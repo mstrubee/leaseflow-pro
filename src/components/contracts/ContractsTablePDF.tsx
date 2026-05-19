@@ -3,7 +3,7 @@ import autoTable from "jspdf-autotable";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import logosHeader from "@/assets/logos-header.png";
-import { calculateTotalArriendoUF } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, formatContractAmount } from "@/lib/contractRent";
 
 interface ContractVersion {
   // Base rent
@@ -52,6 +52,7 @@ interface Contract {
   name: string;
   status: string;
   signed_date: string | null;
+  display_currency?: string | null;
   negotiation_subcategory?: string | null;
   negotiation_notes?: string | null;
   venta_estimada?: number | null;
@@ -243,6 +244,15 @@ export const generateContractsListPDF = async (
             const superficie = contract.superficie_edificada_local || 0;
             const metrosFrente = contract.metros_lineales_frente || 0;
 
+            // Mirror ContractsTable: use weighted average when multi-period,
+            // otherwise show breakdown (Canon + GC + FP + Otros) in display currency.
+            const { promedio, hasMultiplePeriods } = calculateWeightedAverageTotalArriendo({
+              version: currentVersion,
+              signedDate: contract.signed_date,
+              superficie,
+              metrosLinealesFrente: metrosFrente,
+            });
+
             const breakdown = calculateTotalArriendoUF({
               version: currentVersion,
               signedDate: contract.signed_date,
@@ -250,27 +260,19 @@ export const generateContractsListPDF = async (
               metrosLinealesFrente: metrosFrente,
             });
 
-            // UF totals: 2 decimals max | UF/m²: 3 decimals max
-            const fmtUF = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const fmtUFM2 = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
-            const lines: string[] = [`${fmtUF(breakdown.total)} UF`];
+            const totalShown = hasMultiplePeriods
+              ? promedio
+              : breakdown.canon + breakdown.ggcc + breakdown.fondoPromocion + breakdown.otrosEgresos;
 
-            // Always show Canon in UF/m² when superficie is available:
-            // - If rent is stored as UF/m², use that exact rate
-            // - Otherwise, derive it from canon / superficie
-            if (superficie > 0) {
-              const ufM2Rate = breakdown.regimeRentUfM2 ?? (breakdown.canon / superficie);
-              if (Number.isFinite(ufM2Rate) && (ufM2Rate > 0 || breakdown.regimeRentUfM2 != null)) {
-                lines.push(`(Canon ${fmtUFM2(ufM2Rate)} UF/m²)`);
-              }
-            }
+            const lines: string[] = [formatContractAmount(totalShown, contract.display_currency)];
 
-            const extras: string[] = [];
-            if (breakdown.ggcc > 0) extras.push(`GGCC ${fmtUF(breakdown.ggcc)}`);
-            if (breakdown.fondoPromocion > 0) extras.push(`FP ${fmtUF(breakdown.fondoPromocion)}`);
-            if (breakdown.otrosEgresos > 0) extras.push(`Otros ${fmtUF(breakdown.otrosEgresos)}`);
-            if (extras.length > 0) {
-              lines.push(`(${extras.join(' + ')})`);
+            if (hasMultiplePeriods) {
+              lines.push("(Promedio. Incluye GGCC, FP y Otros)");
+            } else {
+              lines.push(`Canon: ${formatContractAmount(breakdown.canon, contract.display_currency)}`);
+              lines.push(`GC: ${formatContractAmount(breakdown.ggcc, contract.display_currency)}`);
+              if (breakdown.fondoPromocion > 0) lines.push(`F. Prom: ${formatContractAmount(breakdown.fondoPromocion, contract.display_currency)}`);
+              if (breakdown.otrosEgresos > 0) lines.push(`Otros: ${formatContractAmount(breakdown.otrosEgresos, contract.display_currency)}`);
             }
 
             rowData.push(lines.join('\n'));

@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
-import { calculateTotalArriendoUF } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, formatContractAmount } from "@/lib/contractRent";
 import { getAvailableColumns } from "./ContractsTablePDF";
 
 interface ContractVersion {
@@ -41,6 +41,7 @@ interface Contract {
   name: string;
   status: string;
   signed_date: string | null;
+  display_currency?: string | null;
   negotiation_subcategory?: string | null;
   negotiation_notes?: string | null;
   venta_estimada?: number | null;
@@ -144,22 +145,31 @@ export const generateContractsListExcel = (
           if (!v) return "";
           const superficie = contract.superficie_edificada_local || 0;
           const metrosFrente = contract.metros_lineales_frente || 0;
+          const { promedio, hasMultiplePeriods } = calculateWeightedAverageTotalArriendo({
+            version: v,
+            signedDate: contract.signed_date,
+            superficie,
+            metrosLinealesFrente: metrosFrente,
+          });
           const breakdown = calculateTotalArriendoUF({
             version: v,
             signedDate: contract.signed_date,
             superficie,
             metrosLinealesFrente: metrosFrente,
           });
-          const parts: string[] = [`${breakdown.total.toFixed(2)} UF`];
-          if (superficie > 0) {
-            const ufM2 = breakdown.regimeRentUfM2 ?? breakdown.canon / superficie;
-            if (Number.isFinite(ufM2) && ufM2 > 0) parts.push(`Canon ${ufM2.toFixed(3)} UF/m²`);
+          const total = hasMultiplePeriods
+            ? promedio
+            : breakdown.canon + breakdown.ggcc + breakdown.fondoPromocion + breakdown.otrosEgresos;
+          const parts: string[] = [formatContractAmount(total, contract.display_currency)];
+          if (hasMultiplePeriods) {
+            parts.push("Promedio (incl. GGCC, FP, Otros)");
+          } else {
+            const extras: string[] = [`Canon ${formatContractAmount(breakdown.canon, contract.display_currency)}`];
+            if (breakdown.ggcc > 0) extras.push(`GC ${formatContractAmount(breakdown.ggcc, contract.display_currency)}`);
+            if (breakdown.fondoPromocion > 0) extras.push(`FP ${formatContractAmount(breakdown.fondoPromocion, contract.display_currency)}`);
+            if (breakdown.otrosEgresos > 0) extras.push(`Otros ${formatContractAmount(breakdown.otrosEgresos, contract.display_currency)}`);
+            parts.push(extras.join(" + "));
           }
-          const extras: string[] = [];
-          if (breakdown.ggcc > 0) extras.push(`GGCC ${breakdown.ggcc.toFixed(2)}`);
-          if (breakdown.fondoPromocion > 0) extras.push(`FP ${breakdown.fondoPromocion.toFixed(2)}`);
-          if (breakdown.otrosEgresos > 0) extras.push(`Otros ${breakdown.otrosEgresos.toFixed(2)}`);
-          if (extras.length) parts.push(extras.join(" + "));
           return parts.join(" | ");
         }
         case "duracion":

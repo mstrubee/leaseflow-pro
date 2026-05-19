@@ -402,3 +402,16 @@ export const calculateWeightedAverageTotalArriendo = (params: {
 
   return { promedio, hasMultiplePeriods: true };
 };
+
+/**
+ * Format a contract amount using the contract's display currency.
+ * Mirrors the formatter used in ContractsTable so PDF/Excel match the list.
+ */
+export const formatContractAmount = (amount: number, currency: string | null | undefined): string => {
+  const displayCurrency = currency || "UF";
+  if (displayCurrency === "CLP") {
+    return `$${amount.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  }
+  return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+};
+
