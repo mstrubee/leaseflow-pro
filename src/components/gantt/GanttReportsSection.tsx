@@ -370,16 +370,18 @@ export function GanttReportsSection() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1) Load all timelines with contract names
+      // 1) Load all timelines with contract names + superficie for UF/m²
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .select("id, name, contract_id, contracts(name, deleted_at)")
+        .select(
+          "id, name, contract_id, contracts(name, deleted_at, superficie_edificada_local)",
+        )
         .order("created_at", { ascending: false });
 
       if (tlErr) throw tlErr;
 
       const validTimelines = (timelines || []).filter(
-        (t: any) => t.contracts && !t.contracts.deleted_at
+        (t: any) => t.contracts && !t.contracts.deleted_at,
       );
 
       if (validTimelines.length === 0) {
@@ -408,112 +410,40 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load CAPEX budget per contract for current year (mirrors the contract CAPEX card logic)
+      // 3) Load CAPEX budget for the current year per contract, then compute
+      //    each total using the SAME pipeline as the Control de Presupuesto
+      //    tree (buildBudgetTree + calculateGrandTotal). This guarantees the
+      //    number shown here matches the one in the budget detail.
       const currentYear = new Date().getFullYear();
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, updated_at")
+        .select("id, contract_id, year, amount_uf")
         .eq("budget_type", "capex")
         .eq("year", currentYear)
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
-      const latestBudgetByContract = new Map<
+      const budgetByContract = new Map<
         string,
-        { id: string; year: number; amount_uf: number | null }
+        { id: string; amount_uf: number | null }
       >();
       (budgets || []).forEach((b) => {
-        if (!latestBudgetByContract.has(b.contract_id)) {
-          latestBudgetByContract.set(b.contract_id, {
-            id: b.id,
-            year: b.year,
-            amount_uf: b.amount_uf,
-          });
+        if (!budgetByContract.has(b.contract_id)) {
+          budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
         }
       });
 
-      const latestBudgetIds = Array.from(latestBudgetByContract.values()).map((b) => b.id);
-
-      let budgetLines: Array<{
-        id: string;
-        budget_id: string;
-        amount_uf: number;
-        status: string;
-        parent_id: string | null;
-        quantity: number | null;
-        unit_price: number | null;
-        template_line_id: string | null;
-        currency: string | null;
-        calc_type: string | null;
-      }> = [];
-
-      if (latestBudgetIds.length > 0) {
-        const { data: lines, error: linesErr } = await supabase
-          .from("budget_lines")
-          .select(
-            "id, budget_id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency, calc_type"
-          )
-          .in("budget_id", latestBudgetIds)
-          .is("deleted_at", null);
-
-        if (linesErr) throw linesErr;
-        budgetLines = (lines || []) as typeof budgetLines;
-      }
-
-      const linesWithTemplate = budgetLines.filter((line) => line.template_line_id);
-      const uniqueTemplateIds = [...new Set(linesWithTemplate.map((line) => line.template_line_id!))];
-      const templatePriceById = new Map<string, number>();
-
-      if (uniqueTemplateIds.length > 0) {
-        const { data: templateData, error: templateErr } = await supabase
-          .from("budget_template_lines")
-          .select("id, default_amount_uf")
-          .in("id", uniqueTemplateIds);
-
-        if (templateErr) throw templateErr;
-        (templateData || []).forEach((template) => {
-          templatePriceById.set(template.id, template.default_amount_uf || 0);
-        });
-      }
+      const budgetIds = Array.from(budgetByContract.values()).map((b) => b.id);
+      const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
 
       const currentUF = ufValue || 0;
-      const parentIds = new Set(
-        budgetLines.filter((line) => line.parent_id).map((line) => line.parent_id as string)
-      );
-
-      const getEffectiveAmount = (line: (typeof budgetLines)[number]) => {
-        if (line.calc_type === "percentage") {
-          return line.amount_uf || 0;
-        }
-
-        const qty = line.quantity || 0;
-        const localPrice = line.unit_price || 0;
-        const templatePrice = line.template_line_id
-          ? templatePriceById.get(line.template_line_id) || 0
-          : 0;
-        const price = localPrice > 0 ? localPrice : templatePrice;
-
-        if (qty <= 0 || price <= 0) return 0;
-
-        const total = qty * price;
-        if (line.currency === "CLP" && currentUF > 0) {
-          return total / currentUF;
-        }
-
-        return total;
-      };
-
       const capexByContract = new Map<string, number>();
-      latestBudgetByContract.forEach((budget, contractId) => {
-        const leafLines = budgetLines.filter(
-          (line) => line.budget_id === budget.id && !parentIds.has(line.id)
-        );
-
-        const linesTotal = leafLines.reduce((sum, line) => sum + getEffectiveAmount(line), 0);
-        const fallback = budget.amount_uf || 0;
-        // Mirror contract CAPEX card: use lines total if any lines exist, else fall back to manual amount
-        const finalCapex = linesTotal > 0 ? linesTotal : fallback;
-        capexByContract.set(contractId, finalCapex);
+      budgetByContract.forEach((budget, contractId) => {
+        const total = totals.get(budget.id);
+        const fromTree = total ? total.grand : 0;
+        // Mirror BudgetDashboard fallback: if there are no lines, use the
+        // manual amount_uf on the budget envelope.
+        capexByContract.set(contractId, fromTree > 0 ? fromTree : budget.amount_uf || 0);
       });
 
       // 4) Assemble per-timeline data
@@ -522,7 +452,6 @@ export function GanttReportsSection() {
         // Excluir líneas de tiempo sin tareas (no tienen Gantt cargada)
         if (tasks.length === 0) return [];
         const taskTree = buildTree(tasks);
-        // End date = max end_date of all tasks
         const endDates = tasks.map((t) => t.end_date).filter(Boolean) as string[];
         const endDate =
           endDates.length > 0
@@ -538,8 +467,10 @@ export function GanttReportsSection() {
           endDate,
           capexUF,
           capexCLP: capexUF * currentUF,
+          surfaceM2: Number(tl.contracts.superficie_edificada_local) || 0,
         }];
       });
+
 
       // Sort by contract name
       result.sort((a, b) => a.contractName.localeCompare(b.contractName));
