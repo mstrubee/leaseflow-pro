@@ -504,6 +504,8 @@ export function GanttReportsSection() {
     new Intl.NumberFormat("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(
       Math.round(n)
     );
+  const formatUFm2 = (n: number) =>
+    new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
   const exportPDF = async () => {
     if (data.length === 0) {
