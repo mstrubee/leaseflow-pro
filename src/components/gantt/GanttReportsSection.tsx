@@ -901,6 +901,11 @@ export function GanttReportsSection() {
                                   <span className="text-muted-foreground">Sin CAPEX</span>
                                 )}
                               </div>
+                              {item.capexUF > 0 && item.surfaceM2 > 0 && (
+                                <div className="text-[11px] text-muted-foreground font-normal">
+                                  {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
+                                </div>
+                              )}
                             </div>
                             <Button
                               variant="ghost"
