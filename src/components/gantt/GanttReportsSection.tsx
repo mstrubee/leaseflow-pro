@@ -596,8 +596,11 @@ export function GanttReportsSection() {
           infoY,
           { align: "center" }
         );
+        const capexLabel = item.capexUF > 0
+          ? `UF ${formatUF(item.capexUF)} / $${formatCLP(item.capexCLP)}${item.surfaceM2 > 0 ? ` · ${formatUFm2(item.capexUF / item.surfaceM2)} UF/m²` : ""}`
+          : "—";
         doc.text(
-          `CAPEX Total: ${item.capexUF > 0 ? `UF ${formatUF(item.capexUF)} / $${formatCLP(item.capexCLP)}` : "—"}`,
+          `CAPEX Total: ${capexLabel}`,
           pageWidth - 10,
           infoY,
           { align: "right" }
