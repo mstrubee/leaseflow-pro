@@ -20,6 +20,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
 import { CapexCloseYearDialog } from "./CapexCloseYearDialog";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 
 interface BudgetSummary {
   budget: number;
