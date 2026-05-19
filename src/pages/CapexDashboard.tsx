@@ -88,61 +88,18 @@ export default function CapexDashboard() {
       }));
       setBudgets(processed);
 
-      // Load budget lines for authorized/unauthorized breakdown
-      // Paginate to avoid 1000-row limit
+      // Load budget lines totals via the shared pipeline that powers the
+      // "Control de Presupuesto" tree (BudgetLineTree.calculateGrandTotal).
+      // Mantiene este dashboard cuadrado con cada contrato.
       const budgetIds = (data || []).map((b: any) => b.id);
       if (budgetIds.length > 0) {
-        let allLines: any[] = [];
-        const PAGE_SIZE = 1000;
-        let from = 0;
-        let hasMore = true;
-        while (hasMore) {
-          const { data: page, error: pageErr } = await supabase
-            .from("budget_lines")
-            .select("id, budget_id, amount_uf, status, parent_id, quantity, unit_price, currency, calc_type")
-            .in("budget_id", budgetIds)
-            .is("deleted_at", null)
-            .range(from, from + PAGE_SIZE - 1);
-          if (pageErr) throw pageErr;
-          allLines = allLines.concat(page || []);
-          hasMore = (page?.length || 0) === PAGE_SIZE;
-          from += PAGE_SIZE;
-        }
-
-        // No longer filter out budgets without lines — they may have manual amount_uf
-
-        if (allLines.length > 0) {
-          // Find parent IDs to exclude (avoid double-counting)
-          const parentIds = new Set(allLines.filter(l => l.parent_id).map(l => l.parent_id!));
-          const leafLines = allLines.filter(l => !parentIds.has(l.id));
-
-          // Calculate effective amount in UF matching BudgetLineTree logic
-          const currentUF = ufValue || 0;
-          const getEffectiveUF = (line: any): number => {
-            if (line.calc_type === "percentage") return line.amount_uf || 0;
-            const qty = line.quantity || 0;
-            const price = line.unit_price || 0;
-            if (qty <= 0 || price <= 0) return 0;
-            const total = qty * price;
-            if (line.currency === "CLP" && currentUF > 0) return total / currentUF;
-            return total;
-          };
-
-          // Group by budget_id (NOT contract_id) to avoid cross-year duplication
-          const breakdown: AuthByBudget = {};
-          leafLines.forEach(line => {
-            if (!breakdown[line.budget_id]) breakdown[line.budget_id] = { authorized: 0, unauthorized: 0 };
-            const amt = getEffectiveUF(line);
-            if (line.status === "autorizado") {
-              breakdown[line.budget_id].authorized += amt;
-            } else {
-              breakdown[line.budget_id].unauthorized += amt;
-            }
-          });
-          setAuthByBudget(breakdown);
-        }
-      } else {
-        // No budget lines — keep budgets with manual amount_uf
+        const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
+        const breakdown: AuthByBudget = {};
+        totals.forEach((t, budgetId) => {
+          breakdown[budgetId] = { authorized: t.authorized, unauthorized: t.unauthorized };
+        });
+        setAuthByBudget(breakdown);
+      }
       }
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
