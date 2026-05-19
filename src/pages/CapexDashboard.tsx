@@ -100,7 +100,6 @@ export default function CapexDashboard() {
         });
         setAuthByBudget(breakdown);
       }
-      }
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
     } finally {
