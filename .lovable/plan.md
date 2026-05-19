@@ -1,70 +1,41 @@
-# Estabilidad del sistema ante errores transitorios
+## Problema
 
-## Diagnóstico
+En el listado de contratos, la columna "Costo Arriendo" usa `calculateWeightedAverageTotalArriendo` cuando el contrato tiene múltiples periodos (escalonamientos/reajustes) y muestra el **promedio ponderado** en la moneda de presentación del contrato (`display_currency`, CLP o UF).
 
-Los logs del servidor (Postgres, Edge Functions, Auth) están limpios — no hay errores 4xx/5xx ni fallos de RLS. Sin embargo, la consola del navegador muestra ráfagas de `TypeError: Load failed` en peticiones no relacionadas (logos, alertas, indicadores económicos, campos personalizados). Ese mensaje en Safari indica que la petición HTTP fue abortada antes de obtener respuesta (corte de red, cambio de red, throttling del navegador, o pestaña en background).
+El PDF (y Excel) usan otra ruta: `calculateTotalArriendoUF` con la versión vigente "punto en el tiempo", siempre en UF. Por eso para muchos contratos el monto no coincide con el que el usuario ve en pantalla.
 
-El síntoma reportado ("no se pudo cargar contrato" al hacer click) ocurre en `ContractDetail.tsx → loadContract`: ante cualquier error muestra toast y ejecuta `navigate("/")`, expulsando al usuario. Sin reintentos. La query además trae 7 relaciones anidadas, lo que la hace más sensible.
+## Cambios
 
-## Cambios propuestos
+### 1. `src/components/contracts/ContractsTablePDF.tsx` — case `"costo_arriendo"`
 
-### 1. `src/pages/ContractDetail.tsx` — carga resiliente del contrato
-- Agregar reintento automático con backoff (2 intentos, 600ms y 1500ms) ante errores de red (`TypeError`, `Failed to fetch`, `Load failed`).
-- En caso de fallo definitivo: **no navegar fuera**. Mostrar estado de error inline con botón "Reintentar" y "Volver".
-- Distinguir entre "contrato no existe" (usar `.maybeSingle()`) y "error de red" — solo el primero debe redirigir.
+Replicar la lógica de la tabla (`ContractsTable.tsx` líneas ~1090‑1165):
 
-### 2. Helper compartido `src/lib/supabaseRetry.ts` (nuevo)
-- Función `withRetry(fn, { attempts, delays })` que reintenta solo ante errores de red transitorios (no ante errores SQL/RLS reales).
-- Reutilizable por hooks críticos.
+- Calcular `gastosComunesTotal` con la misma rama `percentage` vs `uf_m2` (incluyendo tope, `hasExtended`, ml de frente, kwh, adicional admin, fixed admin UF).
+- Llamar a `calculateWeightedAverageTotalArriendo` para obtener `{ promedio, hasMultiplePeriods }`.
+- Calcular `currentRentVal2` con `calculateCurrentRent` para obtener el canon actual.
+- Total mostrado:
+  - Si `hasMultiplePeriods`: `promedio` con sufijo "Promedio (incluye GGCC, FP y Otros)".
+  - Si no: `currentRentVal2 + gastosComunesTotal + fondoP + otros`, con desglose Canon / GC / F. Prom / Otros.
+- Usar `contract.display_currency` con un helper `formatAmount` equivalente (CLP con separador miles + "$"; UF con 2 decimales + " UF") en lugar de forzar UF.
 
-### 3. Hooks con fallos visibles en consola — envolver en `withRetry`
-- `src/hooks/useAppLogos.ts` — carga de logos
-- `src/hooks/useEconomicIndicators.ts` — invocación de edge function `economic-indicators`
-- `src/components/alerts/AlertsList.tsx` (y similares) — carga de alertas
-- Carga de custom fields en `ContractDetail.tsx`
+### 2. `src/components/contracts/ContractsTableExcel.ts` — case `"costo_arriendo"`
 
-Los fallos transitorios se silencian (no toast), solo se loguean. Los fallos persistentes mantienen el comportamiento actual.
+Aplicar el mismo cálculo (promedio ponderado + display_currency) para que el Excel también coincida con el listado.
 
-### 4. `loadContract` — query más liviana
-Separar la query monolítica en 2 llamadas paralelas:
-- Contrato + companies + addresses + contacts + documents + termination_notices
-- Versions con sus relaciones (rent_escalations, notice_ranges, version_notices)
+### 3. Pasar `display_currency` en el tipo `Contract` de ambos archivos
 
-Esto reduce el tamaño del payload por request y la probabilidad de timeout, manteniendo la misma latencia (paralelo).
+Añadir el campo opcional `display_currency?: "CLP" | "UF" | null` a las interfaces locales `Contract` en `ContractsTablePDF.tsx` y `ContractsTableExcel.ts`. Los datos ya vienen en `filteredContracts` desde `Contracts.tsx`.
 
-## Detalles técnicos
+### 4. Helper compartido
 
-```ts
-// supabaseRetry.ts
-const isTransient = (e: any) =>
-  e?.name === "TypeError" ||
-  /load failed|failed to fetch|networkerror/i.test(e?.message ?? "");
-
-export async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delays = [0, 600, 1500]): Promise<T> {
-  let last: any;
-  for (let i = 0; i < attempts; i++) {
-    if (delays[i]) await new Promise(r => setTimeout(r, delays[i]));
-    try { return await fn(); }
-    catch (e) { last = e; if (!isTransient(e)) throw e; }
-  }
-  throw last;
-}
-```
-
-```tsx
-// ContractDetail estado de error
-if (loadError) {
-  return (
-    <div className="...">
-      <p>No se pudo cargar el contrato.</p>
-      <Button onClick={retry}>Reintentar</Button>
-      <Button variant="outline" onClick={() => navigate("/")}>Volver</Button>
-    </div>
-  );
-}
-```
+Extraer `formatAmount(value, currency, ufValue?)` a `src/lib/contractRent.ts` (o nuevo archivo `src/lib/contractAmount.ts`) para evitar duplicación entre tabla, PDF y Excel.
 
 ## Fuera de alcance
-- No se tocan edge functions (`recent-logins`, `force-logout-all`) — ya están estabilizadas en el turno anterior.
-- No se modifica el esquema de DB ni RLS.
-- No se cambia UI/diseño general.
+
+- No se cambia la lógica del listado en `ContractsTable.tsx`.
+- No se modifican otras columnas del PDF (categoría, venta estimada, etc.) salvo que el usuario lo pida.
+- No se tocan edge functions, RLS ni datos.
+
+## Resultado
+
+El PDF y el Excel mostrarán exactamente el mismo monto de "Costo Arriendo" que se ve en la tabla del listado, en la misma moneda y con el mismo desglose, sin depender de cálculos distintos por contrato.
