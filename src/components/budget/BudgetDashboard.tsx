@@ -443,29 +443,15 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       return { budget: 0, authorized: 0, unauthorized: 0 };
     }
 
-    // Obtener líneas activas del presupuesto (mismo criterio que la columna CAPEX del listado de contratos)
-    const { data: lines } = await supabase
-      .from("budget_lines")
-      .select("id, amount_uf, status, parent_id")
-      .eq("budget_id", budget.id)
-      .is("deleted_at", null);
-
-    // Solo contar líneas hoja (no padres) para evitar doble conteo
-    const parentIds = new Set((lines || []).filter(l => l.parent_id).map(l => l.parent_id));
-    const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
-
-    const authorized = leafLines
-      .filter(l => l.status === "autorizado")
-      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
-
-    const unauthorized = leafLines
-      .filter(l => l.status === "no_autorizado")
-      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+    // Usar la misma cañería que el árbol "Control de Presupuesto"
+    // (loadBudgetTotals) para que la tarjeta superior y el árbol coincidan.
+    const totals = await loadBudgetTotals([budget.id], ufValue || 0);
+    const t = totals.get(budget.id);
 
     return {
       budget: budget.amount_uf || 0,
-      authorized,
-      unauthorized,
+      authorized: t?.authorized || 0,
+      unauthorized: t?.unauthorized || 0,
     };
   };
 
