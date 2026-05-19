@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
-import { calculateTotalArriendoUF } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, formatContractAmount } from "@/lib/contractRent";
 import { getAvailableColumns } from "./ContractsTablePDF";
 
 interface ContractVersion {
