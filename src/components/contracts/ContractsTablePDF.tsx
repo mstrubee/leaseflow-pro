@@ -3,7 +3,7 @@ import autoTable from "jspdf-autotable";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import logosHeader from "@/assets/logos-header.png";
-import { calculateTotalArriendoUF } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, formatContractAmount } from "@/lib/contractRent";
 
 interface ContractVersion {
   // Base rent
