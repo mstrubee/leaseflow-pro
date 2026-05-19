@@ -555,7 +555,7 @@ export function GanttReportsSection() {
       drawHeader(`${data.length} contrato(s)`);
       autoTable(doc, {
         startY: 28,
-        head: [["Contrato", "Línea de Tiempo", "Fecha Término", "Tareas", "CAPEX (UF)", "CAPEX (CLP)"]],
+        head: [["Contrato", "Línea de Tiempo", "Fecha Término", "Tareas", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
         body: data.map((d) => [
           d.contractName,
           d.timelineName,
@@ -563,17 +563,19 @@ export function GanttReportsSection() {
           String(d.tasks.length),
           d.capexUF > 0 ? formatUF(d.capexUF) : "—",
           d.capexCLP > 0 ? `$${formatCLP(d.capexCLP)}` : "—",
+          d.capexUF > 0 && d.surfaceM2 > 0 ? formatUFm2(d.capexUF / d.surfaceM2) : "—",
         ]),
         styles: { fontSize: 8, cellPadding: 1.5 },
         headStyles: { fillColor: [59, 130, 246], textColor: 255 },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { cellWidth: 70 },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 30, halign: "center" },
-          3: { cellWidth: 20, halign: "center" },
-          4: { cellWidth: 35, halign: "right" },
-          5: { cellWidth: 45, halign: "right" },
+          0: { cellWidth: 65 },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 28, halign: "center" },
+          3: { cellWidth: 18, halign: "center" },
+          4: { cellWidth: 30, halign: "right" },
+          5: { cellWidth: 40, halign: "right" },
+          6: { cellWidth: 22, halign: "right" },
         },
       });
 
