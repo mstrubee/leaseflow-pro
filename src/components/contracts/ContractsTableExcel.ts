@@ -41,6 +41,7 @@ interface Contract {
   name: string;
   status: string;
   signed_date: string | null;
+  display_currency?: string | null;
   negotiation_subcategory?: string | null;
   negotiation_notes?: string | null;
   venta_estimada?: number | null;
