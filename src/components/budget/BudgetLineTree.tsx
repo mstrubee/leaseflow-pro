@@ -138,12 +138,10 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
   };
 
   const badge = (
-    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", getProgressColorClass(current?.color), !readOnly && "cursor-pointer")}>
+    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap cursor-pointer", getProgressColorClass(current?.color))}>
       {current?.name || "Sin estado"}
     </Badge>
   );
-
-  if (readOnly) return badge;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
