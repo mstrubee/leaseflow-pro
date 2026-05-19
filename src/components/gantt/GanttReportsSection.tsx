@@ -29,6 +29,7 @@ import autoTable from "jspdf-autotable";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 
 interface GanttContractData {
   contractId: string;
