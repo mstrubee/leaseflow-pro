@@ -39,6 +39,7 @@ interface GanttContractData {
   endDate: string | null;
   capexUF: number;
   capexCLP: number;
+  surfaceM2: number; // superficie_edificada_local for UF/m² metric
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
