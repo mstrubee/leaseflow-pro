@@ -56,6 +56,7 @@ export default function CapexDashboard() {
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
   const [templateOpen, setTemplateOpen] = useState(false);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
