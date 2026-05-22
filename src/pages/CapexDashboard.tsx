@@ -91,8 +91,10 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, status, deleted_at, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
+        .is("contracts.deleted_at", null)
+        .eq("contracts.status", "firmado")
         .order("year", { ascending: false });
 
       if (error) throw error;
