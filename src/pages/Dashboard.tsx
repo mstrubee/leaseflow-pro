@@ -68,7 +68,7 @@ const Dashboard = () => {
                     OPEX
                   </Button>
                 )}
-                {hasPermission("purchase_orders", "view") && (
+                {hasPermission("capex", "view") && (
                   <Button variant="outline" size="sm" onClick={() => navigate("/capex")} className="gap-2">
                     <HardHat className="h-4 w-4" />
                     CAPEX
