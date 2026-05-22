@@ -249,22 +249,31 @@ export default function CapexDashboard() {
     return total;
   }, [filteredBudgets, authByBudget]);
 
-  // Totals by clasificacion
+  // Solo locales con CAPEX efectivo > 0 (descarta budgets vacíos)
+  const contractsWithCapex = React.useMemo(() => {
+    return contractGroups.filter(([contractId, cBudgets]) => {
+      const bd = authByContract[contractId];
+      const totalUf = bd
+        ? bd.authorized + bd.unauthorized
+        : cBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
+      return totalUf > 0;
+    });
+  }, [contractGroups, authByContract]);
+
+  // Totals by clasificacion (solo locales con CAPEX > 0)
   const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
     let nuevo = 0, reemplazo = 0, regularizacion = 0;
     let cNuevo = 0, cReemplazo = 0, cRegularizacion = 0;
-    const seen = new Set<string>();
-    filteredBudgets.forEach(b => {
-      if (seen.has(b.contract_id)) return;
-      seen.add(b.contract_id);
-      const breakdown = authByContract[b.contract_id];
-      const effectiveUF = breakdown ? (breakdown.authorized + breakdown.unauthorized) : b.amount_uf;
-      if (b.clasificacion === "nuevo") { nuevo += effectiveUF; cNuevo++; }
-      else if (b.clasificacion === "reemplazo") { reemplazo += effectiveUF; cReemplazo++; }
-      else if (b.clasificacion === "regularizacion") { regularizacion += effectiveUF; cRegularizacion++; }
+    contractsWithCapex.forEach(([contractId, cBudgets]) => {
+      const bd = authByContract[contractId];
+      const effectiveUF = bd ? (bd.authorized + bd.unauthorized) : cBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
+      const cl = cBudgets[0].clasificacion;
+      if (cl === "nuevo") { nuevo += effectiveUF; cNuevo++; }
+      else if (cl === "reemplazo") { reemplazo += effectiveUF; cReemplazo++; }
+      else if (cl === "regularizacion") { regularizacion += effectiveUF; cRegularizacion++; }
     });
     return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion, countNuevo: cNuevo, countReemplazo: cReemplazo, countRegularizacion: cRegularizacion };
-  }, [filteredBudgets, authByContract]);
+  }, [contractsWithCapex, authByContract]);
 
   const handleExportPPT = async () => {
     try {
