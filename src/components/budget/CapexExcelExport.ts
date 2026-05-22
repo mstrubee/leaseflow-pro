@@ -13,6 +13,7 @@ export interface CapexExportContract {
   superficie: number;
   year: number;
   budget_ids: string[];
+  legacy_amount_uf?: number;
 }
 
 interface Row {
@@ -211,11 +212,12 @@ export async function exportCapexToExcel(
 
     // Patch contract header subtotal formulas
     const header = rows[contractHeaderRowIdx];
+    const legacy = c.legacy_amount_uf || 0;
     if (rootRowIdxs.length) {
       const refs = rootRowIdxs.map((r) => cellRef(r, COL.uf)).join(",");
-      header.formulas[COL.uf] = `SUM(${refs})`;
+      header.formulas[COL.uf] = legacy > 0 ? `MAX(SUM(${refs}),${legacy})` : `SUM(${refs})`;
     } else {
-      header.values[COL.uf] = 0;
+      header.values[COL.uf] = legacy;
     }
     header.formulas[COL.clp] = `${cellRef(contractHeaderRowIdx, COL.uf)}*$B$1`;
     if (c.superficie && c.superficie > 0) {
@@ -268,6 +270,22 @@ export async function exportCapexToExcel(
     { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 },
   ];
   ws["!freeze"] = { xSplit: 0, ySplit: 2 } as any;
+
+  // Autofilter on the header row (row index 1 → Excel row 2) across all columns.
+  const lastColLetter = colLetter(HEADERS.length - 1);
+  const lastRow = rows.length; // 1-indexed: header is row 2, data ends at rows.length
+  ws["!autofilter"] = { ref: `A2:${lastColLetter}${lastRow}` };
+
+  // Pre-hide rows where Nivel != 0 so the file opens showing only contract headers.
+  // (Users can right-click → Unhide, or change the filter, to see deeper levels.)
+  const wsRows: any[] = [];
+  rows.forEach((r, rIdx) => {
+    const nivel = r.values[4];
+    if (typeof nivel === "number" && nivel !== 0) {
+      wsRows[rIdx] = { hidden: true };
+    }
+  });
+  ws["!rows"] = wsRows;
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "CAPEX");

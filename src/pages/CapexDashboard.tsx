@@ -325,15 +325,23 @@ export default function CapexDashboard() {
     setExportingExcel(true);
     try {
       toast.info("Generando Excel...");
-      const payload = contractGroups.map(([contractId, cBudgets]) => ({
-        contract_id: contractId,
-        contract_name: cBudgets[0].contract_name,
-        clasificacion: cBudgets[0].clasificacion,
-        company_names: cBudgets[0].company_names,
-        superficie: cBudgets[0].superficie || 0,
-        year: cBudgets[0].year,
-        budget_ids: cBudgets.map((b) => b.budget_id),
-      }));
+      const payload = contractGroups.map(([contractId, cBudgets]) => {
+        const legacy = cBudgets.reduce((sum, b) => {
+          const bd = authByBudget[b.budget_id];
+          const fromLines = bd ? bd.authorized + bd.unauthorized : 0;
+          return sum + Math.max(fromLines, b.amount_uf || 0);
+        }, 0);
+        return {
+          contract_id: contractId,
+          contract_name: cBudgets[0].contract_name,
+          clasificacion: cBudgets[0].clasificacion,
+          company_names: cBudgets[0].company_names,
+          superficie: cBudgets[0].superficie || 0,
+          year: cBudgets[0].year,
+          budget_ids: cBudgets.map((b) => b.budget_id),
+          legacy_amount_uf: legacy,
+        };
+      });
       const label = yearFilter !== "todos" ? yearFilter : "todos";
       await exportCapexToExcel(payload, ufValue || 0, label);
       toast.success("Excel descargado");
