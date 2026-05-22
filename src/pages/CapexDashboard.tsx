@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
 import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
+import { exportCapexToExcel } from "@/components/budget/CapexExcelExport";
 
 interface ContractBudget {
   contract_id: string;
