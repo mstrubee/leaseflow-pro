@@ -212,11 +212,12 @@ export async function exportCapexToExcel(
 
     // Patch contract header subtotal formulas
     const header = rows[contractHeaderRowIdx];
+    const legacy = c.legacy_amount_uf || 0;
     if (rootRowIdxs.length) {
       const refs = rootRowIdxs.map((r) => cellRef(r, COL.uf)).join(",");
-      header.formulas[COL.uf] = `SUM(${refs})`;
+      header.formulas[COL.uf] = legacy > 0 ? `MAX(SUM(${refs}),${legacy})` : `SUM(${refs})`;
     } else {
-      header.values[COL.uf] = 0;
+      header.values[COL.uf] = legacy;
     }
     header.formulas[COL.clp] = `${cellRef(contractHeaderRowIdx, COL.uf)}*$B$1`;
     if (c.superficie && c.superficie > 0) {
