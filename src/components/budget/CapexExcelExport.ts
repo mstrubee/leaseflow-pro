@@ -165,10 +165,13 @@ export async function exportCapexToExcel(
       const hasChildren = !!(node.children && node.children.length > 0);
       const localPrice = node.unit_price ?? 0;
       const templatePrice = node.template_line_id ? templatePricesMap[node.id] ?? 0 : 0;
-      const unitPrice =
+      const rawUnitPrice =
         localPrice > 0 ? localPrice : templatePrice > 0 ? templatePrice : null;
       const qty = node.quantity ?? null;
       const currency = (node.currency || "UF").toUpperCase();
+      const unitPrice = rawUnitPrice != null && currency === "CLP" && ufValue > 0
+        ? rawUnitPrice / ufValue
+        : rawUnitPrice;
 
       const indent = "    ".repeat(depth);
       const row: Row = {
@@ -206,10 +209,9 @@ export async function exportCapexToExcel(
           row.values[COL.uf] = node.amount_uf || 0;
         }
       } else {
-        // Leaf: if both qty and price present, use formula; convert CLP inputs to UF.
+        // Leaf: if both qty and price present, use formula. CLP unit prices are exported converted to UF.
         if (qty != null && unitPrice != null && qty !== 0) {
-          const base = `${cellRef(rowIdx, COL.qty)}*${cellRef(rowIdx, COL.price)}`;
-          row.formulas[COL.uf] = currency === "CLP" ? `IFERROR(${base}/$B$1,0)` : base;
+          row.formulas[COL.uf] = `${cellRef(rowIdx, COL.qty)}*${cellRef(rowIdx, COL.price)}`;
         } else {
           row.values[COL.uf] = node.amount_uf || 0;
         }
