@@ -40,6 +40,24 @@ interface AuthBreakdown {
 // Store breakdown per budget_id (not per contract) to avoid cross-year duplication
 type AuthByBudget = Record<string, AuthBreakdown>;
 
+const getEffectiveBudgetBreakdown = (budget: ContractBudget, breakdown?: AuthBreakdown): AuthBreakdown => {
+  const baseline = budget.amount_uf || 0;
+  if (!breakdown) return { authorized: 0, unauthorized: baseline };
+
+  const fromLines = breakdown.authorized + breakdown.unauthorized;
+  if (fromLines >= baseline) return breakdown;
+
+  return {
+    authorized: breakdown.authorized,
+    unauthorized: Math.max(0, baseline - breakdown.authorized),
+  };
+};
+
+const getEffectiveBudgetTotal = (budget: ContractBudget, breakdown?: AuthBreakdown) => {
+  const effective = getEffectiveBudgetBreakdown(budget, breakdown);
+  return effective.authorized + effective.unauthorized;
+};
+
 export default function CapexDashboard() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -131,7 +149,7 @@ export default function CapexDashboard() {
     });
   }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter]);
 
-  // Group by contract, filtering out those with zero total amounts
+  // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
   const contractGroups = React.useMemo(() => {
     const map = new Map<string, ContractBudget[]>();
     filteredBudgets.forEach(b => {
@@ -140,14 +158,6 @@ export default function CapexDashboard() {
       map.set(b.contract_id, existing);
     });
     return Array.from(map.entries())
-      .filter(([, cBudgets]) => {
-        const total = cBudgets.reduce((sum, b) => {
-          const bd = authByBudget[b.budget_id];
-          const fromLines = bd ? bd.authorized + bd.unauthorized : 0;
-          return sum + Math.max(fromLines, b.amount_uf || 0);
-        }, 0);
-        return total > 0;
-      })
       .sort((a, b) => {
         const aB = a[1][0], bB = b[1][0];
         if (sortBy === "empresa") {
@@ -168,14 +178,10 @@ export default function CapexDashboard() {
   const authByContract = React.useMemo(() => {
     const result: Record<string, AuthBreakdown> = {};
     filteredBudgets.forEach(b => {
-      const bd = authByBudget[b.budget_id];
+      const bd = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
       if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      if (bd) {
-        result[b.contract_id].authorized += bd.authorized;
-        result[b.contract_id].unauthorized += bd.unauthorized;
-      } else {
-        result[b.contract_id].unauthorized += b.amount_uf;
-      }
+      result[b.contract_id].authorized += bd.authorized;
+      result[b.contract_id].unauthorized += bd.unauthorized;
     });
     return result;
   }, [filteredBudgets, authByBudget]);
@@ -227,9 +233,7 @@ export default function CapexDashboard() {
   const totalCapexUF = React.useMemo(() => {
     let total = 0;
     filteredBudgets.forEach(b => {
-      const bd = authByBudget[b.budget_id];
-      if (bd) total += bd.authorized + bd.unauthorized;
-      else total += b.amount_uf;
+      total += getEffectiveBudgetTotal(b, authByBudget[b.budget_id]);
     });
     return total;
   }, [filteredBudgets, authByBudget]);
@@ -327,9 +331,7 @@ export default function CapexDashboard() {
       toast.info("Generando Excel...");
       const payload = contractGroups.map(([contractId, cBudgets]) => {
         const legacy = cBudgets.reduce((sum, b) => {
-          const bd = authByBudget[b.budget_id];
-          const fromLines = bd ? bd.authorized + bd.unauthorized : 0;
-          return sum + Math.max(fromLines, b.amount_uf || 0);
+          return sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]);
         }, 0);
         return {
           contract_id: contractId,

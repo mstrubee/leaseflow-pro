@@ -156,16 +156,22 @@ export async function exportCapexToExcel(
     // Build tree for this contract (combining all its budget_ids)
     const flat = all.filter((l) => c.budget_ids.includes(l.budget_id) && !isExcluded(l, internal));
     const tree = buildBudgetTree(flat);
+    const rowByLineId = new Map<string, number>();
 
     // Emit nodes recursively; return row index of this node and its monto col fills.
     const emitNode = (node: BudgetLine, depth: number): number => {
       const rowIdx = rows.length;
+      rowByLineId.set(node.id, rowIdx);
       const hasChildren = !!(node.children && node.children.length > 0);
-      const unitPrice =
-        node.template_line_id != null
-          ? templatePricesMap[node.id] ?? 0
-          : node.unit_price ?? null;
+      const localPrice = node.unit_price ?? 0;
+      const templatePrice = node.template_line_id ? templatePricesMap[node.id] ?? 0 : 0;
+      const rawUnitPrice =
+        localPrice > 0 ? localPrice : templatePrice > 0 ? templatePrice : null;
       const qty = node.quantity ?? null;
+      const currency = (node.currency || "UF").toUpperCase();
+      const unitPrice = rawUnitPrice != null && currency === "CLP" && ufValue > 0
+        ? rawUnitPrice / ufValue
+        : rawUnitPrice;
 
       const indent = "    ".repeat(depth);
       const row: Row = {
@@ -195,8 +201,15 @@ export async function exportCapexToExcel(
         // Monto UF = sum of children's Monto UF cells
         const refs = childRowIdxs.map((r) => cellRef(r, COL.uf)).join(",");
         row.formulas[COL.uf] = `SUM(${refs})`;
+      } else if (node.calc_type === "percentage") {
+        const sourceRow = node.calc_source_line_id ? rowByLineId.get(node.calc_source_line_id) : undefined;
+        if (sourceRow != null && node.calc_percentage != null) {
+          row.formulas[COL.uf] = `${cellRef(sourceRow, COL.uf)}*${node.calc_percentage}/100`;
+        } else {
+          row.values[COL.uf] = node.amount_uf || 0;
+        }
       } else {
-        // Leaf: if both qty and price present, use formula; else hardcoded amount_uf (editable)
+        // Leaf: if both qty and price present, use formula. CLP unit prices are exported converted to UF.
         if (qty != null && unitPrice != null && qty !== 0) {
           row.formulas[COL.uf] = `${cellRef(rowIdx, COL.qty)}*${cellRef(rowIdx, COL.price)}`;
         } else {
