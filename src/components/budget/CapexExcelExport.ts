@@ -304,5 +304,24 @@ export async function exportCapexToExcel(
   XLSX.utils.book_append_sheet(wb, ws, "CAPEX");
 
   const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  XLSX.writeFile(wb, `CAPEX_${yearLabel}_${ts}.xlsx`);
+  const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
+
+  // Use Blob + anchor download (more reliable inside sandboxed iframes than XLSX.writeFile,
+  // which can silently no-op when the preview iframe's download permissions are restricted).
+  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([wbout], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 0);
 }
+
