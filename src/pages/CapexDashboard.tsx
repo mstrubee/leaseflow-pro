@@ -342,6 +342,10 @@ export default function CapexDashboard() {
       await generateSingleContractPPT({ contractId, contractName, companyNames });
       toast.success("PPT descargado");
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        toast.info("Descarga cancelada");
+        return;
+      }
       console.error("Single PPT error:", err);
       toast.error("Error al generar PPT individual");
     } finally {
