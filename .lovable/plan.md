@@ -1,11 +1,18 @@
-Voy a deshacer la parte que introduje con `window.open`/popup y volver a una descarga directa desde el click del usuario.
+## Plan
 
-Plan:
-1. Cambiar `src/components/budget/CapexExcelExport.ts` para eliminar el flujo de popup/nueva pestaña.
-2. Usar descarga directa con un `<a download>` temporal y `Blob`, disparada dentro del mismo evento del botón.
-3. Agregar validación mínima: si no se puede crear el archivo, lanzar error para que no aparezca “Excel descargado” falsamente.
-4. Revisar el handler en `src/pages/CapexDashboard.tsx` para que el toast de éxito solo aparezca después de ejecutar correctamente la descarga.
+1. **Reemplazar el método de descarga del Excel CAPEX**
+   - Cambiar `src/components/budget/CapexExcelExport.ts` para que deje de depender de `XLSX.writeFile`, que puede no disparar descarga de forma confiable en el preview/iframe.
+   - Generar explícitamente el `.xlsx` con `XLSX.write(..., { type: "array" })`, crear un `Blob`, preparar un `<a download>`, hacer click programático y limpiar el objeto URL después.
+   - Este patrón ya existe y funciona en otros exportadores del proyecto.
 
-Detalle técnico:
-- El cambio roto más probable es el `window.open(url, "_blank")`: para `blob:` en iframe/preview puede abrir o consumir el gesto del usuario sin iniciar una descarga real, aunque el popup no esté bloqueado.
-- La corrección será eliminar esa rama y dejar un único método de descarga, similar al patrón que ya funciona en otros módulos del proyecto.
+2. **Evitar el toast falso de éxito**
+   - Hacer que `exportCapexToExcel` retorne información del archivo generado, al menos `filename` y tamaño del `Blob`.
+   - Si el buffer/Blob queda vacío o falla la creación del link, lanzar error para que no aparezca “Excel descargado”.
+
+3. **Actualizar el handler del dashboard**
+   - En `src/pages/CapexDashboard.tsx`, mostrar éxito solo cuando `exportCapexToExcel` termine con archivo válido.
+   - Mantener el botón bloqueado durante la generación y conservar el manejo de error actual.
+
+4. **Verificación**
+   - Revisar que el flujo compile a nivel de código y que no quede ningún `window.open` ni popup involucrado.
+   - Usar el patrón con `data-interception="off"` si aplica, igual que el PPT, para que Lovable/preview no intercepte el enlace de descarga.
