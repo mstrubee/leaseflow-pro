@@ -321,7 +321,7 @@ export default function CapexDashboard() {
         countNuevo,
         countReemplazo,
         countRegularizacion,
-        totalLocales: contractGroups.length,
+        totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
       });
       toast.success("Presentación descargada");
