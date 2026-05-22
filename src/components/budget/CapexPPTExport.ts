@@ -94,6 +94,23 @@ async function loadImageAsBase64(src: string): Promise<string> {
 }
 
 export async function generateCapexPPT(data: CapexPPTData) {
+  const fileName = `CAPEX_${data.year}_${new Date().toISOString().slice(0, 10)}.pptx`;
+
+  type FileHandle = { createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> };
+  let saveHandle: FileHandle | null = null;
+  const canPick = typeof (window as any).showSaveFilePicker === "function";
+  if (canPick) {
+    try {
+      saveHandle = await (window as any).showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{ description: "Presentación PowerPoint", accept: { "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"] } }],
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      saveHandle = null;
+    }
+  }
+
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_16x9";
   pres.author = "GPlanet";
@@ -382,20 +399,26 @@ export async function generateCapexPPT(data: CapexPPTData) {
   }
 
   // Save
-  const fileName = `CAPEX_${data.year}_${new Date().toISOString().slice(0, 10)}.pptx`;
   const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
   const blob = new Blob([arrBuf], {
     type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
+  if (saveHandle) {
+    const writable = await saveHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
 }
+
