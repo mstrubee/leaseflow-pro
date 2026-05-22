@@ -326,6 +326,10 @@ export default function CapexDashboard() {
       });
       toast.success("Presentación descargada");
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        toast.info("Descarga cancelada");
+        return;
+      }
       console.error("PPT export error:", err);
       toast.error("Error al generar la presentación");
     }
