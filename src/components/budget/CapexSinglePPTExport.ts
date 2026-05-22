@@ -97,6 +97,23 @@ async function getBusinessCaseImages(contractId: string): Promise<string[]> {
 }
 
 export async function generateSingleContractPPT(data: SingleContractPPTData) {
+  const fileName = `CAPEX_${data.contractName.replace(/[^a-zA-Z0-9]/g, "_")}.pptx`;
+
+  type FileHandle = { createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> };
+  let saveHandle: FileHandle | null = null;
+  const canPick = typeof (window as any).showSaveFilePicker === "function";
+  if (canPick) {
+    try {
+      saveHandle = await (window as any).showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{ description: "Presentación PowerPoint", accept: { "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"] } }],
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      saveHandle = null;
+    }
+  }
+
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_16x9";
   pres.author = "GPlanet";
