@@ -342,6 +342,9 @@ export default function CapexDashboard() {
     } finally {
       setExportingExcel(false);
     }
+  };
+
+
 
   const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
