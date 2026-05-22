@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
 import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
+import { exportCapexToExcel } from "@/components/budget/CapexExcelExport";
 
 interface ContractBudget {
   contract_id: string;
@@ -55,6 +56,7 @@ export default function CapexDashboard() {
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
   const [templateOpen, setTemplateOpen] = useState(false);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -318,6 +320,32 @@ export default function CapexDashboard() {
     }
   };
 
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    try {
+      toast.info("Generando Excel...");
+      const payload = contractGroups.map(([contractId, cBudgets]) => ({
+        contract_id: contractId,
+        contract_name: cBudgets[0].contract_name,
+        clasificacion: cBudgets[0].clasificacion,
+        company_names: cBudgets[0].company_names,
+        superficie: cBudgets[0].superficie || 0,
+        year: cBudgets[0].year,
+        budget_ids: cBudgets.map((b) => b.budget_id),
+      }));
+      const label = yearFilter !== "todos" ? yearFilter : "todos";
+      await exportCapexToExcel(payload, ufValue || 0, label);
+      toast.success("Excel descargado");
+    } catch (err) {
+      console.error("Excel export error:", err);
+      toast.error("Error al generar Excel");
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
+
+
   const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
       .from("contracts")
@@ -357,6 +385,10 @@ export default function CapexDashboard() {
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel} className="gap-2">
+              {exportingExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Exportar Excel
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
               <Presentation className="h-4 w-4" />
               PPT General
