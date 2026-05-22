@@ -84,7 +84,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "patents", label: "Patentes", desc: "Gestión de patentes municipales", icon: Shield, path: "/patents", resource: null, color: "text-purple-600 bg-purple-100" },
   { id: "purchase_orders", label: "Órdenes de Compra", desc: "Control de órdenes y presupuestos", icon: ShoppingCart, path: "/purchase-orders", resource: "purchase_orders", color: "text-orange-600 bg-orange-100" },
   { id: "opex", label: "OPEX", desc: "Gastos operacionales", icon: Wallet, path: "/opex", resource: "opex", color: "text-emerald-600 bg-emerald-100" },
-  { id: "capex", label: "CAPEX", desc: "Inversiones de capital", icon: HardHat, path: "/capex", resource: "purchase_orders", color: "text-amber-600 bg-amber-100" },
+  { id: "capex", label: "CAPEX", desc: "Inversiones de capital", icon: HardHat, path: "/capex", resource: "capex", color: "text-amber-600 bg-amber-100" },
   { id: "alerts", label: "Alertas", desc: "Notificaciones y vencimientos", icon: Bell, path: "/alerts", resource: "alerts", color: "text-red-600 bg-red-100" },
   { id: "reports", label: "Informes", desc: "Reportes y análisis", icon: BarChart3, path: "/reports", resource: "reports", color: "text-cyan-600 bg-cyan-100" },
   { id: "kpi", label: "KPI", desc: "Indicadores de gestión", icon: BarChart3, path: "/kpi", resource: "kpi", color: "text-indigo-600 bg-indigo-100" },

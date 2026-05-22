@@ -202,6 +202,7 @@ const MAIN_RESOURCES = [
   { id: "suppliers", label: "Proveedores", category: "principal" },
   { id: "maintenance", label: "Mantenciones", category: "principal" },
   { id: "purchase_orders", label: "Órdenes de Compra", category: "principal" },
+  { id: "capex", label: "CAPEX", category: "principal" },
   { id: "opex", label: "OPEX", category: "principal" },
   { id: "alerts", label: "Alertas", category: "principal" },
   { id: "reports", label: "Informes", category: "principal" },
