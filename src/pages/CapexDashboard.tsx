@@ -385,6 +385,10 @@ export default function CapexDashboard() {
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel} className="gap-2">
+              {exportingExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Exportar Excel
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
               <Presentation className="h-4 w-4" />
               PPT General
