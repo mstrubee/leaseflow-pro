@@ -33,15 +33,20 @@ interface SaveFileHandle {
   }>;
 }
 
+type SaveTarget =
+  | { status: "ready"; handle: SaveFileHandle }
+  | { status: "unsupported" }
+  | { status: "cancelled" };
+
 const canPickSaveLocation = () =>
   typeof window !== "undefined" &&
   typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
 
-const pickSaveLocation = async (filename: string): Promise<SaveFileHandle | null> => {
-  if (!canPickSaveLocation()) return null;
+const pickSaveLocation = async (filename: string): Promise<SaveTarget> => {
+  if (!canPickSaveLocation()) return { status: "unsupported" };
 
   try {
-    return await (window as typeof window & {
+    const handle = await (window as typeof window & {
       showSaveFilePicker: (options: {
         suggestedName: string;
         types: Array<{ description: string; accept: Record<string, string[]> }>;
@@ -57,10 +62,11 @@ const pickSaveLocation = async (filename: string): Promise<SaveFileHandle | null
         },
       ],
     });
+    return { status: "ready", handle };
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return null;
+    if (error instanceof DOMException && error.name === "AbortError") return { status: "cancelled" };
     console.warn("No se pudo abrir el selector de carpeta, usando descarga del navegador.", error);
-    return null;
+    return { status: "unsupported" };
   }
 };
 
@@ -156,7 +162,11 @@ export async function exportCapexToExcel(
 ): Promise<CapexExcelExportResult> {
   const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
-  const saveHandle = await pickSaveLocation(filename);
+  const saveTarget = await pickSaveLocation(filename);
+
+  if (saveTarget.status === "cancelled") {
+    return { filename, size: 0, method: "cancelled" };
+  }
 
   const allBudgetIds = contracts.flatMap((c) => c.budget_ids);
   const { all, templatePricesMap, internal } = allBudgetIds.length
@@ -359,8 +369,8 @@ export async function exportCapexToExcel(
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 
-  if (saveHandle) {
-    const writable = await saveHandle.createWritable();
+  if (saveTarget.status === "ready") {
+    const writable = await saveTarget.handle.createWritable();
     await writable.write(blob);
     await writable.close();
     return { filename, size: blob.size, method: "file-picker" };
