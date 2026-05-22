@@ -94,6 +94,23 @@ async function loadImageAsBase64(src: string): Promise<string> {
 }
 
 export async function generateCapexPPT(data: CapexPPTData) {
+  const fileName = `CAPEX_${data.year}_${new Date().toISOString().slice(0, 10)}.pptx`;
+
+  type FileHandle = { createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> };
+  let saveHandle: FileHandle | null = null;
+  const canPick = typeof (window as any).showSaveFilePicker === "function";
+  if (canPick) {
+    try {
+      saveHandle = await (window as any).showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{ description: "Presentación PowerPoint", accept: { "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"] } }],
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      saveHandle = null;
+    }
+  }
+
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_16x9";
   pres.author = "GPlanet";
