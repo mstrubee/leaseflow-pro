@@ -143,7 +143,8 @@ export default function CapexDashboard() {
       .filter(([, cBudgets]) => {
         const total = cBudgets.reduce((sum, b) => {
           const bd = authByBudget[b.budget_id];
-          return sum + (bd ? bd.authorized + bd.unauthorized : b.amount_uf);
+          const fromLines = bd ? bd.authorized + bd.unauthorized : 0;
+          return sum + Math.max(fromLines, b.amount_uf || 0);
         }, 0);
         return total > 0;
       })
