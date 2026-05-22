@@ -199,6 +199,16 @@ export default function CapexDashboard() {
         : hasAutoplanet ? "Autoplanet"
         : hasAgroplanet ? "Agroplanet"
         : "Otra";
+
+      // "Otra" bucket: only include contracts that actually have CAPEX amount > 0
+      if (companyKey === "Otra") {
+        const total = cBudgets.reduce((sum, b) => {
+          const bd = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
+          return sum + bd.authorized + bd.unauthorized;
+        }, 0);
+        if (total <= 0) return;
+      }
+
       const existing = groups.get(companyKey) || [];
       existing.push(entry);
       groups.set(companyKey, existing);
@@ -207,7 +217,8 @@ export default function CapexDashboard() {
     return order
       .filter(k => groups.has(k))
       .map(k => ({ company: k, contracts: groups.get(k)! }));
-  }, [contractGroups]);
+  }, [contractGroups, authByBudget]);
+
 
   // Per-company clasificacion stats
   const companyClasificacionStats = React.useMemo(() => {
