@@ -320,6 +320,29 @@ export default function CapexDashboard() {
     }
   };
 
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    try {
+      toast.info("Generando Excel...");
+      const payload = contractGroups.map(([contractId, cBudgets]) => ({
+        contract_id: contractId,
+        contract_name: cBudgets[0].contract_name,
+        clasificacion: cBudgets[0].clasificacion,
+        company_names: cBudgets[0].company_names,
+        superficie: cBudgets[0].superficie || 0,
+        year: cBudgets[0].year,
+        budget_ids: cBudgets.map((b) => b.budget_id),
+      }));
+      const label = yearFilter !== "todos" ? yearFilter : "todos";
+      await exportCapexToExcel(payload, ufValue || 0, label);
+      toast.success("Excel descargado");
+    } catch (err) {
+      console.error("Excel export error:", err);
+      toast.error("Error al generar Excel");
+    } finally {
+      setExportingExcel(false);
+    }
+
   const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
       .from("contracts")
