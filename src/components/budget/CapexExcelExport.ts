@@ -22,6 +22,54 @@ interface Row {
   style?: "contract" | "subtotal" | "grand" | "leaf" | "group";
 }
 
+type CapexExcelExportResult =
+  | { filename: string; size: number; method: "file-picker" | "download" }
+  | { filename: string; size: 0; method: "cancelled" };
+
+interface SaveFileHandle {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+}
+
+type SaveTarget =
+  | { status: "ready"; handle: SaveFileHandle }
+  | { status: "unsupported" }
+  | { status: "cancelled" };
+
+const canPickSaveLocation = () =>
+  typeof window !== "undefined" &&
+  typeof (window as typeof window & { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
+
+const pickSaveLocation = async (filename: string): Promise<SaveTarget> => {
+  if (!canPickSaveLocation()) return { status: "unsupported" };
+
+  try {
+    const handle = await (window as typeof window & {
+      showSaveFilePicker: (options: {
+        suggestedName: string;
+        types: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<SaveFileHandle>;
+    }).showSaveFilePicker({
+      suggestedName: filename,
+      types: [
+        {
+          description: "Libro de Excel",
+          accept: {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+          },
+        },
+      ],
+    });
+    return { status: "ready", handle };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return { status: "cancelled" };
+    console.warn("No se pudo abrir el selector de carpeta, usando descarga del navegador.", error);
+    return { status: "unsupported" };
+  }
+};
+
 // Column layout (0-indexed)
 // 0 Contrato | 1 Empresa | 2 Clasif | 3 Año | 4 Nivel | 5 Categoría/Línea
 // 6 Proveedor | 7 Cantidad | 8 Unidad | 9 Precio UF | 10 Monto UF
@@ -111,7 +159,15 @@ export async function exportCapexToExcel(
   contracts: CapexExportContract[],
   ufValue: number,
   yearLabel: string,
-) {
+): Promise<CapexExcelExportResult> {
+  const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
+  const saveTarget = await pickSaveLocation(filename);
+
+  if (saveTarget.status === "cancelled") {
+    return { filename, size: 0, method: "cancelled" };
+  }
+
   const allBudgetIds = contracts.flatMap((c) => c.budget_ids);
   const { all, templatePricesMap, internal } = allBudgetIds.length
     ? await loadLinesForBudgets(allBudgetIds)
@@ -303,11 +359,8 @@ export async function exportCapexToExcel(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "CAPEX");
 
-  const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
-
-  // Build the file as an in-memory buffer and trigger a real <a download> click.
-  // XLSX.writeFile can silently fail inside the Lovable preview iframe.
+  // Build the file as an in-memory buffer. Prefer the native save dialog when
+  // the browser supports it; otherwise fall back to a real <a download> click.
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   if (!buf || buf.byteLength === 0) {
     throw new Error("No se pudo generar el archivo Excel (buffer vacío).");
@@ -315,6 +368,14 @@ export async function exportCapexToExcel(
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
+
+  if (saveTarget.status === "ready") {
+    const writable = await saveTarget.handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return { filename, size: blob.size, method: "file-picker" };
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -328,7 +389,7 @@ export async function exportCapexToExcel(
     URL.revokeObjectURL(url);
   }, 1000);
 
-  return { filename, size: buf.byteLength };
+  return { filename, size: blob.size, method: "download" };
 }
 
 
