@@ -1,38 +1,51 @@
-## Diagnóstico
+## Objetivo
 
-CAPEX (y otras secciones) muestra 0 porque las políticas de lectura (RLS `SELECT`) en la base de datos exigen que el usuario tenga una fila explícita en `user_permissions` para `'budget'`, `'contract_budget'` o `'contracts'`. Hoy ningún usuario no-admin tiene esas filas, así que aunque el front lo deje entrar a `/capex`, el `SELECT` sobre `budget_lines`, `contracts`, etc. devuelve cero filas.
-
-Tablas afectadas con `SELECT` restringido por `has_permission`:
-
-`alert_recipients`, `budget_carryover`, `budget_lines`, `budget_reassignments`, `contract_addresses`, `contract_budgets`, `contract_companies`, `contract_contacts`, `contract_documents`, `contract_import_audit`, `contract_patents`, `contract_versions`, `contracts`, `credit_notes`, `finalized_contracts`, `folder_statuses`, `gantt_task_dependencies`, `gantt_task_purchase_orders`, `gantt_tasks`, `gantt_timelines`, `invoices`, `notice_ranges`, `opex_master_budget`, `patent_document_alerts`, `patent_documents`, `purchase_items`, `purchase_orders`, `renegotiation_draft_escalations`, `renegotiation_draft_notice_ranges`, `renegotiation_drafts`, `rent_escalations`, `repository_files`, `repository_folders`, `supplier_categories`, `supplier_emails`, `supplier_influence_zones`, `supplier_products`, `suppliers`, `termination_notices`, `version_notices`.
+Agregar un botón **"Exportar Excel"** en `CapexDashboard` que descargue un `.xlsx` con todo el CAPEX visible (respetando los filtros activos: año, empresa, clasificación, búsqueda) y con fórmulas vivas para que al editar las líneas, los subtotales por contrato y el total general se recalculen solos.
 
 ## Cambios
 
-**Migración SQL única**: reemplazar la política `SELECT` actual de cada una de estas tablas por:
+### 1. Nuevo archivo `src/components/budget/CapexExcelExport.ts`
 
-```sql
-USING (auth.uid() IS NOT NULL)
-```
+Función `exportCapexToExcel(contractGroups, ufValue)` que:
 
-Es decir: cualquier usuario autenticado puede leer. Las políticas de `INSERT` / `UPDATE` / `DELETE` permanecen intactas y siguen exigiendo `has_permission(...)` o rol admin, así que la edición sigue restringida como hoy.
+1. Para cada contrato visible carga las líneas de presupuesto (usa el mismo `SELECT_COLS` que `budgetTotals.ts` y reutiliza `buildBudgetTree` + el mismo pipeline de exclusión: ghost, merged, surcharge, proveedores de transferencia interna, template prices).
+2. Construye una hoja única con las siguientes columnas:
 
-Para cada tabla:
-1. `DROP POLICY` la política `SELECT` existente que usa `has_permission`.
-2. `CREATE POLICY` nueva: `FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL)`.
+   `Contrato | Empresa | Clasificación | Año | Nivel | Categoría / Línea | Proveedor | Cantidad | Unidad | Precio Unit. (UF) | Monto (UF) | Monto (CLP) | UF/m² | m²`
 
-**No se tocan**:
-- Tablas de seguridad/credenciales: `user_roles`, `user_permissions`, `profiles`, `cloud_storage_tokens`, `auth.*`, `storage.*`.
-- Tablas donde la lectura ya es libre para autenticados.
-- Las políticas de escritura (`INSERT`/`UPDATE`/`DELETE`/`ALL`) — quedan exactamente como están.
+3. Estructura del libro:
+   - Fila 1: encabezado con valor UF actual en celda con nombre (`UF_VALUE` named range) para que CLP = `Monto UF * UF_VALUE`.
+   - Fila 2: títulos de columnas.
+   - Por cada contrato:
+     - Fila de cabecera (negrita, fondo gris) con datos del contrato.
+     - Filas de líneas hijas con su path jerárquico indentado (`Nivel` = profundidad).
+     - Fila **Subtotal contrato**: `Monto UF = SUM(rango de líneas hijas)`, `Monto CLP = MontoUF * UF_VALUE`, `UF/m² = MontoUF / m²`.
+   - Fila final **TOTAL GENERAL**: `=SUM(...subtotales...)` para UF y CLP.
 
-**Front-end**: no requiere cambios. El gating de UI (botones, rutas) lo seguirá manejando `useAuth.hasPermission` / `ProtectedRoute`. Si el usuario llega a la pantalla, ahora la verá con datos.
+4. **Fórmulas usadas** (vía `{ t: "n", f: "..." }` de SheetJS):
+   - Líneas hoja: `Monto UF = Cantidad * Precio Unit.` (cuando aplique; si la línea es solo monto manual, queda con valor numérico editable).
+   - Subtotal contrato: `SUM(K{first}:K{last})`.
+   - Monto CLP: `K{row} * UF_VALUE`.
+   - UF/m²: `K{row} / N{row}` con `IFERROR` para evitar `#DIV/0!`.
+   - Total general: `SUM(...)` solo sobre filas de subtotal.
+
+5. Formato:
+   - Anchos de columna definidos.
+   - Filas de cabecera de contrato y subtotal con `fill` gris y `bold`.
+   - Formato numérico: UF con 2 decimales, CLP con separadores, % no aplica.
+   - Freeze pane en fila 2.
+
+6. Nombre archivo: `CAPEX_{yearFilter}_{timestamp}.xlsx`.
+
+### 2. `src/pages/CapexDashboard.tsx`
+
+- Importar `exportCapexToExcel` y el icono `FileSpreadsheet` de lucide.
+- Estado `exportingExcel`.
+- Handler `handleExportExcel` que arma el set de contratos filtrados (igual que la grilla actual usa `contractGroups`) y llama al export.
+- Agregar `<Button>` "Exportar Excel" en el header (antes del botón "PPT General"), con loader cuando `exportingExcel`.
 
 ## Fuera de alcance
 
-- No se elimina ninguna política de escritura.
-- No se cambian recursos de admin (`user_roles`, `user_permissions`).
-- No se modifica `useAuth` ni la lógica de permisos del front.
-
-## Pregunta
-
-¿Hay alguna sección/tabla en particular que SÍ debas mantener oculta para usuarios sin permiso explícito de lectura? Si no me indicas excepciones, aplico el criterio "lectura abierta a autenticados" a todas las tablas listadas arriba.
+- No se modifica la lógica de cálculo de CAPEX.
+- No se importan/escriben datos al backend.
+- No se cambia la vista jerárquica (la jerarquía se aplana con indentación en la columna "Categoría / Línea").
