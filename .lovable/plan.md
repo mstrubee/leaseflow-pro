@@ -1,14 +1,11 @@
-## Problema
+Voy a deshacer la parte que introduje con `window.open`/popup y volver a una descarga directa desde el click del usuario.
 
-Al eliminar el filtro `total > 0` en `contractGroups`, todos los contratos sin Autoplanet/Agroplanet aparecen en el grupo "Otra", incluso los que no tienen CAPEX real (monto cero y sin líneas detalladas).
+Plan:
+1. Cambiar `src/components/budget/CapexExcelExport.ts` para eliminar el flujo de popup/nueva pestaña.
+2. Usar descarga directa con un `<a download>` temporal y `Blob`, disparada dentro del mismo evento del botón.
+3. Agregar validación mínima: si no se puede crear el archivo, lanzar error para que no aparezca “Excel descargado” falsamente.
+4. Revisar el handler en `src/pages/CapexDashboard.tsx` para que el toast de éxito solo aparezca después de ejecutar correctamente la descarga.
 
-## Cambio
-
-En `src/pages/CapexDashboard.tsx`, dentro del memo `companyGroups`, al asignar `companyKey === "Otra"`, incluir el contrato solo si tiene CAPEX efectivo > 0.
-
-Criterio "tiene CAPEX":
-- Sumar por cada budget del contrato `getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]).authorized + .unauthorized`.
-- Si el total > 0 → incluir en "Otra".
-- Si el total = 0 → excluir.
-
-Los contratos AP/AG mantienen el comportamiento actual (se muestran siempre, incluso sin líneas detalladas).
+Detalle técnico:
+- El cambio roto más probable es el `window.open(url, "_blank")`: para `blob:` en iframe/preview puede abrir o consumir el gesto del usuario sin iniciar una descarga real, aunque el popup no esté bloqueado.
+- La corrección será eliminar esa rama y dejar un único método de descarga, similar al patrón que ya funciona en otros módulos del proyecto.

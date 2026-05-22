@@ -306,43 +306,8 @@ export async function exportCapexToExcel(
   const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
 
-  // Generate Blob and trigger download. When running inside the Lovable preview
-  // iframe (which may not have `allow-downloads`), fall back to opening the file
-  // in a new top-level window so the parent browser context can handle the download.
-  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([wbout], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  const url = URL.createObjectURL(blob);
+  XLSX.writeFile(wb, filename);
 
-  const inIframe = (() => {
-    try { return window.self !== window.top; } catch { return true; }
-  })();
-
-  if (inIframe) {
-    // Open in a new tab — the user's browser will then download the .xlsx.
-    const w = window.open(url, "_blank");
-    if (!w) {
-      // Popup blocked: fall back to anchor click in the iframe.
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener";
-      a.target = "_blank";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
-  } else {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 
