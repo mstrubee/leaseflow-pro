@@ -162,7 +162,21 @@ export async function generateSingleContractPPT(data: SingleContractPPTData) {
   }
 
   const fileName = `CAPEX_${data.contractName.replace(/[^a-zA-Z0-9]/g, "_")}.pptx`;
-  await pres.writeFile({ fileName });
+  const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
+  const blob = new Blob([arrBuf], {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 function addImageGrid(slide: PptxGenJS.Slide, images: ImgData[], startY: number) {
