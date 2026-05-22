@@ -1,26 +1,38 @@
-## Problema
+## Diagnóstico
 
-En el panel de admin, "Secciones Principales" no incluye **CAPEX**. Actualmente CAPEX se controla con el permiso de "Órdenes de Compra" (`purchase_orders`), lo que impide diferenciar el acceso entre ambos módulos.
+CAPEX (y otras secciones) muestra 0 porque las políticas de lectura (RLS `SELECT`) en la base de datos exigen que el usuario tenga una fila explícita en `user_permissions` para `'budget'`, `'contract_budget'` o `'contracts'`. Hoy ningún usuario no-admin tiene esas filas, así que aunque el front lo deje entrar a `/capex`, el `SELECT` sobre `budget_lines`, `contracts`, etc. devuelve cero filas.
 
-Revisé el resto de rutas/menúes y CAPEX es la única sección visible (Dashboard, Welcome, header) que no tiene su propio recurso. El resto (Contratos, Dashboard, Repositorio, Proveedores, Mantenciones, Órdenes de Compra, OPEX, Alertas, Informes, KPI, Patentes, Atención Especial, GEOLOC) ya están listados.
+Tablas afectadas con `SELECT` restringido por `has_permission`:
+
+`alert_recipients`, `budget_carryover`, `budget_lines`, `budget_reassignments`, `contract_addresses`, `contract_budgets`, `contract_companies`, `contract_contacts`, `contract_documents`, `contract_import_audit`, `contract_patents`, `contract_versions`, `contracts`, `credit_notes`, `finalized_contracts`, `folder_statuses`, `gantt_task_dependencies`, `gantt_task_purchase_orders`, `gantt_tasks`, `gantt_timelines`, `invoices`, `notice_ranges`, `opex_master_budget`, `patent_document_alerts`, `patent_documents`, `purchase_items`, `purchase_orders`, `renegotiation_draft_escalations`, `renegotiation_draft_notice_ranges`, `renegotiation_drafts`, `rent_escalations`, `repository_files`, `repository_folders`, `supplier_categories`, `supplier_emails`, `supplier_influence_zones`, `supplier_products`, `suppliers`, `termination_notices`, `version_notices`.
 
 ## Cambios
 
-1. **`src/pages/AdminPanel.tsx`** — agregar entrada en `MAIN_RESOURCES`:
-   ```
-   { id: "capex", label: "CAPEX", category: "principal" }
-   ```
-   (insertada justo después de `purchase_orders`).
+**Migración SQL única**: reemplazar la política `SELECT` actual de cada una de estas tablas por:
 
-2. **`src/App.tsx`** — cambiar la protección de la ruta `/capex` de `resource="purchase_orders"` a `resource="capex"`.
+```sql
+USING (auth.uid() IS NOT NULL)
+```
 
-3. **`src/pages/Welcome.tsx`** — cambiar `resource: "purchase_orders"` por `resource: "capex"` en la tarjeta de CAPEX.
+Es decir: cualquier usuario autenticado puede leer. Las políticas de `INSERT` / `UPDATE` / `DELETE` permanecen intactas y siguen exigiendo `has_permission(...)` o rol admin, así que la edición sigue restringida como hoy.
 
-4. **`src/pages/Dashboard.tsx`** — el botón "CAPEX" del header usa `hasPermission("purchase_orders", "view")`; cambiarlo a `hasPermission("capex", "view")`.
+Para cada tabla:
+1. `DROP POLICY` la política `SELECT` existente que usa `has_permission`.
+2. `CREATE POLICY` nueva: `FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL)`.
 
-5. **Migración de datos**: para los usuarios existentes que ya tenían acceso a `purchase_orders`, copiar ese permiso al recurso `capex` con un INSERT idempotente, para que no pierdan acceso a CAPEX tras el cambio.
+**No se tocan**:
+- Tablas de seguridad/credenciales: `user_roles`, `user_permissions`, `profiles`, `cloud_storage_tokens`, `auth.*`, `storage.*`.
+- Tablas donde la lectura ya es libre para autenticados.
+- Las políticas de escritura (`INSERT`/`UPDATE`/`DELETE`/`ALL`) — quedan exactamente como están.
+
+**Front-end**: no requiere cambios. El gating de UI (botones, rutas) lo seguirá manejando `useAuth.hasPermission` / `ProtectedRoute`. Si el usuario llega a la pantalla, ahora la verá con datos.
 
 ## Fuera de alcance
 
-- No se toca la lógica interna de cálculo de CAPEX ni los queries con `budget_type = 'capex'`.
-- No se agregan sub-secciones dentro de CAPEX.
+- No se elimina ninguna política de escritura.
+- No se cambian recursos de admin (`user_roles`, `user_permissions`).
+- No se modifica `useAuth` ni la lógica de permisos del front.
+
+## Pregunta
+
+¿Hay alguna sección/tabla en particular que SÍ debas mantener oculta para usuarios sin permiso explícito de lectura? Si no me indicas excepciones, aplico el criterio "lectura abierta a autenticados" a todas las tablas listadas arriba.
