@@ -271,6 +271,22 @@ export async function exportCapexToExcel(
   ];
   ws["!freeze"] = { xSplit: 0, ySplit: 2 } as any;
 
+  // Autofilter on the header row (row index 1 → Excel row 2) across all columns.
+  const lastColLetter = colLetter(HEADERS.length - 1);
+  const lastRow = rows.length; // 1-indexed: header is row 2, data ends at rows.length
+  ws["!autofilter"] = { ref: `A2:${lastColLetter}${lastRow}` };
+
+  // Pre-hide rows where Nivel != 0 so the file opens showing only contract headers.
+  // (Users can right-click → Unhide, or change the filter, to see deeper levels.)
+  const wsRows: any[] = [];
+  rows.forEach((r, rIdx) => {
+    const nivel = r.values[4];
+    if (typeof nivel === "number" && nivel !== 0) {
+      wsRows[rIdx] = { hidden: true };
+    }
+  });
+  ws["!rows"] = wsRows;
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "CAPEX");
 
