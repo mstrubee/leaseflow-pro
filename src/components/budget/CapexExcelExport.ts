@@ -13,6 +13,7 @@ export interface CapexExportContract {
   superficie: number;
   year: number;
   budget_ids: string[];
+  legacy_amount_uf?: number;
 }
 
 interface Row {
