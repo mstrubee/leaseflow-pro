@@ -66,9 +66,26 @@ export function CapexTemplateManager({ open, onOpenChange }: CapexTemplateManage
 
   const handleDownload = async () => {
     const { data } = await supabase.storage.from(BUCKET).createSignedUrl(TEMPLATE_PATH, 60);
-    if (data?.signedUrl) {
-      window.open(data.signedUrl, "_blank");
-    } else {
+    if (!data?.signedUrl) {
+      toast.error("No se pudo descargar el template");
+      return;
+    }
+    try {
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) throw new Error("fetch failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "single_contract_template.pptx";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+    } catch {
       toast.error("No se pudo descargar el template");
     }
   };
