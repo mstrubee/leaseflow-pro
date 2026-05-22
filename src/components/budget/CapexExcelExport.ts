@@ -306,8 +306,29 @@ export async function exportCapexToExcel(
   const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
 
-  XLSX.writeFile(wb, filename);
+  // Build the file as an in-memory buffer and trigger a real <a download> click.
+  // XLSX.writeFile can silently fail inside the Lovable preview iframe.
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  if (!buf || buf.byteLength === 0) {
+    throw new Error("No se pudo generar el archivo Excel (buffer vacío).");
+  }
+  const blob = new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.setAttribute("data-interception", "off");
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 
+  return { filename, size: buf.byteLength };
 }
 
 
