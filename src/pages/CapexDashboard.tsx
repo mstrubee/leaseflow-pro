@@ -462,7 +462,7 @@ export default function CapexDashboard() {
               <DollarSign className="h-8 w-8 text-primary" />
               <div>
                 <p className="text-xs text-muted-foreground">Locales con CAPEX</p>
-                <p className="text-xl font-bold">{contractGroups.length}</p>
+                <p className="text-xl font-bold">{contractsWithCapex.length}</p>
               </div>
             </CardContent>
           </Card>
