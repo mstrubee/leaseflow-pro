@@ -356,8 +356,8 @@ export default function CapexDashboard() {
         };
       });
       const label = yearFilter !== "todos" ? yearFilter : "todos";
-      await exportCapexToExcel(payload, ufValue || 0, label);
-      toast.success("Excel descargado");
+      const result = await exportCapexToExcel(payload, ufValue || 0, label);
+      toast.success(`Excel descargado (${result.filename})`);
     } catch (err) {
       console.error("Excel export error:", err);
       toast.error("Error al generar Excel");
