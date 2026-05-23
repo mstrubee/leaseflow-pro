@@ -63,6 +63,7 @@ export default function CapexDashboard() {
   const { ufValue } = useEconomicIndicators();
 
   const [budgets, setBudgets] = useState<ContractBudget[]>([]);
+  const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
