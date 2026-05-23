@@ -41,15 +41,11 @@ interface AuthBreakdown {
 type AuthByBudget = Record<string, AuthBreakdown>;
 
 const getEffectiveBudgetBreakdown = (budget: ContractBudget, breakdown?: AuthBreakdown): AuthBreakdown => {
-  const baseline = budget.amount_uf || 0;
-  if (!breakdown) return { authorized: 0, unauthorized: baseline };
-
-  const fromLines = breakdown.authorized + breakdown.unauthorized;
-  if (fromLines >= baseline) return breakdown;
-
+  const total = budget.amount_uf || 0;
+  const authorized = Math.min(breakdown?.authorized ?? 0, total);
   return {
-    authorized: breakdown.authorized,
-    unauthorized: Math.max(0, baseline - breakdown.authorized),
+    authorized,
+    unauthorized: Math.max(0, total - authorized),
   };
 };
 
@@ -91,15 +87,15 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, status, deleted_at, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local, deleted_at, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
-        .is("contracts.deleted_at", null)
-        .eq("contracts.status", "firmado")
         .order("year", { ascending: false });
 
       if (error) throw error;
 
-      const processed = (data || []).map((b: any) => ({
+      const processed = (data || [])
+        .filter((b: any) => b.contracts && !b.contracts.deleted_at)
+        .map((b: any) => ({
         contract_id: b.contract_id,
         contract_name: b.contracts?.name || "Sin nombre",
         clasificacion: b.contracts?.clasificacion || null,
@@ -204,10 +200,7 @@ export default function CapexDashboard() {
 
       // "Otra" bucket: only include contracts that actually have CAPEX amount > 0
       if (companyKey === "Otra") {
-        const total = cBudgets.reduce((sum, b) => {
-          const bd = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
-          return sum + bd.authorized + bd.unauthorized;
-        }, 0);
+        const total = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
         if (total <= 0) return;
       }
 
@@ -244,23 +237,15 @@ export default function CapexDashboard() {
   }, [companyGroups, authByContract]);
 
   const totalCapexUF = React.useMemo(() => {
-    let total = 0;
-    filteredBudgets.forEach(b => {
-      total += getEffectiveBudgetTotal(b, authByBudget[b.budget_id]);
-    });
-    return total;
-  }, [filteredBudgets, authByBudget]);
+    return filteredBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
+  }, [filteredBudgets]);
 
   // Solo locales con CAPEX efectivo > 0 (descarta budgets vacíos)
   const contractsWithCapex = React.useMemo(() => {
-    return contractGroups.filter(([contractId, cBudgets]) => {
-      const bd = authByContract[contractId];
-      const totalUf = bd
-        ? bd.authorized + bd.unauthorized
-        : cBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
-      return totalUf > 0;
-    });
-  }, [contractGroups, authByContract]);
+    return contractGroups.filter(([, cBudgets]) =>
+      cBudgets.some(b => (b.amount_uf || 0) > 0)
+    );
+  }, [contractGroups]);
 
   // Totals by clasificacion (solo locales con CAPEX > 0)
   const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
@@ -360,9 +345,7 @@ export default function CapexDashboard() {
     try {
       toast.info("Generando Excel...");
       const payload = contractGroups.map(([contractId, cBudgets]) => {
-        const legacy = cBudgets.reduce((sum, b) => {
-          return sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]);
-        }, 0);
+        const legacy = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
         return {
           contract_id: contractId,
           contract_name: cBudgets[0].contract_name,
