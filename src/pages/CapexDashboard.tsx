@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { loadBudgetTotals } from "@/lib/budgetTotals";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -37,22 +37,6 @@ interface AuthBreakdown {
   unauthorized: number;
 }
 
-// Store breakdown per budget_id (not per contract) to avoid cross-year duplication
-type AuthByBudget = Record<string, AuthBreakdown>;
-
-const getEffectiveBudgetBreakdown = (budget: ContractBudget, breakdown?: AuthBreakdown): AuthBreakdown => {
-  const total = budget.amount_uf || 0;
-  const authorized = Math.min(breakdown?.authorized ?? 0, total);
-  return {
-    authorized,
-    unauthorized: Math.max(0, total - authorized),
-  };
-};
-
-const getEffectiveBudgetTotal = (budget: ContractBudget, breakdown?: AuthBreakdown) => {
-  const effective = getEffectiveBudgetBreakdown(budget, breakdown);
-  return effective.authorized + effective.unauthorized;
-};
 
 export default function CapexDashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -67,7 +51,7 @@ export default function CapexDashboard() {
   const [clasificacionFilter, setClasificacionFilter] = useState("todas");
   const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
-  const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
+  
   const [templateOpen, setTemplateOpen] = useState(false);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
@@ -106,19 +90,6 @@ export default function CapexDashboard() {
         company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
       }));
       setBudgets(processed);
-
-      // Load budget lines totals via the shared pipeline that powers the
-      // "Control de Presupuesto" tree (BudgetLineTree.calculateGrandTotal).
-      // Mantiene este dashboard cuadrado con cada contrato.
-      const budgetIds = (data || []).map((b: any) => b.id);
-      if (budgetIds.length > 0) {
-        const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
-        const breakdown: AuthByBudget = {};
-        totals.forEach((t, budgetId) => {
-          breakdown[budgetId] = { authorized: t.authorized, unauthorized: t.unauthorized };
-        });
-        setAuthByBudget(breakdown);
-      }
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
     } finally {
@@ -170,19 +141,17 @@ export default function CapexDashboard() {
         }
         return aB.contract_name.localeCompare(bB.contract_name);
       });
-  }, [filteredBudgets, authByBudget, sortBy]);
+  }, [filteredBudgets, sortBy]);
 
-  // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
+  // Total CAPEX por contrato = suma de amount_uf de sus budgets
   const authByContract = React.useMemo(() => {
     const result: Record<string, AuthBreakdown> = {};
     filteredBudgets.forEach(b => {
-      const bd = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
       if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      result[b.contract_id].authorized += bd.authorized;
-      result[b.contract_id].unauthorized += bd.unauthorized;
+      result[b.contract_id].unauthorized += (b.amount_uf || 0);
     });
     return result;
-  }, [filteredBudgets, authByBudget]);
+  }, [filteredBudgets]);
 
   // Group contractGroups by company
   const companyGroups = React.useMemo(() => {
@@ -198,11 +167,7 @@ export default function CapexDashboard() {
         : hasAgroplanet ? "Agroplanet"
         : "Otra";
 
-      // "Otra" bucket: only include contracts that actually have CAPEX amount > 0
-      if (companyKey === "Otra") {
-        const total = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
-        if (total <= 0) return;
-      }
+      // Todos los contratos con registro CAPEX se muestran, sin filtrar por monto
 
       const existing = groups.get(companyKey) || [];
       existing.push(entry);
@@ -212,7 +177,7 @@ export default function CapexDashboard() {
     return order
       .filter(k => groups.has(k))
       .map(k => ({ company: k, contracts: groups.get(k)! }));
-  }, [contractGroups, authByBudget]);
+  }, [contractGroups]);
 
 
   // Per-company clasificacion stats
