@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +36,25 @@ interface ContractBudget {
 interface AuthBreakdown {
   authorized: number;
   unauthorized: number;
+  grand: number;
 }
+
+type AuthByBudget = Record<string, AuthBreakdown>;
+
+const getEffectiveBudgetBreakdown = (budget: ContractBudget, breakdown?: AuthBreakdown): AuthBreakdown => {
+  const cardAmount = budget.amount_uf || 0;
+  const linesTotal = breakdown?.grand || 0;
+  // Use the card amount if it was explicitly set; otherwise fall back to
+  // the grand total calculated from the detail lines.
+  const total = cardAmount > 0 ? cardAmount : linesTotal;
+  return { authorized: 0, unauthorized: total, grand: total };
+};
+
+const getEffectiveBudgetTotal = (budget: ContractBudget, breakdown?: AuthBreakdown): number => {
+  const eff = getEffectiveBudgetBreakdown(budget, breakdown);
+  return eff.authorized + eff.unauthorized;
+};
+
 
 
 export default function CapexDashboard() {
@@ -44,6 +63,7 @@ export default function CapexDashboard() {
   const { ufValue } = useEconomicIndicators();
 
   const [budgets, setBudgets] = useState<ContractBudget[]>([]);
+  const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
@@ -90,6 +110,15 @@ export default function CapexDashboard() {
         company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
       }));
       setBudgets(processed);
+
+      // Load per-budget breakdown (authorized / unauthorized / grand) from detail lines
+      const budgetIds = processed.map((b) => b.budget_id);
+      const totals = await loadBudgetTotals(budgetIds, ufValue);
+      const breakdown: AuthByBudget = {};
+      totals.forEach((t, budgetId) => {
+        breakdown[budgetId] = { authorized: t.authorized, unauthorized: t.unauthorized, grand: t.grand };
+      });
+      setAuthByBudget(breakdown);
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
     } finally {
@@ -143,15 +172,18 @@ export default function CapexDashboard() {
       });
   }, [filteredBudgets, sortBy]);
 
-  // Total CAPEX por contrato = suma de amount_uf de sus budgets
+  // Total CAPEX por contrato, usando el breakdown efectivo (card amount o líneas)
   const authByContract = React.useMemo(() => {
     const result: Record<string, AuthBreakdown> = {};
     filteredBudgets.forEach(b => {
-      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      result[b.contract_id].unauthorized += (b.amount_uf || 0);
+      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0, grand: 0 };
+      const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
+      result[b.contract_id].authorized += eff.authorized;
+      result[b.contract_id].unauthorized += eff.unauthorized;
+      result[b.contract_id].grand += eff.grand;
     });
     return result;
-  }, [filteredBudgets]);
+  }, [filteredBudgets, authByBudget]);
 
   // Group contractGroups by company
   const companyGroups = React.useMemo(() => {
