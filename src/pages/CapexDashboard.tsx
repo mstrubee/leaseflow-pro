@@ -110,6 +110,15 @@ export default function CapexDashboard() {
         company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
       }));
       setBudgets(processed);
+
+      // Load per-budget breakdown (authorized / unauthorized / grand) from detail lines
+      const budgetIds = processed.map((b) => b.budget_id);
+      const totals = await loadBudgetTotals(budgetIds, ufValue);
+      const breakdown: AuthByBudget = {};
+      totals.forEach((t, budgetId) => {
+        breakdown[budgetId] = { authorized: t.authorized, unauthorized: t.unauthorized, grand: t.grand };
+      });
+      setAuthByBudget(breakdown);
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
     } finally {
