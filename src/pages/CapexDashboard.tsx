@@ -36,7 +36,25 @@ interface ContractBudget {
 interface AuthBreakdown {
   authorized: number;
   unauthorized: number;
+  grand: number;
 }
+
+type AuthByBudget = Record<string, AuthBreakdown>;
+
+const getEffectiveBudgetBreakdown = (budget: ContractBudget, breakdown?: AuthBreakdown): AuthBreakdown => {
+  const cardAmount = budget.amount_uf || 0;
+  const linesTotal = breakdown?.grand || 0;
+  // Use the card amount if it was explicitly set; otherwise fall back to
+  // the grand total calculated from the detail lines.
+  const total = cardAmount > 0 ? cardAmount : linesTotal;
+  return { authorized: 0, unauthorized: total, grand: total };
+};
+
+const getEffectiveBudgetTotal = (budget: ContractBudget, breakdown?: AuthBreakdown): number => {
+  const eff = getEffectiveBudgetBreakdown(budget, breakdown);
+  return eff.authorized + eff.unauthorized;
+};
+
 
 
 export default function CapexDashboard() {
