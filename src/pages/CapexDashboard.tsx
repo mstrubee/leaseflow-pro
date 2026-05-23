@@ -211,6 +211,11 @@ export default function CapexDashboard() {
       .map(k => ({ company: k, contracts: groups.get(k)! }));
   }, [contractGroups]);
 
+  // Lista plana de contratos exactamente como aparecen en el dashboard
+  const listedContracts = React.useMemo(() => {
+    return companyGroups.flatMap(({ contracts }) => contracts);
+  }, [companyGroups]);
+
 
   // Per-company clasificacion stats
   const companyClasificacionStats = React.useMemo(() => {
@@ -242,12 +247,7 @@ export default function CapexDashboard() {
     return total;
   }, [contractGroups, authByContract]);
 
-  const contractsWithCapex = React.useMemo(() => {
-    return contractGroups.filter(([contractId]) => {
-      const bd = authByContract[contractId];
-      return bd ? (bd.authorized + bd.unauthorized) > 0 : false;
-    });
-  }, [contractGroups, authByContract]);
+  const contractsWithCapex = listedContracts;
 
   // Totals by clasificacion (solo locales con CAPEX > 0)
   const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
@@ -346,7 +346,7 @@ export default function CapexDashboard() {
     setExportingExcel(true);
     try {
       toast.info("Generando Excel...");
-      const payload = contractGroups.map(([contractId, cBudgets]) => {
+      const payload = listedContracts.map(([contractId, cBudgets]) => {
         const legacy = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
         return {
           contract_id: contractId,
