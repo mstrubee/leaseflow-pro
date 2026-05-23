@@ -234,15 +234,20 @@ export default function CapexDashboard() {
   }, [companyGroups, authByContract]);
 
   const totalCapexUF = React.useMemo(() => {
-    return filteredBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
-  }, [filteredBudgets]);
+    let total = 0;
+    contractGroups.forEach(([contractId]) => {
+      const bd = authByContract[contractId];
+      if (bd) total += bd.authorized + bd.unauthorized;
+    });
+    return total;
+  }, [contractGroups, authByContract]);
 
-  // Solo locales con CAPEX efectivo > 0 (descarta budgets vacíos)
   const contractsWithCapex = React.useMemo(() => {
-    return contractGroups.filter(([, cBudgets]) =>
-      cBudgets.some(b => (b.amount_uf || 0) > 0)
-    );
-  }, [contractGroups]);
+    return contractGroups.filter(([contractId]) => {
+      const bd = authByContract[contractId];
+      return bd ? (bd.authorized + bd.unauthorized) > 0 : false;
+    });
+  }, [contractGroups, authByContract]);
 
   // Totals by clasificacion (solo locales con CAPEX > 0)
   const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
