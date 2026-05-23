@@ -172,15 +172,18 @@ export default function CapexDashboard() {
       });
   }, [filteredBudgets, sortBy]);
 
-  // Total CAPEX por contrato = suma de amount_uf de sus budgets
+  // Total CAPEX por contrato, usando el breakdown efectivo (card amount o líneas)
   const authByContract = React.useMemo(() => {
     const result: Record<string, AuthBreakdown> = {};
     filteredBudgets.forEach(b => {
-      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      result[b.contract_id].unauthorized += (b.amount_uf || 0);
+      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0, grand: 0 };
+      const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
+      result[b.contract_id].authorized += eff.authorized;
+      result[b.contract_id].unauthorized += eff.unauthorized;
+      result[b.contract_id].grand += eff.grand;
     });
     return result;
-  }, [filteredBudgets]);
+  }, [filteredBudgets, authByBudget]);
 
   // Group contractGroups by company
   const companyGroups = React.useMemo(() => {
