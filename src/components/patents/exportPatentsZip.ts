@@ -10,6 +10,7 @@ import {
 import { exportPatentsToExcelBuffer } from "./exportPatentsExcel";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 /**
  * Download a ZIP containing the Excel checklist + all uploaded patent documents
