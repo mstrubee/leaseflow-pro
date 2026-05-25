@@ -22,6 +22,7 @@ interface FileInfo {
   name: string;
   driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable' | 'retrying';
   driveUrl?: string;
+  repoFileId?: string; // present when this file maps to a repository_files row
 }
 
 function cleanFileName(name: string): string {
@@ -45,30 +46,39 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
     }));
     setFiles(initialFiles);
 
+    // Resolve each storage:// URL by exact match in repository_files (gives us the row id).
     initialFiles.forEach(async (file, index) => {
       if (file.driveStatus !== 'checking') return;
 
       try {
-        const fileName = file.url.split('/').pop() || '';
-        const cleanName = cleanFileName(fileName);
         const { data } = await supabase
           .from("repository_files")
-          .select("drive_file_id, url, name")
-          .or(`name.eq.${cleanName},name.ilike.%${cleanName}%`)
-          .limit(10);
-
-        const match = (data || []).find(r => r.drive_file_id);
+          .select("id, drive_file_id, url, name")
+          .eq("url", file.url)
+          .limit(1)
+          .maybeSingle();
 
         setFiles(prev => {
           const updated = [...prev];
-          if (updated[index]) {
+          if (!updated[index]) return prev;
+          if (data?.drive_file_id) {
             updated[index] = {
               ...updated[index],
-              driveStatus: match?.drive_file_id ? 'ok' : 'missing',
-              driveUrl: match?.drive_file_id
-                ? `https://drive.google.com/file/d/${match.drive_file_id}/view`
-                : undefined,
+              repoFileId: data.id,
+              driveStatus: 'ok',
+              driveUrl: data.url?.startsWith('http')
+                ? data.url
+                : `https://drive.google.com/file/d/${data.drive_file_id}/view`,
             };
+          } else if (data?.id) {
+            // Row exists but no Drive copy yet → recoverable via reconciliation
+            updated[index] = {
+              ...updated[index],
+              repoFileId: data.id,
+              driveStatus: 'missing',
+            };
+          } else {
+            updated[index] = { ...updated[index], driveStatus: 'missing' };
           }
           return updated;
         });
@@ -95,19 +105,25 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
     });
 
     try {
+      // Prefer repository_files reconciliation when the file maps to a repo row.
+      // Fall back to the patent upload flow for files tracked in patent_documents only.
+      const useRepoReconcile = !!file.repoFileId;
       const { data, error } = await supabase.functions.invoke('google-drive', {
-        body: {
-          action: 'uploadPatentFileFromStorage',
-          contractId,
-          itemId,
-          fileName: file.name,
-          storageUrl: file.url,
-          mimeType: 'application/octet-stream',
-        }
+        body: useRepoReconcile
+          ? { action: 'reconcileRepositoryFile', fileId: file.repoFileId }
+          : {
+              action: 'uploadPatentFileFromStorage',
+              contractId,
+              itemId,
+              fileName: file.name,
+              storageUrl: file.url,
+              mimeType: 'application/octet-stream',
+            },
       });
 
       if (error || !data?.id) {
-        toast.error(`No se pudo reintentar: ${data?.error || error?.message || 'Error'}`);
+        const msg = (data as any)?.error || error?.message || 'Error';
+        toast.error(`No se pudo reintentar: ${msg}`);
         setFiles(prev => {
           const updated = [...prev];
           updated[index] = { ...updated[index], driveStatus: 'missing' };
@@ -122,9 +138,8 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
         updated[index] = { ...updated[index], driveStatus: 'ok', driveUrl };
         return updated;
       });
-      // Propagate the new Drive URL back to the parent so it persists in the DB
       onUrlUpdated?.(index, driveUrl);
-      toast.success(`${file.name} subido a Drive correctamente`);
+      toast.success(`${file.name} disponible en Drive`);
     } catch (err) {
       console.error("Retry upload error:", err);
       toast.error("Error al reintentar subida");
@@ -135,6 +150,7 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
       });
     }
   };
+
 
   const handleView = async (file: FileInfo) => {
     try {

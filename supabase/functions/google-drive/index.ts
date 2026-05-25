@@ -2166,6 +2166,140 @@ serve(async (req) => {
         break;
       }
 
+      case "reconcileRepositoryFile": {
+        // Reconcile a repository_files row whose URL is still storage:// or otherwise broken.
+        // Resolution order:
+        //   1. If row already has drive_file_id, just return success.
+        //   2. If file still exists in temporary storage, upload to Drive and update row.
+        //   3. If file exists in target Drive folder with same name, link existing Drive file.
+        //   4. Otherwise, return a clear "irrecoverable" error.
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        const { fileId } = params as { fileId?: string };
+        if (!fileId) {
+          return new Response(JSON.stringify({ error: "fileId is required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: row, error: rowErr } = await sb
+          .from('repository_files')
+          .select('id, folder_id, name, url, drive_file_id, file_type')
+          .eq('id', fileId)
+          .maybeSingle();
+
+        if (rowErr || !row) {
+          return new Response(JSON.stringify({ error: "Repository file not found" }), {
+            status: 404, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        if (row.drive_file_id) {
+          const existingUrl = row.url && row.url.startsWith('http')
+            ? row.url
+            : `https://drive.google.com/file/d/${row.drive_file_id}/view`;
+          if (row.url !== existingUrl) {
+            await sb.from('repository_files').update({ url: existingUrl }).eq('id', row.id);
+          }
+          result = {
+            id: row.drive_file_id,
+            driveFileId: row.drive_file_id,
+            webViewLink: existingUrl,
+            alreadySynced: true,
+          };
+          break;
+        }
+
+        const { data: folderRow } = await sb
+          .from('repository_folders')
+          .select('id, contract_id, drive_folder_id')
+          .eq('id', row.folder_id)
+          .maybeSingle();
+
+        if (!folderRow) {
+          return new Response(JSON.stringify({ error: "Parent folder not found" }), {
+            status: 404, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        let targetDriveFolderId = folderRow.drive_folder_id;
+        if (!targetDriveFolderId && folderRow.contract_id) {
+          try {
+            targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+              sb, accessToken, folderRow.contract_id, folderRow.id,
+            );
+          } catch (e) {
+            console.warn("reconcileRepositoryFile: could not resolve Drive folder", e);
+          }
+        }
+
+        const storagePath = extractRepositoryStoragePath(row.url);
+        if (storagePath && targetDriveFolderId) {
+          const { data: dlData } = await sb.storage
+            .from('repository-files')
+            .download(storagePath);
+
+          if (dlData) {
+            const driveFile = await uploadFileToDrive(
+              accessToken, row.name, dlData,
+              'application/octet-stream', targetDriveFolderId,
+            );
+            const fileUrl = driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
+            const ext = row.name.includes('.') ? row.name.split('.').pop() : row.file_type;
+            await sb.from('repository_files')
+              .update({ url: fileUrl, drive_file_id: driveFile.id, file_type: ext })
+              .eq('id', row.id);
+            await cleanupStorageFile(sb, row.url);
+            result = {
+              id: driveFile.id,
+              driveFileId: driveFile.id,
+              webViewLink: fileUrl,
+              reconciled: 'uploaded',
+            };
+            break;
+          }
+        }
+
+        if (targetDriveFolderId) {
+          try {
+            const escName = row.name.replace(/'/g, "\\'");
+            const q = `'${targetDriveFolderId}' in parents and name='${escName}' and trashed=false`;
+            const searchRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+              { headers: { Authorization: `Bearer ${accessToken}` } },
+            );
+            if (searchRes.ok) {
+              const j = await searchRes.json();
+              const hit = (j.files || [])[0];
+              if (hit?.id) {
+                const hitUrl = hit.webViewLink || `https://drive.google.com/file/d/${hit.id}/view`;
+                await sb.from('repository_files')
+                  .update({ url: hitUrl, drive_file_id: hit.id })
+                  .eq('id', row.id);
+                result = {
+                  id: hit.id,
+                  driveFileId: hit.id,
+                  webViewLink: hitUrl,
+                  reconciled: 'linked',
+                };
+                break;
+              }
+            }
+          } catch (e) {
+            console.warn("reconcileRepositoryFile: Drive search failed", e);
+          }
+        }
+
+        return new Response(JSON.stringify({
+          error: "Archivo no recuperable: ya no está en almacenamiento temporal ni en Google Drive. Súbelo nuevamente.",
+          irrecoverable: true,
+        }), {
+          status: 410, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+
       case "listFiles": {
         const { driveFolderId } = params;
         const files = await listFilesInFolder(accessToken, driveFolderId);
