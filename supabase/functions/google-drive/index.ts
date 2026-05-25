@@ -2085,11 +2085,41 @@ serve(async (req) => {
               break;
             }
 
+            // Last-resort: search Drive directly inside the patent folder for a file with the same name.
+            // This handles legacy uploads where repository_files has no matching row (the URL lives in patent_documents).
+            try {
+              const escName = fileName.replace(/'/g, "\\'");
+              const q = `'${targetDriveFolderId}' in parents and name='${escName}' and trashed=false`;
+              const searchRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+                { headers: { Authorization: `Bearer ${accessToken}` } },
+              );
+              if (searchRes.ok) {
+                const j = await searchRes.json();
+                const hit = (j.files || [])[0];
+                if (hit?.id) {
+                  const hitUrl = hit.webViewLink || `https://drive.google.com/file/d/${hit.id}/view`;
+                  console.log("uploadPatentFileFromStorage: reconciled via Drive search", { driveFileId: hit.id, contractId });
+                  result = {
+                    id: hit.id,
+                    driveFileId: hit.id,
+                    webViewLink: hitUrl,
+                    driveUrl: hitUrl,
+                    alreadySynced: true,
+                  };
+                  break;
+                }
+              }
+            } catch (e) {
+              console.warn("uploadPatentFileFromStorage: Drive search fallback failed", e);
+            }
+
             console.error("uploadPatentFileFromStorage: file not found in storage", { storagePath });
             return new Response(JSON.stringify({ error: `File not found in temporary storage` }), {
               status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
             });
           }
+
         } else {
           fileData = dlData;
         }
