@@ -10,6 +10,7 @@ import {
 import { exportPatentsToExcelBuffer } from "./exportPatentsExcel";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 /**
  * Download a ZIP containing the Excel checklist + all uploaded patent documents
@@ -102,10 +103,19 @@ export async function exportPatentsWithFiles(
     });
   });
 
-  // Helper: extract Drive file id from a Drive URL
+  // Helper: extract Drive file id from any Drive/Docs URL
   const extractDriveFileId = (url: string): string | null => {
-    const m1 = url.match(/\/file\/d\/([^/?#]+)/);
-    if (m1) return m1[1];
+    const patterns = [
+      /\/file\/d\/([^/?#]+)/,
+      /\/document\/d\/([^/?#]+)/,
+      /\/spreadsheets\/d\/([^/?#]+)/,
+      /\/presentation\/d\/([^/?#]+)/,
+      /\/drawings\/d\/([^/?#]+)/,
+    ];
+    for (const re of patterns) {
+      const m = url.match(re);
+      if (m) return m[1];
+    }
     const m2 = url.match(/[?&]id=([^&]+)/);
     if (m2) return m2[1];
     return null;
@@ -118,49 +128,89 @@ export async function exportPatentsWithFiles(
     return new Blob([bytes], { type: mimeType || "application/octet-stream" });
   };
 
+  // Build name → drive_file_id map from repository_files for this contract's docs
+  const allNames = Array.from(new Set(docs.map(d => d.fileName).filter(Boolean) as string[]));
+  const nameToDriveId = new Map<string, string>();
+  if (allNames.length > 0) {
+    try {
+      const { data: repoFiles } = await supabase
+        .from("repository_files")
+        .select("name, drive_file_id")
+        .in("name", allNames)
+        .not("drive_file_id", "is", null);
+      (repoFiles || []).forEach((r: any) => {
+        if (r.drive_file_id && !nameToDriveId.has(r.name)) {
+          nameToDriveId.set(r.name, r.drive_file_id);
+        }
+      });
+    } catch (e) {
+      console.warn("Could not load repository_files name map:", e);
+    }
+  }
+
   // 3. Download each file and add to ZIP in a "Documentos" folder
+  const skipped: { name: string; reason: string }[] = [];
   if (docs.length > 0) {
     const docsFolder = zip.folder("Documentos");
     let downloaded = 0;
 
     for (const doc of docs) {
+      const label = doc.fileName || doc.itemName;
       try {
         onProgress?.(`Descargando archivo ${++downloaded}/${docs.length}...`);
 
-        const isDriveUrl = /drive\.google\.com/.test(doc.url);
+        const isDriveUrl = /drive\.google\.com|docs\.google\.com/.test(doc.url);
         let blob: Blob | null = null;
         let driveFileName: string | null = null;
         let contentType: string | null = null;
 
-        if (isDriveUrl) {
-          const driveFileId = extractDriveFileId(doc.url);
-          if (!driveFileId) {
-            console.warn(`Could not extract Drive file id from ${doc.url}`);
-            continue;
-          }
+        // Prefer drive_file_id from repository_files (source of truth)
+        let driveFileId: string | null = doc.fileName ? (nameToDriveId.get(doc.fileName) || null) : null;
+        if (!driveFileId && isDriveUrl) {
+          driveFileId = extractDriveFileId(doc.url);
+        }
+
+        if (driveFileId) {
           const { data, error } = await supabase.functions.invoke("google-drive", {
             body: { action: "downloadFile", driveFileId },
           });
           if (error || !data?.base64) {
-            console.error(`Drive download failed for ${doc.itemName}:`, error || data);
+            const msg = (data as any)?.error || error?.message || "Drive download error";
+            console.error(`Drive download failed for ${label}:`, msg);
+            skipped.push({ name: label, reason: `Drive: ${msg}` });
             continue;
           }
           contentType = data.mimeType || null;
           driveFileName = data.fileName || null;
           blob = base64ToBlob(data.base64, data.mimeType);
+        } else if (isDriveUrl) {
+          console.warn(`Could not resolve Drive file id for ${label}: ${doc.url}`);
+          skipped.push({ name: label, reason: "ID de Drive no extraíble" });
+          continue;
         } else {
           let fetchUrl = doc.url;
           if (isStorageUrl(doc.url)) {
             const signed = await getSignedUrl(doc.url);
             if (signed) fetchUrl = signed;
           }
-          const response = await fetch(fetchUrl);
-          if (!response.ok) continue;
-          contentType = response.headers.get("content-type");
-          blob = await response.blob();
+          try {
+            const response = await fetch(fetchUrl);
+            if (!response.ok) {
+              skipped.push({ name: label, reason: `HTTP ${response.status}` });
+              continue;
+            }
+            contentType = response.headers.get("content-type");
+            blob = await response.blob();
+          } catch (fe: any) {
+            skipped.push({ name: label, reason: `Fetch: ${fe?.message || "error"}` });
+            continue;
+          }
         }
 
-        if (!blob) continue;
+        if (!blob) {
+          skipped.push({ name: label, reason: "Blob vacío" });
+          continue;
+        }
 
         const baseName = doc.fileName || driveFileName;
         const ext = baseName ? '' : getFileExtension(doc.url, contentType);
@@ -169,11 +219,19 @@ export async function exportPatentsWithFiles(
 
         const sectionFolder = docsFolder!.folder(folderName);
         sectionFolder!.file(fileName, blob);
-      } catch (err) {
-        console.error(`Error downloading file for ${doc.itemName}:`, err);
+      } catch (err: any) {
+        console.error(`Error downloading file for ${label}:`, err);
+        skipped.push({ name: label, reason: err?.message || "error" });
       }
     }
   }
+
+  const okCount = docs.length - skipped.length;
+  if (skipped.length > 0) {
+    console.warn("Archivos omitidos del ZIP:", skipped);
+    toast.warning(`${okCount} archivo(s) descargado(s), ${skipped.length} omitido(s). Ver consola para detalle.`);
+  }
+
 
 
   // 4. Generate and download ZIP

@@ -2194,10 +2194,27 @@ serve(async (req) => {
         }
         const meta = await metaRes.json();
 
-        const dlRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
+        const isGoogleNative = typeof meta.mimeType === "string" && meta.mimeType.startsWith("application/vnd.google-apps.");
+        let downloadUrl = `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`;
+        let exportMime: string | null = null;
+        let exportExt = "";
+        if (isGoogleNative) {
+          const native = meta.mimeType.replace("application/vnd.google-apps.", "");
+          const map: Record<string, { mime: string; ext: string }> = {
+            document: { mime: "application/pdf", ext: ".pdf" },
+            spreadsheet: { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ext: ".xlsx" },
+            presentation: { mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", ext: ".pptx" },
+            drawing: { mime: "application/pdf", ext: ".pdf" },
+          };
+          const target = map[native] || { mime: "application/pdf", ext: ".pdf" };
+          exportMime = target.mime;
+          exportExt = target.ext;
+          downloadUrl = `https://www.googleapis.com/drive/v3/files/${driveFileId}/export?mimeType=${encodeURIComponent(exportMime)}`;
+        }
+
+        const dlRes = await fetch(downloadUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
         if (!dlRes.ok) {
           const text = await dlRes.text();
           throw new Error(`Failed to download file: ${dlRes.status} ${text}`);
@@ -2211,10 +2228,15 @@ serve(async (req) => {
         }
         const base64 = btoa(binary);
 
+        let finalName: string = meta.name || "archivo";
+        if (exportExt && !finalName.toLowerCase().endsWith(exportExt)) {
+          finalName = `${finalName}${exportExt}`;
+        }
+
         result = {
           base64,
-          fileName: meta.name,
-          mimeType: meta.mimeType,
+          fileName: finalName,
+          mimeType: exportMime || meta.mimeType,
           size: buffer.length,
         };
         break;
