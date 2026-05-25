@@ -20,7 +20,7 @@ interface PatentFileListPopoverProps {
 interface FileInfo {
   url: string;
   name: string;
-  driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable' | 'retrying';
+  driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable' | 'retrying' | 'unrecoverable';
   driveUrl?: string;
   repoFileId?: string; // present when this file maps to a repository_files row
 }
