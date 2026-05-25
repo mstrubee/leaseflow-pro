@@ -20,7 +20,7 @@ interface PatentFileListPopoverProps {
 interface FileInfo {
   url: string;
   name: string;
-  driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable' | 'retrying';
+  driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable' | 'retrying' | 'unrecoverable';
   driveUrl?: string;
   repoFileId?: string; // present when this file maps to a repository_files row
 }
@@ -121,6 +121,23 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
             },
       });
 
+      // Detect irrecoverable (410): file lost from both storage and Drive.
+      const errMsg = String(error?.message || '');
+      const isIrrecoverable =
+        (data as any)?.irrecoverable === true ||
+        errMsg.includes('410') ||
+        /no recuperable/i.test((data as any)?.error || '');
+
+      if (isIrrecoverable) {
+        setFiles(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], driveStatus: 'unrecoverable' };
+          return updated;
+        });
+        toast.error(`${file.name}: archivo perdido. Súbelo nuevamente.`);
+        return;
+      }
+
       if (error || !data?.id) {
         const msg = (data as any)?.error || error?.message || 'Error';
         toast.error(`No se pudo reintentar: ${msg}`);
@@ -140,7 +157,17 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
       });
       onUrlUpdated?.(index, driveUrl);
       toast.success(`${file.name} disponible en Drive`);
-    } catch (err) {
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (msg.includes('410') || /no recuperable/i.test(msg)) {
+        setFiles(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], driveStatus: 'unrecoverable' };
+          return updated;
+        });
+        toast.error(`${file.name}: archivo perdido. Súbelo nuevamente.`);
+        return;
+      }
       console.error("Retry upload error:", err);
       toast.error("Error al reintentar subida");
       setFiles(prev => {
@@ -224,11 +251,13 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
                 <div className="flex-shrink-0" title={
                   file.driveStatus === 'ok' ? 'En Google Drive' :
                   file.driveStatus === 'missing' ? 'No está en Google Drive' :
+                  file.driveStatus === 'unrecoverable' ? 'Archivo perdido — súbelo nuevamente' :
                   file.driveStatus === 'checking' || file.driveStatus === 'retrying' ? 'Verificando...' : 'Enlace externo'
                 }>
                   {(file.driveStatus === 'checking' || file.driveStatus === 'retrying') && <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />}
                   {file.driveStatus === 'ok' && <Cloud className="h-3.5 w-3.5 text-green-600" />}
                   {file.driveStatus === 'missing' && <CloudOff className="h-3.5 w-3.5 text-destructive" />}
+                  {file.driveStatus === 'unrecoverable' && <CloudOff className="h-3.5 w-3.5 text-destructive" />}
                   {file.driveStatus === 'not_applicable' && <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
                 </div>
 
