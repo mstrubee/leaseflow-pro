@@ -2292,11 +2292,15 @@ serve(async (req) => {
           }
         }
 
+        // Return 200 with an irrecoverable flag so supabase.functions.invoke
+        // does not throw a generic runtime error / blank screen on the client.
+        // The client checks `data.irrecoverable` and shows a friendly state.
         return new Response(JSON.stringify({
           error: "Archivo no recuperable: ya no está en almacenamiento temporal ni en Google Drive. Súbelo nuevamente.",
           irrecoverable: true,
+          fallback: true,
         }), {
-          status: 410, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
 
