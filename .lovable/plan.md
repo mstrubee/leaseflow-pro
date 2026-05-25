@@ -1,31 +1,52 @@
-## Diagnóstico
+## Objetivo
+Hacer que los documentos de patentes vuelvan a cargarse y abrirse correctamente, incluyendo los del repositorio común y los legacy que hoy quedaron con enlace temporal roto.
 
-Hoy el ZIP solo descarga lo que viene del repositorio común porque varios archivos del contrato fallan silenciosamente al descargarse y nadie se entera:
+## Hallazgo
+El backend está sano; el problema no es de disponibilidad.
 
-1. **URLs de Google Docs/Sheets/Slides no se reconocen.** El regex actual solo matchea `/file/d/...`. URLs como `https://docs.google.com/document/d/...` (hay 3 en BD) o `/spreadsheets/d/...`, `/presentation/d/...` se saltan.
-2. **Archivos nativos de Google Workspace fallan en `alt=media`.** Para `application/vnd.google-apps.*`, Drive exige el endpoint `/export?mimeType=...`. Si el archivo se subió como Google Doc, el `downloadFile` actual revienta con 403.
-3. **No hay feedback al usuario.** Si un archivo falla, el `catch` solo hace `console.error` y sigue. El usuario ve el ZIP sin esos archivos y cree que el botón no funciona.
-4. **Posible URL obsoleta en `patent_documents`.** Si el `webViewLink` guardado quedó desactualizado (archivo movido/recreado), el ID extraído ya no existe en Drive. El `drive_file_id` real vive en `repository_files` y es la fuente de verdad.
+El caso que falla (`2026_03.10 - egakatlogistica - Megacentro.pdf`) quedó guardado en `repository_files` con:
+- URL `storage://repository-files/...`
+- sin `drive_file_id`
 
-## Cambios
+Pero ese archivo ya no existe en el almacenamiento temporal, así que al reintentar subirlo el backend responde `File not found in temporary storage`.
 
-### `src/components/patents/exportPatentsZip.ts`
-- Extender `extractDriveFileId` para reconocer `/file/d/`, `/document/d/`, `/spreadsheets/d/`, `/presentation/d/` y `?id=`.
-- Antes del loop de descarga, traer en un solo query todos los `repository_files` del contrato cuyo `name` coincida con cualquiera de los `document_names` de sus `patent_documents`. Construir un mapa `nombreArchivo → drive_file_id`.
-- Para cada documento a descargar: si hay match por nombre en ese mapa, **usar ese `drive_file_id`** (más confiable que parsear la URL). Si no, caer al parseo de URL como hoy.
-- Acumular contadores `descargados`/`omitidos` y al final mostrar un toast: `"X archivos descargados, Y omitidos. Ver consola."` con detalle por nombre en consola.
-- Si la URL no es Drive ni Supabase Storage ni público (caso "other" — 2 filas), intentar `fetch` directo y registrar el fallo en el resumen si no funciona.
+Además, el popover hoy reintenta todos los casos usando el flujo `uploadPatentFileFromStorage`, que sirve para documentos de patente, pero no es suficiente para archivos legacy del repositorio común / `repository_files`.
 
-### `supabase/functions/google-drive/index.ts` — acción `downloadFile`
-- Tras obtener metadata, si `mimeType` empieza con `application/vnd.google-apps.`, usar `/files/{id}/export?mimeType=...` con el mapeo:
-  - `document` → `application/pdf`
-  - `spreadsheet` → `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-  - `presentation` → `application/vnd.openxmlformats-officedocument.presentationml.presentation`
-  - `drawing` → `application/pdf`
-  - Para cualquier otro tipo Google, fallback a PDF.
-- Ajustar el `fileName` para incluir la extensión correcta cuando sea un export (Drive devuelve el nombre sin extensión para archivos nativos).
-- Mantener el flujo actual de `alt=media` para archivos binarios.
+## Plan
+1. Corregir la detección de origen del archivo en `PatentFileListPopover`
+- Resolver cada archivo por su fila real de `repository_files` cuando exista, no solo por coincidencia flexible de nombre.
+- Distinguir entre:
+  - documento de patente guardado en `patent_documents`
+  - archivo del repositorio común guardado en `repository_files`
+  - enlace externo/manual
 
-## Pregunta para validar
+2. Crear un flujo de reconciliación para archivos legacy de `repository_files`
+- Agregar en la función `google-drive` una acción específica para:
+  - tomar una fila de `repository_files`
+  - si ya existe en Drive, actualizar `url` y `drive_file_id`
+  - si aún existe en storage, subirla a Drive y actualizar la fila
+  - si no existe ni en Drive ni en storage, devolver un error claro de archivo irrecuperable
+- No reutilizar el flujo de `uploadPatentFileFromStorage` para estos casos.
 
-Antes de implementar, necesito que confirmes **qué contrato** estás probando (nombre o ID). Los items que mencionas — *Recepción Final*, *Contrato Arriendo*, *Distribución de capital*, *Apertura de sucursal* — existen en BD para muchos contratos, y en la mayoría `document_url` está vacío (no se ha subido archivo aún). Si en el contrato que pruebas esos items aparecen con icono de archivo subido en la UI pero no llegan al ZIP, los 4 cambios de arriba lo resuelven. Si en cambio aparecen vacíos en la UI, no hay nada que descargar — el archivo nunca se asoció al item.
+3. Conectar el botón de reintento al flujo correcto
+- Si el archivo pertenece a `repository_files`, usar la nueva reconciliación.
+- Si pertenece a `patent_documents` y realmente es un storage URL de patente, mantener el flujo actual.
+
+4. Mejorar la carga visual del popover
+- Marcar como disponible cuando ya tenga `drive_file_id` o URL final válida.
+- Evitar falsos “faltantes” por búsquedas ambiguas solo por nombre.
+- Mostrar mensaje útil cuando el archivo ya no es recuperable y requiera re-subida.
+
+5. Validación
+- Probar el caso que hoy falla (`Megacentro.pdf`).
+- Verificar apertura/estado en:
+  - repositorio común
+  - documentos de patente propios
+  - archivos Google Drive nativos y binarios
+
+## Detalles técnicos
+- Archivos a tocar:
+  - `src/components/patents/PatentFileListPopover.tsx`
+  - `supabase/functions/google-drive/index.ts`
+- No debería requerir migración de base de datos; el cambio es de reconciliación y lectura.
+- Si encuentro más filas legacy con `storage://` en `repository_files`, dejaré el flujo preparado para recuperarlas también.
