@@ -251,11 +251,13 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
                 <div className="flex-shrink-0" title={
                   file.driveStatus === 'ok' ? 'En Google Drive' :
                   file.driveStatus === 'missing' ? 'No está en Google Drive' :
+                  file.driveStatus === 'unrecoverable' ? 'Archivo perdido — súbelo nuevamente' :
                   file.driveStatus === 'checking' || file.driveStatus === 'retrying' ? 'Verificando...' : 'Enlace externo'
                 }>
                   {(file.driveStatus === 'checking' || file.driveStatus === 'retrying') && <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />}
                   {file.driveStatus === 'ok' && <Cloud className="h-3.5 w-3.5 text-green-600" />}
                   {file.driveStatus === 'missing' && <CloudOff className="h-3.5 w-3.5 text-destructive" />}
+                  {file.driveStatus === 'unrecoverable' && <CloudOff className="h-3.5 w-3.5 text-destructive" />}
                   {file.driveStatus === 'not_applicable' && <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
                 </div>
 
