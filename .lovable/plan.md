@@ -1,32 +1,31 @@
-# Descargar archivos de patentes en el ZIP
-
 ## Diagnóstico
 
-Hoy el checkbox "Incluir archivos (ZIP)" sólo trae los archivos del repositorio común porque esos están en Supabase Storage (URLs públicas, `fetch()` directo funciona).
+Hoy el ZIP solo descarga lo que viene del repositorio común porque varios archivos del contrato fallan silenciosamente al descargarse y nadie se entera:
 
-Los archivos de cada ítem del checklist se guardan en Google Drive: `patent_documents.document_url` contiene un `webViewLink` tipo `https://drive.google.com/file/d/{ID}/view`. `fetch()` sobre esa URL no devuelve el archivo (devuelve el visor HTML), por eso silenciosamente no entran al ZIP.
+1. **URLs de Google Docs/Sheets/Slides no se reconocen.** El regex actual solo matchea `/file/d/...`. URLs como `https://docs.google.com/document/d/...` (hay 3 en BD) o `/spreadsheets/d/...`, `/presentation/d/...` se saltan.
+2. **Archivos nativos de Google Workspace fallan en `alt=media`.** Para `application/vnd.google-apps.*`, Drive exige el endpoint `/export?mimeType=...`. Si el archivo se subió como Google Doc, el `downloadFile` actual revienta con 403.
+3. **No hay feedback al usuario.** Si un archivo falla, el `catch` solo hace `console.error` y sigue. El usuario ve el ZIP sin esos archivos y cree que el botón no funciona.
+4. **Posible URL obsoleta en `patent_documents`.** Si el `webViewLink` guardado quedó desactualizado (archivo movido/recreado), el ID extraído ya no existe en Drive. El `drive_file_id` real vive en `repository_files` y es la fuente de verdad.
 
-Adicionalmente, `patent_documents.drive_file_id` está en NULL para los 1850 registros existentes (el upload guarda la URL pero no persiste el `id` de Drive).
+## Cambios
 
-## Cambios propuestos
+### `src/components/patents/exportPatentsZip.ts`
+- Extender `extractDriveFileId` para reconocer `/file/d/`, `/document/d/`, `/spreadsheets/d/`, `/presentation/d/` y `?id=`.
+- Antes del loop de descarga, traer en un solo query todos los `repository_files` del contrato cuyo `name` coincida con cualquiera de los `document_names` de sus `patent_documents`. Construir un mapa `nombreArchivo → drive_file_id`.
+- Para cada documento a descargar: si hay match por nombre en ese mapa, **usar ese `drive_file_id`** (más confiable que parsear la URL). Si no, caer al parseo de URL como hoy.
+- Acumular contadores `descargados`/`omitidos` y al final mostrar un toast: `"X archivos descargados, Y omitidos. Ver consola."` con detalle por nombre en consola.
+- Si la URL no es Drive ni Supabase Storage ni público (caso "other" — 2 filas), intentar `fetch` directo y registrar el fallo en el resumen si no funciona.
 
-### 1. Edge function `google-drive`: nueva acción `downloadFile`
-Recibe `{ driveFileId }`, descarga el archivo usando el OAuth token ya configurado (`files.get?alt=media`) y responde con `{ base64, mimeType, fileName }`. Sirve para cualquier archivo privado de Drive del workspace.
+### `supabase/functions/google-drive/index.ts` — acción `downloadFile`
+- Tras obtener metadata, si `mimeType` empieza con `application/vnd.google-apps.`, usar `/files/{id}/export?mimeType=...` con el mapeo:
+  - `document` → `application/pdf`
+  - `spreadsheet` → `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+  - `presentation` → `application/vnd.openxmlformats-officedocument.presentationml.presentation`
+  - `drawing` → `application/pdf`
+  - Para cualquier otro tipo Google, fallback a PDF.
+- Ajustar el `fileName` para incluir la extensión correcta cuando sea un export (Drive devuelve el nombre sin extensión para archivos nativos).
+- Mantener el flujo actual de `alt=media` para archivos binarios.
 
-### 2. `src/components/patents/exportPatentsZip.ts`
-- Soportar múltiples archivos por ítem (hoy `document_url` puede contener varias URLs separadas por `|||`, pero el código toma sólo el primer documento y un solo URL).
-- Para cada URL:
-  - Si es `storage://...` o URL pública de Supabase → flujo actual (`fetch` + `getSignedUrl`).
-  - Si es URL de Drive → extraer el ID con regex `/\/file\/d\/([^/]+)/` (o usar `drive_file_id` si existe), invocar `google-drive` con `action: "downloadFile"`, decodificar base64 a Blob y agregarlo al ZIP.
-- Conservar nombres de archivo originales desde `patent_documents.document_names` (mismo separador `|||`) cuando estén disponibles; si no, derivar del ítem + índice + extensión.
-- Mantener el manejo de errores actual (saltar archivo que falla, continuar el resto) y los mensajes de progreso.
+## Pregunta para validar
 
-### 3. (Opcional, no crítico) `PatentDocumentUpload.tsx`
-Guardar también `drive_file_id` en `patent_documents` al subir, separado por `|||` igual que las URLs, para no depender del parsing por regex en futuros uploads. No es estrictamente necesario para esta fix porque el regex sobre la URL ya resuelve los 1850 registros existentes.
-
-## Resultado
-
-Al marcar "Incluir archivos (ZIP)", el ZIP contendrá:
-- Excel del checklist.
-- Carpeta `Documentos/{Sección}/` con todos los archivos subidos al ítem (provenientes de Drive).
-- Carpeta `Documentos/{Sección}_Repositorio_Comun/` con los archivos del repositorio compartido (sin cambios).
+Antes de implementar, necesito que confirmes **qué contrato** estás probando (nombre o ID). Los items que mencionas — *Recepción Final*, *Contrato Arriendo*, *Distribución de capital*, *Apertura de sucursal* — existen en BD para muchos contratos, y en la mayoría `document_url` está vacío (no se ha subido archivo aún). Si en el contrato que pruebas esos items aparecen con icono de archivo subido en la UI pero no llegan al ZIP, los 4 cambios de arriba lo resuelven. Si en cambio aparecen vacíos en la UI, no hay nada que descargar — el archivo nunca se asoció al item.
