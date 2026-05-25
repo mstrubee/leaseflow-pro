@@ -2150,6 +2150,46 @@ serve(async (req) => {
         break;
       }
 
+      case "downloadFile": {
+        const { driveFileId } = params as { driveFileId: string };
+        if (!driveFileId) throw new Error("driveFileId is required");
+
+        const metaRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=id,name,mimeType,size&supportsAllDrives=true`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!metaRes.ok) {
+          const text = await metaRes.text();
+          throw new Error(`Failed to fetch file metadata: ${metaRes.status} ${text}`);
+        }
+        const meta = await metaRes.json();
+
+        const dlRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!dlRes.ok) {
+          const text = await dlRes.text();
+          throw new Error(`Failed to download file: ${dlRes.status} ${text}`);
+        }
+        const buffer = new Uint8Array(await dlRes.arrayBuffer());
+
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let i = 0; i < buffer.length; i += chunkSize) {
+          binary += String.fromCharCode(...buffer.subarray(i, i + chunkSize));
+        }
+        const base64 = btoa(binary);
+
+        result = {
+          base64,
+          fileName: meta.name,
+          mimeType: meta.mimeType,
+          size: buffer.length,
+        };
+        break;
+      }
+
       case "syncFolder": {
         const { name, parentDriveFolderId } = params;
         let folder = await getFolderByName(accessToken, name, parentDriveFolderId);

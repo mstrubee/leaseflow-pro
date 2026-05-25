@@ -69,13 +69,24 @@ export async function exportPatentsWithFiles(
     const cleanSection = section.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '_');
     sectionItems.forEach(item => {
       const cleanItem = item.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '_');
-      
-      // Contract-specific document
+
+      // Contract-specific document(s) — may contain multiple URLs joined by '|||'
       const doc = (contract.patent_documents || []).find(d => d.checklist_item_id === item.id);
       if (doc?.document_url) {
-        docs.push({ sectionName: cleanSection, itemName: cleanItem, url: doc.document_url });
+        const urls = doc.document_url.split('|||').filter(Boolean);
+        const names = (doc as any).document_names
+          ? String((doc as any).document_names).split('|||').filter(Boolean)
+          : [];
+        urls.forEach((u, idx) => {
+          docs.push({
+            sectionName: cleanSection,
+            itemName: cleanItem,
+            url: u,
+            fileName: names[idx] || undefined,
+          });
+        });
       }
-      
+
       // Shared repository files
       const sharedFolderId = sharedItemLookup[item.id];
       if (sharedFolderId && sharedFilesCache[sharedFolderId]) {
@@ -91,6 +102,22 @@ export async function exportPatentsWithFiles(
     });
   });
 
+  // Helper: extract Drive file id from a Drive URL
+  const extractDriveFileId = (url: string): string | null => {
+    const m1 = url.match(/\/file\/d\/([^/?#]+)/);
+    if (m1) return m1[1];
+    const m2 = url.match(/[?&]id=([^&]+)/);
+    if (m2) return m2[1];
+    return null;
+  };
+
+  const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType || "application/octet-stream" });
+  };
+
   // 3. Download each file and add to ZIP in a "Documentos" folder
   if (docs.length > 0) {
     const docsFolder = zip.folder("Documentos");
@@ -99,31 +126,55 @@ export async function exportPatentsWithFiles(
     for (const doc of docs) {
       try {
         onProgress?.(`Descargando archivo ${++downloaded}/${docs.length}...`);
-        
-        let fetchUrl = doc.url;
-        if (isStorageUrl(doc.url)) {
-          const signed = await getSignedUrl(doc.url);
-          if (signed) fetchUrl = signed;
+
+        const isDriveUrl = /drive\.google\.com/.test(doc.url);
+        let blob: Blob | null = null;
+        let driveFileName: string | null = null;
+        let contentType: string | null = null;
+
+        if (isDriveUrl) {
+          const driveFileId = extractDriveFileId(doc.url);
+          if (!driveFileId) {
+            console.warn(`Could not extract Drive file id from ${doc.url}`);
+            continue;
+          }
+          const { data, error } = await supabase.functions.invoke("google-drive", {
+            body: { action: "downloadFile", driveFileId },
+          });
+          if (error || !data?.base64) {
+            console.error(`Drive download failed for ${doc.itemName}:`, error || data);
+            continue;
+          }
+          contentType = data.mimeType || null;
+          driveFileName = data.fileName || null;
+          blob = base64ToBlob(data.base64, data.mimeType);
+        } else {
+          let fetchUrl = doc.url;
+          if (isStorageUrl(doc.url)) {
+            const signed = await getSignedUrl(doc.url);
+            if (signed) fetchUrl = signed;
+          }
+          const response = await fetch(fetchUrl);
+          if (!response.ok) continue;
+          contentType = response.headers.get("content-type");
+          blob = await response.blob();
         }
 
-        const response = await fetch(fetchUrl);
-        if (!response.ok) continue;
+        if (!blob) continue;
 
-        const blob = await response.blob();
-        
-        // Determine file name
-        const ext = doc.fileName ? '' : getFileExtension(doc.url, response.headers.get("content-type"));
+        const baseName = doc.fileName || driveFileName;
+        const ext = baseName ? '' : getFileExtension(doc.url, contentType);
         const folderName = doc.sectionName;
-        const fileName = doc.fileName || `${doc.itemName}${ext}`;
+        const fileName = baseName || `${doc.itemName}${ext}`;
 
         const sectionFolder = docsFolder!.folder(folderName);
         sectionFolder!.file(fileName, blob);
       } catch (err) {
         console.error(`Error downloading file for ${doc.itemName}:`, err);
-        // Skip failed downloads
       }
     }
   }
+
 
   // 4. Generate and download ZIP
   onProgress?.("Generando ZIP...");
