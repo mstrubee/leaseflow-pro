@@ -121,6 +121,23 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
             },
       });
 
+      // Detect irrecoverable (410): file lost from both storage and Drive.
+      const errMsg = String(error?.message || '');
+      const isIrrecoverable =
+        (data as any)?.irrecoverable === true ||
+        errMsg.includes('410') ||
+        /no recuperable/i.test((data as any)?.error || '');
+
+      if (isIrrecoverable) {
+        setFiles(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], driveStatus: 'unrecoverable' };
+          return updated;
+        });
+        toast.error(`${file.name}: archivo perdido. Súbelo nuevamente.`);
+        return;
+      }
+
       if (error || !data?.id) {
         const msg = (data as any)?.error || error?.message || 'Error';
         toast.error(`No se pudo reintentar: ${msg}`);
@@ -140,7 +157,17 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
       });
       onUrlUpdated?.(index, driveUrl);
       toast.success(`${file.name} disponible en Drive`);
-    } catch (err) {
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (msg.includes('410') || /no recuperable/i.test(msg)) {
+        setFiles(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], driveStatus: 'unrecoverable' };
+          return updated;
+        });
+        toast.error(`${file.name}: archivo perdido. Súbelo nuevamente.`);
+        return;
+      }
       console.error("Retry upload error:", err);
       toast.error("Error al reintentar subida");
       setFiles(prev => {
