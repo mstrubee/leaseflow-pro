@@ -101,6 +101,62 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       const userId = (await supabase.auth.getUser()).data.user?.id ?? null;
       const movedAt = new Date().toISOString();
 
+      // 0) If destination is a leaf with its own monetary value (qty * unit_price > 0
+      //    or stored amount_uf > 0) and currently has NO real children, the act of
+      //    parenting another line under it would re-interpret its `quantity` as a
+      //    multiplier over the children subtotal — silently inflating the budget.
+      //    To preserve the destination's original value, clone it as a self-child
+      //    first, then neutralize the parent (qty=1, unit_price=0, amount_uf=0).
+      if (targetParentId) {
+        const { data: destRow, error: destErr } = await supabase
+          .from("budget_lines")
+          .select("*")
+          .eq("id", targetParentId)
+          .maybeSingle();
+        if (destErr) throw destErr;
+        if (destRow) {
+          const { data: existingChildren } = await supabase
+            .from("budget_lines")
+            .select("id, display_order")
+            .eq("parent_id", targetParentId)
+            .is("deleted_at", null);
+          const realChildren = (existingChildren || []).filter((c: any) => !ids.includes(c.id));
+          const qty = Number(destRow.quantity) || 0;
+          const price = Number(destRow.unit_price) || 0;
+          const amt = Number(destRow.amount_uf) || 0;
+          const hasOwnValue = (qty > 0 && price > 0) || amt > 0;
+          if (realChildren.length === 0 && hasOwnValue) {
+            const clonePayload: any = {
+              budget_id: destRow.budget_id,
+              parent_id: destRow.id,
+              name: destRow.name,
+              description: destRow.description,
+              amount_uf: destRow.amount_uf,
+              status: destRow.status,
+              display_order: 0,
+              quantity: destRow.quantity,
+              unit_type: destRow.unit_type,
+              currency: destRow.currency,
+              unit_price: destRow.unit_price,
+              template_line_id: destRow.template_line_id,
+              supplier_id: destRow.supplier_id,
+              supplier_name: destRow.supplier_name,
+              category_id: destRow.category_id,
+              progress_status_id: destRow.progress_status_id,
+            };
+            const { error: cloneErr } = await supabase.from("budget_lines").insert(clonePayload);
+            if (cloneErr) throw cloneErr;
+            // Neutralize the destination so its own qty/price stop multiplying children
+            const { error: neutErr } = await supabase
+              .from("budget_lines")
+              .update({ quantity: 1, unit_price: 0, amount_uf: 0, template_line_id: null, supplier_id: null, supplier_name: null })
+              .eq("id", destRow.id);
+            if (neutErr) throw neutErr;
+            console.log("[MOVE] Destination leaf cloned + neutralized to preserve original value");
+          }
+        }
+      }
+
       // 1) Update the real lines: change parent_id + record move metadata.
       const { data: updated, error: updErr } = await supabase
         .from("budget_lines")
@@ -141,6 +197,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
       toast({ title: "Líneas movidas", description: `Se movieron ${ids.length} línea(s) y se dejó marca en su posición original.` });
       handleExitSelectionMode();
+      // Auto-expand the destination parent so the new child is visible to all users
+      if (targetParentId) {
+        setCollapsedIds((prev) => {
+          if (!prev.has(targetParentId)) return prev;
+          const next = new Set(prev);
+          next.delete(targetParentId);
+          return next;
+        });
+      }
       const budget = budgets.find((b) => b.year === selectedYear);
       if (budget) await loadLines(budget.id);
       onRefresh?.();
@@ -149,6 +214,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       toast({ variant: "destructive", title: "Error al mover", description: err?.message || "No se pudieron mover las líneas." });
     }
   }, [selectedLineIds, budgets, selectedYear, onRefresh, handleExitSelectionMode]);
+
 
   
   // OC Dialog state
