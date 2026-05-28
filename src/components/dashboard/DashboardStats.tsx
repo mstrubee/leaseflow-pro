@@ -290,58 +290,92 @@ export const DashboardStats = () => {
 
   const downloadExcel = () => {
     const workbook = XLSX.utils.book_new();
-    
-    // Create data array with headers
-    const data: (string | number)[][] = [
-      ["Región", "N° de comunas con presencia", "N° locales Autoplanet", "N° locales Agroplanet", "Total Sucursales"]
+
+    const headers = [
+      "Región / Comuna",
+      "N° de comunas con presencia",
+      "N° locales Autoplanet",
+      "N° locales Agroplanet",
+      "Total Sucursales",
+      "En Negociación",
     ];
-    
+    const data: (string | number)[][] = [headers];
+    // Track which rows are commune detail rows (to collapse by default)
+    const communeRowIndices: number[] = [];
+
     let totalComunas = 0;
     let totalAutoplanet = 0;
     let totalAgroplanet = 0;
     let totalSucursales = 0;
-    
+    let totalNegociacion = 0;
+
     stats.byRegion.forEach((region) => {
-      // Only include regions with vigentes contracts (Autoplanet or Agroplanet)
       const autoplanet = region.vigentesAutoplanet;
       const agroplanet = region.vigentesAgroplanet;
       const sucursales = autoplanet + agroplanet;
-      
-      if (sucursales === 0) return; // Skip regions with no vigentes
-      
-      // Count only communes that have vigentes contracts
-      const comunasConVigentes = Object.values(region.communes).filter(
+      const negociacion = region.negociacion || 0;
+
+      // Skip regions with no vigentes AND no negociacion
+      if (sucursales === 0 && negociacion === 0) return;
+
+      const comunasList = Object.values(region.communes).filter(
+        (c) => c.vigentesAutoplanet > 0 || c.vigentesAgroplanet > 0 || (c.negociacion || 0) > 0
+      );
+      const comunasConPresencia = comunasList.filter(
         (c) => c.vigentesAutoplanet > 0 || c.vigentesAgroplanet > 0
       ).length;
-      
-      totalComunas += comunasConVigentes;
+
+      totalComunas += comunasConPresencia;
       totalAutoplanet += autoplanet;
       totalAgroplanet += agroplanet;
       totalSucursales += sucursales;
-      
-      data.push([region.region, comunasConVigentes, autoplanet, agroplanet, sucursales]);
+      totalNegociacion += negociacion;
+
+      data.push([region.region, comunasConPresencia, autoplanet, agroplanet, sucursales, negociacion]);
+
+      // Add commune detail rows
+      comunasList
+        .sort((a, b) => a.commune.localeCompare(b.commune))
+        .forEach((c) => {
+          communeRowIndices.push(data.length); // 0-based index in final sheet
+          data.push([
+            `    ${c.commune}`,
+            "",
+            c.vigentesAutoplanet,
+            c.vigentesAgroplanet,
+            c.vigentesAutoplanet + c.vigentesAgroplanet,
+            c.negociacion || 0,
+          ]);
+        });
     });
-    
-    // Add totals row
-    data.push(["Totales", totalComunas, totalAutoplanet, totalAgroplanet, totalSucursales]);
-    
+
+    data.push(["Totales", totalComunas, totalAutoplanet, totalAgroplanet, totalSucursales, totalNegociacion]);
+
     const worksheet = XLSX.utils.aoa_to_sheet(data);
-    
-    // Set column widths
+
     worksheet["!cols"] = [
-      { wch: 30 },
-      { wch: 25 },
+      { wch: 32 },
+      { wch: 28 },
+      { wch: 22 },
+      { wch: 22 },
       { wch: 18 },
       { wch: 18 },
-      { wch: 15 },
     ];
-    
+
+    // Configure row outlines so communes are grouped under their region and collapsed by default
+    const rows: any[] = [];
+    communeRowIndices.forEach((idx) => {
+      rows[idx] = { level: 1, hidden: true };
+    });
+    worksheet["!rows"] = rows;
+    // Place expand/collapse summary above the group (region row above its communes)
+    worksheet["!outline"] = { above: true };
+
     XLSX.utils.book_append_sheet(workbook, worksheet, "Resumen por Región");
-    
-    // Generate and download
+
     const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
     const blob = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -351,6 +385,7 @@ export const DashboardStats = () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
 
   // Wait for permissions to load before showing content to prevent flickering
   if (permissionsLoading || statsLoading) {
