@@ -43,6 +43,10 @@ export interface RouteForm {
   criticality_weight: number;
   contract_id: string | null;
   contract_name: string | null;
+  // Fusión de forms
+  merge_group_id: string | null;
+  mergedFormIds: string[];      // todos los IDs representados (1 si no está fusionado)
+  mergedFormNumbers: string[];  // números de los forms del grupo
 }
 
 export interface ScoredLocation extends MaintenanceLocation {
@@ -236,6 +240,7 @@ export function useRouteBuilder() {
   const [criticalities, setCriticalities] = useState<CriticalityCategory[]>([]);
   const [allForms, setAllForms]           = useState<RouteForm[]>([]);
   const [loading, setLoading]             = useState(false);
+  const [formsReloadKey, setFormsReloadKey] = useState(0);
 
   // Route state
   const [origin, setOrigin]               = useState<MaintenanceLocation | null>(null);
@@ -280,37 +285,45 @@ export function useRouteBuilder() {
   useEffect(() => {
     if (!user) return;
 
-    supabase
-      .from("maintenance_forms")
-      .select("id,form_number,general_description,electrical_description,civil_description,hvac_description,fixed_assets_description,criticality_category_id,contract_id,contract_name")
-      .eq("status", "proceso")
-      .is("deleted_at", null)
-      .then(({ data }) => {
-        if (!data) return;
+    // Intento con columnas de fusión; si la migración aún no se aplicó, reintenta sin ellas
+    const baseCols = "id,form_number,general_description,electrical_description,civil_description,hvac_description,fixed_assets_description,criticality_category_id,contract_id,contract_name";
+    (async () => {
+      let res = await supabase.from("maintenance_forms")
+        .select(`${baseCols},merge_group_id,merge_is_primary`)
+        .eq("status", "proceso").is("deleted_at", null);
+      if (res.error && /merge_group_id|column|schema cache/i.test(res.error.message)) {
+        res = await supabase.from("maintenance_forms").select(baseCols)
+          .eq("status", "proceso").is("deleted_at", null);
+      }
+      const data = res.data;
+      if (!data) return;
         const weightMap = new Map(
           criticalities.map((c) => [c.id, { weight: getCriticalityWeight(c), name: c.name, color: c.color }]),
         );
-        const forms: RouteForm[] = data.map((f) => {
-          const cat = f.criticality_category_id ? weightMap.get(f.criticality_category_id) : null;
+        const forms: RouteForm[] = data.map((f: Record<string, unknown>) => {
+          const cat = f.criticality_category_id ? weightMap.get(f.criticality_category_id as string) : null;
           return {
-            id: f.id,
-            form_number: f.form_number,
-            general_description: f.general_description,
-            electrical_description: f.electrical_description,
-            civil_description: f.civil_description,
-            hvac_description: f.hvac_description,
-            fixed_assets_description: f.fixed_assets_description,
-            criticality_category_id: f.criticality_category_id,
+            id: f.id as string,
+            form_number: f.form_number as string,
+            general_description: f.general_description as string ?? null,
+            electrical_description: f.electrical_description as string ?? null,
+            civil_description: f.civil_description as string ?? null,
+            hvac_description: f.hvac_description as string ?? null,
+            fixed_assets_description: f.fixed_assets_description as string ?? null,
+            criticality_category_id: f.criticality_category_id as string ?? null,
             criticality_name: cat?.name ?? null,
             criticality_color: cat?.color ?? null,
             criticality_weight: cat?.weight ?? 1,
-            contract_id: f.contract_id,
-            contract_name: f.contract_name,
+            contract_id: f.contract_id as string ?? null,
+            contract_name: f.contract_name as string ?? null,
+            merge_group_id: (f.merge_group_id as string) ?? null,
+            mergedFormIds: [f.id as string],
+            mergedFormNumbers: [f.form_number as string],
           };
         });
         setAllForms(forms);
-      });
-  }, [user, criticalities]); // re-run when criticalities load
+    })();
+  }, [user, criticalities, formsReloadKey]); // re-run when criticalities load o tras fusionar
 
   // ---------------------------------------------------------------------------
   // Pre-compute forms per location (independent of origin — fixes popup bug)
@@ -318,13 +331,41 @@ export function useRouteBuilder() {
   const formsByLocation = useMemo(() => {
     const map = new Map<string, RouteForm[]>();
     for (const loc of locations) {
-      // Ordenados por criticidad descendente (más alta primero)
-      const matched = matchFormsToLocation(loc, allForms)
+      const matched = matchFormsToLocation(loc, allForms);
+      // Colapsar forms fusionados en un representante (el de mayor criticidad del grupo)
+      const groups = new Map<string, RouteForm[]>();
+      const singles: RouteForm[] = [];
+      for (const f of matched) {
+        if (f.merge_group_id) {
+          if (!groups.has(f.merge_group_id)) groups.set(f.merge_group_id, []);
+          groups.get(f.merge_group_id)!.push(f);
+        } else {
+          singles.push(f);
+        }
+      }
+      const merged: RouteForm[] = [];
+      for (const [, gforms] of groups) {
+        const sorted = [...gforms].sort((a, b) => b.criticality_weight - a.criticality_weight);
+        const rep = sorted[0];
+        merged.push({
+          ...rep,
+          mergedFormIds: gforms.map((g) => g.id),
+          mergedFormNumbers: gforms.map((g) => g.form_number),
+        });
+      }
+      const result = [...singles, ...merged]
         .sort((a, b) => b.criticality_weight - a.criticality_weight);
-      map.set(loc.id, matched);
+      map.set(loc.id, result);
     }
     return map;
   }, [locations, allForms]);
+
+  // Fusionar forms (RPC). Devuelve el group_id. Refresca la lista.
+  const mergeForms = useCallback(async (formIds: string[]): Promise<void> => {
+    const { error } = await supabase.rpc("merge_maintenance_forms", { p_form_ids: formIds });
+    if (error) throw new Error(error.message);
+    setFormsReloadKey((k) => k + 1);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Filtros: ¿un form cumple los filtros activos de tipo y criticidad?
@@ -609,5 +650,6 @@ export function useRouteBuilder() {
     addStop, removeStop, reorderStops,
     toggleFormInStop, addAllFormsToStop,
     setFormMinutes, resetRoute, saveRoute,
+    mergeForms,
   };
 }

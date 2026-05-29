@@ -110,6 +110,7 @@ export function RouteBuilderLayout() {
             onAddAllForms={rb.addAllFormsToStop}
             onSetFormMinutes={rb.setFormMinutes}
             onSetOrigin={rb.setOrigin}
+            onMergeForms={rb.mergeForms}
           />
         </div>
 

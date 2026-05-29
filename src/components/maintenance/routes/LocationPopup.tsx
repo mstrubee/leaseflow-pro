@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { Popup } from "react-leaflet";
 import type { RouteForm, MaintenanceLocation, RouteStop } from "@/hooks/useRouteBuilder";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, PlusCircle, Navigation2, Clock } from "lucide-react";
+import { Plus, PlusCircle, Navigation2, Clock, Link2, Loader2 } from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
 import { MinutesInput } from "./MinutesInput";
+import { toast } from "sonner";
 
 interface Props {
   location: MaintenanceLocation;
@@ -17,6 +19,7 @@ interface Props {
   onAddAllForms: (locationId: string) => void;
   onSetFormMinutes?: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin?: (location: MaintenanceLocation) => void;
+  onMergeForms?: (formIds: string[]) => Promise<void>;
 }
 
 function formTypeLabel(f: RouteForm): string {
@@ -39,9 +42,36 @@ function formDescriptions(f: RouteForm): { label: string; text: string }[] {
 
 export function LocationPopup({
   location, forms, existingStop,
-  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin,
+  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms,
 }: Props) {
   const isInRoute = !!existingStop;
+  const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
+  const [merging, setMerging] = useState(false);
+
+  const toggleMergeSel = (id: string) => setMergeSel((prev) => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+
+  const doMerge = async () => {
+    if (!onMergeForms || mergeSel.size < 2) return;
+    // Solo se fusionan forms NO fusionados; expandir a sus IDs base
+    const ids = forms.filter((f) => mergeSel.has(f.id)).flatMap((f) => f.mergedFormIds);
+    if (!window.confirm(
+      `¿Fusionar ${mergeSel.size} forms en uno solo?\n\n` +
+      `Compartirán un único tiempo y se completarán juntos. ` +
+      `Se guardará el historial de la fusión. Esta acción es permanente (puede deshacerse luego).`
+    )) return;
+    setMerging(true);
+    try {
+      await onMergeForms(ids);
+      toast.success("Forms fusionados");
+      setMergeSel(new Set());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudieron fusionar");
+    } finally {
+      setMerging(false);
+    }
+  };
 
   return (
     <Popup minWidth={300} maxWidth={620} className="lf-resizable-popup">
@@ -83,10 +113,27 @@ export function LocationPopup({
                     else onToggleForm(location.id, f.id);
                   }}
                 >
-                  {/* Top row: form number + type + criticality + check */}
+                  {/* Top row: checkbox fusión + form number + type + criticality + check */}
                   <div className="flex items-center gap-2">
+                    {onMergeForms && (
+                      <input
+                        type="checkbox"
+                        checked={mergeSel.has(f.id)}
+                        onChange={() => toggleMergeSel(f.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Marcar para fusionar"
+                        className="shrink-0 rounded border-gray-300"
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
-                      <span className="font-mono text-xs text-gray-600">{f.form_number}</span>
+                      {f.mergedFormNumbers.length > 1 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Link2 className="w-3 h-3 text-purple-500 shrink-0" />
+                          <span className="font-mono text-xs text-purple-700">{f.mergedFormNumbers.join(" + ")}</span>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs text-gray-600">{f.form_number}</span>
+                      )}
                       <span className="ml-1 text-xs text-gray-400">· {formTypeLabel(f)}</span>
                     </div>
                     {f.criticality_name && (
@@ -153,6 +200,19 @@ export function LocationPopup({
               );
             })}
           </div>
+        )}
+
+        {/* Botón fusionar (aparece con 2+ marcados) */}
+        {onMergeForms && mergeSel.size >= 2 && (
+          <Button
+            size="sm"
+            className="w-full text-xs h-7 bg-purple-600 hover:bg-purple-700"
+            onClick={doMerge}
+            disabled={merging}
+          >
+            {merging ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Link2 className="w-3 h-3 mr-1" />}
+            Fusionar {mergeSel.size} forms
+          </Button>
         )}
 
         {/* Set as origin */}
