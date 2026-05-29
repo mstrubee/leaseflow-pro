@@ -1,21 +1,13 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { supabase } from "@/integrations/supabase/client";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import logosHeader from "@/assets/logos-header.png";
+import { fetchRoutesForExport, type ExportRoute } from "./routesExportData";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Borrador", assigned: "Asignada", in_progress: "En ejecución", completed: "Completada",
 };
-
-function formTypeLabel(f: Record<string, unknown>): string {
-  if (f.electrical_description) return "Eléctrico";
-  if (f.civil_description) return "Obra Civil";
-  if (f.hvac_description) return "Climatización";
-  if (f.fixed_assets_description) return "Activos Fijos";
-  return "General";
-}
 
 async function loadLogo(): Promise<HTMLImageElement | null> {
   try {
@@ -85,31 +77,7 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
   if (dates.length === 0) return;
   const sorted = [...dates].sort();
 
-  // Fetch routes with full detail for the selected dates
-  const { data, error } = await supabase
-    .from("maintenance_routes")
-    .select(`
-      id, name, scheduled_date, status,
-      suppliers ( name ),
-      maintenance_route_stops (
-        stop_order, status, estimated_travel_min,
-        maintenance_locations ( name, local_name, zona, lat, lng ),
-        maintenance_route_forms (
-          estimated_minutes,
-          maintenance_forms (
-            form_number, electrical_description, civil_description,
-            hvac_description, fixed_assets_description, general_description,
-            maintenance_criticality_categories ( name )
-          )
-        )
-      )
-    `)
-    .in("scheduled_date", sorted)
-    .order("scheduled_date");
-
-  if (error) throw new Error(error.message);
-
-  const routes = data ?? [];
+  const routes = await fetchRoutesForExport(sorted);
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const logo = await loadLogo();
@@ -134,11 +102,10 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
   let cursorY = 32;
 
   // Group routes by date
-  const byDate = new Map<string, typeof routes>();
+  const byDate = new Map<string, ExportRoute[]>();
   for (const r of routes) {
-    const d = r.scheduled_date as string;
-    if (!byDate.has(d)) byDate.set(d, []);
-    byDate.get(d)!.push(r);
+    if (!byDate.has(r.scheduled_date)) byDate.set(r.scheduled_date, []);
+    byDate.get(r.scheduled_date)!.push(r);
   }
 
   for (const date of sorted) {
@@ -166,9 +133,7 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
     }
 
     for (const route of dayRoutes) {
-      const supplier = (route.suppliers as { name: string } | null)?.name;
-      const stops = ((route.maintenance_route_stops as Record<string, unknown>[]) ?? [])
-        .sort((a, b) => (a.stop_order as number) - (b.stop_order as number));
+      const stops = route.stops;
 
       // Route subtitle
       if (cursorY > 255) { doc.addPage(); cursorY = 20; }
@@ -179,8 +144,8 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
       doc.setFontSize(8);
       doc.setTextColor(110);
       const meta = [
-        STATUS_LABEL[route.status as string] ?? route.status,
-        supplier ? `Proveedor: ${supplier}` : null,
+        STATUS_LABEL[route.status] ?? route.status,
+        route.supplier_name ? `Proveedor: ${route.supplier_name}` : null,
         `${stops.length} paradas`,
       ].filter(Boolean).join("  ·  ");
       doc.text(meta as string, 16, cursorY + 4);
@@ -189,9 +154,8 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
 
       // Diagrama del recorrido (puntos numerados conectados por su lat/lng)
       const pts = stops
-        .map((s) => s.maintenance_locations as Record<string, unknown> | null)
-        .filter((l) => l && l.lat != null && l.lng != null)
-        .map((l) => ({ lat: Number(l!.lat), lng: Number(l!.lng), name: (l!.local_name as string) || (l!.name as string) || "" }));
+        .filter((s) => s.lat != null && s.lng != null)
+        .map((s) => ({ lat: s.lat as number, lng: s.lng as number, name: s.name }));
       if (pts.length >= 1) {
         if (cursorY > 215) { doc.addPage(); cursorY = 20; }
         cursorY = drawRouteDiagram(doc, pts, 16, cursorY, pageW - 30, 48) + 4;
@@ -200,23 +164,17 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
       // Build table rows
       const rows: string[][] = [];
       for (const stop of stops) {
-        const loc = stop.maintenance_locations as Record<string, unknown> | null;
-        const locName = (loc?.local_name as string) || (loc?.name as string) || "—";
-        const forms = (stop.maintenance_route_forms as Record<string, unknown>[]) ?? [];
-
-        if (forms.length === 0) {
-          rows.push([String(stop.stop_order), locName, "—", "—", "—", "—"]);
+        if (stop.forms.length === 0) {
+          rows.push([String(stop.stop_order), stop.name, "—", "—", "—", `${stop.travel_min} min`]);
         } else {
-          forms.forEach((rf, idx) => {
-            const mf = rf.maintenance_forms as Record<string, unknown>;
-            const crit = (mf?.maintenance_criticality_categories as { name: string } | null)?.name ?? "—";
+          stop.forms.forEach((f, idx) => {
             rows.push([
               idx === 0 ? String(stop.stop_order) : "",
-              idx === 0 ? locName : "",
-              (mf?.form_number as string) ?? "—",
-              formTypeLabel(mf),
-              crit,
-              `${rf.estimated_minutes ?? 30} min`,
+              idx === 0 ? stop.name : "",
+              f.form_number,
+              f.type,
+              f.criticality,
+              `${f.minutes} min`,
             ]);
           });
         }
@@ -240,8 +198,7 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
         margin: { left: 16, right: 14 },
         didDrawPage: () => { /* keep */ },
       });
-      // @ts-expect-error lastAutoTable is injected by the plugin
-      cursorY = (doc.lastAutoTable?.finalY ?? cursorY) + 6;
+      cursorY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY) + 6;
     }
     cursorY += 2;
   }

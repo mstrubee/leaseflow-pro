@@ -16,6 +16,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { exportRoutesPDF } from "./exportRoutesPDF";
 import { exportRoutesExcel } from "./exportRoutesExcel";
+import { fetchRoutesForExport, type ExportRoute } from "./routesExportData";
+import { RouteDetailMap } from "./RouteDetailMap";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -56,6 +58,18 @@ export function RouteCalendar() {
   const [routes, setRoutes] = useState<CalendarRoute[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<CalendarRoute | null>(null);
+  const [detailRoute, setDetailRoute] = useState<ExportRoute | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Cargar las paradas (con coordenadas) de la ruta seleccionada
+  useEffect(() => {
+    if (!selected) { setDetailRoute(null); return; }
+    setDetailLoading(true);
+    fetchRoutesForExport([selected.scheduled_date])
+      .then((rs) => setDetailRoute(rs.find((r) => r.id === selected.id) ?? null))
+      .catch(() => setDetailRoute(null))
+      .finally(() => setDetailLoading(false));
+  }, [selected]);
 
   // Export-to-PDF mode
   const [exportMode, setExportMode] = useState(false);
@@ -356,7 +370,7 @@ export function RouteCalendar() {
 
       {/* Route detail sheet */}
       <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-md">
+        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
           {selected && (
             <>
               <SheetHeader>
@@ -406,6 +420,52 @@ export function RouteCalendar() {
                     <span className="ml-auto">{selected.stop_count} paradas total</span>
                   </div>
                 </div>
+
+                {/* Mapa del recorrido */}
+                {detailLoading ? (
+                  <div className="h-56 rounded-lg border bg-gray-50 flex items-center justify-center text-xs text-gray-400">
+                    Cargando mapa…
+                  </div>
+                ) : detailRoute && detailRoute.stops.length > 0 ? (
+                  <RouteDetailMap stops={detailRoute.stops} />
+                ) : null}
+
+                {/* Lista de paradas: orden, local, traslado, forms */}
+                {detailRoute && detailRoute.stops.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-gray-600">Recorrido</p>
+                    {detailRoute.stops.map((s) => (
+                      <div key={s.stop_order} className="rounded-lg border border-gray-100 p-2 text-xs">
+                        {s.travel_min > 0 && (
+                          <div className="text-[10px] text-gray-400 mb-1">🚗 {s.travel_min} min de traslado</div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                            {s.stop_order}
+                          </span>
+                          <span className="font-medium flex-1 truncate">{s.name}</span>
+                          <span className="text-gray-400">{s.forms.length} form{s.forms.length !== 1 ? "s" : ""}</span>
+                        </div>
+                        {s.forms.length > 0 && (
+                          <div className="mt-1 pl-7 space-y-0.5">
+                            {s.forms.map((f, i) => (
+                              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                                <span className="font-mono">{f.form_number}</span>
+                                <span className="text-gray-300">·</span>
+                                <span>{f.type}</span>
+                                {f.criticality !== "—" && (
+                                  <span className="px-1 rounded text-[9px] text-white"
+                                    style={{ background: f.criticality_color ?? "#6b7280" }}>{f.criticality}</span>
+                                )}
+                                <span className="ml-auto text-gray-400">{f.minutes} min</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <Badge
                   className="text-xs"
