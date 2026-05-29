@@ -184,7 +184,7 @@ interface Profile {
 
 interface UserRole {
   user_id: string;
-  role: "admin" | "user";
+  role: "admin" | "user" | "operador_terreno";
 }
 
 interface UserPermission {
