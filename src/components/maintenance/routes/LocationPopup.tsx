@@ -20,6 +20,7 @@ interface Props {
   onSetFormMinutes?: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin?: (location: MaintenanceLocation) => void;
   onMergeForms?: (formIds: string[]) => Promise<void>;
+  onUnmergeForms?: (groupId: string) => Promise<void>;
 }
 
 function formTypeLabel(f: RouteForm): string {
@@ -42,7 +43,7 @@ function formDescriptions(f: RouteForm): { label: string; text: string }[] {
 
 export function LocationPopup({
   location, forms, existingStop,
-  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms,
+  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms,
 }: Props) {
   const isInRoute = !!existingStop;
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
@@ -74,7 +75,13 @@ export function LocationPopup({
   };
 
   return (
-    <Popup minWidth={300} maxWidth={620} className="lf-resizable-popup">
+    <Popup
+      minWidth={300}
+      maxWidth={620}
+      autoPan={false}
+      keepInView={false}
+      className="lf-resizable-popup"
+    >
       <div className="text-sm space-y-2">
         {/* Header */}
         <div className="flex items-center gap-2">
@@ -144,6 +151,21 @@ export function LocationPopup({
                     )}
                     {selected && <span className="text-blue-500 text-xs shrink-0">✓</span>}
                   </div>
+
+                  {/* Deshacer fusión (solo en forms fusionados) */}
+                  {f.merge_group_id && f.mergedFormNumbers.length > 1 && onUnmergeForms && (
+                    <button
+                      className="mt-0.5 flex items-center gap-1 text-[10px] text-purple-500 hover:text-red-500 transition-colors"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!window.confirm(`¿Deshacer la fusión de ${f.mergedFormNumbers.join(" + ")}?\nVolverán a ser forms independientes.`)) return;
+                        try { await onUnmergeForms(f.merge_group_id!); toast.success("Fusión deshecha"); }
+                        catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
+                      }}
+                    >
+                      <Link2 className="w-3 h-3" /> Deshacer fusión
+                    </button>
+                  )}
 
                   {/* Description headline → click opens full description popover */}
                   {headline && (

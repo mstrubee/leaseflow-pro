@@ -111,6 +111,7 @@ export function RouteBuilderLayout() {
             onSetFormMinutes={rb.setFormMinutes}
             onSetOrigin={rb.setOrigin}
             onMergeForms={rb.mergeForms}
+            onUnmergeForms={rb.unmergeForms}
           />
         </div>
 

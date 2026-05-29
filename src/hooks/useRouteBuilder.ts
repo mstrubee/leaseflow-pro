@@ -373,9 +373,16 @@ export function useRouteBuilder() {
     return map;
   }, [locations, allForms]);
 
-  // Fusionar forms (RPC). Devuelve el group_id. Refresca la lista.
+  // Fusionar forms (RPC). Refresca la lista.
   const mergeForms = useCallback(async (formIds: string[]): Promise<void> => {
     const { error } = await supabase.rpc("merge_maintenance_forms", { p_form_ids: formIds });
+    if (error) throw new Error(error.message);
+    setFormsReloadKey((k) => k + 1);
+  }, []);
+
+  // Deshacer fusión de un grupo (RPC). Refresca la lista.
+  const unmergeForms = useCallback(async (groupId: string): Promise<void> => {
+    const { error } = await supabase.rpc("unmerge_maintenance_forms", { p_group_id: groupId });
     if (error) throw new Error(error.message);
     setFormsReloadKey((k) => k + 1);
   }, []);
@@ -677,6 +684,6 @@ export function useRouteBuilder() {
     addStop, removeStop, reorderStops,
     toggleFormInStop, addAllFormsToStop,
     setFormMinutes, resetRoute, saveRoute,
-    mergeForms,
+    mergeForms, unmergeForms,
   };
 }

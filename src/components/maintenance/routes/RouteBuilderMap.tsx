@@ -247,12 +247,13 @@ interface Props {
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin: (location: MaintenanceLocation) => void;
   onMergeForms?: (formIds: string[]) => Promise<void>;
+  onUnmergeForms?: (groupId: string) => Promise<void>;
 }
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
   origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
-  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms,
+  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms,
 }: Props) {
   const stopSet   = new Set(stops.map((s) => s.locationId));
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
@@ -355,6 +356,7 @@ export function RouteBuilderMap({
                 onSetFormMinutes={onSetFormMinutes}
                 onSetOrigin={(l) => { onSetOrigin(l); setPickingOrigin(false); }}
                 onMergeForms={onMergeForms}
+                onUnmergeForms={onUnmergeForms}
               />
             </Marker>
           );
