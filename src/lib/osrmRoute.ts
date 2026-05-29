@@ -33,9 +33,9 @@ export async function getOsrmRoute(
 
 /**
  * Estimate travel minutes between two points.
- * Uses 30 km/h for distances < 20km (urban), 100 km/h otherwise.
+ * Uses 20 km/h for distances < 20km (urban), 100 km/h otherwise.
  */
 export function estimateTravelMinutes(distanceKm: number): number {
-  const speed = distanceKm < 20 ? 30 : 100;
+  const speed = distanceKm < 20 ? 20 : 100;
   return Math.round((distanceKm / speed) * 60);
 }
