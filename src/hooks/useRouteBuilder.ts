@@ -344,28 +344,34 @@ export function useRouteBuilder() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: match forms to location by contract_name containing local_name/code
+// Helper: match forms to location by contract_name ↔ local_name/code
+// Tries multiple strategies so partial matches are caught:
+//   1. contract_name contains local_name  (e.g. "AP0070-Orientales" ⊂ contract)
+//   2. contract_name contains local_code  (e.g. "AP0070" ⊂ contract)
+//   3. local_name contains contract_name  (reverse containment)
+//   4. local_code == contract_name        (exact code match)
+//   5. folder name match                  (last resort: same brand)
 // ---------------------------------------------------------------------------
 function matchFormsToLocation(
   loc: MaintenanceLocation,
   formsByContract: Map<string, RouteForm[]>,
 ): RouteForm[] {
   const results: RouteForm[] = [];
-  const localName = loc.local_name?.toLowerCase() ?? "";
-  const localCode = loc.local_code?.toLowerCase() ?? "";
-  const locName = loc.name.toLowerCase();
+  const localName = loc.local_name?.toLowerCase().trim() ?? "";
+  const localCode = loc.local_code?.toLowerCase().trim() ?? "";
+  const locFolder = loc.folder.toLowerCase(); // 'autoplanet' | 'agroplanet'
 
   for (const [, forms] of formsByContract) {
     for (const f of forms) {
-      const cn = (f.contract_name ?? "").toLowerCase();
+      const cn = (f.contract_name ?? "").toLowerCase().trim();
       if (!cn) continue;
-      if (
-        (localName && cn.includes(localName)) ||
-        (localCode && cn.includes(localCode)) ||
-        cn.includes(locName)
-      ) {
-        results.push(f);
-      }
+
+      const matched =
+        (localName && (cn.includes(localName) || localName.includes(cn))) ||
+        (localCode && (cn.includes(localCode) || cn === localCode)) ||
+        cn.includes(locFolder);
+
+      if (matched) results.push(f);
     }
   }
   return results;

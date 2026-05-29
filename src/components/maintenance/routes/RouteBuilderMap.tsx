@@ -1,9 +1,23 @@
 import { useEffect, useRef } from "react";
-import { MapContainer, TileLayer, CircleMarker, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Polyline, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MaintenanceLocation, RouteStop, ScoredLocation } from "@/hooks/useRouteBuilder";
 import { LocationPopup } from "./LocationPopup";
+import logoAutoplanet from "@/assets/logo-autoplanet.png";
+import logoAgroplanet from "@/assets/logo-agroplanet.png";
+
+// Custom icons per brand
+function makeBrandIcon(folder: string, size = 28) {
+  const src = folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet;
+  return L.divIcon({
+    html: `<img src="${src}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);background:white;" />`,
+    className: "",
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2)],
+  });
+}
 
 // Fix Leaflet default icon paths when bundled
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -92,38 +106,48 @@ export function RouteBuilderMap({
         const isOrigin = origin?.id === loc.id;
         const isStop = stopSet.has(loc.id);
         const scored = scoredMap.get(loc.id);
-        const stopIndex = stops.findIndex((s) => s.locationId === loc.id);
         const existingStop = stops.find((s) => s.locationId === loc.id);
         const forms = scored?.scored.forms ?? existingStop?.allForms ?? [];
 
-        let color = "#6b7280";
-        let radius = 7;
-        let fillOpacity = 0.7;
-
-        if (isOrigin) {
-          color = "#7c3aed";
-          radius = 11;
-          fillOpacity = 1;
-        } else if (isStop) {
-          color = "#3b82f6";
-          radius = 9;
-          fillOpacity = 1;
-        } else if (scored) {
-          color = scoreColor(scored.rank, scoredLocations.length);
-          radius = 7 + Math.min(scored.scored.totalForms, 5);
-          fillOpacity = 0.75;
+        // Icon size: bigger for origin/stops, scaled by form count otherwise
+        let size = 28;
+        let border = "2px solid #fff";
+        let shadow = "0 1px 4px rgba(0,0,0,0.25)";
+        if (isOrigin) { size = 36; border = "3px solid #7c3aed"; shadow = "0 2px 8px rgba(124,58,237,0.5)"; }
+        else if (isStop) { size = 32; border = "3px solid #3b82f6"; shadow = "0 2px 8px rgba(59,130,246,0.5)"; }
+        else if (scored) {
+          const col = scoreColor(scored.rank, scoredLocations.length);
+          border = `2px solid ${col}`;
+          size = 26 + Math.min(scored.scored.totalForms, 6);
         }
 
+        const icon = L.divIcon({
+          html: `<div style="position:relative">
+            <img src="${loc.folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet}"
+              style="width:${size}px;height:${size}px;object-fit:contain;border-radius:50%;
+                border:${border};box-shadow:${shadow};background:white;" />
+            ${isStop ? `<span style="position:absolute;top:-5px;right:-5px;background:#3b82f6;color:white;
+              border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:bold;
+              display:flex;align-items:center;justify-content:center;border:1px solid white;">
+              ${stops.findIndex((s) => s.locationId === loc.id) + 1}</span>` : ""}
+            ${forms.length > 0 && !isStop ? `<span style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;
+              border-radius:50%;width:15px;height:15px;font-size:9px;font-weight:bold;
+              display:flex;align-items:center;justify-content:center;border:1px solid white;">
+              ${forms.length}</span>` : ""}
+          </div>`,
+          className: "",
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+          popupAnchor: [0, -(size / 2 + 4)],
+        });
+
         return (
-          <CircleMarker
+          <Marker
             key={loc.id}
-            center={[loc.lat, loc.lng]}
-            radius={radius}
-            pathOptions={{ color, fillColor: color, fillOpacity, weight: isOrigin || isStop ? 2 : 1 }}
+            position={[loc.lat, loc.lng]}
+            icon={icon}
             eventHandlers={{
-              dblclick: () => {
-                if (!origin) onSetOrigin(loc);
-              },
+              dblclick: () => { if (!origin) onSetOrigin(loc); },
             }}
           >
             <LocationPopup
@@ -134,7 +158,7 @@ export function RouteBuilderMap({
               onToggleForm={onToggleForm}
               onAddAllForms={onAddAllForms}
             />
-          </CircleMarker>
+          </Marker>
         );
       })}
 

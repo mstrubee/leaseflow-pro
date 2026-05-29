@@ -119,7 +119,14 @@ export function RouteBuilderLayout() {
             saving={rb.saving}
             onRouteName={rb.setRouteName}
             onSupplierId={rb.setSupplierId}
-            onScheduledDate={rb.setScheduledDate}
+            onScheduledDate={(v) => {
+              rb.setScheduledDate(v);
+              // Auto-fill route name when date is picked and name is still empty/auto
+              if (v && (!rb.routeName || rb.routeName.startsWith("Ruta "))) {
+                const [y, m, d] = v.split("-");
+                rb.setRouteName(`Ruta ${y}.${m}.${d}`);
+              }
+            }}
             onRemoveStop={rb.removeStop}
             onReorder={rb.reorderStops}
             onSave={async () => {

@@ -3,6 +3,8 @@ import type { RouteForm, MaintenanceLocation, RouteStop } from "@/hooks/useRoute
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, PlusCircle } from "lucide-react";
+import logoAutoplanet from "@/assets/logo-autoplanet.png";
+import logoAgroplanet from "@/assets/logo-agroplanet.png";
 
 interface Props {
   location: MaintenanceLocation;
@@ -28,12 +30,19 @@ export function LocationPopup({ location, forms, existingStop, onAddStop, onTogg
     <Popup minWidth={280} maxWidth={320}>
       <div className="text-sm space-y-2">
         {/* Header */}
-        <div className="font-semibold text-base leading-tight">
-          {location.local_name || location.name}
+        <div className="flex items-center gap-2">
+          <img
+            src={location.folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet}
+            alt={location.folder}
+            className="w-7 h-7 rounded-full object-contain border border-gray-100 bg-white shrink-0"
+          />
+          <div>
+            <div className="font-semibold text-sm leading-tight">{location.local_name || location.name}</div>
+            {location.zona && (
+              <div className="text-xs text-gray-400">{location.zona}{location.gerente_zonal ? ` · ${location.gerente_zonal}` : ""}</div>
+            )}
+          </div>
         </div>
-        {location.zona && (
-          <div className="text-xs text-gray-500">{location.zona}{location.gerente_zonal ? ` · ${location.gerente_zonal}` : ""}</div>
-        )}
 
         {/* Forms */}
         {forms.length === 0 ? (
