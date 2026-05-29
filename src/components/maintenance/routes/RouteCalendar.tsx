@@ -225,10 +225,18 @@ export function RouteCalendar() {
   const softDeleteRoute = async (route: CalendarRoute) => {
     setCtxMenu(null);
     if (!window.confirm(`¿Eliminar la ruta "${route.name}"?\nIrá a la papelera (se conserva 1 semana).`)) return;
-    const { error } = await supabase.from("maintenance_routes")
-      .update({ deleted_at: new Date().toISOString() }).eq("id", route.id);
+    // .select() confirma cuántas filas se marcaron realmente
+    const { data, error } = await supabase.from("maintenance_routes")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", route.id)
+      .select("id");
     if (error) { toast.error(error.message); return; }
+    if (!data || data.length === 0) {
+      toast.error("No se pudo eliminar (sin permisos o ruta no encontrada)");
+      return;
+    }
     setRoutes((prev) => prev.filter((r) => r.id !== route.id));
+    await loadRoutes(); // refrescar desde la BD para reflejar el estado real
     toast.success("Ruta enviada a la papelera", {
       action: {
         label: "Deshacer",
