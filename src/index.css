@@ -206,6 +206,17 @@ All colors MUST be HSL.
 .geoloc-root .font-display { font-family: 'Inter', system-ui, sans-serif; letter-spacing: -0.02em; }
 .geoloc-root .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
+/* Popup de forms del armador de rutas: redimensionable desde la esquina (todo el popup) */
+.lf-resizable-popup .leaflet-popup-content {
+  resize: both;
+  overflow: auto;
+  min-width: 280px;
+  min-height: 160px;
+  max-width: none !important;
+  max-height: 70vh;
+}
+.lf-resizable-popup .leaflet-popup-content-wrapper { width: fit-content; }
+
 /* Leaflet inside GeoLoc */
 .geoloc-root .leaflet-container { background: hsl(0 0% 100%); }
 .geoloc-root .leaflet-popup-content-wrapper {

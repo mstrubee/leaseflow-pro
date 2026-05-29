@@ -97,6 +97,21 @@ function MapController({ flyTo }: { flyTo: { lat: number; lng: number; zoom?: nu
   return null;
 }
 
+// Recalcula el tamaño del mapa cuando su contenedor cambia (evita áreas en blanco
+// al colapsar/redimensionar la lista lateral).
+function MapResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    const ro = new ResizeObserver(() => {
+      map.invalidateSize({ animate: false });
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [map]);
+  return null;
+}
+
 function MapClickHandler({ pickingOrigin, locations, onSetOrigin, onDone }: {
   pickingOrigin: boolean;
   locations: MaintenanceLocation[];
@@ -241,6 +256,7 @@ export function RouteBuilderMap({
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
   const [pickingOrigin, setPickingOrigin] = useState(false);
   const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [basemap, setBasemap] = useState<"light" | "satellite" | "hybrid">("light");
 
   return (
     <div className="relative w-full h-full">
@@ -254,10 +270,34 @@ export function RouteBuilderMap({
         </div>
       )}
 
+      {/* Selector de capa: político / satélite / híbrido */}
+      <div className="absolute top-3 right-3 z-[600] flex rounded-lg overflow-hidden shadow-md border border-gray-200 text-[11px] font-medium bg-white">
+        {([["light", "Mapa"], ["satellite", "Satélite"], ["hybrid", "Híbrido"]] as const).map(([key, label]) => (
+          <button key={key}
+            onClick={() => setBasemap(key)}
+            className={`px-2.5 py-1 transition-colors ${basemap === key ? "bg-blue-500 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <MapContainer center={RM_CENTER} zoom={RM_ZOOM} className="w-full h-full rounded-lg"
         style={{ cursor: pickingOrigin ? "crosshair" : "grab" }}>
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution="© OpenStreetMap · © CARTO" />
+        {basemap === "light" && (
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            attribution="© OpenStreetMap · © CARTO" />
+        )}
+        {(basemap === "satellite" || basemap === "hybrid") && (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            attribution="Tiles © Esri — World Imagery" />
+        )}
+        {basemap === "hybrid" && (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+            attribution="© Esri" />
+        )}
+        <MapResizeHandler />
         <MapController flyTo={flyTo} />
         <MapClickHandler pickingOrigin={pickingOrigin} locations={locations}
           onSetOrigin={(loc) => { onSetOrigin(loc); setPickingOrigin(false); }}

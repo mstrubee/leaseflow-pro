@@ -44,11 +44,8 @@ export function LocationPopup({
   const isInRoute = !!existingStop;
 
   return (
-    <Popup minWidth={300} maxWidth={620}>
-      <div
-        className="text-sm space-y-2 overflow-auto"
-        style={{ resize: "both", minWidth: 280, minHeight: 160, maxWidth: 600, maxHeight: 520 }}
-      >
+    <Popup minWidth={300} maxWidth={620} className="lf-resizable-popup">
+      <div className="text-sm space-y-2">
         {/* Header */}
         <div className="flex items-center gap-2">
           <img

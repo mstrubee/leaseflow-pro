@@ -462,19 +462,30 @@ export function useRouteBuilder() {
           ? `${routeName.trim()} — Día ${dayIndex + 1} (${dayDate})`
           : routeName.trim();
 
-        const { data: route, error: routeErr } = await supabase
-          .from("maintenance_routes")
-          .insert({
-            name: dayName,
-            supplier_id: supplierId,
-            created_by: user.id,
-            scheduled_date: dayDate,
-            status: "draft",
-            tour_id: tourId,
-            day_index: dayIndex,
-            start_time: startTime,
-          })
-          .select("id").single();
+        // Insert robusto: si la migración de tour_id/day_index/start_time aún
+        // no se aplicó en la BD, reintenta sin esas columnas para no bloquear.
+        const fullPayload = {
+          name: dayName,
+          supplier_id: supplierId,
+          created_by: user.id,
+          scheduled_date: dayDate,
+          status: "draft",
+          tour_id: tourId,
+          day_index: dayIndex,
+          start_time: startTime,
+        };
+        let route: { id: string } | null = null;
+        let routeErr: { message: string } | null = null;
+        {
+          const res = await supabase.from("maintenance_routes").insert(fullPayload).select("id").single();
+          route = res.data; routeErr = res.error;
+          if (routeErr && /day_index|tour_id|start_time|schema cache|column/i.test(routeErr.message)) {
+            // Degradar: insertar solo columnas base garantizadas
+            const base = { name: dayName, supplier_id: supplierId, created_by: user.id, scheduled_date: dayDate, status: "draft" };
+            const res2 = await supabase.from("maintenance_routes").insert(base).select("id").single();
+            route = res2.data; routeErr = res2.error;
+          }
+        }
         if (routeErr || !route) throw new Error(routeErr?.message ?? "Error al crear ruta");
         if (!firstRouteId) firstRouteId = route.id;
 

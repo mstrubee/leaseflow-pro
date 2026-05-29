@@ -18,6 +18,27 @@ export function RouteBuilderLayout() {
   const rb = useRouteBuilder();
   const [search, setSearch] = useState("");
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [listWidth, setListWidth] = useState(384); // px (w-96)
+
+  // Divisor arrastrable entre el mapa y la lista de locales
+  const startDragDivider = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = listWidth;
+    const onMove = (ev: MouseEvent) => {
+      // La lista está a la derecha del mapa: arrastrar a la izquierda la agranda
+      const delta = startX - ev.clientX;
+      setListWidth(Math.max(240, Math.min(720, startW + delta)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const filteredScored = rb.scoredLocations.filter((loc) => {
     if (!search.trim()) return true;
@@ -90,7 +111,16 @@ export function RouteBuilderLayout() {
           />
         </div>
 
-        {/* Score list — colapsable, 50% más ancho (w-96) */}
+        {/* Divisor arrastrable (solo cuando la lista está visible) */}
+        {!listCollapsed && (
+          <div
+            onMouseDown={startDragDivider}
+            className="shrink-0 w-1.5 rounded cursor-col-resize bg-gray-200 hover:bg-blue-400 transition-colors"
+            title="Arrastra para redimensionar"
+          />
+        )}
+
+        {/* Score list — colapsable y redimensionable */}
         {listCollapsed ? (
           <button
             onClick={() => setListCollapsed(false)}
@@ -102,7 +132,8 @@ export function RouteBuilderLayout() {
             <ListOrdered className="w-4 h-4 text-gray-400" />
           </button>
         ) : (
-          <div className="w-96 shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden">
+          <div className="shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden"
+            style={{ width: listWidth }}>
             <div className="px-3 py-2 border-b bg-gray-50 shrink-0">
               <div className="flex items-center gap-2 mb-1">
                 <p className="text-xs font-semibold text-gray-600 flex-1">Locales ordenados por prioridad</p>
