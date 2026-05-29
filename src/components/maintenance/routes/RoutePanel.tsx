@@ -56,12 +56,20 @@ export function RoutePanel({
   const [dragOver, setDragOver] = useState<number | null>(null);
 
   useEffect(() => {
-    supabase
+    const client = supabase as unknown as {
+      from: (t: string) => {
+        select: (c: string) => {
+          eq: (k: string, v: boolean) => {
+            order: (o: string) => Promise<{ data: Supplier[] | null }>;
+          };
+        };
+      };
+    };
+    client
       .from("suppliers")
       .select("id,name")
       .eq("is_active", true)
       .order("name")
-      .returns<Supplier[]>()
       .then(({ data }) => {
         if (data) setSuppliers(data);
       });
