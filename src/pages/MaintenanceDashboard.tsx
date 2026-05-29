@@ -1,11 +1,17 @@
 import { MaintenanceModule } from "@/components/maintenance/MaintenanceModule";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { Wrench, Navigation } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 
 const MaintenanceDashboard = () => {
   const navigate = useNavigate();
+  const { isOperador, roleLoaded } = useAuth();
+
+  // El operador de terreno no accede al módulo completo de mantenciones, solo rutas
+  if (roleLoaded && isOperador) return <Navigate to="/maintenance/routes" replace />;
+
   return (
     <div className="min-h-screen bg-background">
       <SelectableElement elementId="maintenance" label="Mantenciones">

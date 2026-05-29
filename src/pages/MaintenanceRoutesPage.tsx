@@ -18,17 +18,19 @@ export default function MaintenanceRoutesPage() {
   const tabs: { id: Tab; label: string; icon: React.ReactNode; hide?: boolean }[] = [
     { id: "builder",  label: "Armar Ruta",    icon: <Navigation className="w-4 h-4" />,   hide: isOperador },
     { id: "calendar", label: "Calendario",    icon: <CalendarDays className="w-4 h-4" /> },
-    { id: "stats",    label: "Cumplimiento",  icon: <BarChart2 className="w-4 h-4" /> },
+    { id: "stats",    label: "Cumplimiento",  icon: <BarChart2 className="w-4 h-4" />,     hide: isOperador },
   ];
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
       {/* Top bar */}
       <div className="flex items-center gap-2 px-4 pt-3 pb-0 shrink-0">
-        <Button variant="ghost" size="sm" className="h-8 px-2 gap-1 text-xs"
-          onClick={() => navigate("/maintenance")}>
-          <ArrowLeft className="w-3.5 h-3.5" /> Mantenciones
-        </Button>
+        {!isOperador && (
+          <Button variant="ghost" size="sm" className="h-8 px-2 gap-1 text-xs"
+            onClick={() => navigate("/maintenance")}>
+            <ArrowLeft className="w-3.5 h-3.5" /> Mantenciones
+          </Button>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 ml-2">

@@ -95,7 +95,7 @@ const ALL_MODULES: ModuleItem[] = [
 
 const Welcome = () => {
   const navigate = useNavigate();
-  const { user, loading, isAdmin, roleLoaded, hasPermission, signOut } = useAuth();
+  const { user, loading, isAdmin, isOperador, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -112,6 +112,11 @@ const Welcome = () => {
   useEffect(() => {
     if (!loading && !user) navigate("/auth");
   }, [loading, user, navigate]);
+
+  // El operador de terreno solo gestiona rutas: aterriza directo en el calendario
+  useEffect(() => {
+    if (roleLoaded && isOperador) navigate("/maintenance/routes", { replace: true });
+  }, [roleLoaded, isOperador, navigate]);
 
   useEffect(() => {
     if (user) {
