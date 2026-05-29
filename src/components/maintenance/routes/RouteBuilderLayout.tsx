@@ -82,6 +82,7 @@ export function RouteBuilderLayout() {
             onAddStop={rb.addStop}
             onToggleForm={rb.toggleFormInStop}
             onAddAllForms={rb.addAllFormsToStop}
+            onSetFormMinutes={rb.setFormMinutes}
             onSetOrigin={rb.setOrigin}
           />
         </div>

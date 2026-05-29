@@ -188,12 +188,13 @@ interface Props {
   onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
   onToggleForm: (locationId: string, formId: string) => void;
   onAddAllForms: (locationId: string) => void;
+  onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin: (location: MaintenanceLocation) => void;
 }
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
-  origin, stops, onAddStop, onToggleForm, onAddAllForms, onSetOrigin,
+  origin, stops, onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin,
 }: Props) {
   const stopSet   = new Set(stops.map((s) => s.locationId));
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
@@ -265,6 +266,7 @@ export function RouteBuilderMap({
                 location={loc} forms={forms} existingStop={existingStop}
                 onAddStop={onAddStop} onToggleForm={onToggleForm}
                 onAddAllForms={onAddAllForms}
+                onSetFormMinutes={onSetFormMinutes}
                 onSetOrigin={(l) => { onSetOrigin(l); setPickingOrigin(false); }}
               />
             </Marker>
