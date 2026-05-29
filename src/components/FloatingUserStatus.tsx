@@ -103,7 +103,7 @@ export function FloatingUserStatus() {
   if (!roleLoaded || !isAdmin) return null;
 
   return (
-    <div className="fixed bottom-[52px] left-4 z-50">
+    <div ref={containerRef} className="fixed bottom-[52px] left-4 z-50">
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
