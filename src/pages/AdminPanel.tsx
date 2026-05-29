@@ -844,6 +844,15 @@ const AdminPanel = () => {
               <Trash2 className="h-4 w-4" />
               Eliminados
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open("https://supabase.com/dashboard/project/tgxiqvfpirwvhktgqqfa", "_blank", "noopener,noreferrer")}
+              className="gap-2"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ver Backend
+            </Button>
           </div>
         </div>
 
