@@ -61,16 +61,9 @@ function buildIcon(
   });
 }
 
-function MapFitter({ locations }: { locations: MaintenanceLocation[] }) {
-  const map = useMap();
-  const fitted = useRef(false);
-  useEffect(() => {
-    if (fitted.current || locations.length === 0) return;
-    map.fitBounds(L.latLngBounds(locations.map((l) => [l.lat, l.lng])), { padding: [40, 40] });
-    fitted.current = true;
-  }, [map, locations]);
-  return null;
-}
+// Región Metropolitana (Santiago) — centro por defecto
+const RM_CENTER: [number, number] = [-33.45, -70.66];
+const RM_ZOOM = 10;
 
 function MapController({ flyTo }: { flyTo: { lat: number; lng: number; zoom?: number } | null }) {
   const map = useMap();
@@ -218,11 +211,10 @@ export function RouteBuilderMap({
         </div>
       )}
 
-      <MapContainer center={[-34.0, -71.0]} zoom={7} className="w-full h-full rounded-lg"
+      <MapContainer center={RM_CENTER} zoom={RM_ZOOM} className="w-full h-full rounded-lg"
         style={{ cursor: pickingOrigin ? "crosshair" : "grab" }}>
         <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution="© OpenStreetMap · © CARTO" />
-        <MapFitter locations={locations} />
         <MapController flyTo={flyTo} />
         <MapClickHandler pickingOrigin={pickingOrigin} locations={locations}
           onSetOrigin={(loc) => { onSetOrigin(loc); setPickingOrigin(false); }}

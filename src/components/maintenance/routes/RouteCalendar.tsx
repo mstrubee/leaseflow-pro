@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, startOfWeek, endOfWeek,
-  format, isSameMonth, isSameDay, isToday, parseISO,
+  format, isSameMonth, isToday, parseISO,
 } from "date-fns";
 import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { ChevronLeft, ChevronRight, CalendarDays, MapPin, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, MapPin, Clock, CheckCircle2, AlertCircle, Download, FileDown, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/sheet";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { exportRoutesPDF } from "./exportRoutesPDF";
+import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,6 +55,11 @@ export function RouteCalendar() {
   const [routes, setRoutes] = useState<CalendarRoute[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<CalendarRoute | null>(null);
+
+  // Export-to-PDF mode
+  const [exportMode, setExportMode] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
 
   const loadRoutes = useCallback(async () => {
     setLoading(true);
@@ -110,6 +117,45 @@ export function RouteCalendar() {
   const completionPct = (r: CalendarRoute) =>
     r.stop_count > 0 ? Math.round((r.completed_stops / r.stop_count) * 100) : 0;
 
+  // Days that actually have routes (only these are selectable for export)
+  const daysWithRoutes = new Set(routes.map((r) => r.scheduled_date));
+
+  const toggleDay = (key: string) => {
+    if (!daysWithRoutes.has(key)) return;
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const selectWeek = (weekStart: Date) => {
+    const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 1 }) })
+      .map((d) => format(d, "yyyy-MM-dd"))
+      .filter((k) => daysWithRoutes.has(k));
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      const allSelected = weekDays.every((k) => next.has(k));
+      weekDays.forEach((k) => (allSelected ? next.delete(k) : next.add(k)));
+      return next;
+    });
+  };
+
+  const handleExport = async () => {
+    if (selectedDays.size === 0) return;
+    setExporting(true);
+    try {
+      await exportRoutesPDF([...selectedDays]);
+      toast.success("PDF generado");
+      setExportMode(false);
+      setSelectedDays(new Set());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error al generar PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 h-full">
       {/* Header */}
@@ -118,6 +164,30 @@ export function RouteCalendar() {
         <h2 className="text-base font-semibold text-gray-800 capitalize">
           {format(currentMonth, "MMMM yyyy", { locale: es })}
         </h2>
+
+        {!exportMode ? (
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 ml-3"
+            onClick={() => setExportMode(true)}>
+            <FileDown className="w-3.5 h-3.5" />
+            Exportar PDF
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2 ml-3">
+            <span className="text-xs text-blue-600 font-medium">
+              {selectedDays.size > 0 ? `${selectedDays.size} día(s) seleccionado(s)` : "Selecciona días o semanas"}
+            </span>
+            <Button size="sm" className="h-8 text-xs gap-1.5" disabled={selectedDays.size === 0 || exporting}
+              onClick={handleExport}>
+              {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              Generar ({selectedDays.size})
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 text-xs gap-1"
+              onClick={() => { setExportMode(false); setSelectedDays(new Set()); }}>
+              <X className="w-3.5 h-3.5" /> Cancelar
+            </Button>
+          </div>
+        )}
+
         <div className="flex gap-1 ml-auto">
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
             onClick={() => setCurrentMonth((m) => subMonths(m, 1))}>
@@ -144,29 +214,49 @@ export function RouteCalendar() {
       {/* Grid */}
       <div className={`grid grid-cols-7 gap-px flex-1 overflow-auto ${loading ? "opacity-50" : ""}`}>
         {days.map((day) => {
-          const key     = format(day, "yyyy-MM-dd");
+          const key       = format(day, "yyyy-MM-dd");
           const dayRoutes = routesByDay.get(key) ?? [];
-          const inMonth = isSameMonth(day, currentMonth);
-          const today   = isToday(day);
+          const inMonth   = isSameMonth(day, currentMonth);
+          const today     = isToday(day);
+          const hasRoutes = dayRoutes.length > 0;
+          const isSelectedDay = selectedDays.has(key);
+          const isMonday  = day.getDay() === 1;
 
           return (
             <div
               key={key}
-              className={`min-h-[90px] rounded-lg p-1.5 border transition-colors
+              onClick={() => exportMode && toggleDay(key)}
+              className={`relative min-h-[90px] rounded-lg p-1.5 border transition-colors
                 ${inMonth ? "bg-white border-gray-100" : "bg-gray-50/60 border-transparent"}
-                ${today ? "ring-2 ring-blue-400 ring-offset-0" : ""}
+                ${today && !isSelectedDay ? "ring-2 ring-blue-400 ring-offset-0" : ""}
+                ${exportMode && hasRoutes ? "cursor-pointer hover:bg-blue-50/50" : ""}
+                ${isSelectedDay ? "ring-2 ring-blue-600 bg-blue-50/60" : ""}
+                ${exportMode && !hasRoutes ? "opacity-50" : ""}
               `}
             >
-              <div className={`text-xs font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full
-                ${today ? "bg-blue-500 text-white" : inMonth ? "text-gray-700" : "text-gray-300"}`}>
-                {format(day, "d")}
+              <div className="flex items-center justify-between mb-1">
+                <div className={`text-xs font-medium w-5 h-5 flex items-center justify-center rounded-full
+                  ${isSelectedDay ? "bg-blue-600 text-white" : today ? "bg-blue-500 text-white" : inMonth ? "text-gray-700" : "text-gray-300"}`}>
+                  {format(day, "d")}
+                </div>
+                {/* Week-select button (only on Mondays, in export mode) */}
+                {exportMode && isMonday && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); selectWeek(day); }}
+                    className="text-[9px] px-1 py-0.5 rounded bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-700 font-medium transition-colors"
+                    title="Seleccionar/deseleccionar semana"
+                  >
+                    semana
+                  </button>
+                )}
+                {isSelectedDay && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />}
               </div>
 
               {dayRoutes.slice(0, 3).map((r) => (
                 <button
                   key={r.id}
                   className="w-full text-left mb-0.5 group"
-                  onClick={() => setSelected(r)}
+                  onClick={(e) => { if (exportMode) return; e.stopPropagation(); setSelected(r); }}
                 >
                   <div className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium text-white
                     ${STATUS_COLOR[r.status] ?? "bg-gray-400"} hover:opacity-90 transition-opacity`}>
@@ -272,6 +362,23 @@ export function RouteCalendar() {
                       {isOperador ? "Ejecutar ruta" : "Ver ejecución"}
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    disabled={exporting}
+                    onClick={async () => {
+                      setExporting(true);
+                      try {
+                        await exportRoutesPDF([selected.scheduled_date], `Ruta: ${selected.name}`);
+                        toast.success("PDF generado");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Error al generar PDF");
+                      } finally { setExporting(false); }
+                    }}
+                  >
+                    {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                    Exportar este día a PDF
+                  </Button>
                 </div>
               </div>
             </>
