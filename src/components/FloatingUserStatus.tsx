@@ -127,7 +127,7 @@ export function FloatingUserStatus() {
           <div className="p-3 border-b">
             <h4 className="text-sm font-semibold text-foreground">Usuarios conectados</h4>
           </div>
-          <ScrollArea className="max-h-72">
+          <ScrollArea className="h-72">
             <div className="p-2 space-y-1">
               {profiles.map((profile) => {
                 const status = getStatus(profile, thresholds);
