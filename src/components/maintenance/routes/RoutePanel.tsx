@@ -61,6 +61,7 @@ export function RoutePanel({
       .select("id,name")
       .eq("is_active", true)
       .order("name")
+      .returns<Supplier[]>()
       .then(({ data }) => {
         if (data) setSuppliers(data);
       });
