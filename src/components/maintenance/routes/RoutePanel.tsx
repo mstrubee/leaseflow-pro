@@ -42,8 +42,10 @@ function fmt(m: number) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
 }
 
-function StopRow({ stop, index, schedule, dragging, dragOver, onDragStart, onDragOver, onDrop, onRemove, onSetFormMinutes }: {
-  stop: RouteStop; index: number; schedule: ScheduleEntry | undefined;
+function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dragOver, onDragStart, onDragOver, onDrop, onRemove, onSetFormMinutes }: {
+  stop: RouteStop; index: number; order: number; schedule: ScheduleEntry | undefined;
+  formIds: string[]; // forms de este tramo (día)
+  partial: boolean;
   dragging: number | null; dragOver: number | null;
   onDragStart: (i: number) => void;
   onDragOver: (e: React.DragEvent, i: number) => void;
@@ -52,7 +54,7 @@ function StopRow({ stop, index, schedule, dragging, dragOver, onDragStart, onDra
   onSetFormMinutes: (locId: string, formId: string, min: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const selected = stop.allForms.filter((f) => stop.formIds.includes(f.id));
+  const selected = stop.allForms.filter((f) => formIds.includes(f.id));
 
   return (
     <div draggable onDragStart={() => onDragStart(index)} onDragOver={(e) => onDragOver(e, index)} onDrop={() => onDrop(index)}
@@ -68,9 +70,12 @@ function StopRow({ stop, index, schedule, dragging, dragOver, onDragStart, onDra
 
       <div className="flex items-center gap-1.5 px-2 py-1.5">
         <GripVertical className="w-3 h-3 text-gray-300 shrink-0 cursor-grab" />
-        <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{index + 1}</span>
+        <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{order}</span>
         <div className="flex-1 min-w-0">
-          <div className="truncate font-medium">{stop.location.local_name || stop.location.name}</div>
+          <div className="truncate font-medium">
+            {stop.location.local_name || stop.location.name}
+            {partial && <span className="ml-1 text-[9px] text-amber-600 font-normal">(continúa)</span>}
+          </div>
           <div className="text-gray-400 flex gap-2 flex-wrap">
             {schedule && <span>{schedule.arrivalTime} – {schedule.departureTime}</span>}
             {selected.length > 0 && <span>{selected.length} form{selected.length !== 1 ? "s" : ""} · {fmt(schedule?.workMinutes ?? 0)}</span>}
@@ -147,7 +152,6 @@ export function RoutePanel({
   };
 
   const totalForms = stops.reduce((acc, s) => acc + s.formIds.length, 0);
-  const dayOfStop  = (i: number) => schedule[i]?.dayIndex ?? 0;
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -168,28 +172,25 @@ export function RoutePanel({
       )}
 
       <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-        {stops.length === 0 ? (
+        {stops.length === 0 || schedule.length === 0 ? (
           <p className="text-xs text-gray-400 italic text-center mt-4">Agrega paradas desde el mapa</p>
         ) : (
-          // Agrupar índices de paradas por día
+          // Agrupar las ENTRIES del cronograma por día (una parada puede partirse)
           Array.from(
-            stops.reduce((acc, _, i) => {
-              const day = dayOfStop(i);
-              if (!acc.has(day)) acc.set(day, []);
-              acc.get(day)!.push(i);
+            schedule.reduce((acc, e) => {
+              if (!acc.has(e.dayIndex)) acc.set(e.dayIndex, []);
+              acc.get(e.dayIndex)!.push(e);
               return acc;
-            }, new Map<number, number[]>()),
+            }, new Map<number, ScheduleEntry[]>()),
           )
             .sort((a, b) => a[0] - b[0])
-            .map(([day, indices]) => {
+            .map(([day, dayEntries]) => {
               const collapsed = collapsedDays.has(day);
-              const dayForms = indices.reduce((s, i) => s + stops[i].formIds.length, 0);
-              const dayWork = indices.reduce((s, i) => s + (schedule[i]?.workMinutes ?? 0), 0);
-              const firstArr = schedule[indices[0]]?.arrivalTime;
-              const lastDep = schedule[indices[indices.length - 1]]?.departureTime;
+              const dayForms = dayEntries.reduce((s, e) => s + e.formIds.length, 0);
+              const firstArr = dayEntries[0]?.arrivalTime;
+              const lastDep = dayEntries[dayEntries.length - 1]?.departureTime;
               return (
                 <div key={`day-${day}`} className="border border-blue-100 rounded-lg overflow-hidden">
-                  {/* Día header (colapsable) */}
                   <button
                     onClick={() => toggleDayCollapse(day)}
                     className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
@@ -199,17 +200,19 @@ export function RoutePanel({
                       📅 {dayDateLabel(scheduledDate, day)}
                     </span>
                     <span className="text-[10px] text-blue-500">
-                      {indices.length} parada{indices.length !== 1 ? "s" : ""} · {dayForms} forms · {firstArr}–{lastDep}
+                      {dayEntries.length} parada{dayEntries.length !== 1 ? "s" : ""} · {dayForms} forms · {firstArr}–{lastDep}
                     </span>
                   </button>
-                  {/* Paradas del día */}
                   {!collapsed && (
                     <div className="p-1 space-y-1">
-                      {indices.map((i) => (
-                        <StopRow key={stops[i].locationId} stop={stops[i]} index={i} schedule={schedule[i]}
+                      {dayEntries.map((e, idxInDay) => (
+                        <StopRow
+                          key={`${e.stopIndex}-${e.dayIndex}`}
+                          stop={stops[e.stopIndex]} index={e.stopIndex} order={idxInDay + 1}
+                          schedule={e} formIds={e.formIds} partial={e.partial}
                           dragging={dragging} dragOver={dragOver}
                           onDragStart={setDragging}
-                          onDragOver={(e, idx) => { e.preventDefault(); setDragOver(idx); }}
+                          onDragOver={(ev, idx) => { ev.preventDefault(); setDragOver(idx); }}
                           onDrop={handleDrop}
                           onRemove={onRemoveStop}
                           onSetFormMinutes={onSetFormMinutes}

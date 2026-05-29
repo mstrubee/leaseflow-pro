@@ -82,6 +82,8 @@ export interface ScheduleEntry {
   departureTime: string;
   travelMinutes: number;
   workMinutes: number;
+  formIds: string[];      // forms de esta parada que caen en este día (puede ser subconjunto)
+  partial: boolean;       // true si la parada se parte entre días (continúa o viene de otro día)
   isLunch: boolean;
 }
 
@@ -168,66 +170,77 @@ export function addBusinessDays(startISO: string, n: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Schedule calculator — MULTI-DÍA
-// Reparte las paradas en días hábiles (L-V). Cuando una parada no cabe completa
-// antes de las 18:00, se mueve entera al siguiente día hábil (no se parte el
-// trabajo de un local entre días). El almuerzo (1.5h) se aplica una vez por día.
+// Schedule calculator — MULTI-DÍA a nivel de FORM
+// Reparte el trabajo en días hábiles (L-V). Cuando un form no cabe antes de las
+// 18:00, continúa al día hábil siguiente. Una parada puede partirse entre días
+// (sus forms): genera un ScheduleEntry por (parada, día). El almuerzo (1.5h) se
+// aplica una vez por día, cruzando las 13:00.
 // ---------------------------------------------------------------------------
 export function calculateSchedule(stops: RouteStop[], startMinutes: number = WORK_START_MINUTES): ScheduleEntry[] {
+  interface Tramo { arrival: number; day: number; travel: number; forms: string[]; work: number; }
   const entries: ScheduleEntry[] = [];
   let cursor = startMinutes;
   let lunchTaken = false;
   let dayIndex = 0;
+  let anyWorkPlaced = false; // no trasladar antes del primer trabajo absoluto
 
-  const applyLunchIfNeeded = (workMinutes: number) => {
-    // Si cruzamos las 13:00 (al llegar o durante el trabajo), tomar almuerzo
-    if (!lunchTaken && cursor + workMinutes > LUNCH_START && cursor < LUNCH_START + LUNCH_DURATION) {
-      cursor = Math.max(cursor, LUNCH_START) + LUNCH_DURATION;
-      lunchTaken = true;
+  const maybeLunch = (work: number) => {
+    if (!lunchTaken && cursor + work > LUNCH_START && cursor < LUNCH_START + LUNCH_DURATION) {
+      cursor = Math.max(cursor, LUNCH_START) + LUNCH_DURATION; lunchTaken = true;
     } else if (!lunchTaken && cursor >= LUNCH_START) {
-      cursor += LUNCH_DURATION;
-      lunchTaken = true;
+      cursor += LUNCH_DURATION; lunchTaken = true;
     }
   };
 
   for (let i = 0; i < stops.length; i++) {
     const stop = stops[i];
+    const ids: (string | null)[] = stop.formIds.length > 0 ? stop.formIds : [null];
 
-    // Tiempo de traslado desde la parada anterior (no en la primera)
-    if (i > 0) cursor += stop.travelMinutes;
+    // Traslado desde la parada anterior (no antes del primer trabajo absoluto)
+    if (anyWorkPlaced) cursor += stop.travelMinutes;
 
-    const workMinutes = stop.formIds.length > 0
-      ? stop.formIds.reduce((s, id) => s + (stop.formMinutes[id] || DEFAULT_FORM_MINUTES), 0)
-      : DEFAULT_FORM_MINUTES;
+    let tramo: Tramo = { arrival: cursor, day: dayIndex, travel: anyWorkPlaced ? stop.travelMinutes : 0, forms: [], work: 0 };
+    const closeTramo = () => {
+      if (tramo.forms.length === 0) return;
+      entries.push({
+        stopIndex: i, dayIndex: tramo.day,
+        arrivalTime: minutesToHHMM(tramo.arrival),
+        departureTime: minutesToHHMM(cursor),
+        travelMinutes: tramo.travel,
+        workMinutes: tramo.work,
+        formIds: tramo.forms.filter((x): x is string => x !== null),
+        partial: false,
+        isLunch: false,
+      });
+    };
 
-    // ¿Cabe esta parada (almuerzo incluido si aplica) antes de las 18:00?
-    const lunchCost = (!lunchTaken && cursor + workMinutes > LUNCH_START) ? LUNCH_DURATION : 0;
-    if (cursor + lunchCost + workMinutes > WORK_END_MINUTES && entries.length > 0) {
-      // No cabe → avanzar al siguiente día hábil
-      dayIndex += 1;
-      cursor = startMinutes;
-      lunchTaken = false;
-      // El traslado del primer local del nuevo día se mantiene como referencia,
-      // pero el día arranca a la hora de inicio (sin sumar traslado del día anterior)
+    for (const fid of ids) {
+      const work = fid === null ? DEFAULT_FORM_MINUTES : (stop.formMinutes[fid] || DEFAULT_FORM_MINUTES);
+      const lunchCost = (!lunchTaken && cursor + work > LUNCH_START && cursor < LUNCH_START + LUNCH_DURATION) ? LUNCH_DURATION : 0;
+
+      // ¿Este form cabe antes de las 18:00? Si no, cerrar tramo y pasar al día siguiente
+      if (anyWorkPlaced && cursor + lunchCost + work > WORK_END_MINUTES) {
+        closeTramo();
+        dayIndex += 1;
+        cursor = startMinutes;
+        lunchTaken = false;
+        tramo = { arrival: cursor, day: dayIndex, travel: 0, forms: [], work: 0 };
+      }
+
+      maybeLunch(work);
+      if (tramo.forms.length === 0) tramo.arrival = cursor; // fijar llegada al primer form (post-almuerzo)
+      cursor += work;
+      tramo.work += work;
+      tramo.forms.push(fid);
+      anyWorkPlaced = true;
     }
-
-    applyLunchIfNeeded(workMinutes);
-
-    const arrivalMinutes = cursor;
-    cursor += workMinutes;
-
-    entries.push({
-      stopIndex: i,
-      dayIndex,
-      arrivalTime: minutesToHHMM(arrivalMinutes),
-      departureTime: minutesToHHMM(cursor),
-      travelMinutes: i > 0 ? stop.travelMinutes : 0,
-      workMinutes,
-      isLunch: false,
-    });
+    closeTramo();
   }
 
-  return entries;
+  // Marcar como parcial las paradas que quedaron divididas en más de un día
+  const count: Record<number, number> = {};
+  entries.forEach((e) => { count[e.stopIndex] = (count[e.stopIndex] ?? 0) + 1; });
+  return entries.map((e) => ({ ...e, partial: count[e.stopIndex] > 1 }));
 }
 
 // ---------------------------------------------------------------------------
@@ -409,7 +422,10 @@ export function useRouteBuilder() {
       .filter((loc) => loc.id !== origin.id && !stopIds.has(loc.id))
       .filter((loc) => !visibleLocationIds || visibleLocationIds.has(loc.id))
       .map((loc) => {
-        const locForms   = formsByLocation.get(loc.id) ?? [];
+        const allLocForms = formsByLocation.get(loc.id) ?? [];
+        // Con filtros activos, mostrar solo los forms que cumplen
+        const hasFilters = filterTypes.size > 0 || filterCriticalities.size > 0;
+        const locForms = hasFilters ? allLocForms.filter(formMatchesFilters) : allLocForms;
         const totalScore = locForms.reduce((acc, f) => acc + f.criticality_weight, 0);
         const distanceKm = haversine(origin.lat, origin.lng, loc.lat, loc.lng);
         return { ...loc, forms: locForms, totalForms: locForms.length, totalScore, distanceKm };
@@ -554,11 +570,12 @@ export function useRouteBuilder() {
 
     setSaving(true);
     try {
-      // Agrupar las paradas por día (dayIndex del cronograma multi-día)
-      const byDay = new Map<number, number[]>(); // dayIndex → índices de stops
+      // Agrupar los TRAMOS (parada-día) por día. Una parada partida aparece en
+      // varios días con sus forms respectivos (e.formIds).
+      const byDay = new Map<number, { stopIndex: number; formIds: string[] }[]>();
       schedule.forEach((e) => {
         if (!byDay.has(e.dayIndex)) byDay.set(e.dayIndex, []);
-        byDay.get(e.dayIndex)!.push(e.stopIndex);
+        byDay.get(e.dayIndex)!.push({ stopIndex: e.stopIndex, formIds: e.formIds });
       });
 
       const tourId = crypto.randomUUID();
@@ -599,10 +616,11 @@ export function useRouteBuilder() {
         if (routeErr || !route) throw new Error(routeErr?.message ?? "Error al crear ruta");
         if (!firstRouteId) firstRouteId = route.id;
 
-        // Paradas de este día (en orden), re-numeradas desde 1
-        const dayStopIndices = byDay.get(dayIndex)!;
-        for (let order = 0; order < dayStopIndices.length; order++) {
-          const stop = stops[dayStopIndices[order]];
+        // Tramos (parada-día) de este día, en orden, re-numerados desde 1
+        const dayTramos = byDay.get(dayIndex)!;
+        for (let order = 0; order < dayTramos.length; order++) {
+          const tramo = dayTramos[order];
+          const stop = stops[tramo.stopIndex];
           const { data: stopRow, error: stopErr } = await supabase
             .from("maintenance_route_stops")
             .insert({
@@ -614,13 +632,22 @@ export function useRouteBuilder() {
             .select("id").single();
           if (stopErr || !stopRow) throw new Error(stopErr?.message ?? "Error al crear parada");
 
-          if (stop.formIds.length > 0) {
-            const formRows = stop.formIds.map((fid) => ({
+          // Solo los forms de ESTA parada que caen en ESTE día
+          const dayFormIds = tramo.formIds;
+          if (dayFormIds.length > 0) {
+            const formRows = dayFormIds.map((fid) => ({
               route_stop_id: stopRow.id,
               maintenance_form_id: fid,
               estimated_minutes: stop.formMinutes[fid] ?? DEFAULT_FORM_MINUTES,
             }));
-            const { error: formErr } = await supabase.from("maintenance_route_forms").insert(formRows);
+            let formErr = (await supabase.from("maintenance_route_forms").insert(formRows)).error;
+            if (formErr && /estimated_minutes|column|schema cache/i.test(formErr.message)) {
+              const baseRows = dayFormIds.map((fid) => ({
+                route_stop_id: stopRow.id,
+                maintenance_form_id: fid,
+              }));
+              formErr = (await supabase.from("maintenance_route_forms").insert(baseRows)).error;
+            }
             if (formErr) throw new Error(formErr.message);
           }
         }

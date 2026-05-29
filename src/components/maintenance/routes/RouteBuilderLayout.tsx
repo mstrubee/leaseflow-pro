@@ -131,7 +131,7 @@ export function RouteBuilderLayout() {
             title="Mostrar locales por prioridad"
           >
             <PanelRightOpen className="w-4 h-4 text-gray-500" />
-            <span className="text-[10px] text-gray-500 [writing-mode:vertical-rl] rotate-180">Locales por prioridad</span>
+            <span className="text-[10px] text-gray-500 [writing-mode:vertical-rl] rotate-180">Ordenamiento de Locales</span>
             <ListOrdered className="w-4 h-4 text-gray-400" />
           </button>
         ) : (
@@ -139,7 +139,7 @@ export function RouteBuilderLayout() {
             style={{ width: listWidth }}>
             <div className="px-3 py-2 border-b bg-gray-50 shrink-0">
               <div className="flex items-center gap-2 mb-1">
-                <p className="text-xs font-semibold text-gray-600 flex-1">Locales ordenados por prioridad</p>
+                <p className="text-xs font-semibold text-gray-600 flex-1">Ordenamiento de Locales</p>
                 <button onClick={() => setListCollapsed(true)} className="text-gray-400 hover:text-gray-600" title="Ocultar">
                   <PanelRightClose className="w-4 h-4" />
                 </button>

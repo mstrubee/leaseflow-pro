@@ -336,12 +336,9 @@ export function RouteBuilderMap({
           const forms       = formsByLocation.get(loc.id) ?? [];
           const scored      = scoredMap.get(loc.id);
 
-          // Hora: inicio en el punto de partida; hora de llegada en cada parada
-          const timeLabel = isOrigin
-            ? startTime
-            : isStop && schedule[stopIndex]
-              ? schedule[stopIndex].arrivalTime
-              : undefined;
+          // Hora: inicio en el punto de partida; hora de llegada (primer tramo) en cada parada
+          const firstEntry = isStop ? schedule.find((e) => e.stopIndex === stopIndex) : undefined;
+          const timeLabel = isOrigin ? startTime : firstEntry?.arrivalTime;
 
           const icon = buildIcon(loc, isOrigin, isStop, stopIndex, forms.length, scored?.rank ?? 0, scoredLocations.length, timeLabel);
 
