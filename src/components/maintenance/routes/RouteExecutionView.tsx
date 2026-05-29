@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
   MessageSquare, Camera, CalendarDays, Loader2, MapPin, ArrowLeft,
-  Image as ImageIcon,
+  Image as ImageIcon, Link2,
 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -159,7 +159,15 @@ function FormCard({
                 {form.criticality_name}
               </Badge>
             )}
+            {form.merge_group_id && form.mergedCount > 1 && (
+              <Badge className="text-[10px] px-1.5 py-0 h-4 bg-purple-600 text-white border-none gap-0.5">
+                <Link2 className="w-2.5 h-2.5" /> Fusionado ×{form.mergedCount}
+              </Badge>
+            )}
           </div>
+          {form.merge_group_id && form.mergedCount > 1 && (
+            <p className="text-[10px] text-purple-500 mt-0.5">Al completar este form se completan los {form.mergedCount} fusionados.</p>
+          )}
           {(form.general_description || form.electrical_description || form.civil_description) && (
             <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
               {form.general_description || form.electrical_description || form.civil_description}

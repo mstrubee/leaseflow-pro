@@ -25,6 +25,9 @@ export interface ExecutionForm {
   completed_at: string | null;
   operator_notes: string | null;
   visit_evidence_urls: string[];
+  // fusión
+  merge_group_id: string | null;
+  mergedCount: number;          // 1 si no está fusionado
 }
 
 export interface ExecutionStop {
@@ -113,6 +116,8 @@ export function useRouteExecution(routeId: string) {
               completed_at: rf.completed_at as string ?? null,
               operator_notes: rf.operator_notes as string ?? null,
               visit_evidence_urls: (rf.visit_evidence_urls as string[]) ?? [],
+              merge_group_id: null,
+              mergedCount: 1,
             };
           },
         );
@@ -134,6 +139,31 @@ export function useRouteExecution(routeId: string) {
       });
 
     const suppliers = data.suppliers as Record<string, unknown> | null;
+
+    // Enriquecer con info de fusión (query liviano y robusto)
+    const allFormIds = stops.flatMap((s) => s.forms.map((f) => f.maintenance_form_id));
+    if (allFormIds.length > 0) {
+      const { data: mergeData } = await supabase
+        .from("maintenance_forms")
+        .select("id, merge_group_id")
+        .in("id", allFormIds);
+      if (mergeData) {
+        const groupOf = new Map<string, string | null>();
+        const countByGroup = new Map<string, number>();
+        for (const m of mergeData as { id: string; merge_group_id: string | null }[]) {
+          groupOf.set(m.id, m.merge_group_id);
+          if (m.merge_group_id) countByGroup.set(m.merge_group_id, (countByGroup.get(m.merge_group_id) ?? 0) + 1);
+        }
+        for (const s of stops) {
+          for (const f of s.forms) {
+            const g = groupOf.get(f.maintenance_form_id) ?? null;
+            f.merge_group_id = g;
+            f.mergedCount = g ? (countByGroup.get(g) ?? 1) : 1;
+          }
+        }
+      }
+    }
+
     setRoute({
       id: data.id,
       name: data.name,
