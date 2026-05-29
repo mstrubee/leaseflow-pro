@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
@@ -42,7 +42,7 @@ interface Profile {
 
 interface UserRole {
   user_id: string;
-  role: "admin" | "user";
+  role: "admin" | "user" | "operador_terreno";
 }
 
 interface UserPermission {
@@ -184,7 +184,7 @@ interface Profile {
 
 interface UserRole {
   user_id: string;
-  role: "admin" | "user";
+  role: "admin" | "user" | "operador_terreno";
 }
 
 interface UserPermission {
@@ -843,6 +843,15 @@ const AdminPanel = () => {
             <Button variant="outline" size="sm" onClick={() => navigate("/deleted")} className="gap-2">
               <Trash2 className="h-4 w-4" />
               Eliminados
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open("https://supabase.com/dashboard/project/tgxiqvfpirwvhktgqqfa", "_blank", "noopener,noreferrer")}
+              className="gap-2"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ver Backend
             </Button>
           </div>
         </div>

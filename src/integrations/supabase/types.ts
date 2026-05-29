@@ -966,7 +966,11 @@ export type Database = {
           contract_id: string
           country: string
           created_at: string
+          geocode_source: string | null
+          geocoded_at: string | null
           id: string
+          lat: number | null
+          lng: number | null
           number: string
           region: string
           rol_sii: string | null
@@ -977,7 +981,11 @@ export type Database = {
           contract_id: string
           country?: string
           created_at?: string
+          geocode_source?: string | null
+          geocoded_at?: string | null
           id?: string
+          lat?: number | null
+          lng?: number | null
           number: string
           region: string
           rol_sii?: string | null
@@ -988,7 +996,11 @@ export type Database = {
           contract_id?: string
           country?: string
           created_at?: string
+          geocode_source?: string | null
+          geocoded_at?: string | null
           id?: string
+          lat?: number | null
+          lng?: number | null
           number?: string
           region?: string
           rol_sii?: string | null
@@ -3149,6 +3161,206 @@ export type Database = {
           },
         ]
       }
+      maintenance_locations: {
+        Row: {
+          centro_sap: string | null
+          created_at: string
+          folder: string
+          gerente_zonal: string | null
+          id: string
+          is_active: boolean
+          lat: number
+          lng: number
+          local_code: string | null
+          local_name: string | null
+          name: string
+          poi_id: string
+          zona: string | null
+        }
+        Insert: {
+          centro_sap?: string | null
+          created_at?: string
+          folder: string
+          gerente_zonal?: string | null
+          id?: string
+          is_active?: boolean
+          lat: number
+          lng: number
+          local_code?: string | null
+          local_name?: string | null
+          name: string
+          poi_id: string
+          zona?: string | null
+        }
+        Update: {
+          centro_sap?: string | null
+          created_at?: string
+          folder?: string
+          gerente_zonal?: string | null
+          id?: string
+          is_active?: boolean
+          lat?: number
+          lng?: number
+          local_code?: string | null
+          local_name?: string | null
+          name?: string
+          poi_id?: string
+          zona?: string | null
+        }
+        Relationships: []
+      }
+      maintenance_route_forms: {
+        Row: {
+          completed: boolean
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          id: string
+          maintenance_form_id: string
+          operator_notes: string | null
+          route_stop_id: string
+          visit_evidence_urls: string[] | null
+        }
+        Insert: {
+          completed?: boolean
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          maintenance_form_id: string
+          operator_notes?: string | null
+          route_stop_id: string
+          visit_evidence_urls?: string[] | null
+        }
+        Update: {
+          completed?: boolean
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          maintenance_form_id?: string
+          operator_notes?: string | null
+          route_stop_id?: string
+          visit_evidence_urls?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_route_forms_maintenance_form_id_fkey"
+            columns: ["maintenance_form_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_route_forms_route_stop_id_fkey"
+            columns: ["route_stop_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_route_stops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_route_stops: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          estimated_travel_min: number | null
+          id: string
+          location_id: string
+          postpone_note: string | null
+          postponed_to: string | null
+          route_id: string
+          status: string
+          stop_order: number
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          estimated_travel_min?: number | null
+          id?: string
+          location_id: string
+          postpone_note?: string | null
+          postponed_to?: string | null
+          route_id: string
+          status?: string
+          stop_order: number
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          estimated_travel_min?: number | null
+          id?: string
+          location_id?: string
+          postpone_note?: string | null
+          postponed_to?: string | null
+          route_id?: string
+          status?: string
+          stop_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_route_stops_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_route_stops_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_routes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          notes: string | null
+          scheduled_date: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          scheduled_date?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          scheduled_date?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_routes_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       maintenance_status_history: {
         Row: {
           changed_at: string
@@ -5265,6 +5477,64 @@ export type Database = {
           },
         ]
       }
+      route_compliance_log: {
+        Row: {
+          event_type: string
+          form_id: string | null
+          id: string
+          notes: string | null
+          performed_at: string
+          performed_by: string | null
+          postponed_to: string | null
+          route_id: string
+          stop_id: string | null
+        }
+        Insert: {
+          event_type: string
+          form_id?: string | null
+          id?: string
+          notes?: string | null
+          performed_at?: string
+          performed_by?: string | null
+          postponed_to?: string | null
+          route_id: string
+          stop_id?: string | null
+        }
+        Update: {
+          event_type?: string
+          form_id?: string | null
+          id?: string
+          notes?: string | null
+          performed_at?: string
+          performed_by?: string | null
+          postponed_to?: string | null
+          route_id?: string
+          stop_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "route_compliance_log_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_route_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_compliance_log_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_compliance_log_stop_id_fkey"
+            columns: ["stop_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_route_stops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       special_attention_checklist: {
         Row: {
           completed_at: string | null
@@ -5915,6 +6185,10 @@ export type Database = {
       }
     }
     Functions: {
+      append_maintenance_comment: {
+        Args: { p_comment: string; p_form_id: string }
+        Returns: undefined
+      }
       calculate_next_send_at: {
         Args: {
           p_days_before: number[]
@@ -5983,7 +6257,7 @@ export type Database = {
         | "permit"
         | "certificate"
         | "other"
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "operador_terreno"
       budget_classification: "CAPEX" | "OPEX"
       contract_status: "en_negociacion" | "firmado" | "vencido"
       document_type:
@@ -6142,7 +6416,7 @@ export const Constants = {
         "certificate",
         "other",
       ],
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "operador_terreno"],
       budget_classification: ["CAPEX", "OPEX"],
       contract_status: ["en_negociacion", "firmado", "vencido"],
       document_type: [
