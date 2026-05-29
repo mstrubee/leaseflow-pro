@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
   MessageSquare, Camera, CalendarDays, Loader2, MapPin, ArrowLeft,
-  Image as ImageIcon, Link2,
+  Image as ImageIcon, Link2, RotateCcw,
 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
@@ -122,12 +122,13 @@ function NotesSheet({
 // Form card
 // ---------------------------------------------------------------------------
 function FormCard({
-  form, stopId, saving, onComplete, onNotes, onPhoto,
+  form, stopId, saving, onComplete, onUncomplete, onNotes, onPhoto,
 }: {
   form: ExecutionForm;
   stopId: string;
   saving: string | null;
   onComplete: (routeFormId: string) => void;
+  onUncomplete: (routeFormId: string) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
 }) {
@@ -243,6 +244,15 @@ function FormCard({
             <Camera className="w-3.5 h-3.5 mr-1" />
             + Foto
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-gray-500 border border-gray-200 hover:bg-gray-50"
+            disabled={isSaving}
+            onClick={() => onUncomplete(form.id)}
+          >
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><RotateCcw className="w-3.5 h-3.5 mr-1" />Desmarcar</>}
+          </Button>
         </div>
       )}
     </div>
@@ -253,12 +263,14 @@ function FormCard({
 // Stop card
 // ---------------------------------------------------------------------------
 function StopCard({
-  stop, saving, onCompleteForm, onCompleteStop, onPostpone, onNotes, onPhoto,
+  stop, saving, onCompleteForm, onUncompleteForm, onCompleteStop, onReopenStop, onPostpone, onNotes, onPhoto,
 }: {
   stop: ExecutionStop;
   saving: string | null;
   onCompleteForm: (routeFormId: string) => void;
+  onUncompleteForm: (routeFormId: string) => void;
   onCompleteStop: (stopId: string) => void;
+  onReopenStop: (stopId: string) => void;
   onPostpone: (stop: ExecutionStop) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
@@ -316,10 +328,24 @@ function StopCard({
                 stopId={stop.id}
                 saving={saving}
                 onComplete={onCompleteForm}
+                onUncomplete={onUncompleteForm}
                 onNotes={onNotes}
                 onPhoto={onPhoto}
               />
             ))
+          )}
+
+          {/* Reabrir parada completada */}
+          {stop.status === "completed" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full h-9 text-xs text-gray-600 border-gray-300 hover:bg-gray-50"
+              disabled={saving === stop.id}
+              onClick={() => onReopenStop(stop.id)}
+            >
+              {saving === stop.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RotateCcw className="w-3.5 h-3.5 mr-1" />Reabrir parada</>}
+            </Button>
           )}
 
           {/* Stop-level actions */}
@@ -461,7 +487,9 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
             stop={stop}
             saving={exec.saving}
             onCompleteForm={handleCompleteForm}
+            onUncompleteForm={exec.uncompleteForm}
             onCompleteStop={exec.completeStop}
+            onReopenStop={exec.reopenStop}
             onPostpone={(s) => setPostponeStop(s)}
             onNotes={(f) => setNotesForm(f)}
             onPhoto={(f) => {

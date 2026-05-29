@@ -195,6 +195,20 @@ export function useRouteExecution(routeId: string) {
     setSaving(null);
   }, [user, load]);
 
+  // Desmarcar un form completado
+  const uncompleteForm = useCallback(async (routeFormId: string) => {
+    setSaving(routeFormId);
+    const { error } = await supabase
+      .from("maintenance_route_forms")
+      .update({ completed: false, completed_at: null, completed_by: null })
+      .eq("id", routeFormId);
+    if (!error) {
+      await logEvent(routeFormId, null, "reopened");
+      await load();
+    }
+    setSaving(null);
+  }, [load]);
+
   // ---------------------------------------------------------------------------
   // Mark stop completed (all its forms done)
   // ---------------------------------------------------------------------------
@@ -210,6 +224,18 @@ export function useRouteExecution(routeId: string) {
     await load();
     setSaving(null);
   }, [user, load]);
+
+  // Reabrir una parada completada (vuelve a pendiente)
+  const reopenStop = useCallback(async (stopId: string) => {
+    setSaving(stopId);
+    await supabase
+      .from("maintenance_route_stops")
+      .update({ status: "pending", completed_at: null, completed_by: null })
+      .eq("id", stopId);
+    await logEvent(null, stopId, "reopened");
+    await load();
+    setSaving(null);
+  }, [load]);
 
   // ---------------------------------------------------------------------------
   // Postpone stop
@@ -343,7 +369,9 @@ export function useRouteExecution(routeId: string) {
     loading,
     saving,
     completeForm,
+    uncompleteForm,
     completeStop,
+    reopenStop,
     postponeStop,
     saveNotes,
     uploadEvidence,
