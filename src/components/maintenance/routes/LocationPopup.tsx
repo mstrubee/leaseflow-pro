@@ -2,7 +2,7 @@ import { Popup } from "react-leaflet";
 import type { RouteForm, MaintenanceLocation, RouteStop } from "@/hooks/useRouteBuilder";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, PlusCircle } from "lucide-react";
+import { Plus, PlusCircle, Navigation2 } from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
 
@@ -13,9 +13,10 @@ interface Props {
   onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
   onToggleForm: (locationId: string, formId: string) => void;
   onAddAllForms: (locationId: string) => void;
+  onSetOrigin?: (location: MaintenanceLocation) => void;
 }
 
-export function LocationPopup({ location, forms, existingStop, onAddStop, onToggleForm, onAddAllForms }: Props) {
+export function LocationPopup({ location, forms, existingStop, onAddStop, onToggleForm, onAddAllForms, onSetOrigin }: Props) {
   const isInRoute = !!existingStop;
 
   function formTypeLabel(f: RouteForm): string {
@@ -86,6 +87,17 @@ export function LocationPopup({ location, forms, existingStop, onAddStop, onTogg
               );
             })}
           </div>
+        )}
+
+        {/* Set as origin */}
+        {onSetOrigin && (
+          <button
+            className="flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-800 font-medium"
+            onClick={() => onSetOrigin(location)}
+          >
+            <Navigation2 className="w-3 h-3" />
+            Fijar como punto de partida
+          </button>
         )}
 
         {/* Actions */}
