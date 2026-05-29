@@ -6,7 +6,7 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { ChevronLeft, ChevronRight, CalendarDays, MapPin, Clock, CheckCircle2, AlertCircle, Download, FileDown, X, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, MapPin, Clock, CheckCircle2, AlertCircle, Download, FileDown, X, Loader2, Trash2, RotateCcw, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -76,6 +76,11 @@ export function RouteCalendar() {
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
 
+  // Papelera de rutas
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; route: CalendarRoute } | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashed, setTrashed] = useState<CalendarRoute[]>([]);
+
   // Supplier filtering
   // - operatorSupplierIds: null = admin (ve todo); array = operador (solo esos)
   const [operatorSupplierIds, setOperatorSupplierIds] = useState<string[] | null>(null);
@@ -110,30 +115,31 @@ export function RouteCalendar() {
     const from = format(startOfMonth(currentMonth), "yyyy-MM-dd");
     const to   = format(endOfMonth(currentMonth),   "yyyy-MM-dd");
 
-    let query = supabase
-      .from("maintenance_routes")
-      .select(`
-        id, name, scheduled_date, status, supplier_id,
-        suppliers ( name ),
-        maintenance_route_stops ( id, status )
-      `)
-      .gte("scheduled_date", from)
-      .lte("scheduled_date", to)
-      .order("scheduled_date");
-
-    // Operador: limitar a sus proveedores
-    if (operatorSupplierIds !== null) {
-      if (operatorSupplierIds.length === 0) {
-        setRoutes([]); setLoading(false); return; // sin proveedores → sin rutas
-      }
-      query = query.in("supplier_id", operatorSupplierIds);
-    }
-    // Filtro manual por proveedor individual
-    if (filterSupplierId !== "all") {
-      query = query.eq("supplier_id", filterSupplierId);
+    if (operatorSupplierIds !== null && operatorSupplierIds.length === 0) {
+      setRoutes([]); setLoading(false); return; // operador sin proveedores → sin rutas
     }
 
-    const { data } = await query;
+    const runQuery = (excludeDeleted: boolean) => {
+      let q = supabase
+        .from("maintenance_routes")
+        .select(`
+          id, name, scheduled_date, status, supplier_id,
+          suppliers ( name ),
+          maintenance_route_stops ( id, status )
+        `)
+        .gte("scheduled_date", from)
+        .lte("scheduled_date", to)
+        .order("scheduled_date");
+      if (excludeDeleted) q = q.is("deleted_at", null);
+      if (operatorSupplierIds !== null) q = q.in("supplier_id", operatorSupplierIds);
+      if (filterSupplierId !== "all") q = q.eq("supplier_id", filterSupplierId);
+      return q;
+    };
+
+    let { data, error } = await runQuery(true);
+    if (error && /deleted_at|column|schema cache/i.test(error.message)) {
+      ({ data, error } = await runQuery(false)); // columna aún no existe
+    }
 
     if (data) {
       setRoutes(
@@ -215,8 +221,59 @@ export function RouteCalendar() {
     }
   };
 
+  // ── Papelera ──────────────────────────────────────────────────────────────
+  const softDeleteRoute = async (route: CalendarRoute) => {
+    setCtxMenu(null);
+    if (!window.confirm(`¿Eliminar la ruta "${route.name}"?\nIrá a la papelera (se conserva 1 semana).`)) return;
+    const { error } = await supabase.from("maintenance_routes")
+      .update({ deleted_at: new Date().toISOString() }).eq("id", route.id);
+    if (error) { toast.error(error.message); return; }
+    setRoutes((prev) => prev.filter((r) => r.id !== route.id));
+    toast.success("Ruta enviada a la papelera", {
+      action: {
+        label: "Deshacer",
+        onClick: async () => {
+          await supabase.from("maintenance_routes").update({ deleted_at: null }).eq("id", route.id);
+          loadRoutes();
+        },
+      },
+    });
+  };
+
+  const loadTrash = async () => {
+    const { data } = await supabase.from("maintenance_routes")
+      .select("id, name, scheduled_date, status, supplier_id, deleted_at, suppliers ( name ), maintenance_route_stops ( id, status )")
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false });
+    setTrashed((data ?? []).map((r: Record<string, unknown>) => {
+      const stops = (r.maintenance_route_stops as { status: string }[]) ?? [];
+      return {
+        id: r.id as string, name: r.name as string, scheduled_date: r.scheduled_date as string,
+        status: r.status as string, supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
+        stop_count: stops.length, completed_stops: 0, postponed_stops: 0,
+      };
+    }));
+  };
+
+  const openTrash = async () => { await loadTrash(); setTrashOpen(true); };
+
+  const restoreFromTrash = async (id: string) => {
+    await supabase.from("maintenance_routes").update({ deleted_at: null }).eq("id", id);
+    setTrashed((prev) => prev.filter((r) => r.id !== id));
+    loadRoutes();
+    toast.success("Ruta restaurada");
+  };
+
+  const purgeRoute = async (route: CalendarRoute) => {
+    if (!window.confirm(`¿Eliminar DEFINITIVAMENTE la ruta "${route.name}"?\nEsta acción no se puede deshacer.`)) return;
+    const { error } = await supabase.from("maintenance_routes").delete().eq("id", route.id);
+    if (error) { toast.error(error.message); return; }
+    setTrashed((prev) => prev.filter((r) => r.id !== route.id));
+    toast.success("Ruta eliminada definitivamente");
+  };
+
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-3 h-full" onClick={() => ctxMenu && setCtxMenu(null)}>
       {/* Header */}
       <div className="flex items-center gap-3 shrink-0">
         <CalendarDays className="w-5 h-5 text-blue-500" />
@@ -266,6 +323,12 @@ export function RouteCalendar() {
               <X className="w-3.5 h-3.5" /> Cancelar
             </Button>
           </div>
+        )}
+
+        {!isOperador && !exportMode && (
+          <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-gray-500" onClick={openTrash}>
+            <Trash2 className="w-3.5 h-3.5" /> Papelera
+          </Button>
         )}
 
         <div className="flex gap-1 ml-auto">
@@ -337,6 +400,11 @@ export function RouteCalendar() {
                   key={r.id}
                   className="w-full text-left mb-0.5 group"
                   onClick={(e) => { if (exportMode) return; e.stopPropagation(); setSelected(r); }}
+                  onContextMenu={(e) => {
+                    if (exportMode || isOperador) return;
+                    e.preventDefault(); e.stopPropagation();
+                    setCtxMenu({ x: e.clientX, y: e.clientY, route: r });
+                  }}
                 >
                   <div className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium text-white
                     ${STATUS_COLOR[r.status] ?? "bg-gray-400"} hover:opacity-90 transition-opacity`}>
@@ -509,6 +577,54 @@ export function RouteCalendar() {
               </div>
             </>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Menú contextual (click derecho en una ruta) */}
+      {ctxMenu && (
+        <div
+          className="fixed z-[1000] bg-white rounded-lg shadow-xl border border-gray-200 py-1 text-sm"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-red-600 hover:bg-red-50 w-full text-left"
+            onClick={() => softDeleteRoute(ctxMenu.route)}
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Eliminar ruta
+          </button>
+        </div>
+      )}
+
+      {/* Papelera */}
+      <Sheet open={trashOpen} onOpenChange={setTrashOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2 text-base">
+              <Trash2 className="w-4 h-4 text-gray-500" /> Papelera de rutas
+            </SheetTitle>
+          </SheetHeader>
+          <p className="text-xs text-gray-400 mt-2">Las rutas eliminadas se conservan 1 semana antes de borrarse definitivamente.</p>
+          <div className="mt-4 space-y-2">
+            {trashed.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">La papelera está vacía</p>
+            ) : trashed.map((r) => (
+              <div key={r.id} className="rounded-lg border border-gray-200 p-2.5 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{r.name}</div>
+                  <div className="text-xs text-gray-400">{r.scheduled_date}{r.supplier_name ? ` · ${r.supplier_name}` : ""}</div>
+                </div>
+                <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-blue-600"
+                  onClick={() => restoreFromTrash(r.id)}>
+                  <RotateCcw className="w-3.5 h-3.5" /> Restaurar
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
+                  onClick={() => purgeRoute(r)} title="Eliminar definitivamente">
+                  <Trash className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
         </SheetContent>
       </Sheet>
     </div>
