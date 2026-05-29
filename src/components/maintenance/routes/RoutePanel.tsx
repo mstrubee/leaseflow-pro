@@ -1,15 +1,13 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
 import type { RouteStop, MaintenanceLocation, ScheduleEntry } from "@/hooks/useRouteBuilder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car } from "lucide-react";
 import { toast } from "sonner";
-
-interface Supplier { id: string; name: string; }
+import { MinutesInput } from "./MinutesInput";
+import { SupplierCombobox } from "./SupplierCombobox";
 
 interface Props {
   origin: MaintenanceLocation | null;
@@ -20,10 +18,12 @@ interface Props {
   routeName: string;
   supplierId: string | null;
   scheduledDate: string;
+  startTime: string;
   saving: boolean;
   onRouteName: (v: string) => void;
   onSupplierId: (v: string | null) => void;
   onScheduledDate: (v: string) => void;
+  onStartTime: (v: string) => void;
   onRemoveStop: (locationId: string) => void;
   onReorder: (stops: RouteStop[]) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
@@ -90,9 +90,9 @@ function StopRow({ stop, index, schedule, dragging, dragOver, onDragStart, onDra
                 </span>
               )}
               <div className="flex items-center gap-0.5 shrink-0">
-                <input type="number" min="5" max="480" step="5"
+                <MinutesInput
                   value={stop.formMinutes[f.id] ?? 30}
-                  onChange={(e) => onSetFormMinutes(stop.locationId, f.id, parseInt(e.target.value) || 30)}
+                  onChange={(m) => onSetFormMinutes(stop.locationId, f.id, m)}
                   className="w-12 border border-gray-200 rounded px-1 py-0 text-[10px] text-center focus:outline-none focus:border-blue-400"
                 />
                 <span className="text-gray-400 text-[9px]">min</span>
@@ -107,18 +107,12 @@ function StopRow({ stop, index, schedule, dragging, dragOver, onDragStart, onDra
 
 export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes,
-  routeName, supplierId, scheduledDate, saving,
-  onRouteName, onSupplierId, onScheduledDate,
+  routeName, supplierId, scheduledDate, startTime, saving,
+  onRouteName, onSupplierId, onScheduledDate, onStartTime,
   onRemoveStop, onReorder, onSetFormMinutes, onSave, onReset,
 }: Props) {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
-
-  useEffect(() => {
-    supabase.from("suppliers").select("id,name").eq("is_active", true).order("name")
-      .then(({ data }) => { if (data) setSuppliers(data); });
-  }, []);
 
   const handleDrop = (i: number) => {
     if (dragging === null || dragging === i) { setDragging(null); setDragOver(null); return; }
@@ -146,7 +140,7 @@ export function RoutePanel({
         <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-purple-50 border border-purple-200 text-xs shrink-0">
           <span className="w-3 h-3 rounded-full bg-purple-500 shrink-0" />
           <span className="font-medium text-purple-700 truncate">Inicio: {origin.local_name || origin.name}</span>
-          <span className="ml-auto text-purple-400">09:00</span>
+          <span className="ml-auto text-purple-400">{startTime}</span>
         </div>
       )}
 
@@ -170,7 +164,7 @@ export function RoutePanel({
         <div className={`rounded-lg border px-3 py-2 text-xs shrink-0 space-y-1 ${dayFits ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
           <div className="flex justify-between font-medium text-gray-700">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Jornada estimada</span>
-            <span>09:00 – {endTime}</span>
+            <span>{startTime} – {endTime}</span>
           </div>
           <div className="flex gap-3 text-gray-500 flex-wrap">
             <span><Car className="w-3 h-3 inline mr-0.5" />{fmt(totalTravelMinutes)} traslado</span>
@@ -188,17 +182,17 @@ export function RoutePanel({
         </div>
         <div>
           <Label className="text-xs">Proveedor asignado</Label>
-          <Select value={supplierId ?? "none"} onValueChange={(v) => onSupplierId(v === "none" ? null : v)}>
-            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Sin asignar" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none" className="text-xs">Sin asignar</SelectItem>
-              {suppliers.map((s) => <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <SupplierCombobox value={supplierId} onChange={onSupplierId} />
         </div>
-        <div>
-          <Label className="text-xs">Fecha programada</Label>
-          <Input type="date" value={scheduledDate} onChange={(e) => onScheduledDate(e.target.value)} className="h-8 text-xs mt-1" />
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <Label className="text-xs">Fecha programada</Label>
+            <Input type="date" value={scheduledDate} onChange={(e) => onScheduledDate(e.target.value)} className="h-8 text-xs mt-1" />
+          </div>
+          <div className="w-24">
+            <Label className="text-xs">Hora inicio</Label>
+            <Input type="time" value={startTime} onChange={(e) => onStartTime(e.target.value)} className="h-8 text-xs mt-1" />
+          </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="flex-1 text-xs h-8" onClick={onReset} disabled={saving}>

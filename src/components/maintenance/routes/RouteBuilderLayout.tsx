@@ -121,9 +121,11 @@ export function RouteBuilderLayout() {
             routeName={rb.routeName}
             supplierId={rb.supplierId}
             scheduledDate={rb.scheduledDate}
+            startTime={rb.startTime}
             saving={rb.saving}
             onRouteName={rb.setRouteName}
             onSupplierId={rb.setSupplierId}
+            onStartTime={rb.setStartTime}
             onScheduledDate={(v) => {
               rb.setScheduledDate(v);
               if (v && (!rb.routeName || rb.routeName.startsWith("Ruta "))) {

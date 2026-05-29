@@ -136,9 +136,9 @@ function matchFormsToLocation(
 // ---------------------------------------------------------------------------
 // Schedule calculator
 // ---------------------------------------------------------------------------
-export function calculateSchedule(stops: RouteStop[]): ScheduleEntry[] {
+export function calculateSchedule(stops: RouteStop[], startMinutes: number = WORK_START_MINUTES): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
-  let cursor = WORK_START_MINUTES;
+  let cursor = startMinutes;
   let lunchTaken = false;
 
   for (let i = 0; i < stops.length; i++) {
@@ -154,8 +154,11 @@ export function calculateSchedule(stops: RouteStop[]): ScheduleEntry[] {
     }
 
     const arrivalMinutes = cursor;
-    const workMinutes = Object.values(stop.formMinutes).reduce((s, v) => s + (v || DEFAULT_FORM_MINUTES), 0) ||
-      (stop.formIds.length > 0 ? stop.formIds.length * DEFAULT_FORM_MINUTES : DEFAULT_FORM_MINUTES);
+    // SOLO sumar el tiempo de los forms SELECCIONADOS (formIds), no de todos los
+    // que quedaron en formMinutes tras deseleccionar. Si no hay forms, 1×default.
+    const workMinutes = stop.formIds.length > 0
+      ? stop.formIds.reduce((s, id) => s + (stop.formMinutes[id] || DEFAULT_FORM_MINUTES), 0)
+      : DEFAULT_FORM_MINUTES;
 
     // Mid-stop lunch
     if (!lunchTaken && cursor + workMinutes > LUNCH_START) {
@@ -193,8 +196,11 @@ export function useRouteBuilder() {
   const [origin, setOrigin]               = useState<MaintenanceLocation | null>(null);
   const [stops, setStops]                 = useState<RouteStop[]>([]);
   const [routeName, setRouteName]         = useState("");
-  const [supplierId, setSupplierId]       = useState<string | null>(null);
+  const [supplierId, setSupplierId]       = useState<string | null>(
+    () => localStorage.getItem("lastRouteSupplierId") || null,
+  );
   const [scheduledDate, setScheduledDate] = useState<string>("");
+  const [startTime, setStartTime]         = useState<string>("09:00");
   const [saving, setSaving]               = useState(false);
 
   // ---------------------------------------------------------------------------
@@ -258,7 +264,10 @@ export function useRouteBuilder() {
   const formsByLocation = useMemo(() => {
     const map = new Map<string, RouteForm[]>();
     for (const loc of locations) {
-      map.set(loc.id, matchFormsToLocation(loc, allForms));
+      // Ordenados por criticidad descendente (más alta primero)
+      const matched = matchFormsToLocation(loc, allForms)
+        .sort((a, b) => b.criticality_weight - a.criticality_weight);
+      map.set(loc.id, matched);
     }
     return map;
   }, [locations, allForms]);
@@ -286,9 +295,13 @@ export function useRouteBuilder() {
   }, [origin, locations, formsByLocation, stops]);
 
   // ---------------------------------------------------------------------------
-  // Schedule
+  // Schedule (con hora de inicio configurable)
   // ---------------------------------------------------------------------------
-  const schedule = useMemo(() => calculateSchedule(stops), [stops]);
+  const startMinutes = useMemo(() => {
+    const [h, m] = startTime.split(":").map(Number);
+    return (h || 9) * 60 + (m || 0);
+  }, [startTime]);
+  const schedule = useMemo(() => calculateSchedule(stops, startMinutes), [stops, startMinutes]);
 
   const totalWorkMinutes  = schedule.reduce((s, e) => s + e.workMinutes, 0);
   const totalTravelMinutes = stops.reduce((s, st) => s + st.travelMinutes, 0);
@@ -376,7 +389,8 @@ export function useRouteBuilder() {
 
   const resetRoute = useCallback(() => {
     setOrigin(null); setStops([]); setRouteName("");
-    setSupplierId(null); setScheduledDate("");
+    setScheduledDate(""); setStartTime("09:00");
+    // supplierId NO se resetea: mantiene el último usado como default
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -413,6 +427,8 @@ export function useRouteBuilder() {
           if (formErr) throw new Error(formErr.message);
         }
       }
+      // Recordar el último proveedor usado para la próxima ruta
+      if (supplierId) localStorage.setItem("lastRouteSupplierId", supplierId);
       return route.id;
     } finally { setSaving(false); }
   }, [user, routeName, supplierId, scheduledDate, stops]);
@@ -424,6 +440,7 @@ export function useRouteBuilder() {
     stops, routeName, setRouteName,
     supplierId, setSupplierId,
     scheduledDate, setScheduledDate,
+    startTime, setStartTime,
     saving,
     schedule, totalWorkMinutes, totalTravelMinutes,
     addStop, removeStop, reorderStops,

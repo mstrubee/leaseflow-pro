@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Plus, PlusCircle, Navigation2, Clock } from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
+import { MinutesInput } from "./MinutesInput";
 
 interface Props {
   location: MaintenanceLocation;
@@ -139,10 +140,9 @@ export function LocationPopup({
                       onClick={(e) => e.stopPropagation()}>
                       <Clock className="w-3 h-3 text-gray-400" />
                       <span className="text-[10px] text-gray-500">Tiempo:</span>
-                      <input
-                        type="number" min="5" max="480" step="5"
+                      <MinutesInput
                         value={minutes}
-                        onChange={(e) => onSetFormMinutes(location.id, f.id, parseInt(e.target.value) || 30)}
+                        onChange={(m) => onSetFormMinutes(location.id, f.id, m)}
                         onClick={(e) => e.stopPropagation()}
                         className="w-14 border border-gray-200 rounded px-1 py-0.5 text-[11px] text-center focus:outline-none focus:border-blue-400"
                       />
