@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { RouteStop, MaintenanceLocation, ScheduleEntry } from "@/hooks/useRouteBuilder";
+import { addBusinessDays } from "@/hooks/useRouteBuilder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,8 @@ interface Props {
   schedule: ScheduleEntry[];
   totalWorkMinutes: number;
   totalTravelMinutes: number;
+  totalDays: number;
+  endDate: string;
   routeName: string;
   supplierId: string | null;
   scheduledDate: string;
@@ -105,8 +108,17 @@ function StopRow({ stop, index, schedule, dragging, dragOver, onDragStart, onDra
   );
 }
 
+function dayDateLabel(scheduledDate: string, dayIndex: number): string {
+  if (!scheduledDate) return `Día ${dayIndex + 1}`;
+  const d = addBusinessDays(scheduledDate, dayIndex);
+  const [y, m, dd] = d.split("-").map(Number);
+  const date = new Date(y, m - 1, dd);
+  const label = date.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "short" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export function RoutePanel({
-  origin, stops, schedule, totalWorkMinutes, totalTravelMinutes,
+  origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime,
   onRemoveStop, onReorder, onSetFormMinutes, onSave, onReset,
@@ -123,8 +135,7 @@ export function RoutePanel({
   };
 
   const totalForms = stops.reduce((acc, s) => acc + s.formIds.length, 0);
-  const endTime    = schedule[schedule.length - 1]?.departureTime ?? "--:--";
-  const dayFits    = (totalWorkMinutes + totalTravelMinutes) <= 7.5 * 60;
+  const dayOfStop  = (i: number) => schedule[i]?.dayIndex ?? 0;
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -147,30 +158,51 @@ export function RoutePanel({
       <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
         {stops.length === 0
           ? <p className="text-xs text-gray-400 italic text-center mt-4">Agrega paradas desde el mapa</p>
-          : stops.map((stop, i) => (
-            <StopRow key={stop.locationId} stop={stop} index={i} schedule={schedule[i]}
-              dragging={dragging} dragOver={dragOver}
-              onDragStart={setDragging}
-              onDragOver={(e, idx) => { e.preventDefault(); setDragOver(idx); }}
-              onDrop={handleDrop}
-              onRemove={onRemoveStop}
-              onSetFormMinutes={onSetFormMinutes}
-            />
-          ))
+          : stops.map((stop, i) => {
+            const showDayHeader = i === 0 || dayOfStop(i) !== dayOfStop(i - 1);
+            return (
+              <div key={stop.locationId}>
+                {showDayHeader && (
+                  <div className="flex items-center gap-2 mt-2 mb-1 first:mt-0">
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5">
+                      📅 {dayDateLabel(scheduledDate, dayOfStop(i))}
+                    </span>
+                    <div className="flex-1 h-px bg-blue-100" />
+                  </div>
+                )}
+                <StopRow stop={stop} index={i} schedule={schedule[i]}
+                  dragging={dragging} dragOver={dragOver}
+                  onDragStart={setDragging}
+                  onDragOver={(e, idx) => { e.preventDefault(); setDragOver(idx); }}
+                  onDrop={handleDrop}
+                  onRemove={onRemoveStop}
+                  onSetFormMinutes={onSetFormMinutes}
+                />
+              </div>
+            );
+          })
         }
       </div>
 
       {stops.length > 0 && (
-        <div className={`rounded-lg border px-3 py-2 text-xs shrink-0 space-y-1 ${dayFits ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-xs shrink-0 space-y-1 ${totalDays === 1 ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}`}>
           <div className="flex justify-between font-medium text-gray-700">
-            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Jornada estimada</span>
-            <span>{startTime} – {endTime}</span>
+            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />
+              {totalDays === 1 ? "Jornada estimada" : `${totalDays} días de trabajo`}
+            </span>
+            {scheduledDate && (
+              <span>{totalDays === 1 ? scheduledDate : `${scheduledDate} → ${endDate}`}</span>
+            )}
           </div>
           <div className="flex gap-3 text-gray-500 flex-wrap">
             <span><Car className="w-3 h-3 inline mr-0.5" />{fmt(totalTravelMinutes)} traslado</span>
             <span><Clock className="w-3 h-3 inline mr-0.5" />{fmt(totalWorkMinutes)} trabajo</span>
           </div>
-          {!dayFits && <div className="text-amber-600 font-medium text-[11px]">⚠ Supera la jornada (7h 30min disponibles)</div>}
+          {totalDays > 1 && (
+            <div className="text-blue-600 font-medium text-[11px]">
+              ℹ Supera la jornada diaria → se reparte en {totalDays} días hábiles (una ruta por día)
+            </div>
+          )}
         </div>
       )}
 

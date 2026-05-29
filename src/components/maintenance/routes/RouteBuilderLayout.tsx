@@ -138,6 +138,8 @@ export function RouteBuilderLayout() {
             schedule={rb.schedule}
             totalWorkMinutes={rb.totalWorkMinutes}
             totalTravelMinutes={rb.totalTravelMinutes}
+            totalDays={rb.totalDays}
+            endDate={rb.endDate}
             routeName={rb.routeName}
             supplierId={rb.supplierId}
             scheduledDate={rb.scheduledDate}

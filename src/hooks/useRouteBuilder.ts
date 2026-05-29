@@ -64,6 +64,7 @@ export interface RouteStop {
 
 export interface ScheduleEntry {
   stopIndex: number;
+  dayIndex: number;       // 0 = primer día, 1 = segundo día hábil, …
   arrivalTime: string;    // "HH:MM"
   departureTime: string;
   travelMinutes: number;
@@ -134,45 +135,80 @@ function matchFormsToLocation(
 }
 
 // ---------------------------------------------------------------------------
-// Schedule calculator
+// Suma `n` días hábiles (L-V) a una fecha ISO (YYYY-MM-DD). Si la fecha de
+// inicio cae en fin de semana, se corre al lunes siguiente antes de sumar.
+// ---------------------------------------------------------------------------
+export function addBusinessDays(startISO: string, n: number): string {
+  if (!startISO) return startISO;
+  const [y, m, d] = startISO.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  // Normaliza el día 0 a hábil
+  while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() + 1);
+  let added = 0;
+  while (added < n) {
+    date.setDate(date.getDate() + 1);
+    if (date.getDay() !== 0 && date.getDay() !== 6) added++;
+  }
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+// ---------------------------------------------------------------------------
+// Schedule calculator — MULTI-DÍA
+// Reparte las paradas en días hábiles (L-V). Cuando una parada no cabe completa
+// antes de las 18:00, se mueve entera al siguiente día hábil (no se parte el
+// trabajo de un local entre días). El almuerzo (1.5h) se aplica una vez por día.
 // ---------------------------------------------------------------------------
 export function calculateSchedule(stops: RouteStop[], startMinutes: number = WORK_START_MINUTES): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
   let cursor = startMinutes;
   let lunchTaken = false;
+  let dayIndex = 0;
+
+  const applyLunchIfNeeded = (workMinutes: number) => {
+    // Si cruzamos las 13:00 (al llegar o durante el trabajo), tomar almuerzo
+    if (!lunchTaken && cursor + workMinutes > LUNCH_START && cursor < LUNCH_START + LUNCH_DURATION) {
+      cursor = Math.max(cursor, LUNCH_START) + LUNCH_DURATION;
+      lunchTaken = true;
+    } else if (!lunchTaken && cursor >= LUNCH_START) {
+      cursor += LUNCH_DURATION;
+      lunchTaken = true;
+    }
+  };
 
   for (let i = 0; i < stops.length; i++) {
     const stop = stops[i];
 
-    // Add travel time
+    // Tiempo de traslado desde la parada anterior (no en la primera)
     if (i > 0) cursor += stop.travelMinutes;
 
-    // Lunch check: if we hit 13:00 before starting this stop, take lunch first
-    if (!lunchTaken && cursor >= LUNCH_START) {
-      cursor += LUNCH_DURATION;
-      lunchTaken = true;
-    }
-
-    const arrivalMinutes = cursor;
-    // SOLO sumar el tiempo de los forms SELECCIONADOS (formIds), no de todos los
-    // que quedaron en formMinutes tras deseleccionar. Si no hay forms, 1×default.
     const workMinutes = stop.formIds.length > 0
       ? stop.formIds.reduce((s, id) => s + (stop.formMinutes[id] || DEFAULT_FORM_MINUTES), 0)
       : DEFAULT_FORM_MINUTES;
 
-    // Mid-stop lunch
-    if (!lunchTaken && cursor + workMinutes > LUNCH_START) {
-      cursor += LUNCH_DURATION;
-      lunchTaken = true;
+    // ¿Cabe esta parada (almuerzo incluido si aplica) antes de las 18:00?
+    const lunchCost = (!lunchTaken && cursor + workMinutes > LUNCH_START) ? LUNCH_DURATION : 0;
+    if (cursor + lunchCost + workMinutes > WORK_END_MINUTES && entries.length > 0) {
+      // No cabe → avanzar al siguiente día hábil
+      dayIndex += 1;
+      cursor = startMinutes;
+      lunchTaken = false;
+      // El traslado del primer local del nuevo día se mantiene como referencia,
+      // pero el día arranca a la hora de inicio (sin sumar traslado del día anterior)
     }
 
+    applyLunchIfNeeded(workMinutes);
+
+    const arrivalMinutes = cursor;
     cursor += workMinutes;
 
     entries.push({
       stopIndex: i,
+      dayIndex,
       arrivalTime: minutesToHHMM(arrivalMinutes),
-      departureTime: minutesToHHMM(Math.min(cursor, WORK_END_MINUTES)),
-      travelMinutes: stop.travelMinutes,
+      departureTime: minutesToHHMM(cursor),
+      travelMinutes: i > 0 ? stop.travelMinutes : 0,
       workMinutes,
       isLunch: false,
     });
@@ -306,6 +342,10 @@ export function useRouteBuilder() {
   const totalWorkMinutes  = schedule.reduce((s, e) => s + e.workMinutes, 0);
   const totalTravelMinutes = stops.reduce((s, st) => s + st.travelMinutes, 0);
 
+  // Multi-día: cuántos días hábiles abarca y la fecha de término
+  const totalDays = schedule.length > 0 ? Math.max(...schedule.map((e) => e.dayIndex)) + 1 : 1;
+  const endDate = scheduledDate ? addBusinessDays(scheduledDate, totalDays - 1) : "";
+
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
@@ -397,41 +437,78 @@ export function useRouteBuilder() {
   // Save
   // ---------------------------------------------------------------------------
   const saveRoute = useCallback(async (): Promise<string> => {
-    if (!user)           throw new Error("No autenticado");
-    if (!routeName.trim()) throw new Error("Ingresa un nombre para la ruta");
+    if (!user)              throw new Error("No autenticado");
+    if (!routeName.trim())  throw new Error("Ingresa un nombre para la ruta");
     if (stops.length === 0) throw new Error("Agrega al menos una parada");
+    if (!scheduledDate)     throw new Error("Selecciona la fecha de inicio");
 
     setSaving(true);
     try {
-      const { data: route, error: routeErr } = await supabase
-        .from("maintenance_routes")
-        .insert({ name: routeName.trim(), supplier_id: supplierId, created_by: user.id, scheduled_date: scheduledDate || null, status: "draft" })
-        .select("id").single();
-      if (routeErr || !route) throw new Error(routeErr?.message ?? "Error al crear ruta");
+      // Agrupar las paradas por día (dayIndex del cronograma multi-día)
+      const byDay = new Map<number, number[]>(); // dayIndex → índices de stops
+      schedule.forEach((e) => {
+        if (!byDay.has(e.dayIndex)) byDay.set(e.dayIndex, []);
+        byDay.get(e.dayIndex)!.push(e.stopIndex);
+      });
 
-      for (let i = 0; i < stops.length; i++) {
-        const stop = stops[i];
-        const { data: stopRow, error: stopErr } = await supabase
-          .from("maintenance_route_stops")
-          .insert({ route_id: route.id, location_id: stop.locationId, stop_order: i + 1, estimated_travel_min: stop.travelMinutes })
+      const tourId = crypto.randomUUID();
+      const days = [...byDay.keys()].sort((a, b) => a - b);
+      const multiDay = days.length > 1;
+      let firstRouteId = "";
+
+      for (const dayIndex of days) {
+        const dayDate = addBusinessDays(scheduledDate, dayIndex);
+        const dayName = multiDay
+          ? `${routeName.trim()} — Día ${dayIndex + 1} (${dayDate})`
+          : routeName.trim();
+
+        const { data: route, error: routeErr } = await supabase
+          .from("maintenance_routes")
+          .insert({
+            name: dayName,
+            supplier_id: supplierId,
+            created_by: user.id,
+            scheduled_date: dayDate,
+            status: "draft",
+            tour_id: tourId,
+            day_index: dayIndex,
+            start_time: startTime,
+          })
           .select("id").single();
-        if (stopErr || !stopRow) throw new Error(stopErr?.message ?? "Error al crear parada");
+        if (routeErr || !route) throw new Error(routeErr?.message ?? "Error al crear ruta");
+        if (!firstRouteId) firstRouteId = route.id;
 
-        if (stop.formIds.length > 0) {
-          const formRows = stop.formIds.map((fid) => ({
-            route_stop_id: stopRow.id,
-            maintenance_form_id: fid,
-            estimated_minutes: stop.formMinutes[fid] ?? DEFAULT_FORM_MINUTES,
-          }));
-          const { error: formErr } = await supabase.from("maintenance_route_forms").insert(formRows);
-          if (formErr) throw new Error(formErr.message);
+        // Paradas de este día (en orden), re-numeradas desde 1
+        const dayStopIndices = byDay.get(dayIndex)!;
+        for (let order = 0; order < dayStopIndices.length; order++) {
+          const stop = stops[dayStopIndices[order]];
+          const { data: stopRow, error: stopErr } = await supabase
+            .from("maintenance_route_stops")
+            .insert({
+              route_id: route.id,
+              location_id: stop.locationId,
+              stop_order: order + 1,
+              estimated_travel_min: stop.travelMinutes,
+            })
+            .select("id").single();
+          if (stopErr || !stopRow) throw new Error(stopErr?.message ?? "Error al crear parada");
+
+          if (stop.formIds.length > 0) {
+            const formRows = stop.formIds.map((fid) => ({
+              route_stop_id: stopRow.id,
+              maintenance_form_id: fid,
+              estimated_minutes: stop.formMinutes[fid] ?? DEFAULT_FORM_MINUTES,
+            }));
+            const { error: formErr } = await supabase.from("maintenance_route_forms").insert(formRows);
+            if (formErr) throw new Error(formErr.message);
+          }
         }
       }
-      // Recordar el último proveedor usado para la próxima ruta
+
       if (supplierId) localStorage.setItem("lastRouteSupplierId", supplierId);
-      return route.id;
+      return firstRouteId;
     } finally { setSaving(false); }
-  }, [user, routeName, supplierId, scheduledDate, stops]);
+  }, [user, routeName, supplierId, scheduledDate, startTime, stops, schedule]);
 
   return {
     locations, criticalities, allForms, formsByLocation,
@@ -442,7 +519,7 @@ export function useRouteBuilder() {
     scheduledDate, setScheduledDate,
     startTime, setStartTime,
     saving,
-    schedule, totalWorkMinutes, totalTravelMinutes,
+    schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
     addStop, removeStop, reorderStops,
     toggleFormInStop, addAllFormsToStop,
     setFormMinutes, resetRoute, saveRoute,
