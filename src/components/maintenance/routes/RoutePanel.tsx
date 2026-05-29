@@ -22,11 +22,15 @@ interface Props {
   supplierId: string | null;
   scheduledDate: string;
   startTime: string;
+  urbanSpeed: number;
+  highwaySpeed: number;
   saving: boolean;
   onRouteName: (v: string) => void;
   onSupplierId: (v: string | null) => void;
   onScheduledDate: (v: string) => void;
   onStartTime: (v: string) => void;
+  onUrbanSpeed: (v: number) => void;
+  onHighwaySpeed: (v: number) => void;
   onRemoveStop: (locationId: string) => void;
   onReorder: (stops: RouteStop[]) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
@@ -119,8 +123,8 @@ function dayDateLabel(scheduledDate: string, dayIndex: number): string {
 
 export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
-  routeName, supplierId, scheduledDate, startTime, saving,
-  onRouteName, onSupplierId, onScheduledDate, onStartTime,
+  routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
+  onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
   onRemoveStop, onReorder, onSetFormMinutes, onSave, onReset,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
@@ -259,6 +263,22 @@ export function RoutePanel({
           <div className="w-24">
             <Label className="text-xs">Hora inicio</Label>
             <Input type="time" value={startTime} onChange={(e) => onStartTime(e.target.value)} className="h-8 text-xs mt-1" />
+          </div>
+        </div>
+        {/* Velocidades de traslado editables */}
+        <div className="flex gap-2 items-end">
+          <Car className="w-3.5 h-3.5 text-gray-400 mb-2 shrink-0" />
+          <div className="flex-1">
+            <Label className="text-[10px] text-gray-500">Vel. ciudad (km/h)</Label>
+            <Input type="number" min={5} max={120} value={urbanSpeed}
+              onChange={(e) => onUrbanSpeed(parseInt(e.target.value) || 20)}
+              className="h-8 text-xs mt-0.5" />
+          </div>
+          <div className="flex-1">
+            <Label className="text-[10px] text-gray-500">Vel. carretera (km/h)</Label>
+            <Input type="number" min={20} max={140} value={highwaySpeed}
+              onChange={(e) => onHighwaySpeed(parseInt(e.target.value) || 100)}
+              className="h-8 text-xs mt-0.5" />
           </div>
         </div>
         <div className="flex gap-2">

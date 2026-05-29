@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { getOsrmRoute, estimateTravelMinutes } from "@/lib/osrmRoute";
+import { getOsrmRoute } from "@/lib/osrmRoute";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,8 +58,17 @@ export interface RouteStop {
   formIds: string[];
   allForms: RouteForm[];
   formMinutes: Record<string, number>; // formId → estimated minutes
-  travelMinutes: number;               // travel time from previous stop
+  travelDistanceKm: number;            // distancia del tramo (OSRM o Haversine)
+  travelMinutes: number;               // tiempo de traslado (derivado de distancia y velocidades)
   routeGeometry: GeoJSON.LineString | null;
+}
+
+const URBAN_THRESHOLD_KM = 20; // < 20 km = ciudad; ≥ = carretera
+
+/** Tiempo de traslado (min) según distancia y velocidades configuradas. */
+export function travelMinutesFromKm(km: number, urbanSpeed: number, highwaySpeed: number): number {
+  const speed = km < URBAN_THRESHOLD_KM ? urbanSpeed : highwaySpeed;
+  return speed > 0 ? Math.round((km / speed) * 60) : 0;
 }
 
 export interface ScheduleEntry {
@@ -239,6 +248,10 @@ export function useRouteBuilder() {
   const [startTime, setStartTime]         = useState<string>("09:00");
   const [saving, setSaving]               = useState(false);
 
+  // Velocidades editables por el usuario (km/h) para estimar el traslado
+  const [urbanSpeed, setUrbanSpeed]     = useState(20);
+  const [highwaySpeed, setHighwaySpeed] = useState(100);
+
   // Filtros / orden de la lista de locales (afectan también el mapa)
   const [sortBy, setSortBy] = useState<"priority" | "distance" | "forms">("priority");
   const [filterTypes, setFilterTypes] = useState<Set<string>>(new Set());
@@ -379,6 +392,19 @@ export function useRouteBuilder() {
   }, [startTime]);
   const schedule = useMemo(() => calculateSchedule(stops, startMinutes), [stops, startMinutes]);
 
+  // Recalcular el tiempo de traslado de las paradas cuando cambian las velocidades
+  useEffect(() => {
+    setStops((prev) => {
+      let changed = false;
+      const next = prev.map((s) => {
+        const tm = travelMinutesFromKm(s.travelDistanceKm ?? 0, urbanSpeed, highwaySpeed);
+        if (tm !== s.travelMinutes) { changed = true; return { ...s, travelMinutes: tm }; }
+        return s;
+      });
+      return changed ? next : prev;
+    });
+  }, [urbanSpeed, highwaySpeed]);
+
   const totalWorkMinutes  = schedule.reduce((s, e) => s + e.workMinutes, 0);
   const totalTravelMinutes = stops.reduce((s, st) => s + st.travelMinutes, 0);
 
@@ -399,24 +425,26 @@ export function useRouteBuilder() {
       ? stops[stops.length - 1].location
       : origin;
 
-    let travelMinutes  = 0;
+    let travelDistanceKm = 0;
     let routeGeometry: GeoJSON.LineString | null = null;
 
     if (prevPoint) {
-      const dist  = haversine(prevPoint.lat, prevPoint.lng, location.lat, location.lng);
-      travelMinutes = estimateTravelMinutes(dist);
-      // Try OSRM for real road geometry
+      travelDistanceKm = haversine(prevPoint.lat, prevPoint.lng, location.lat, location.lng);
+      // OSRM: usar la distancia real por calles y la geometría
       try {
         const osrm = await getOsrmRoute([
           { lat: prevPoint.lat, lng: prevPoint.lng },
           { lat: location.lat, lng: location.lng },
         ]);
         if (osrm) {
-          travelMinutes = Math.round(osrm.duration / 60);
+          travelDistanceKm = osrm.distance / 1000; // metros → km
           routeGeometry = osrm.geometry;
         }
-      } catch { /* keep estimate */ }
+      } catch { /* keep haversine */ }
     }
+
+    // El tiempo se calcula con las velocidades configuradas por el usuario
+    const travelMinutes = travelMinutesFromKm(travelDistanceKm, urbanSpeed, highwaySpeed);
 
     setStops((prev) => [
       ...prev,
@@ -426,11 +454,12 @@ export function useRouteBuilder() {
         formIds: selectedIds,
         allForms: locForms,
         formMinutes: defaultMinutes,
+        travelDistanceKm,
         travelMinutes,
         routeGeometry,
       },
     ]);
-  }, [formsByLocation, stops, origin]);
+  }, [formsByLocation, stops, origin, urbanSpeed, highwaySpeed]);
 
   const removeStop = useCallback((locationId: string) => {
     setStops((prev) => prev.filter((s) => s.locationId !== locationId));
@@ -573,6 +602,8 @@ export function useRouteBuilder() {
     supplierId, setSupplierId,
     scheduledDate, setScheduledDate,
     startTime, setStartTime,
+    urbanSpeed, setUrbanSpeed,
+    highwaySpeed, setHighwaySpeed,
     saving,
     schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
     addStop, removeStop, reorderStops,
