@@ -239,6 +239,11 @@ export function useRouteBuilder() {
   const [startTime, setStartTime]         = useState<string>("09:00");
   const [saving, setSaving]               = useState(false);
 
+  // Filtros / orden de la lista de locales (afectan también el mapa)
+  const [sortBy, setSortBy] = useState<"priority" | "distance" | "forms">("priority");
+  const [filterTypes, setFilterTypes] = useState<Set<string>>(new Set());
+  const [filterCriticalities, setFilterCriticalities] = useState<Set<string>>(new Set());
+
   // ---------------------------------------------------------------------------
   // Load base data: locations + criticalities in one shot
   // ---------------------------------------------------------------------------
@@ -309,7 +314,38 @@ export function useRouteBuilder() {
   }, [locations, allForms]);
 
   // ---------------------------------------------------------------------------
-  // Scored locations relative to origin
+  // Filtros: ¿un form cumple los filtros activos de tipo y criticidad?
+  // (sin filtros activos → todo pasa)
+  // ---------------------------------------------------------------------------
+  const formMatchesFilters = useCallback((f: RouteForm): boolean => {
+    if (filterTypes.size > 0) {
+      const typeOk =
+        (filterTypes.has("Eléctrico")    && !!f.electrical_description) ||
+        (filterTypes.has("Obra Civil")   && !!f.civil_description) ||
+        (filterTypes.has("Climatización")&& !!f.hvac_description) ||
+        (filterTypes.has("Activos Fijos")&& !!f.fixed_assets_description) ||
+        (filterTypes.has("General")      && !!f.general_description &&
+          !f.electrical_description && !f.civil_description && !f.hvac_description && !f.fixed_assets_description);
+      if (!typeOk) return false;
+    }
+    if (filterCriticalities.size > 0) {
+      if (!f.criticality_name || !filterCriticalities.has(f.criticality_name)) return false;
+    }
+    return true;
+  }, [filterTypes, filterCriticalities]);
+
+  // IDs de locales que tienen ≥1 form que cumple los filtros (null = sin filtro)
+  const visibleLocationIds = useMemo((): Set<string> | null => {
+    if (filterTypes.size === 0 && filterCriticalities.size === 0) return null;
+    const ids = new Set<string>();
+    for (const [locId, forms] of formsByLocation) {
+      if (forms.some(formMatchesFilters)) ids.add(locId);
+    }
+    return ids;
+  }, [formsByLocation, filterTypes, filterCriticalities, formMatchesFilters]);
+
+  // ---------------------------------------------------------------------------
+  // Scored locations relative to origin (con filtros + orden)
   // ---------------------------------------------------------------------------
   const scoredLocations = useMemo((): ScoredLocation[] => {
     if (!origin) return [];
@@ -317,6 +353,7 @@ export function useRouteBuilder() {
 
     return locations
       .filter((loc) => loc.id !== origin.id && !stopIds.has(loc.id))
+      .filter((loc) => !visibleLocationIds || visibleLocationIds.has(loc.id))
       .map((loc) => {
         const locForms   = formsByLocation.get(loc.id) ?? [];
         const totalScore = locForms.reduce((acc, f) => acc + f.criticality_weight, 0);
@@ -324,11 +361,14 @@ export function useRouteBuilder() {
         return { ...loc, forms: locForms, totalForms: locForms.length, totalScore, distanceKm };
       })
       .sort((a, b) => {
+        if (sortBy === "distance") return a.distanceKm - b.distanceKm;
+        if (sortBy === "forms") return b.totalForms - a.totalForms || a.distanceKm - b.distanceKm;
+        // priority (default): score/distancia
         const sa = a.distanceKm > 0 ? a.totalScore / a.distanceKm : a.totalScore;
         const sb = b.distanceKm > 0 ? b.totalScore / b.distanceKm : b.totalScore;
         return sb !== sa ? sb - sa : a.distanceKm - b.distanceKm;
       });
-  }, [origin, locations, formsByLocation, stops]);
+  }, [origin, locations, formsByLocation, stops, visibleLocationIds, sortBy]);
 
   // ---------------------------------------------------------------------------
   // Schedule (con hora de inicio configurable)
@@ -524,6 +564,10 @@ export function useRouteBuilder() {
   return {
     locations, criticalities, allForms, formsByLocation,
     scoredLocations, loading,
+    visibleLocationIds,
+    sortBy, setSortBy,
+    filterTypes, setFilterTypes,
+    filterCriticalities, setFilterCriticalities,
     origin, setOrigin,
     stops, routeName, setRouteName,
     supplierId, setSupplierId,

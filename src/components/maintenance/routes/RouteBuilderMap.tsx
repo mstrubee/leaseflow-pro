@@ -240,6 +240,7 @@ interface Props {
   stops: RouteStop[];
   schedule?: ScheduleEntryLite[];
   startTime?: string;
+  visibleLocationIds?: Set<string> | null;
   onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
   onToggleForm: (locationId: string, formId: string) => void;
   onAddAllForms: (locationId: string) => void;
@@ -249,7 +250,7 @@ interface Props {
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
-  origin, stops, schedule = [], startTime = "09:00",
+  origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
   onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin,
 }: Props) {
   const stopSet   = new Set(stops.map((s) => s.locationId));
@@ -318,10 +319,16 @@ export function RouteBuilderMap({
           );
         })}
 
-        {/* Markers */}
+        {/* Markers — con filtros activos, solo globos que pasan (más origen y paradas) */}
         {locations.map((loc) => {
           const isOrigin    = origin?.id === loc.id;
           const isStop      = stopSet.has(loc.id);
+
+          // Ocultar si hay filtro activo y este local no pasa (salvo origen/parada)
+          if (visibleLocationIds && !visibleLocationIds.has(loc.id) && !isOrigin && !isStop) {
+            return null;
+          }
+
           const stopIndex   = stops.findIndex((s) => s.locationId === loc.id);
           const existingStop = stops.find((s) => s.locationId === loc.id);
           // KEY FIX: always use formsByLocation (not dependent on origin/scoring)

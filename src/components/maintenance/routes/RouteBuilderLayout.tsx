@@ -3,6 +3,7 @@ import { useRouteBuilder } from "@/hooks/useRouteBuilder";
 import { RouteBuilderMap } from "./RouteBuilderMap";
 import { LocationScoreList } from "./LocationScoreList";
 import { RoutePanel } from "./RoutePanel";
+import { ListFilters } from "./ListFilters";
 import {
   Select,
   SelectContent,
@@ -103,6 +104,7 @@ export function RouteBuilderLayout() {
             stops={rb.stops}
             schedule={rb.schedule}
             startTime={rb.startTime}
+            visibleLocationIds={rb.visibleLocationIds}
             onAddStop={rb.addStop}
             onToggleForm={rb.toggleFormInStop}
             onAddAllForms={rb.addAllFormsToStop}
@@ -146,9 +148,23 @@ export function RouteBuilderLayout() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Buscar local…"
-                  className="h-7 text-xs"
+                  className="h-7 text-xs mb-1.5"
                 />
               )}
+              <ListFilters
+                sortBy={rb.sortBy}
+                onSortBy={rb.setSortBy}
+                criticalities={rb.criticalities}
+                filterTypes={rb.filterTypes}
+                onToggleType={(t) => rb.setFilterTypes((prev) => {
+                  const next = new Set(prev); next.has(t) ? next.delete(t) : next.add(t); return next;
+                })}
+                filterCriticalities={rb.filterCriticalities}
+                onToggleCriticality={(c) => rb.setFilterCriticalities((prev) => {
+                  const next = new Set(prev); next.has(c) ? next.delete(c) : next.add(c); return next;
+                })}
+                onClear={() => { rb.setFilterTypes(new Set()); rb.setFilterCriticalities(new Set()); }}
+              />
             </div>
             <div className="flex-1 overflow-y-auto p-2">
               <LocationScoreList
