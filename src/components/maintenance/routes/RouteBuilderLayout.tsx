@@ -76,6 +76,7 @@ export function RouteBuilderLayout() {
           <RouteBuilderMap
             locations={rb.locations}
             scoredLocations={rb.scoredLocations}
+            formsByLocation={rb.formsByLocation}
             origin={rb.origin}
             stops={rb.stops}
             onAddStop={rb.addStop}
@@ -113,6 +114,9 @@ export function RouteBuilderLayout() {
           <RoutePanel
             origin={rb.origin}
             stops={rb.stops}
+            schedule={rb.schedule}
+            totalWorkMinutes={rb.totalWorkMinutes}
+            totalTravelMinutes={rb.totalTravelMinutes}
             routeName={rb.routeName}
             supplierId={rb.supplierId}
             scheduledDate={rb.scheduledDate}
@@ -121,7 +125,6 @@ export function RouteBuilderLayout() {
             onSupplierId={rb.setSupplierId}
             onScheduledDate={(v) => {
               rb.setScheduledDate(v);
-              // Auto-fill route name when date is picked and name is still empty/auto
               if (v && (!rb.routeName || rb.routeName.startsWith("Ruta "))) {
                 const [y, m, d] = v.split("-");
                 rb.setRouteName(`Ruta ${y}.${m}.${d}`);
@@ -129,11 +132,8 @@ export function RouteBuilderLayout() {
             }}
             onRemoveStop={rb.removeStop}
             onReorder={rb.reorderStops}
-            onSave={async () => {
-              const id = await rb.saveRoute();
-              rb.resetRoute();
-              return id;
-            }}
+            onSetFormMinutes={rb.setFormMinutes}
+            onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); return id; }}
             onReset={rb.resetRoute}
           />
         </div>
