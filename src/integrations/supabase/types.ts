@@ -5983,7 +5983,7 @@ export type Database = {
         | "permit"
         | "certificate"
         | "other"
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "operador_terreno"
       budget_classification: "CAPEX" | "OPEX"
       contract_status: "en_negociacion" | "firmado" | "vencido"
       document_type:
@@ -6142,7 +6142,7 @@ export const Constants = {
         "certificate",
         "other",
       ],
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "operador_terreno"],
       budget_classification: ["CAPEX", "OPEX"],
       contract_status: ["en_negociacion", "firmado", "vencido"],
       document_type: [
