@@ -49,7 +49,7 @@ const STATUS_LABEL: Record<string, string> = {
 // Component
 // ---------------------------------------------------------------------------
 export function RouteCalendar() {
-  const { isAdmin, isOperador } = useAuth();
+  const { isAdmin, isOperador, user } = useAuth();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [routes, setRoutes] = useState<CalendarRoute[]>([]);
@@ -61,21 +61,64 @@ export function RouteCalendar() {
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
 
+  // Supplier filtering
+  // - operatorSupplierIds: null = admin (ve todo); array = operador (solo esos)
+  const [operatorSupplierIds, setOperatorSupplierIds] = useState<string[] | null>(null);
+  const [supplierOptions, setSupplierOptions] = useState<{ id: string; name: string }[]>([]);
+  const [filterSupplierId, setFilterSupplierId] = useState<string>("all");
+
+  // Load operator's suppliers (or all suppliers for admin) for the filter dropdown
+  useEffect(() => {
+    if (!user) return;
+    if (isOperador) {
+      supabase
+        .from("operator_suppliers")
+        .select("supplier_id, suppliers ( id, name )")
+        .eq("user_id", user.id)
+        .then(({ data }) => {
+          const ids = (data ?? []).map((r: Record<string, unknown>) => r.supplier_id as string);
+          const opts = (data ?? [])
+            .map((r: Record<string, unknown>) => r.suppliers as { id: string; name: string } | null)
+            .filter(Boolean) as { id: string; name: string }[];
+          setOperatorSupplierIds(ids);
+          setSupplierOptions(opts);
+        });
+    } else {
+      setOperatorSupplierIds(null); // admin: sin restricción
+      supabase.from("suppliers").select("id,name").order("name")
+        .then(({ data }) => setSupplierOptions(data ?? []));
+    }
+  }, [user, isOperador]);
+
   const loadRoutes = useCallback(async () => {
     setLoading(true);
     const from = format(startOfMonth(currentMonth), "yyyy-MM-dd");
     const to   = format(endOfMonth(currentMonth),   "yyyy-MM-dd");
 
-    const { data } = await supabase
+    let query = supabase
       .from("maintenance_routes")
       .select(`
-        id, name, scheduled_date, status,
+        id, name, scheduled_date, status, supplier_id,
         suppliers ( name ),
         maintenance_route_stops ( id, status )
       `)
       .gte("scheduled_date", from)
       .lte("scheduled_date", to)
       .order("scheduled_date");
+
+    // Operador: limitar a sus proveedores
+    if (operatorSupplierIds !== null) {
+      if (operatorSupplierIds.length === 0) {
+        setRoutes([]); setLoading(false); return; // sin proveedores → sin rutas
+      }
+      query = query.in("supplier_id", operatorSupplierIds);
+    }
+    // Filtro manual por proveedor individual
+    if (filterSupplierId !== "all") {
+      query = query.eq("supplier_id", filterSupplierId);
+    }
+
+    const { data } = await query;
 
     if (data) {
       setRoutes(
@@ -96,7 +139,7 @@ export function RouteCalendar() {
       );
     }
     setLoading(false);
-  }, [currentMonth]);
+  }, [currentMonth, operatorSupplierIds, filterSupplierId]);
 
   useEffect(() => { loadRoutes(); }, [loadRoutes]);
 
@@ -164,6 +207,22 @@ export function RouteCalendar() {
         <h2 className="text-base font-semibold text-gray-800 capitalize">
           {format(currentMonth, "MMMM yyyy", { locale: es })}
         </h2>
+
+        {/* Filtro por proveedor (operador: solo los suyos; admin: todos) */}
+        {supplierOptions.length > 0 && (
+          <select
+            value={filterSupplierId}
+            onChange={(e) => setFilterSupplierId(e.target.value)}
+            className="h-8 text-xs rounded-md border border-gray-200 px-2 bg-white focus:outline-none focus:border-blue-400 max-w-[180px]"
+          >
+            <option value="all">
+              {isOperador ? "Todos mis proveedores" : "Todos los proveedores"}
+            </option>
+            {supplierOptions.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
 
         {!exportMode ? (
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 ml-3"

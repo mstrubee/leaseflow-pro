@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { email, password, fullName, cargo, role, permissions } = await req.json()
+    const { email, password, fullName, cargo, role, permissions, supplierIds } = await req.json()
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: 'Email and password are required' }), {
@@ -153,9 +153,24 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      user: { id: newUserId, email } 
+    // Operator → supplier links: replace existing set
+    await supabaseAdmin
+      .from('operator_suppliers')
+      .delete()
+      .eq('user_id', newUserId)
+
+    if (Array.isArray(supplierIds) && supplierIds.length > 0) {
+      const links = supplierIds
+        .filter((id: unknown) => typeof id === 'string' && id)
+        .map((supplier_id: string) => ({ user_id: newUserId, supplier_id }))
+      if (links.length > 0) {
+        await supabaseAdmin.from('operator_suppliers').insert(links)
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      user: { id: newUserId, email }
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

@@ -257,8 +257,10 @@ const AdminPanel = () => {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserCargo, setNewUserCargo] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"admin" | "user">("user");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "user" | "operador_terreno">("user");
   const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
+  const [newUserSupplierIds, setNewUserSupplierIds] = useState<string[]>([]);
+  const [allSuppliers, setAllSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -286,8 +288,9 @@ const AdminPanel = () => {
   const [editUserName, setEditUserName] = useState("");
   const [editUserCargo, setEditUserCargo] = useState("");
   const [editUserPassword, setEditUserPassword] = useState("");
-  const [editUserRole, setEditUserRole] = useState<"admin" | "user">("user");
+  const [editUserRole, setEditUserRole] = useState<"admin" | "user" | "operador_terreno">("user");
   const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
+  const [editUserSupplierIds, setEditUserSupplierIds] = useState<string[]>([]);
   const [updatingUser, setUpdatingUser] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -366,12 +369,13 @@ const AdminPanel = () => {
   const loadData = async () => {
     setLoading(true);
     
-    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes] = await Promise.all([
+    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
       supabase.from("user_permissions").select("*"),
       supabase.from("folder_templates").select("*").order("display_order", { ascending: true }),
       supabase.from("user_activity_thresholds").select("*" as any),
+      supabase.from("suppliers").select("id,name").order("name"),
     ]);
 
     setProfiles(profilesRes.data || []);
@@ -379,6 +383,7 @@ const AdminPanel = () => {
     setUserPermissions(permissionsRes.data || []);
     setFolderTemplates(templatesRes.data || []);
     setActivityThresholds((thresholdsRes.data as any) || []);
+    setAllSuppliers(suppliersRes.data || []);
     setLoading(false);
   };
 
@@ -473,7 +478,12 @@ const AdminPanel = () => {
             fullName: newUserName,
             cargo: newUserCargo || null,
             role: newUserRole,
-            permissions: newUserPermissions
+            // Operador: por defecto solo acceso a mantención (rutas), salvo que
+            // el admin haya agregado más permisos manualmente.
+            permissions: newUserRole === "operador_terreno"
+              ? { maintenance: "edit", ...newUserPermissions }
+              : newUserPermissions,
+            supplierIds: newUserRole === "operador_terreno" ? newUserSupplierIds : [],
           })
         }
       );
@@ -492,6 +502,7 @@ const AdminPanel = () => {
       setNewUserCargo("");
       setNewUserRole("user");
       setNewUserPermissions({});
+      setNewUserSupplierIds([]);
       loadData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -566,7 +577,7 @@ const AdminPanel = () => {
     setEditUserName(profile.full_name || "");
     setEditUserCargo(profile.cargo || "");
     setEditUserPassword("");
-    setEditUserRole(getUserRole(profile.id) as "admin" | "user");
+    setEditUserRole(getUserRole(profile.id) as "admin" | "user" | "operador_terreno");
     // Load existing permissions
     const userPerms = getUserPermissions(profile.id);
     const permsMap: Record<string, "view" | "edit" | "none"> = {};
@@ -575,6 +586,12 @@ const AdminPanel = () => {
       permsMap[p.resource] = p.permission === "all" ? "edit" : p.permission;
     });
     setEditUserPermissions(permsMap);
+    // Load operator → supplier links
+    setEditUserSupplierIds([]);
+    supabase.from("operator_suppliers").select("supplier_id").eq("user_id", profile.id)
+      .then(({ data }) => {
+        if (data) setEditUserSupplierIds(data.map((r: { supplier_id: string }) => r.supplier_id));
+      });
     setEditUserDialogOpen(true);
   };
 
@@ -600,21 +617,32 @@ const AdminPanel = () => {
             cargo: editUserCargo !== (editingUserProfile.cargo || "") ? editUserCargo || null : undefined,
             password: editUserPassword || undefined,
             role: editUserRole !== getUserRole(editingUserProfile.id) ? editUserRole : undefined,
-            permissions: editUserPermissions,
+            permissions: editUserRole === "operador_terreno"
+              ? { maintenance: editUserPermissions.maintenance ?? "edit", ...editUserPermissions }
+              : editUserPermissions,
           })
         }
       );
 
       const result = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(result.error || 'Error al actualizar usuario');
+      }
+
+      // Sync operator → supplier links (replace set)
+      await supabase.from("operator_suppliers").delete().eq("user_id", editingUserProfile.id);
+      if (editUserRole === "operador_terreno" && editUserSupplierIds.length > 0) {
+        await supabase.from("operator_suppliers").insert(
+          editUserSupplierIds.map((supplier_id) => ({ user_id: editingUserProfile.id, supplier_id })),
+        );
       }
 
       toast({ title: "Usuario actualizado", description: "Los cambios se guardaron exitosamente" });
       setEditUserDialogOpen(false);
       setEditingUserProfile(null);
       setEditUserPermissions({});
+      setEditUserSupplierIds([]);
       loadData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -916,17 +944,54 @@ const AdminPanel = () => {
                   </div>
                   <div className="space-y-2">
                     <Label>Rol</Label>
-                    <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "user")}>
+                    <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "user" | "operador_terreno")}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="user">Usuario</SelectItem>
+                        <SelectItem value="operador_terreno">Operador de Terreno</SelectItem>
                         <SelectItem value="admin">Administrador</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {newUserRole === "user" && (
+
+                  {/* Operador de Terreno: vincular proveedores */}
+                  {newUserRole === "operador_terreno" && (
+                    <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm">Proveedores asignados</Label>
+                        <span className="text-[11px] text-muted-foreground">(verá solo las rutas de estos proveedores)</span>
+                      </div>
+                      {allSuppliers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic">No hay proveedores creados</p>
+                      ) : (
+                        <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                          {allSuppliers.map((s) => {
+                            const checked = newUserSupplierIds.includes(s.id);
+                            return (
+                              <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => setNewUserSupplierIds((prev) =>
+                                    prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
+                                  )}
+                                  className="rounded border-gray-300"
+                                />
+                                <span className="truncate">{s.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-[11px] text-muted-foreground border-t border-blue-100 pt-1.5">
+                        Acceso por defecto: solo <strong>Mantenciones</strong> (rutas). Puedes agregar más accesos abajo.
+                      </p>
+                    </div>
+                  )}
+
+                  {(newUserRole === "user" || newUserRole === "operador_terreno") && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <Label>Permisos por Sección</Label>
@@ -1450,18 +1515,52 @@ const AdminPanel = () => {
               {editingUserProfile?.id !== user?.id && (
                 <div className="space-y-2">
                   <Label>Rol</Label>
-                  <Select value={editUserRole} onValueChange={(v) => setEditUserRole(v as "admin" | "user")}>
+                  <Select value={editUserRole} onValueChange={(v) => setEditUserRole(v as "admin" | "user" | "operador_terreno")}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="user">Usuario</SelectItem>
+                      <SelectItem value="operador_terreno">Operador de Terreno</SelectItem>
                       <SelectItem value="admin">Administrador</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              {editUserRole === "user" && editingUserProfile && (
+
+              {/* Operador de Terreno: proveedores asignados (edición) */}
+              {editUserRole === "operador_terreno" && editingUserProfile && (
+                <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm">Proveedores asignados</Label>
+                    <span className="text-[11px] text-muted-foreground">(verá solo las rutas de estos proveedores)</span>
+                  </div>
+                  {allSuppliers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No hay proveedores creados</p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                      {allSuppliers.map((s) => {
+                        const checked = editUserSupplierIds.includes(s.id);
+                        return (
+                          <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setEditUserSupplierIds((prev) =>
+                                prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
+                              )}
+                              className="rounded border-gray-300"
+                            />
+                            <span className="truncate">{s.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(editUserRole === "user" || editUserRole === "operador_terreno") && editingUserProfile && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <Label>Permisos por Sección</Label>
