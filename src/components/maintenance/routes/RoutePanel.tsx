@@ -116,8 +116,9 @@ export function RoutePanel({
   const [dragOver, setDragOver]   = useState<number | null>(null);
 
   useEffect(() => {
-    supabase.from("suppliers").select("id,name").eq("is_active", true).order("name")
-      .then(({ data }) => { if (data) setSuppliers(data); });
+    (supabase.from("suppliers") as any)
+      .select("id,name").eq("is_active", true).order("name")
+      .then(({ data }: { data: Supplier[] | null }) => { if (data) setSuppliers(data); });
   }, []);
 
   const handleDrop = (i: number) => {
