@@ -45,6 +45,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { AddressLatLngFields } from "@/components/contracts/AddressLatLngFields";
 
 const EditContract = () => {
   const { id } = useParams();
@@ -66,6 +67,9 @@ const EditContract = () => {
   const [commune, setCommune] = useState("");
   const [region, setRegion] = useState("");
   const [rolSii, setRolSii] = useState("");
+  const [addrLat, setAddrLat] = useState("");
+  const [addrLng, setAddrLng] = useState("");
+  const [geocodeSource, setGeocodeSource] = useState("");
   
   // Contact
   const [contactId, setContactId] = useState("");
@@ -230,6 +234,9 @@ const EditContract = () => {
         setCommune(address.commune);
         setRegion(address.region);
         setRolSii(address.rol_sii || "");
+        setAddrLat(address.lat != null ? String(address.lat) : "");
+        setAddrLng(address.lng != null ? String(address.lng) : "");
+        setGeocodeSource((address as Record<string, unknown>).geocode_source as string || "");
       }
 
       const contact = data.contract_contacts?.[0];
@@ -435,10 +442,19 @@ const EditContract = () => {
       const fullPhone = phoneDigits ? `${countryCode} ${phoneDigits}` : "";
       const fullEmail = emails.filter(e => e.trim()).join(", ");
 
+      const latVal = addrLat ? parseFloat(addrLat) : null;
+      const lngVal = addrLng ? parseFloat(addrLng) : null;
+      const geocodedAt = latVal != null ? new Date().toISOString() : null;
+
       if (addressId) {
         const { error: addressError } = await supabase
           .from("contract_addresses")
-          .update({ street, number, commune, region, rol_sii: rolSii || null })
+          .update({
+            street, number, commune, region, rol_sii: rolSii || null,
+            lat: latVal, lng: lngVal,
+            geocode_source: geocodeSource || null,
+            geocoded_at: geocodedAt,
+          })
           .eq("id", addressId);
 
         if (addressError) throw addressError;
@@ -453,6 +469,9 @@ const EditContract = () => {
             commune: commune || "",
             region: region || "",
             rol_sii: rolSii || null,
+            lat: latVal, lng: lngVal,
+            geocode_source: geocodeSource || null,
+            geocoded_at: geocodedAt,
           });
 
         if (addressError) throw addressError;
@@ -978,6 +997,20 @@ const EditContract = () => {
                     value={rolSii}
                     onChange={(e) => { setRolSii(e.target.value); setHasUnsavedChanges(true); }}
                     placeholder="Ej: 1234-5"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <AddressLatLngFields
+                    street={street}
+                    number={number}
+                    commune={commune}
+                    region={region}
+                    lat={addrLat}
+                    lng={addrLng}
+                    geocodeSource={geocodeSource}
+                    onLatChange={(v) => { setAddrLat(v); setHasUnsavedChanges(true); }}
+                    onLngChange={(v) => { setAddrLng(v); setHasUnsavedChanges(true); }}
+                    onGeocodeSource={setGeocodeSource}
                   />
                 </div>
               </div>

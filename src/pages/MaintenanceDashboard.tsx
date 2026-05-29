@@ -1,8 +1,11 @@
 import { MaintenanceModule } from "@/components/maintenance/MaintenanceModule";
 import { SelectableElement } from "@/components/admin/SelectableElement";
-import { Wrench } from "lucide-react";
+import { Wrench, Navigation } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 
 const MaintenanceDashboard = () => {
+  const navigate = useNavigate();
   return (
     <div className="min-h-screen bg-background">
       <SelectableElement elementId="maintenance" label="Mantenciones">
@@ -13,6 +16,17 @@ const MaintenanceDashboard = () => {
               <div>
                 <h1 className="text-2xl font-semibold text-foreground">Mantenciones</h1>
                 <p className="text-sm text-muted-foreground">Control y seguimiento de requerimientos de mantención y activos fijos</p>
+              </div>
+              <div className="ml-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/maintenance/routes")}
+                  className="gap-2"
+                >
+                  <Navigation className="w-4 h-4" />
+                  Armar Ruta
+                </Button>
               </div>
             </div>
           </div>

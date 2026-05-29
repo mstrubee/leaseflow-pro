@@ -12,6 +12,7 @@ interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
+  isOperador: boolean;
   roleLoaded: boolean;
   permissions: UserPermission[];
   hasPermission: (resource: string, requiredPermission: "view" | "edit" | "all") => boolean;
@@ -25,6 +26,7 @@ function useProvideAuth(): AuthContextValue {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isOperador, setIsOperador] = useState(false);
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [roleLoaded, setRoleLoaded] = useState(false);
 
@@ -69,6 +71,7 @@ function useProvideAuth(): AuthContextValue {
       ]);
 
       setIsAdmin(roleRes.data?.role === "admin");
+      setIsOperador(roleRes.data?.role === "operador_terreno");
       setPermissions(permRes.data || []);
     } catch (error) {
       console.error("Error loading user data:", error);
@@ -109,11 +112,12 @@ function useProvideAuth(): AuthContextValue {
     session,
     loading,
     isAdmin,
+    isOperador,
     roleLoaded,
     permissions,
     hasPermission,
     signOut,
-  }), [user, session, loading, isAdmin, roleLoaded, permissions]);
+  }), [user, session, loading, isAdmin, isOperador, roleLoaded, permissions]);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

@@ -18,6 +18,7 @@ import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager"
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
 import { MultipleNoticesSection, NoticeEntry, createAlertsFromNotices } from "@/components/contracts/MultipleNoticesSection";
+import { AddressLatLngFields } from "@/components/contracts/AddressLatLngFields";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -34,6 +35,9 @@ const NewContract = () => {
   const [commune, setCommune] = useState("");
   const [region, setRegion] = useState("");
   const [rolSii, setRolSii] = useState("");
+  const [addrLat, setAddrLat] = useState("");
+  const [addrLng, setAddrLng] = useState("");
+  const [geocodeSource, setGeocodeSource] = useState("");
   
   // Contact (Arrendador)
   const [company, setCompany] = useState("");
@@ -138,6 +142,10 @@ const NewContract = () => {
             region: region || "",
             country: "Chile",
             rol_sii: rolSii || null,
+            lat: addrLat ? parseFloat(addrLat) : null,
+            lng: addrLng ? parseFloat(addrLng) : null,
+            geocode_source: geocodeSource || null,
+            geocoded_at: addrLat ? new Date().toISOString() : null,
           });
 
         if (addressError) throw addressError;
@@ -432,6 +440,20 @@ const NewContract = () => {
                     value={rolSii}
                     onChange={(e) => setRolSii(e.target.value)}
                     placeholder="Ej: 1234-5"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <AddressLatLngFields
+                    street={street}
+                    number={number}
+                    commune={commune}
+                    region={region}
+                    lat={addrLat}
+                    lng={addrLng}
+                    geocodeSource={geocodeSource}
+                    onLatChange={setAddrLat}
+                    onLngChange={setAddrLng}
+                    onGeocodeSource={setGeocodeSource}
                   />
                 </div>
               </div>
