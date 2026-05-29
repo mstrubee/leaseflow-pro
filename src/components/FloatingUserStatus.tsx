@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -55,6 +55,18 @@ export function FloatingUserStatus() {
   const [open, setOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [thresholds, setThresholds] = useState<Threshold[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,7 +103,7 @@ export function FloatingUserStatus() {
   if (!roleLoaded || !isAdmin) return null;
 
   return (
-    <div className="fixed bottom-[52px] left-4 z-50">
+    <div ref={containerRef} className="fixed bottom-[52px] left-4 z-50">
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -115,7 +127,7 @@ export function FloatingUserStatus() {
           <div className="p-3 border-b">
             <h4 className="text-sm font-semibold text-foreground">Usuarios conectados</h4>
           </div>
-          <ScrollArea className="max-h-72">
+          <ScrollArea className="h-72">
             <div className="p-2 space-y-1">
               {profiles.map((profile) => {
                 const status = getStatus(profile, thresholds);
