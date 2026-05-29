@@ -27,6 +27,57 @@ async function loadLogo(): Promise<HTMLImageElement | null> {
 }
 
 /**
+ * Dibuja un diagrama esquemático del recorrido: puntos numerados posicionados
+ * por su lat/lng (normalizados a la caja) y conectados en orden por una línea.
+ * No depende de red/tiles — siempre se renderiza. Devuelve la Y final.
+ */
+function drawRouteDiagram(
+  doc: jsPDF,
+  pts: { lat: number; lng: number; name: string }[],
+  x: number, y: number, w: number, h: number,
+): number {
+  // Marco
+  doc.setDrawColor(220); doc.setFillColor(248, 250, 252);
+  doc.roundedRect(x, y, w, h, 2, 2, "FD");
+  doc.setFontSize(7); doc.setTextColor(150);
+  doc.text("Recorrido", x + 2, y + 4);
+  doc.setTextColor(0);
+
+  const lats = pts.map((p) => p.lat), lngs = pts.map((p) => p.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const pad = 8;
+  const innerX = x + pad, innerY = y + pad + 2, innerW = w - pad * 2, innerH = h - pad * 2 - 2;
+
+  const project = (lat: number, lng: number): [number, number] => {
+    const px = maxLng === minLng ? innerX + innerW / 2 : innerX + ((lng - minLng) / (maxLng - minLng)) * innerW;
+    // lat invertido (norte arriba)
+    const py = maxLat === minLat ? innerY + innerH / 2 : innerY + (1 - (lat - minLat) / (maxLat - minLat)) * innerH;
+    return [px, py];
+  };
+
+  // Líneas entre puntos consecutivos
+  doc.setDrawColor(59, 130, 246); doc.setLineWidth(0.5);
+  for (let i = 1; i < pts.length; i++) {
+    const [x1, y1] = project(pts[i - 1].lat, pts[i - 1].lng);
+    const [x2, y2] = project(pts[i].lat, pts[i].lng);
+    doc.line(x1, y1, x2, y2);
+  }
+  doc.setLineWidth(0.2);
+
+  // Puntos numerados
+  for (let i = 0; i < pts.length; i++) {
+    const [px, py] = project(pts[i].lat, pts[i].lng);
+    doc.setFillColor(59, 130, 246);
+    doc.circle(px, py, 2.6, "F");
+    doc.setTextColor(255); doc.setFontSize(6); doc.setFont("helvetica", "bold");
+    doc.text(String(i + 1), px, py + 1.1, { align: "center" });
+  }
+  doc.setTextColor(0); doc.setFont("helvetica", "normal");
+  return y + h;
+}
+
+/**
  * Exporta a PDF las rutas programadas en las fechas indicadas (YYYY-MM-DD).
  * Una sección por día, una tabla por ruta con sus paradas y forms.
  */
@@ -42,7 +93,7 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
       suppliers ( name ),
       maintenance_route_stops (
         stop_order, status, estimated_travel_min,
-        maintenance_locations ( name, local_name, zona ),
+        maintenance_locations ( name, local_name, zona, lat, lng ),
         maintenance_route_forms (
           estimated_minutes,
           maintenance_forms (
@@ -135,6 +186,16 @@ export async function exportRoutesPDF(dates: string[], title = "Rutas de Mantenc
       doc.text(meta as string, 16, cursorY + 4);
       doc.setTextColor(0);
       cursorY += 7;
+
+      // Diagrama del recorrido (puntos numerados conectados por su lat/lng)
+      const pts = stops
+        .map((s) => s.maintenance_locations as Record<string, unknown> | null)
+        .filter((l) => l && l.lat != null && l.lng != null)
+        .map((l) => ({ lat: Number(l!.lat), lng: Number(l!.lng), name: (l!.local_name as string) || (l!.name as string) || "" }));
+      if (pts.length >= 1) {
+        if (cursorY > 215) { doc.addPage(); cursorY = 20; }
+        cursorY = drawRouteDiagram(doc, pts, 16, cursorY, pageW - 30, 48) + 4;
+      }
 
       // Build table rows
       const rows: string[][] = [];

@@ -15,6 +15,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { exportRoutesPDF } from "./exportRoutesPDF";
+import { exportRoutesExcel } from "./exportRoutesExcel";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -184,16 +185,17 @@ export function RouteCalendar() {
     });
   };
 
-  const handleExport = async () => {
+  const handleExport = async (formato: "pdf" | "excel") => {
     if (selectedDays.size === 0) return;
     setExporting(true);
     try {
-      await exportRoutesPDF([...selectedDays]);
-      toast.success("PDF generado");
+      if (formato === "pdf") await exportRoutesPDF([...selectedDays]);
+      else await exportRoutesExcel([...selectedDays]);
+      toast.success(formato === "pdf" ? "PDF generado" : "Excel generado");
       setExportMode(false);
       setSelectedDays(new Set());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al generar PDF");
+      toast.error(e instanceof Error ? e.message : "Error al exportar");
     } finally {
       setExporting(false);
     }
@@ -228,17 +230,22 @@ export function RouteCalendar() {
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 ml-3"
             onClick={() => setExportMode(true)}>
             <FileDown className="w-3.5 h-3.5" />
-            Exportar PDF
+            Exportar
           </Button>
         ) : (
           <div className="flex items-center gap-2 ml-3">
             <span className="text-xs text-blue-600 font-medium">
-              {selectedDays.size > 0 ? `${selectedDays.size} día(s) seleccionado(s)` : "Selecciona días o semanas"}
+              {selectedDays.size > 0 ? `${selectedDays.size} día(s)` : "Selecciona días o semanas"}
             </span>
             <Button size="sm" className="h-8 text-xs gap-1.5" disabled={selectedDays.size === 0 || exporting}
-              onClick={handleExport}>
+              onClick={() => handleExport("pdf")}>
               {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-              Generar ({selectedDays.size})
+              PDF
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-green-300 text-green-700"
+              disabled={selectedDays.size === 0 || exporting}
+              onClick={() => handleExport("excel")}>
+              <Download className="w-3.5 h-3.5" /> Excel
             </Button>
             <Button variant="ghost" size="sm" className="h-8 text-xs gap-1"
               onClick={() => { setExportMode(false); setSelectedDays(new Set()); }}>
