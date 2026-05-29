@@ -28,6 +28,7 @@ function buildIcon(
   isOrigin: boolean, isStop: boolean,
   stopIndex: number, formCount: number,
   rank: number, total: number,
+  timeLabel?: string,
 ) {
   const logo = loc.folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet;
   let size = 28, border = "2px solid #fff", shadow = "0 1px 4px rgba(0,0,0,0.25)";
@@ -44,21 +45,43 @@ function buildIcon(
     ? `<span style="position:absolute;top:-6px;right:-6px;background:#ef4444;color:white;
         border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:bold;
         display:flex;align-items:center;justify-content:center;border:1.5px solid white">${formCount}</span>` : "";
-  const originStar = isOrigin
-    ? `<span style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
-        background:#7c3aed;color:white;border-radius:4px;padding:0 3px;font-size:8px;
-        font-weight:bold;border:1px solid white;white-space:nowrap">INICIO</span>` : "";
+
+  // Etiqueta inferior: hora (inicio en partida, llegada en paradas) o INICIO
+  const bg = isOrigin ? "#7c3aed" : "#3b82f6";
+  const label = timeLabel ?? (isOrigin ? "INICIO" : "");
+  const timeChip = (isOrigin || isStop) && label
+    ? `<span style="position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);
+        background:${bg};color:white;border-radius:4px;padding:0 4px;font-size:9px;line-height:1.4;
+        font-weight:bold;border:1px solid white;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.3)">${label}</span>` : "";
 
   return L.divIcon({
     html: `<div style="position:relative;width:${size}px;height:${size}px">
       <img src="${logo}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:50%;
         border:${border};box-shadow:${shadow};background:white;display:block"/>
-      ${stopBadge}${formBadge}${originStar}
+      ${stopBadge}${formBadge}${timeChip}
     </div>`,
     className: "", iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -(size / 2 + 4)],
+    popupAnchor: [0, -(size / 2 + 8)],
   });
+}
+
+// Etiqueta de minutos de traslado en el medio de un tramo
+function travelLabelIcon(minutes: number) {
+  return L.divIcon({
+    html: `<span style="background:white;color:#2563eb;border:1.5px solid #3b82f6;border-radius:10px;
+      padding:1px 6px;font-size:10px;font-weight:bold;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2)">
+      🚗 ${minutes} min</span>`,
+    className: "", iconSize: [0, 0], iconAnchor: [24, 9],
+  });
+}
+
+function midpoint(geom: GeoJSON.LineString | null, a: [number, number], b: [number, number]): [number, number] {
+  if (geom && geom.coordinates.length > 1) {
+    const mid = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+    return [mid[1], mid[0]]; // GeoJSON es [lng,lat]
+  }
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 }
 
 // Región Metropolitana (Santiago) — centro por defecto
@@ -172,12 +195,36 @@ function MapSearchBar({ onFlyTo }: { onFlyTo: (lat: number, lng: number, zoom?: 
   );
 }
 
+interface ScheduleEntryLite {
+  arrivalTime: string;
+  departureTime: string;
+  travelMinutes: number;
+}
+
+// Un tramo de la ruta: línea sólida (OSRM o recta) + etiqueta de minutos al medio
+function FragmentLeg({ geometry, a, b, mid, minutes }: {
+  geometry: GeoJSON.LineString | null;
+  a: [number, number]; b: [number, number];
+  mid: [number, number]; minutes: number;
+}) {
+  return (
+    <>
+      {geometry
+        ? <GeoJSON data={geometry} style={{ color: "#3b82f6", weight: 4, opacity: 0.8 }} />
+        : <Polyline positions={[a, b]} pathOptions={{ color: "#3b82f6", weight: 3, opacity: 0.7 }} />}
+      {minutes > 0 && <Marker position={mid} icon={travelLabelIcon(minutes)} interactive={false} />}
+    </>
+  );
+}
+
 interface Props {
   locations: MaintenanceLocation[];
   scoredLocations: ScoredLocation[];
   formsByLocation: Map<string, RouteForm[]>;
   origin: MaintenanceLocation | null;
   stops: RouteStop[];
+  schedule?: ScheduleEntryLite[];
+  startTime?: string;
   onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
   onToggleForm: (locationId: string, formId: string) => void;
   onAddAllForms: (locationId: string) => void;
@@ -187,17 +234,13 @@ interface Props {
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
-  origin, stops, onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin,
+  origin, stops, schedule = [], startTime = "09:00",
+  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin,
 }: Props) {
   const stopSet   = new Set(stops.map((s) => s.locationId));
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
   const [pickingOrigin, setPickingOrigin] = useState(false);
   const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
-
-  // Straight-line fallback polyline (origin → stops in order)
-  const fallbackCoords: [number, number][] = [];
-  if (origin) fallbackCoords.push([origin.lat, origin.lng]);
-  for (const stop of stops) fallbackCoords.push([stop.location.lat, stop.location.lng]);
 
   return (
     <div className="relative w-full h-full">
@@ -221,20 +264,19 @@ export function RouteBuilderMap({
           onDone={() => setPickingOrigin(false)} />
         <MapSearchBar onFlyTo={(lat, lng, zoom) => setFlyTo({ lat, lng, zoom })} />
 
-        {/* Road geometry per leg (from OSRM) */}
-        {stops.map((stop) =>
-          stop.routeGeometry ? (
-            <GeoJSON key={`route-${stop.locationId}`}
-              data={stop.routeGeometry}
-              style={{ color: "#3b82f6", weight: 4, opacity: 0.75 }} />
-          ) : null
-        )}
-
-        {/* Fallback straight line for legs without OSRM geometry */}
-        {fallbackCoords.length > 1 && stops.some((s) => !s.routeGeometry) && (
-          <Polyline positions={fallbackCoords}
-            pathOptions={{ color: "#3b82f6", weight: 3, dashArray: "6 4", opacity: 0.5 }} />
-        )}
+        {/* Trayecto por tramo: línea sólida real (OSRM) o recta, + etiqueta de minutos */}
+        {stops.map((stop, i) => {
+          const prev = i === 0 ? origin : stops[i - 1].location;
+          if (!prev) return null;
+          const a: [number, number] = [prev.lat, prev.lng];
+          const b: [number, number] = [stop.location.lat, stop.location.lng];
+          const mid = midpoint(stop.routeGeometry, a, b);
+          return (
+            <FragmentLeg key={`leg-${stop.locationId}`}
+              geometry={stop.routeGeometry} a={a} b={b}
+              mid={mid} minutes={stop.travelMinutes} />
+          );
+        })}
 
         {/* Markers */}
         {locations.map((loc) => {
@@ -246,7 +288,14 @@ export function RouteBuilderMap({
           const forms       = formsByLocation.get(loc.id) ?? [];
           const scored      = scoredMap.get(loc.id);
 
-          const icon = buildIcon(loc, isOrigin, isStop, stopIndex, forms.length, scored?.rank ?? 0, scoredLocations.length);
+          // Hora: inicio en el punto de partida; hora de llegada en cada parada
+          const timeLabel = isOrigin
+            ? startTime
+            : isStop && schedule[stopIndex]
+              ? schedule[stopIndex].arrivalTime
+              : undefined;
+
+          const icon = buildIcon(loc, isOrigin, isStop, stopIndex, forms.length, scored?.rank ?? 0, scoredLocations.length, timeLabel);
 
           return (
             <Marker key={loc.id} position={[loc.lat, loc.lng]} icon={icon}

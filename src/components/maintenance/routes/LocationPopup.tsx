@@ -44,8 +44,11 @@ export function LocationPopup({
   const isInRoute = !!existingStop;
 
   return (
-    <Popup minWidth={300} maxWidth={340}>
-      <div className="text-sm space-y-2">
+    <Popup minWidth={300} maxWidth={620}>
+      <div
+        className="text-sm space-y-2 overflow-auto"
+        style={{ resize: "both", minWidth: 280, minHeight: 160, maxWidth: 600, maxHeight: 520 }}
+      >
         {/* Header */}
         <div className="flex items-center gap-2">
           <img
@@ -65,7 +68,7 @@ export function LocationPopup({
         {forms.length === 0 ? (
           <p className="text-xs text-gray-400 italic">Sin forms en proceso</p>
         ) : (
-          <div className="space-y-1 max-h-56 overflow-y-auto">
+          <div className="space-y-1">
             {forms.map((f) => {
               const selected = existingStop?.formIds.includes(f.id) ?? false;
               const descriptions = formDescriptions(f);

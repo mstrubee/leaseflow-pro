@@ -11,12 +11,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Loader2, Navigation } from "lucide-react";
+import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered } from "lucide-react";
 import { toast } from "sonner";
 
 export function RouteBuilderLayout() {
   const rb = useRouteBuilder();
   const [search, setSearch] = useState("");
+  const [listCollapsed, setListCollapsed] = useState(false);
 
   const filteredScored = rb.scoredLocations.filter((loc) => {
     if (!search.trim()) return true;
@@ -79,6 +80,8 @@ export function RouteBuilderLayout() {
             formsByLocation={rb.formsByLocation}
             origin={rb.origin}
             stops={rb.stops}
+            schedule={rb.schedule}
+            startTime={rb.startTime}
             onAddStop={rb.addStop}
             onToggleForm={rb.toggleFormInStop}
             onAddAllForms={rb.addAllFormsToStop}
@@ -87,28 +90,45 @@ export function RouteBuilderLayout() {
           />
         </div>
 
-        {/* Score list — 25% */}
-        <div className="w-64 shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden">
-          <div className="px-3 py-2 border-b bg-gray-50 shrink-0">
-            <p className="text-xs font-semibold text-gray-600 mb-1">Locales ordenados por prioridad</p>
-            {rb.origin && (
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar local…"
-                className="h-7 text-xs"
+        {/* Score list — colapsable, 50% más ancho (w-96) */}
+        {listCollapsed ? (
+          <button
+            onClick={() => setListCollapsed(false)}
+            className="shrink-0 w-9 flex flex-col items-center justify-center gap-2 border border-gray-200 rounded-lg shadow-sm bg-white hover:bg-gray-50 transition-colors"
+            title="Mostrar locales por prioridad"
+          >
+            <PanelRightOpen className="w-4 h-4 text-gray-500" />
+            <span className="text-[10px] text-gray-500 [writing-mode:vertical-rl] rotate-180">Locales por prioridad</span>
+            <ListOrdered className="w-4 h-4 text-gray-400" />
+          </button>
+        ) : (
+          <div className="w-96 shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden">
+            <div className="px-3 py-2 border-b bg-gray-50 shrink-0">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs font-semibold text-gray-600 flex-1">Locales ordenados por prioridad</p>
+                <button onClick={() => setListCollapsed(true)} className="text-gray-400 hover:text-gray-600" title="Ocultar">
+                  <PanelRightClose className="w-4 h-4" />
+                </button>
+              </div>
+              {rb.origin && (
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar local…"
+                  className="h-7 text-xs"
+                />
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              <LocationScoreList
+                scoredLocations={filteredScored}
+                origin={rb.origin}
+                onAddStop={rb.addStop}
+                onSetOrigin={rb.setOrigin}
               />
-            )}
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            <LocationScoreList
-              scoredLocations={filteredScored}
-              origin={rb.origin}
-              onAddStop={rb.addStop}
-              onSetOrigin={rb.setOrigin}
-            />
-          </div>
-        </div>
+        )}
 
         {/* Route panel — 25% */}
         <div className="w-64 shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white p-3 overflow-hidden">
