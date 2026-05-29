@@ -373,19 +373,68 @@ export function useRouteBuilder() {
     return map;
   }, [locations, allForms]);
 
-  // Fusionar forms (RPC). Refresca la lista.
+  // Fusionar forms — directo en el cliente (no depende de RPC, que Lovable a
+  // veces omite). Valida mismo local, asigna merge_group_id y registra historial.
   const mergeForms = useCallback(async (formIds: string[]): Promise<void> => {
-    const { error } = await supabase.rpc("merge_maintenance_forms", { p_form_ids: formIds });
-    if (error) throw new Error(error.message);
-    setFormsReloadKey((k) => k + 1);
-  }, []);
+    if (formIds.length < 2) throw new Error("Selecciona al menos 2 forms");
 
-  // Deshacer fusión de un grupo (RPC). Refresca la lista.
-  const unmergeForms = useCallback(async (groupId: string): Promise<void> => {
-    const { error } = await supabase.rpc("unmerge_maintenance_forms", { p_group_id: groupId });
-    if (error) throw new Error(error.message);
+    const { data: fdata, error: ferr } = await supabase
+      .from("maintenance_forms")
+      .select("id, contract_id, form_number")
+      .in("id", formIds);
+    if (ferr) throw new Error(ferr.message);
+
+    const contracts = new Set((fdata ?? []).map((f: { contract_id: string | null }) => f.contract_id));
+    if (contracts.size > 1) throw new Error("Solo se pueden fusionar forms del mismo local");
+
+    const groupId = crypto.randomUUID();
+    const { error: uerr } = await supabase
+      .from("maintenance_forms")
+      .update({ merge_group_id: groupId })
+      .in("id", formIds);
+    if (uerr) throw new Error(uerr.message);
+
+    // Historial (best-effort: no bloquear la fusión si el log falla)
+    try {
+      await supabase.from("maintenance_form_merge_log").insert({
+        merge_group_id: groupId,
+        form_ids: formIds,
+        form_numbers: (fdata ?? []).map((f: { form_number: string }) => f.form_number),
+        contract_id: [...contracts][0] ?? null,
+        action: "merged",
+        performed_by: user?.id ?? null,
+      });
+    } catch { /* log opcional */ }
+
     setFormsReloadKey((k) => k + 1);
-  }, []);
+  }, [user]);
+
+  // Deshacer fusión — directo en el cliente.
+  const unmergeForms = useCallback(async (groupId: string): Promise<void> => {
+    const { data: fdata } = await supabase
+      .from("maintenance_forms")
+      .select("id, form_number, contract_id")
+      .eq("merge_group_id", groupId);
+
+    const { error } = await supabase
+      .from("maintenance_forms")
+      .update({ merge_group_id: null })
+      .eq("merge_group_id", groupId);
+    if (error) throw new Error(error.message);
+
+    try {
+      await supabase.from("maintenance_form_merge_log").insert({
+        merge_group_id: groupId,
+        form_ids: (fdata ?? []).map((f: { id: string }) => f.id),
+        form_numbers: (fdata ?? []).map((f: { form_number: string }) => f.form_number),
+        contract_id: (fdata ?? [])[0]?.contract_id ?? null,
+        action: "unmerged",
+        performed_by: user?.id ?? null,
+      });
+    } catch { /* log opcional */ }
+
+    setFormsReloadKey((k) => k + 1);
+  }, [user]);
 
   // ---------------------------------------------------------------------------
   // Filtros: ¿un form cumple los filtros activos de tipo y criticidad?
