@@ -153,7 +153,12 @@ export function RouteBuilderLayout() {
                 />
               </div>
               <div className="flex-1 overflow-y-auto p-2">
-                <LocationScoreList scoredLocations={filteredScored} origin={rb.origin} onAddStop={rb.addStop} onSetOrigin={rb.setOrigin} />
+                <LocationScoreList
+                  scoredLocations={filteredScored}
+                  origin={rb.origin}
+                  selectedLocationId={selectedLocation?.id ?? null}
+                  onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
+                />
               </div>
             </div>
           </>

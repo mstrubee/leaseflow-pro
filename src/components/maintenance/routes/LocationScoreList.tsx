@@ -1,16 +1,15 @@
 import type { ScoredLocation, MaintenanceLocation } from "@/hooks/useRouteBuilder";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { MapPin, Plus, AlertTriangle } from "lucide-react";
+import { MapPin, AlertTriangle, ChevronRight } from "lucide-react";
 
 interface Props {
   scoredLocations: ScoredLocation[];
   origin: MaintenanceLocation | null;
-  onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
-  onSetOrigin: (location: MaintenanceLocation) => void;
+  selectedLocationId?: string | null;
+  onSelectLocation: (location: MaintenanceLocation) => void;
 }
 
-export function LocationScoreList({ scoredLocations, origin, onAddStop, onSetOrigin }: Props) {
+export function LocationScoreList({ scoredLocations, origin, selectedLocationId, onSelectLocation }: Props) {
   if (!origin) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
@@ -35,7 +34,13 @@ export function LocationScoreList({ scoredLocations, origin, onAddStop, onSetOri
       {scoredLocations.map((loc, i) => (
         <div
           key={loc.id}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors group"
+          onClick={() => onSelectLocation(loc)}
+          title="Ver forms del local"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors group ${
+            selectedLocationId === loc.id
+              ? "border-blue-300 bg-blue-50/60"
+              : "border-gray-100 hover:border-blue-200 hover:bg-blue-50/40"
+          }`}
         >
           {/* Rank badge */}
           <span className="text-xs font-mono text-gray-400 w-5 shrink-0 text-center">{i + 1}</span>
@@ -86,16 +91,8 @@ export function LocationScoreList({ scoredLocations, origin, onAddStop, onSetOri
             </div>
           )}
 
-          {/* Add button */}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={() => onAddStop(loc)}
-            title="Agregar a ruta"
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
+          {/* Indicador: abre el detalle del local */}
+          <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 group-hover:text-blue-400 transition-colors" />
         </div>
       ))}
     </div>
