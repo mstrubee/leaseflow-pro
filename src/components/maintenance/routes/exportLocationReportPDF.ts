@@ -40,6 +40,7 @@ export async function buildLocationReportPDF(
   stop: ExecutionStop,
   routeName: string,
   scheduledDate: string | null,
+  preliminar = false,
 ): Promise<Blob> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -54,7 +55,7 @@ export async function buildLocationReportPDF(
   }
 
   doc.setFontSize(15); doc.setFont("helvetica", "bold");
-  doc.text("Informe de visita", margin, y); y += 7;
+  doc.text(preliminar ? "Informe de visita (PRELIMINAR)" : "Informe de visita", margin, y); y += 7;
 
   doc.setFontSize(11); doc.setFont("helvetica", "normal");
   doc.text(stop.location_local_name || stop.location_name, margin, y); y += 5;
@@ -112,11 +113,12 @@ export async function shareLocationReport(
   stop: ExecutionStop,
   routeName: string,
   scheduledDate: string | null,
+  preliminar = false,
 ): Promise<void> {
-  const blob = await buildLocationReportPDF(stop, routeName, scheduledDate);
+  const blob = await buildLocationReportPDF(stop, routeName, scheduledDate, preliminar);
   const localName = stop.location_local_name || stop.location_name;
   const safeName = localName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_") || "local";
-  const fileName = `Informe_${safeName}.pdf`;
+  const fileName = `Informe${preliminar ? "_Preliminar" : ""}_${safeName}.pdf`;
   const file = new File([blob], fileName, { type: "application/pdf" });
   const done = stop.forms.filter((f) => f.completed).length;
   const text = `Informe de visita — ${localName} (${routeName}): ${done}/${stop.forms.length} tareas completadas.`;

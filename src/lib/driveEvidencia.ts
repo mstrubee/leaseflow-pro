@@ -99,3 +99,59 @@ export async function uploadEvidenciaToContractDrive(
     return null;
   }
 }
+
+/**
+ * Migra una foto que ya está en Supabase Storage (public URL) al Drive del
+ * contrato, y borra la copia de Storage. Devuelve la URL de Drive, o null si
+ * falla (en cuyo caso NO se borra de Storage, para no perder la evidencia).
+ */
+export async function migrateStorageEvidenceToDrive(
+  publicUrl: string,
+  contractId: string,
+  formNumber: string,
+): Promise<string | null> {
+  try {
+    // Extraer el path de Storage desde la URL pública
+    const marker = "/public/repository-files/";
+    const idx = publicUrl.indexOf(marker);
+    if (idx < 0) return null; // no es una URL de Storage gestionable
+    const storagePath = decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
+
+    const { data: contract, error: contractErr } = await supabase
+      .from("contracts")
+      .select("drive_folder_id")
+      .eq("id", contractId)
+      .single();
+    if (contractErr || !contract?.drive_folder_id) return null;
+
+    const { data: folderData, error: folderErr } = await supabase.functions.invoke("google-drive", {
+      body: {
+        action: "ensureSubfolderExists",
+        parentDriveFolderId: contract.drive_folder_id,
+        folderName: EVIDENCIA_FOLDER_NAME,
+      },
+    });
+    if (folderErr || !folderData?.id) return null;
+
+    const baseName = storagePath.split("/").pop() || "evidencia.jpg";
+    const fileName = `${formNumber}_${baseName}`;
+    const { data: uploadData, error: uploadErr } = await supabase.functions.invoke("google-drive", {
+      body: {
+        action: "uploadFileFromStorage",
+        fileName,
+        storageUrl: `storage://repository-files/${storagePath}`,
+        mimeType: "image/jpeg",
+        driveFolderId: folderData.id,
+      },
+    });
+    if (uploadErr || !uploadData) return null;
+
+    // Subida OK → liberar Storage
+    await supabase.storage.from("repository-files").remove([storagePath]).catch(() => {});
+
+    return uploadData.webViewLink || `https://drive.google.com/file/d/${uploadData.id}/view`;
+  } catch (err) {
+    console.error("[migrateStorageEvidenceToDrive] Unexpected error:", err);
+    return null;
+  }
+}

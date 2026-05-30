@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useRouteExecution } from "@/hooks/useRouteExecution";
@@ -90,6 +90,8 @@ function NotesSheet({
   initialValue: string;
 }) {
   const [text, setText] = useState(initialValue);
+  // Cargar el comentario actual cada vez que se abre (permite editar/complementar)
+  useEffect(() => { if (open) setText(initialValue); }, [open, initialValue]);
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="bottom" className="rounded-t-2xl pb-safe">
@@ -225,22 +227,27 @@ function FormCard({
         {form.completed && <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />}
       </div>
 
-      {/* Operator notes preview */}
+      {/* Comentario del proveedor (completo, tocable para editar/complementar) */}
       {form.operator_notes && (
-        <div className="flex items-start gap-1 text-xs text-blue-600 bg-blue-50 rounded-lg px-2 py-1">
+        <button
+          onClick={() => onNotes(form)}
+          className="w-full text-left flex items-start gap-1 text-xs text-blue-700 bg-blue-50 rounded-lg px-2 py-1.5 hover:bg-blue-100 transition-colors"
+          title="Editar / complementar comentario"
+        >
           <MessageSquare className="w-3 h-3 mt-0.5 shrink-0" />
-          <span className="line-clamp-2">{form.operator_notes}</span>
-        </div>
+          <span className="flex-1 whitespace-pre-wrap break-words">{form.operator_notes}</span>
+          <span className="text-[10px] text-blue-500 underline shrink-0">Editar</span>
+        </button>
       )}
 
-      {/* Evidence thumbnails */}
+      {/* Evidencia: miniaturas tocables (la foto se ve dentro de la app) */}
       {form.visit_evidence_urls.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           {form.visit_evidence_urls.map((url, i) => (
             <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[10px] text-purple-600 bg-purple-50 rounded px-1.5 py-0.5">
-              <ImageIcon className="w-3 h-3" />
-              Foto {i + 1}
+              className="block w-14 h-14 rounded-lg overflow-hidden border border-purple-200 bg-purple-50 shrink-0"
+              title={`Foto ${i + 1}`}>
+              <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
             </a>
           ))}
         </div>
@@ -303,6 +310,15 @@ function FormCard({
           <Button
             size="sm"
             variant="ghost"
+            className="h-7 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50"
+            onClick={() => onNotes(form)}
+          >
+            <MessageSquare className="w-3.5 h-3.5 mr-1" />
+            {form.operator_notes ? "Editar" : "Comentar"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             className="h-7 text-xs text-purple-600 border border-purple-200 hover:bg-purple-50"
             onClick={() => onPhoto(form)}
           >
@@ -328,26 +344,28 @@ function FormCard({
 // Stop card
 // ---------------------------------------------------------------------------
 function StopCard({
-  stop, saving, sharing, onCompleteForm, onCompleteObsForm, onUncompleteForm, onCompleteStop, onReopenStop,
-  onPostponeForm, onUnpostponeForm, onShare, onNotes, onPhoto,
+  stop, saving, sharing, finalizing, onCompleteForm, onCompleteObsForm, onUncompleteForm, onReopenStop,
+  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onNotes, onPhoto,
 }: {
   stop: ExecutionStop;
   saving: string | null;
   sharing: boolean;
+  finalizing: boolean;
   onCompleteForm: (routeFormId: string) => void;
   onCompleteObsForm: (form: ExecutionForm) => void;
   onUncompleteForm: (routeFormId: string) => void;
-  onCompleteStop: (stopId: string) => void;
   onReopenStop: (stopId: string) => void;
   onPostponeForm: (form: ExecutionForm) => void;
   onUnpostponeForm: (routeFormId: string) => void;
   onShare: (stop: ExecutionStop) => void;
+  onFinalize: (stop: ExecutionStop) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const completedForms = stop.forms.filter((f) => f.completed).length;
   const allDone = stop.forms.length > 0 && completedForms === stop.forms.length;
+  const allHavePhotos = stop.forms.length > 0 && stop.forms.every((f) => f.visit_evidence_urls.length > 0);
 
   const statusIcon = {
     completed: <CheckCircle2 className="w-5 h-5 text-green-500" />,
@@ -421,33 +439,34 @@ function StopCard({
             </Button>
           )}
 
-          {/* Stop-level actions: compartir informe del local + marcar parada lista */}
+          {/* Acciones del local: informe preliminar (sin requisitos) y finalizar/enviar */}
           <div className="flex gap-2 pt-1">
             <Button
               size="sm"
               variant="outline"
               className="flex-1 h-9 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
-              disabled={sharing}
+              disabled={sharing || finalizing}
               onClick={() => onShare(stop)}
             >
               {sharing
                 ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <><Share2 className="w-3.5 h-3.5 mr-1" />Compartir informe</>}
+                : <><Share2 className="w-3.5 h-3.5 mr-1" />Informe Preliminar</>}
             </Button>
-            {stop.status === "pending" && allDone && (
-              <Button
-                size="sm"
-                className="flex-1 h-9 text-xs bg-green-500 hover:bg-green-600"
-                disabled={saving === stop.id}
-                onClick={() => onCompleteStop(stop.id)}
-              >
-                {saving === stop.id
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Marcar parada lista</>
-                }
-              </Button>
-            )}
+            <Button
+              size="sm"
+              className="flex-1 h-9 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50"
+              disabled={finalizing || sharing || !allHavePhotos}
+              title={allHavePhotos ? "Finalizar y enviar (archiva fotos en Drive)" : "Falta evidencia fotográfica en alguna tarea"}
+              onClick={() => onFinalize(stop)}
+            >
+              {finalizing
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Finalizar / Enviar</>}
+            </Button>
           </div>
+          {!allHavePhotos && (
+            <p className="text-[10px] text-amber-600 text-center">Para finalizar, agrega una foto a cada tarea.</p>
+          )}
           {stop.status === "postponed" && stop.postponed_to && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
               <CalendarDays className="w-3.5 h-3.5" />
@@ -476,6 +495,7 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
   const [photoForm, setPhotoForm]       = useState<ExecutionForm | null>(null);
   const [uploading, setUploading]       = useState(false);
   const [sharingStopId, setSharingStopId] = useState<string | null>(null);
+  const [finalizingStopId, setFinalizingStopId] = useState<string | null>(null);
 
   if (exec.loading) {
     return (
@@ -511,11 +531,30 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
   async function handleShare(stop: ExecutionStop) {
     setSharingStopId(stop.id);
     try {
-      await shareLocationReport(stop, route!.name, route!.scheduled_date);
+      await shareLocationReport(stop, route!.name, route!.scheduled_date, true /* preliminar */);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo compartir el informe");
     } finally {
       setSharingStopId(null);
+    }
+  }
+
+  async function handleFinalize(stop: ExecutionStop) {
+    const localName = stop.location_local_name || stop.location_name;
+    if (!window.confirm(
+      `¿Finalizar y enviar el informe de "${localName}"?\n\n` +
+      `Las fotos se archivarán en Drive (el proveedor ya no las verá en la app) y se cerrará la parada. ` +
+      `Esta acción no se puede deshacer.`,
+    )) return;
+    setFinalizingStopId(stop.id);
+    try {
+      const res = await exec.finalizeAndSendStop(stop.id);
+      if (!res.ok) { toast.error(res.error ?? "No se pudo finalizar"); return; }
+      toast.success("Informe finalizado y enviado ✓");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error al finalizar");
+    } finally {
+      setFinalizingStopId(null);
     }
   }
 
@@ -573,14 +612,15 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
             stop={stop}
             saving={exec.saving}
             sharing={sharingStopId === stop.id}
+            finalizing={finalizingStopId === stop.id}
             onCompleteForm={handleCompleteForm}
             onCompleteObsForm={(f) => setObsForm(f)}
             onUncompleteForm={exec.uncompleteForm}
-            onCompleteStop={exec.completeStop}
             onReopenStop={exec.reopenStop}
             onPostponeForm={(f) => setPostponeForm(f)}
             onUnpostponeForm={exec.unpostponeForm}
             onShare={handleShare}
+            onFinalize={handleFinalize}
             onNotes={(f) => setNotesForm(f)}
             onPhoto={(f) => {
               setPhotoForm(f);

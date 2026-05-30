@@ -1104,15 +1104,27 @@ export function MaintenanceModule() {
           ) : <span className="text-muted-foreground">-</span>}
         </TableCell>
         <TableCell className="text-xs">
-          {f.evidence_links && f.evidence_links.length > 0 ? (
-            <div className="flex flex-col gap-0.5">
-              {f.evidence_links.map((link, idx) => (
-                <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                  <Link className="h-3 w-3" />Evidencia {idx + 1}
-                </a>
-              ))}
-            </div>
-          ) : "-"}
+          {(() => {
+            const links = f.evidence_links ?? [];
+            if (links.length === 0) return "-";
+            const provTag = "[Evidencia Visita] ";
+            const provider = links.filter((l) => l.startsWith(provTag)).map((l) => l.slice(provTag.length).trim());
+            const normal = links.filter((l) => !l.startsWith(provTag));
+            return (
+              <div className="flex flex-col gap-0.5">
+                {normal.map((link, idx) => (
+                  <a key={`n${idx}`} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                    <Link className="h-3 w-3" />Evidencia {idx + 1}
+                  </a>
+                ))}
+                {provider.map((url, idx) => (
+                  <a key={`p${idx}`} href={url} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline flex items-center gap-1" title="Evidencia del proveedor">
+                    <Link className="h-3 w-3" />Evid. Prov {idx + 1}
+                  </a>
+                ))}
+              </div>
+            );
+          })()}
         </TableCell>
         <TableCell>
           <div className="flex items-center justify-center gap-1">

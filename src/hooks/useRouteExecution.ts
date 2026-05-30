@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { uploadEvidenciaToContractDrive } from "@/lib/driveEvidencia";
+import { migrateStorageEvidenceToDrive } from "@/lib/driveEvidencia";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -340,28 +340,25 @@ export function useRouteExecution(routeId: string) {
   // Upload photo evidence
   // ---------------------------------------------------------------------------
   const uploadEvidence = useCallback(
-    async (routeFormId: string, maintenanceFormId: string, contractId: string | null, formNumber: string, file: File) => {
+    async (routeFormId: string, maintenanceFormId: string, _contractId: string | null, _formNumber: string, file: File) => {
       setSaving(routeFormId);
 
-      let driveUrl: string | null = null;
-      if (contractId) {
-        driveUrl = await uploadEvidenciaToContractDrive(file, contractId, formNumber);
+      // Subir a Supabase Storage (público, visible para el proveedor). La copia
+      // se migra a Drive y se libera de Storage solo al "Finalizar/Enviar".
+      const safe = file.name.replace(/[^\w.\-]/g, "_");
+      const path = `maintenance-evidencia/${maintenanceFormId}/${Date.now()}_${safe}`;
+      const { error: upErr } = await supabase.storage
+        .from("repository-files")
+        .upload(path, file, { upsert: true });
+
+      let publicUrl: string | null = null;
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("repository-files").getPublicUrl(path);
+        publicUrl = urlData?.publicUrl ?? null;
       }
 
-      if (!driveUrl) {
-        // Fallback: Supabase Storage public URL
-        const path = `maintenance-evidencia/${maintenanceFormId}/${Date.now()}_${file.name}`;
-        const { data: storageData } = await supabase.storage
-          .from("repository-files")
-          .upload(path, file, { upsert: true });
-        if (storageData) {
-          const { data: urlData } = supabase.storage.from("repository-files").getPublicUrl(path);
-          driveUrl = urlData?.publicUrl ?? null;
-        }
-      }
-
-      if (driveUrl) {
-        // 1. Append to route_form.visit_evidence_urls
+      if (publicUrl) {
+        // 1. Append a route_form.visit_evidence_urls
         const { data: current } = await supabase
           .from("maintenance_route_forms")
           .select("visit_evidence_urls")
@@ -370,30 +367,85 @@ export function useRouteExecution(routeId: string) {
         const existing: string[] = (current?.visit_evidence_urls as string[]) ?? [];
         await supabase
           .from("maintenance_route_forms")
-          .update({ visit_evidence_urls: [...existing, driveUrl] })
+          .update({ visit_evidence_urls: [...existing, publicUrl] })
           .eq("id", routeFormId);
 
-        // 2. Append to maintenance_forms.evidence_links tagged as "Evidencia Visita"
+        // 2. Append a maintenance_forms.evidence_links con tag "Evidencia Visita"
         const { data: mf } = await supabase
           .from("maintenance_forms")
           .select("evidence_links")
           .eq("id", maintenanceFormId)
           .single();
         const existingLinks: string[] = (mf?.evidence_links as string[]) ?? [];
-        const taggedUrl = `[Evidencia Visita] ${driveUrl}`;
         await supabase
           .from("maintenance_forms")
-          .update({ evidence_links: [...existingLinks, taggedUrl] })
+          .update({ evidence_links: [...existingLinks, `[Evidencia Visita] ${publicUrl}`] })
           .eq("id", maintenanceFormId);
 
         await load();
       }
 
       setSaving(null);
-      return driveUrl;
+      return publicUrl;
     },
     [load],
   );
+
+  // ---------------------------------------------------------------------------
+  // Finalizar/Enviar: exige foto en cada form, migra las fotos de Storage a
+  // Drive, libera Storage y cierra la parada. Devuelve { ok, error }.
+  // ---------------------------------------------------------------------------
+  const finalizeAndSendStop = useCallback(async (stopId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!user) return { ok: false, error: "No autenticado" };
+    const stop = route?.stops.find((s) => s.id === stopId);
+    if (!stop) return { ok: false, error: "Parada no encontrada" };
+
+    const sinFoto = stop.forms.filter((f) => f.visit_evidence_urls.length === 0);
+    if (sinFoto.length > 0) {
+      return { ok: false, error: `Faltan fotos: ${sinFoto.map((f) => f.form_number).join(", ")}` };
+    }
+
+    setSaving(stopId);
+    try {
+      for (const f of stop.forms) {
+        // Migrar a Drive solo las que siguen en Storage
+        const newUrls: string[] = [];
+        for (const url of f.visit_evidence_urls) {
+          if (url.includes("/storage/v1/object/public/")) {
+            const driveUrl = await migrateStorageEvidenceToDrive(url, f.contract_id ?? "", f.form_number);
+            newUrls.push(driveUrl ?? url); // si falla, conservar Storage (no perder evidencia)
+          } else {
+            newUrls.push(url); // ya en Drive
+          }
+        }
+        await supabase.from("maintenance_route_forms").update({ visit_evidence_urls: newUrls }).eq("id", f.id);
+
+        // Reescribir los tags en maintenance_forms.evidence_links
+        const { data: mf } = await supabase.from("maintenance_forms").select("evidence_links").eq("id", f.maintenance_form_id).single();
+        const links: string[] = (mf?.evidence_links as string[]) ?? [];
+        const updated = links.map((l) => {
+          if (!l.startsWith("[Evidencia Visita] ")) return l;
+          const oldUrl = l.slice("[Evidencia Visita] ".length);
+          const i = f.visit_evidence_urls.indexOf(oldUrl);
+          return i >= 0 && newUrls[i] ? `[Evidencia Visita] ${newUrls[i]}` : l;
+        });
+        await supabase.from("maintenance_forms").update({ evidence_links: updated }).eq("id", f.maintenance_form_id);
+      }
+
+      // Cerrar la parada
+      await supabase
+        .from("maintenance_route_stops")
+        .update({ status: "completed", completed_at: new Date().toISOString(), completed_by: user.id })
+        .eq("id", stopId);
+      await logEvent(null, stopId, "completed", "Informe finalizado y enviado");
+      await load();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Error al finalizar" };
+    } finally {
+      setSaving(null);
+    }
+  }, [user, route, load]);
 
   // ---------------------------------------------------------------------------
   // Auto-complete stop when all its forms are done
@@ -442,6 +494,7 @@ export function useRouteExecution(routeId: string) {
     unpostponeForm,
     saveNotes,
     uploadEvidence,
+    finalizeAndSendStop,
     autoCompleteStopIfDone,
     refresh: load,
   };
