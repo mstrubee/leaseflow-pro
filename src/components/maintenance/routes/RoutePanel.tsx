@@ -36,13 +36,14 @@ interface Props {
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSave: () => void;
   onReset: () => void;
+  onSelectLocation?: (loc: MaintenanceLocation) => void;
 }
 
 function fmt(m: number) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
 }
 
-function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dragOver, onDragStart, onDragOver, onDrop, onRemove, onSetFormMinutes }: {
+function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dragOver, onDragStart, onDragOver, onDrop, onRemove, onSetFormMinutes, onSelectLocation }: {
   stop: RouteStop; index: number; order: number; schedule: ScheduleEntry | undefined;
   formIds: string[]; // forms de este tramo (día)
   partial: boolean;
@@ -52,6 +53,7 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
   onDrop: (i: number) => void;
   onRemove: (id: string) => void;
   onSetFormMinutes: (locId: string, formId: string, min: number) => void;
+  onSelectLocation?: (loc: MaintenanceLocation) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const selected = stop.allForms.filter((f) => formIds.includes(f.id));
@@ -72,7 +74,11 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
         <GripVertical className="w-3 h-3 text-gray-300 shrink-0 cursor-grab" />
         <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{order}</span>
         <div className="flex-1 min-w-0">
-          <div className="truncate font-medium">
+          <div
+            className={`truncate font-medium ${onSelectLocation ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
+            onClick={() => onSelectLocation?.(stop.location)}
+            title={onSelectLocation ? "Ver detalle del local" : undefined}
+          >
             {stop.location.local_name || stop.location.name}
             {partial && <span className="ml-1 text-[9px] text-amber-600 font-normal">(continúa)</span>}
           </div>
@@ -130,7 +136,7 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  onRemoveStop, onReorder, onSetFormMinutes, onSave, onReset,
+  onRemoveStop, onReorder, onSetFormMinutes, onSave, onReset, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
@@ -216,6 +222,7 @@ export function RoutePanel({
                           onDrop={handleDrop}
                           onRemove={onRemoveStop}
                           onSetFormMinutes={onSetFormMinutes}
+                          onSelectLocation={onSelectLocation}
                         />
                       ))}
                     </div>

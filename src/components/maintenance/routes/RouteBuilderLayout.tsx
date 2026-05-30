@@ -167,24 +167,20 @@ export function RouteBuilderLayout() {
             <>
               <Divider onDown={dragHandler(detailWidth, setDetailWidth)} />
               <div className="shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden" style={{ width: detailWidth }}>
-                <div className="flex items-center justify-end px-1 pt-1 shrink-0">
-                  <button onClick={() => setDetailCollapsed(true)} className="text-gray-400 hover:text-gray-600 p-1" title="Ocultar"><PanelRightClose className="w-4 h-4" /></button>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <LocationDetailPanel
-                    location={selectedLocation}
-                    forms={detailForms}
-                    existingStop={detailStop}
-                    onAddStop={rb.addStop}
-                    onToggleForm={rb.toggleFormInStop}
-                    onAddAllForms={rb.addAllFormsToStop}
-                    onSetFormMinutes={rb.setFormMinutes}
-                    onSetOrigin={(l) => rb.setOrigin(l)}
-                    onMergeForms={rb.mergeForms}
-                    onUnmergeForms={rb.unmergeForms}
-                    onClose={() => setSelectedLocation(null)}
-                  />
-                </div>
+                <LocationDetailPanel
+                  location={selectedLocation}
+                  forms={detailForms}
+                  existingStop={detailStop}
+                  onAddStop={rb.addStop}
+                  onToggleForm={rb.toggleFormInStop}
+                  onAddAllForms={rb.addAllFormsToStop}
+                  onSetFormMinutes={rb.setFormMinutes}
+                  onSetOrigin={(l) => rb.setOrigin(l)}
+                  onMergeForms={rb.mergeForms}
+                  onUnmergeForms={rb.unmergeForms}
+                  onClose={() => setSelectedLocation(null)}
+                  onCollapse={() => setDetailCollapsed(true)}
+                />
               </div>
             </>
           )
@@ -233,6 +229,7 @@ export function RouteBuilderLayout() {
                   onSetFormMinutes={rb.setFormMinutes}
                   onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); return id; }}
                   onReset={rb.resetRoute}
+                  onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
                 />
               </div>
             </div>

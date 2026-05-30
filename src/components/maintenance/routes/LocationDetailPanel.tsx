@@ -3,7 +3,7 @@ import type { RouteForm, MaintenanceLocation, RouteStop } from "@/hooks/useRoute
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X } from "lucide-react";
+import { Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X, PanelRightClose } from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
 import { MinutesInput } from "./MinutesInput";
@@ -21,6 +21,7 @@ interface Props {
   onMergeForms?: (formIds: string[]) => Promise<void>;
   onUnmergeForms?: (groupId: string) => Promise<void>;
   onClose: () => void;
+  onCollapse?: () => void;
 }
 
 function formTypeLabel(f: RouteForm): string {
@@ -42,7 +43,7 @@ function formDescriptions(f: RouteForm): { label: string; text: string }[] {
 
 export function LocationDetailPanel({
   location, forms, existingStop,
-  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms, onClose,
+  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms, onClose, onCollapse,
 }: Props) {
   const isInRoute = !!existingStop;
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
@@ -81,11 +82,17 @@ export function LocationDetailPanel({
           className="w-7 h-7 rounded-full object-contain border border-gray-100 bg-white shrink-0"
         />
         <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide leading-none mb-0.5">Detalle del local</p>
           <div className="font-semibold text-sm leading-tight truncate">{location.local_name || location.name}</div>
           {location.zona && (
             <div className="text-xs text-gray-400 truncate">{location.zona}{location.gerente_zonal ? ` · ${location.gerente_zonal}` : ""}</div>
           )}
         </div>
+        {onCollapse && (
+          <button onClick={onCollapse} className="text-gray-400 hover:text-gray-600 shrink-0" title="Minimizar">
+            <PanelRightClose className="w-4 h-4" />
+          </button>
+        )}
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0" title="Cerrar">
           <X className="w-4 h-4" />
         </button>

@@ -1369,7 +1369,18 @@ export function MaintenanceModule() {
         >
           <FileDown className="h-4 w-4" /> Descargar PDF
         </Button>
-        
+        {JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) && (
+          <Button
+            variant="outline"
+            className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={() => {
+              setCurrentPage(0);
+              setFilters(DEFAULT_FILTERS);
+            }}
+          >
+            <XCircle className="h-4 w-4" /> Limpiar filtros
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -1625,18 +1636,6 @@ export function MaintenanceModule() {
             </div>
           </div>
         </div>
-      )}
-      {JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) && (
-        <Button
-          variant="outline"
-          className="fixed top-4 right-4 z-50 gap-2 text-destructive border-destructive/30 hover:bg-destructive/10 shadow-lg bg-card"
-          onClick={() => {
-            setCurrentPage(0);
-            setFilters(DEFAULT_FILTERS);
-          }}
-        >
-          <XCircle className="h-4 w-4" /> Limpiar filtros
-        </Button>
       )}
     </div>
   );
