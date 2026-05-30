@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Polyline, Marker, useMap, useMapEvents, GeoJSO
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MaintenanceLocation, RouteStop, ScoredLocation, RouteForm } from "@/hooks/useRouteBuilder";
-import { LocationPopup } from "./LocationPopup";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
 import { Search, Loader2, MapPin, X, Navigation2, Star } from "lucide-react";
@@ -245,19 +244,14 @@ interface Props {
   schedule?: ScheduleEntryLite[];
   startTime?: string;
   visibleLocationIds?: Set<string> | null;
-  onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
-  onToggleForm: (locationId: string, formId: string) => void;
-  onAddAllForms: (locationId: string) => void;
-  onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin: (location: MaintenanceLocation) => void;
-  onMergeForms?: (formIds: string[]) => Promise<void>;
-  onUnmergeForms?: (groupId: string) => Promise<void>;
+  onSelectLocation: (location: MaintenanceLocation) => void;
 }
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
   origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
-  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms,
+  onSetOrigin, onSelectLocation,
 }: Props) {
   const stopSet   = new Set(stops.map((s) => s.locationId));
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
@@ -376,19 +370,12 @@ export function RouteBuilderMap({
           return (
             <Marker key={loc.id} position={[loc.lat, loc.lng]} icon={icon}
               eventHandlers={{
-                click: () => { if (pickingOrigin) { onSetOrigin(loc); setPickingOrigin(false); } },
+                click: () => {
+                  if (pickingOrigin) { onSetOrigin(loc); setPickingOrigin(false); }
+                  else onSelectLocation(loc); // abre el panel lateral de detalle
+                },
               }}
-            >
-              <LocationPopup
-                location={loc} forms={forms} existingStop={existingStop}
-                onAddStop={onAddStop} onToggleForm={onToggleForm}
-                onAddAllForms={onAddAllForms}
-                onSetFormMinutes={onSetFormMinutes}
-                onSetOrigin={(l) => { onSetOrigin(l); setPickingOrigin(false); }}
-                onMergeForms={onMergeForms}
-                onUnmergeForms={onUnmergeForms}
-              />
-            </Marker>
+            />
           );
         })}
 

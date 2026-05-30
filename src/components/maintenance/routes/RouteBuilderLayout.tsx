@@ -1,36 +1,22 @@
 import { useState } from "react";
-import { useRouteBuilder } from "@/hooks/useRouteBuilder";
+import { useRouteBuilder, type MaintenanceLocation } from "@/hooks/useRouteBuilder";
 import { RouteBuilderMap } from "./RouteBuilderMap";
 import { LocationScoreList } from "./LocationScoreList";
+import { LocationDetailPanel } from "./LocationDetailPanel";
 import { RoutePanel } from "./RoutePanel";
 import { ListFilters } from "./ListFilters";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered, MapPin, Route as RouteIcon } from "lucide-react";
 
-export function RouteBuilderLayout() {
-  const rb = useRouteBuilder();
-  const [search, setSearch] = useState("");
-  const [listCollapsed, setListCollapsed] = useState(false);
-  const [listWidth, setListWidth] = useState(384); // px (w-96)
-
-  // Divisor arrastrable entre el mapa y la lista de locales
-  const startDragDivider = (e: React.MouseEvent) => {
+// Divisor arrastrable: arrastrar a la izquierda agranda la columna (que está a la derecha)
+function dragHandler(current: number, setW: (n: number) => void, min = 240, max = 760) {
+  return (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startW = listWidth;
-    const onMove = (ev: MouseEvent) => {
-      // La lista está a la derecha del mapa: arrastrar a la izquierda la agranda
-      const delta = startX - ev.clientX;
-      setListWidth(Math.max(240, Math.min(720, startW + delta)));
-    };
+    const onMove = (ev: MouseEvent) => setW(Math.max(min, Math.min(max, current + (startX - ev.clientX))));
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
@@ -40,6 +26,39 @@ export function RouteBuilderLayout() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+}
+
+function Divider({ onDown }: { onDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div onMouseDown={onDown}
+      className="shrink-0 w-1.5 rounded cursor-col-resize bg-gray-200 hover:bg-blue-400 transition-colors"
+      title="Arrastra para redimensionar" />
+  );
+}
+
+function CollapsedTab({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className="shrink-0 w-9 flex flex-col items-center justify-center gap-2 border border-gray-200 rounded-lg shadow-sm bg-white hover:bg-gray-50 transition-colors"
+      title={`Mostrar ${label}`}>
+      <PanelRightOpen className="w-4 h-4 text-gray-500" />
+      <span className="text-[10px] text-gray-500 [writing-mode:vertical-rl] rotate-180">{label}</span>
+      {icon}
+    </button>
+  );
+}
+
+export function RouteBuilderLayout() {
+  const rb = useRouteBuilder();
+  const [search, setSearch] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState<MaintenanceLocation | null>(null);
+
+  const [listCollapsed, setListCollapsed] = useState(false);
+  const [listWidth, setListWidth] = useState(360);
+  const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [detailWidth, setDetailWidth] = useState(340);
+  const [routeCollapsed, setRouteCollapsed] = useState(false);
+  const [routeWidth, setRouteWidth] = useState(300);
 
   const filteredScored = rb.scoredLocations.filter((loc) => {
     if (!search.trim()) return true;
@@ -51,6 +70,10 @@ export function RouteBuilderLayout() {
       (loc.zona ?? "").toLowerCase().includes(q)
     );
   });
+
+  // Forms/stop del local seleccionado (para el panel de detalle)
+  const detailForms = selectedLocation ? rb.formsByLocation.get(selectedLocation.id) ?? [] : [];
+  const detailStop = selectedLocation ? rb.stops.find((s) => s.locationId === selectedLocation.id) : undefined;
 
   if (rb.loading) {
     return (
@@ -68,7 +91,6 @@ export function RouteBuilderLayout() {
         <Navigation className="w-5 h-5 text-blue-500 shrink-0" />
         <h2 className="text-base font-semibold text-gray-800">Armar Ruta de Mantención</h2>
         <div className="ml-auto flex items-center gap-2">
-          {/* Origin selector */}
           <Select
             value={rb.origin?.id ?? "none"}
             onValueChange={(v) => {
@@ -77,24 +99,20 @@ export function RouteBuilderLayout() {
               if (loc) rb.setOrigin(loc);
             }}
           >
-            <SelectTrigger className="h-8 text-xs w-56">
-              <SelectValue placeholder="Punto de partida…" />
-            </SelectTrigger>
+            <SelectTrigger className="h-8 text-xs w-56"><SelectValue placeholder="Punto de partida…" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="none" className="text-xs">Sin punto de partida</SelectItem>
               {rb.locations.map((loc) => (
-                <SelectItem key={loc.id} value={loc.id} className="text-xs">
-                  {loc.local_name || loc.name}
-                </SelectItem>
+                <SelectItem key={loc.id} value={loc.id} className="text-xs">{loc.local_name || loc.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      {/* Main 3-column layout */}
+      {/* Layout multi-columna */}
       <div className="flex gap-3 flex-1 min-h-0">
-        {/* Map — 50% */}
+        {/* Mapa */}
         <div className="flex-1 min-w-0 rounded-lg overflow-hidden border border-gray-200 shadow-sm" style={{ minHeight: 500 }}>
           <RouteBuilderMap
             locations={rb.locations}
@@ -105,116 +123,121 @@ export function RouteBuilderLayout() {
             schedule={rb.schedule}
             startTime={rb.startTime}
             visibleLocationIds={rb.visibleLocationIds}
-            onAddStop={rb.addStop}
-            onToggleForm={rb.toggleFormInStop}
-            onAddAllForms={rb.addAllFormsToStop}
-            onSetFormMinutes={rb.setFormMinutes}
             onSetOrigin={rb.setOrigin}
-            onMergeForms={rb.mergeForms}
-            onUnmergeForms={rb.unmergeForms}
+            onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
           />
         </div>
 
-        {/* Divisor arrastrable (solo cuando la lista está visible) */}
-        {!listCollapsed && (
-          <div
-            onMouseDown={startDragDivider}
-            className="shrink-0 w-1.5 rounded cursor-col-resize bg-gray-200 hover:bg-blue-400 transition-colors"
-            title="Arrastra para redimensionar"
-          />
-        )}
-
-        {/* Score list — colapsable y redimensionable */}
+        {/* Ordenamiento de Locales */}
         {listCollapsed ? (
-          <button
-            onClick={() => setListCollapsed(false)}
-            className="shrink-0 w-9 flex flex-col items-center justify-center gap-2 border border-gray-200 rounded-lg shadow-sm bg-white hover:bg-gray-50 transition-colors"
-            title="Mostrar locales por prioridad"
-          >
-            <PanelRightOpen className="w-4 h-4 text-gray-500" />
-            <span className="text-[10px] text-gray-500 [writing-mode:vertical-rl] rotate-180">Ordenamiento de Locales</span>
-            <ListOrdered className="w-4 h-4 text-gray-400" />
-          </button>
+          <CollapsedTab label="Ordenamiento de Locales" icon={<ListOrdered className="w-4 h-4 text-gray-400" />} onClick={() => setListCollapsed(false)} />
         ) : (
-          <div className="shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden"
-            style={{ width: listWidth }}>
-            <div className="px-3 py-2 border-b bg-gray-50 shrink-0">
-              <div className="flex items-center gap-2 mb-1">
-                <p className="text-xs font-semibold text-gray-600 flex-1">Ordenamiento de Locales</p>
-                <button onClick={() => setListCollapsed(true)} className="text-gray-400 hover:text-gray-600" title="Ocultar">
-                  <PanelRightClose className="w-4 h-4" />
-                </button>
-              </div>
-              {rb.origin && (
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar local…"
-                  className="h-7 text-xs mb-1.5"
+          <>
+            <Divider onDown={dragHandler(listWidth, setListWidth)} />
+            <div className="shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden" style={{ width: listWidth }}>
+              <div className="px-3 py-2 border-b bg-gray-50 shrink-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-semibold text-gray-600 flex-1">Ordenamiento de Locales</p>
+                  <button onClick={() => setListCollapsed(true)} className="text-gray-400 hover:text-gray-600" title="Ocultar"><PanelRightClose className="w-4 h-4" /></button>
+                </div>
+                {rb.origin && (
+                  <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar local…" className="h-7 text-xs mb-1.5" />
+                )}
+                <ListFilters
+                  sortBy={rb.sortBy} onSortBy={rb.setSortBy} criticalities={rb.criticalities}
+                  filterTypes={rb.filterTypes}
+                  onToggleType={(t) => rb.setFilterTypes((prev) => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; })}
+                  filterCriticalities={rb.filterCriticalities}
+                  onToggleCriticality={(c) => rb.setFilterCriticalities((prev) => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; })}
+                  onClear={() => { rb.setFilterTypes(new Set()); rb.setFilterCriticalities(new Set()); }}
                 />
-              )}
-              <ListFilters
-                sortBy={rb.sortBy}
-                onSortBy={rb.setSortBy}
-                criticalities={rb.criticalities}
-                filterTypes={rb.filterTypes}
-                onToggleType={(t) => rb.setFilterTypes((prev) => {
-                  const next = new Set(prev); next.has(t) ? next.delete(t) : next.add(t); return next;
-                })}
-                filterCriticalities={rb.filterCriticalities}
-                onToggleCriticality={(c) => rb.setFilterCriticalities((prev) => {
-                  const next = new Set(prev); next.has(c) ? next.delete(c) : next.add(c); return next;
-                })}
-                onClear={() => { rb.setFilterTypes(new Set()); rb.setFilterCriticalities(new Set()); }}
-              />
+              </div>
+              <div className="flex-1 overflow-y-auto p-2">
+                <LocationScoreList scoredLocations={filteredScored} origin={rb.origin} onAddStop={rb.addStop} onSetOrigin={rb.setOrigin} />
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-2">
-              <LocationScoreList
-                scoredLocations={filteredScored}
-                origin={rb.origin}
-                onAddStop={rb.addStop}
-                onSetOrigin={rb.setOrigin}
-              />
-            </div>
-          </div>
+          </>
         )}
 
-        {/* Route panel — 25% */}
-        <div className="w-64 shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white p-3 overflow-hidden">
-          <RoutePanel
-            origin={rb.origin}
-            stops={rb.stops}
-            schedule={rb.schedule}
-            totalWorkMinutes={rb.totalWorkMinutes}
-            totalTravelMinutes={rb.totalTravelMinutes}
-            totalDays={rb.totalDays}
-            endDate={rb.endDate}
-            routeName={rb.routeName}
-            supplierId={rb.supplierId}
-            scheduledDate={rb.scheduledDate}
-            startTime={rb.startTime}
-            urbanSpeed={rb.urbanSpeed}
-            highwaySpeed={rb.highwaySpeed}
-            saving={rb.saving}
-            onRouteName={rb.setRouteName}
-            onSupplierId={rb.setSupplierId}
-            onStartTime={rb.setStartTime}
-            onUrbanSpeed={rb.setUrbanSpeed}
-            onHighwaySpeed={rb.setHighwaySpeed}
-            onScheduledDate={(v) => {
-              rb.setScheduledDate(v);
-              if (v && (!rb.routeName || rb.routeName.startsWith("Ruta "))) {
-                const [y, m, d] = v.split("-");
-                rb.setRouteName(`Ruta ${y}.${m}.${d}`);
-              }
-            }}
-            onRemoveStop={rb.removeStop}
-            onReorder={rb.reorderStops}
-            onSetFormMinutes={rb.setFormMinutes}
-            onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); return id; }}
-            onReset={rb.resetRoute}
-          />
-        </div>
+        {/* Detalle del local seleccionado */}
+        {selectedLocation && (
+          detailCollapsed ? (
+            <CollapsedTab label="Detalle del local" icon={<MapPin className="w-4 h-4 text-gray-400" />} onClick={() => setDetailCollapsed(false)} />
+          ) : (
+            <>
+              <Divider onDown={dragHandler(detailWidth, setDetailWidth)} />
+              <div className="shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden" style={{ width: detailWidth }}>
+                <div className="flex items-center justify-end px-1 pt-1 shrink-0">
+                  <button onClick={() => setDetailCollapsed(true)} className="text-gray-400 hover:text-gray-600 p-1" title="Ocultar"><PanelRightClose className="w-4 h-4" /></button>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <LocationDetailPanel
+                    location={selectedLocation}
+                    forms={detailForms}
+                    existingStop={detailStop}
+                    onAddStop={rb.addStop}
+                    onToggleForm={rb.toggleFormInStop}
+                    onAddAllForms={rb.addAllFormsToStop}
+                    onSetFormMinutes={rb.setFormMinutes}
+                    onSetOrigin={(l) => rb.setOrigin(l)}
+                    onMergeForms={rb.mergeForms}
+                    onUnmergeForms={rb.unmergeForms}
+                    onClose={() => setSelectedLocation(null)}
+                  />
+                </div>
+              </div>
+            </>
+          )
+        )}
+
+        {/* Ruta armada */}
+        {routeCollapsed ? (
+          <CollapsedTab label="Ruta armada" icon={<RouteIcon className="w-4 h-4 text-gray-400" />} onClick={() => setRouteCollapsed(false)} />
+        ) : (
+          <>
+            <Divider onDown={dragHandler(routeWidth, setRouteWidth)} />
+            <div className="shrink-0 flex flex-col border border-gray-200 rounded-lg shadow-sm bg-white overflow-hidden" style={{ width: routeWidth }}>
+              <div className="flex items-center justify-end px-1 pt-1 shrink-0">
+                <button onClick={() => setRouteCollapsed(true)} className="text-gray-400 hover:text-gray-600 p-1" title="Ocultar"><PanelRightClose className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 min-h-0 px-3 pb-3">
+                <RoutePanel
+                  origin={rb.origin}
+                  stops={rb.stops}
+                  schedule={rb.schedule}
+                  totalWorkMinutes={rb.totalWorkMinutes}
+                  totalTravelMinutes={rb.totalTravelMinutes}
+                  totalDays={rb.totalDays}
+                  endDate={rb.endDate}
+                  routeName={rb.routeName}
+                  supplierId={rb.supplierId}
+                  scheduledDate={rb.scheduledDate}
+                  startTime={rb.startTime}
+                  urbanSpeed={rb.urbanSpeed}
+                  highwaySpeed={rb.highwaySpeed}
+                  saving={rb.saving}
+                  onRouteName={rb.setRouteName}
+                  onSupplierId={rb.setSupplierId}
+                  onStartTime={rb.setStartTime}
+                  onUrbanSpeed={rb.setUrbanSpeed}
+                  onHighwaySpeed={rb.setHighwaySpeed}
+                  onScheduledDate={(v) => {
+                    rb.setScheduledDate(v);
+                    if (v && (!rb.routeName || rb.routeName.startsWith("Ruta "))) {
+                      const [y, m, d] = v.split("-");
+                      rb.setRouteName(`Ruta ${y}.${m}.${d}`);
+                    }
+                  }}
+                  onRemoveStop={rb.removeStop}
+                  onReorder={rb.reorderStops}
+                  onSetFormMinutes={rb.setFormMinutes}
+                  onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); return id; }}
+                  onReset={rb.resetRoute}
+                />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
