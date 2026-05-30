@@ -3,7 +3,10 @@ import type { RouteForm, MaintenanceLocation, RouteStop } from "@/hooks/useRoute
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X, PanelRightClose } from "lucide-react";
+import {
+  Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X, PanelRightClose,
+  Star, CalendarClock, CheckSquare, Square,
+} from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
 import { MinutesInput } from "./MinutesInput";
@@ -13,11 +16,19 @@ interface Props {
   location: MaintenanceLocation;
   forms: RouteForm[];
   existingStop: RouteStop | undefined;
+  origin: MaintenanceLocation | null;
+  isMultiDay: boolean;
+  startTime: string;
+  onStartTime: (v: string) => void;
   onAddStop: (location: MaintenanceLocation, formIds?: string[]) => void;
   onToggleForm: (locationId: string, formId: string) => void;
   onAddAllForms: (locationId: string) => void;
+  onClearForms: (locationId: string) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin: (location: MaintenanceLocation) => void;
+  onToggleDayBreak: (locationId: string, dayStartTime?: string) => void;
+  onSetDayStartTime: (locationId: string, time: string) => void;
+  onSetPriorityForm: (locationId: string, formId: string | null) => void;
   onMergeForms?: (formIds: string[]) => Promise<void>;
   onUnmergeForms?: (groupId: string) => Promise<void>;
   onClose: () => void;
@@ -42,16 +53,25 @@ function formDescriptions(f: RouteForm): { label: string; text: string }[] {
 }
 
 export function LocationDetailPanel({
-  location, forms, existingStop,
-  onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms, onClose, onCollapse,
+  location, forms, existingStop, origin, isMultiDay, startTime, onStartTime,
+  onAddStop, onToggleForm, onAddAllForms, onClearForms, onSetFormMinutes, onSetOrigin,
+  onToggleDayBreak, onSetDayStartTime, onSetPriorityForm, onMergeForms, onUnmergeForms,
+  onClose, onCollapse,
 }: Props) {
   const isInRoute = !!existingStop;
+  const isOrigin = origin?.id === location.id;
+  const isDayStart = !!existingStop?.dayBreak;
+  const priorityFormId = existingStop?.priorityFormId ?? null;
+
+  const [mergeMode, setMergeMode] = useState(false);
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   const [merging, setMerging] = useState(false);
 
   const toggleMergeSel = (id: string) => setMergeSel((prev) => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
+
+  const exitMergeMode = () => { setMergeMode(false); setMergeSel(new Set()); };
 
   const doMerge = async () => {
     if (!onMergeForms || mergeSel.size < 2) return;
@@ -64,13 +84,23 @@ export function LocationDetailPanel({
     try {
       await onMergeForms(ids);
       toast.success("Forms fusionados");
-      setMergeSel(new Set());
+      exitMergeMode();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudieron fusionar");
     } finally {
       setMerging(false);
     }
   };
+
+  // Mostrar el form prioritario primero (orden coherente con el cronograma)
+  const orderedForms = (() => {
+    if (!priorityFormId) return forms;
+    const idx = forms.findIndex((f) => f.id === priorityFormId);
+    if (idx < 0) return forms;
+    return [forms[idx], ...forms.filter((f) => f.id !== priorityFormId)];
+  })();
+
+  const allSelected = isInRoute && forms.length > 0 && existingStop!.formIds.length === forms.length;
 
   return (
     <div className="flex flex-col h-full">
@@ -88,6 +118,19 @@ export function LocationDetailPanel({
             <div className="text-xs text-gray-400 truncate">{location.zona}{location.gerente_zonal ? ` · ${location.gerente_zonal}` : ""}</div>
           )}
         </div>
+        {/* #1 Marcar como inicio (punto de partida) — al costado del nombre */}
+        <button
+          onClick={() => onSetOrigin(location)}
+          title={isOrigin ? "Es el punto de partida" : "Marcar como inicio (punto de partida)"}
+          className={`shrink-0 flex items-center gap-1 px-2 h-7 rounded text-[11px] font-medium border transition-colors ${
+            isOrigin
+              ? "bg-purple-100 border-purple-300 text-purple-700"
+              : "bg-white border-gray-200 text-gray-500 hover:border-purple-300 hover:text-purple-600"
+          }`}
+        >
+          <Navigation2 className="w-3.5 h-3.5" />
+          {isOrigin ? "Inicio" : "Marcar inicio"}
+        </button>
         {onCollapse && (
           <button onClick={onCollapse} className="text-gray-400 hover:text-gray-600 shrink-0" title="Minimizar">
             <PanelRightClose className="w-4 h-4" />
@@ -98,25 +141,96 @@ export function LocationDetailPanel({
         </button>
       </div>
 
+      {/* Barra de acciones */}
+      {(isOrigin || (isInRoute && isMultiDay) || (onMergeForms && forms.length > 1)) && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b bg-white shrink-0">
+          {/* #4 Hora de inicio (cuando es punto de partida) */}
+          {isOrigin && (
+            <div className="flex items-center gap-1 text-[11px] text-purple-700">
+              <Clock className="w-3.5 h-3.5" />
+              <span>Hora inicio:</span>
+              <input type="time" value={startTime} onChange={(e) => onStartTime(e.target.value)}
+                className="h-6 border border-gray-200 rounded px-1 text-[11px] focus:outline-none focus:border-purple-400" />
+            </div>
+          )}
+
+          {/* #2 Inicio de día (solo si la ruta abarca varios días) */}
+          {isInRoute && isMultiDay && (
+            <>
+              <button
+                onClick={() => onToggleDayBreak(location.id)}
+                title="Forzar que este local inicie un día nuevo"
+                className={`flex items-center gap-1 px-2 h-6 rounded text-[11px] font-medium border transition-colors ${
+                  isDayStart
+                    ? "bg-blue-100 border-blue-300 text-blue-700"
+                    : "bg-white border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600"
+                }`}
+              >
+                <CalendarClock className="w-3.5 h-3.5" />
+                {isDayStart ? "Inicio de día ✓" : "Marcar inicio de día"}
+              </button>
+              {isDayStart && (
+                <input type="time" value={existingStop?.dayStartTime ?? startTime}
+                  onChange={(e) => onSetDayStartTime(location.id, e.target.value)}
+                  title="Hora de inicio de este día"
+                  className="h-6 border border-blue-200 rounded px-1 text-[11px] focus:outline-none focus:border-blue-400" />
+              )}
+            </>
+          )}
+
+          {/* #6 Fusionar forms — botón que activa las casillas */}
+          {onMergeForms && forms.length > 1 && (
+            mergeMode ? (
+              <>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-gray-500" onClick={exitMergeMode}>
+                  Cancelar
+                </Button>
+                {mergeSel.size >= 2 && (
+                  <Button size="sm" className="h-6 px-2 text-[11px] bg-purple-600 hover:bg-purple-700" onClick={doMerge} disabled={merging}>
+                    {merging ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Link2 className="w-3 h-3 mr-1" />}
+                    Fusionar {mergeSel.size}
+                  </Button>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={() => setMergeMode(true)}
+                title="Seleccionar forms para fusionar"
+                className="flex items-center gap-1 px-2 h-6 rounded text-[11px] font-medium border bg-white border-gray-200 text-gray-500 hover:border-purple-300 hover:text-purple-600 transition-colors"
+              >
+                <Link2 className="w-3.5 h-3.5" /> Fusionar forms
+              </button>
+            )
+          )}
+        </div>
+      )}
+
       {/* Body scrollable */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2 text-sm">
         {forms.length === 0 ? (
           <p className="text-xs text-gray-400 italic">Sin forms en proceso</p>
         ) : (
           <div className="space-y-1">
-            {forms.map((f) => {
+            {orderedForms.map((f) => {
               const selected = existingStop?.formIds.includes(f.id) ?? false;
               const descriptions = formDescriptions(f);
               const headline = descriptions[0]?.text ?? "";
               const minutes = existingStop?.formMinutes[f.id] ?? 30;
+              const isPriority = priorityFormId === f.id;
+              const onRowClick = () => {
+                if (mergeMode) { toggleMergeSel(f.id); return; }
+                if (!isInRoute) onAddStop(location, [f.id]); else onToggleForm(location.id, f.id);
+              };
               return (
                 <div key={f.id}
                   className={`rounded px-2 py-1.5 cursor-pointer transition-colors ${
-                    selected ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50 border border-transparent"}`}
-                  onClick={() => { if (!isInRoute) onAddStop(location, [f.id]); else onToggleForm(location.id, f.id); }}
+                    isPriority ? "bg-amber-50 border border-amber-200"
+                      : selected ? "bg-blue-50 border border-blue-200"
+                      : "hover:bg-gray-50 border border-transparent"}`}
+                  onClick={onRowClick}
                 >
                   <div className="flex items-center gap-2">
-                    {onMergeForms && (
+                    {mergeMode && (
                       <input type="checkbox" checked={mergeSel.has(f.id)}
                         onChange={() => toggleMergeSel(f.id)} onClick={(e) => e.stopPropagation()}
                         title="Marcar para fusionar" className="shrink-0 rounded border-gray-300" />
@@ -132,14 +246,27 @@ export function LocationDetailPanel({
                       )}
                       <span className="ml-1 text-xs text-gray-400">· {formTypeLabel(f)}</span>
                     </div>
+                    {/* #3 Form prioritario (solo en ruta y seleccionado) */}
+                    {isInRoute && selected && !mergeMode && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSetPriorityForm(location.id, f.id); }}
+                        title={isPriority ? "Quitar prioridad" : "Atender primero (prioritario)"}
+                        className="shrink-0">
+                        <Star className={`w-3.5 h-3.5 ${isPriority ? "text-amber-500 fill-amber-400" : "text-gray-300 hover:text-amber-400"}`} />
+                      </button>
+                    )}
                     {f.criticality_name && (
                       <Badge className="text-[10px] px-1 py-0 shrink-0"
                         style={{ backgroundColor: f.criticality_color ?? "#6b7280", color: "#fff", border: "none" }}>
                         {f.criticality_name}
                       </Badge>
                     )}
-                    {selected && <span className="text-blue-500 text-xs shrink-0">✓</span>}
+                    {selected && !mergeMode && <span className="text-blue-500 text-xs shrink-0">✓</span>}
                   </div>
+
+                  {isPriority && (
+                    <div className="mt-0.5 text-[10px] text-amber-600 font-medium">★ Tarea inicial (prioritaria)</div>
+                  )}
 
                   {f.merge_group_id && f.mergedFormNumbers.length > 1 && onUnmergeForms && (
                     <button className="mt-0.5 flex items-center gap-1 text-[10px] text-purple-500 hover:text-red-500"
@@ -182,7 +309,7 @@ export function LocationDetailPanel({
                     </Popover>
                   )}
 
-                  {selected && (
+                  {selected && !mergeMode && (
                     <div className="flex items-center gap-1 mt-1 pt-1 border-t border-blue-100" onClick={(e) => e.stopPropagation()}>
                       <Clock className="w-3 h-3 text-gray-400" />
                       <span className="text-[10px] text-gray-500">Tiempo:</span>
@@ -198,18 +325,6 @@ export function LocationDetailPanel({
             })}
           </div>
         )}
-
-        {onMergeForms && mergeSel.size >= 2 && (
-          <Button size="sm" className="w-full text-xs h-7 bg-purple-600 hover:bg-purple-700" onClick={doMerge} disabled={merging}>
-            {merging ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Link2 className="w-3 h-3 mr-1" />}
-            Fusionar {mergeSel.size} forms
-          </Button>
-        )}
-
-        <button className="flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-800 font-medium"
-          onClick={() => onSetOrigin(location)}>
-          <Navigation2 className="w-3 h-3" /> Fijar como punto de partida
-        </button>
       </div>
 
       {/* Footer actions */}
@@ -226,9 +341,16 @@ export function LocationDetailPanel({
             </Button>
           </>
         ) : (
-          <Button size="sm" variant="outline" className="flex-1 text-xs h-8" onClick={() => onAddAllForms(location.id)}>
-            <PlusCircle className="w-3 h-3 mr-1" /> Seleccionar todos
-          </Button>
+          // #5 Seleccionar / Deseleccionar todos (mismo botón, toggle)
+          allSelected ? (
+            <Button size="sm" variant="outline" className="flex-1 text-xs h-8" onClick={() => onClearForms(location.id)}>
+              <Square className="w-3 h-3 mr-1" /> Deseleccionar todos
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" className="flex-1 text-xs h-8" onClick={() => onAddAllForms(location.id)}>
+              <CheckSquare className="w-3 h-3 mr-1" /> Seleccionar todos
+            </Button>
+          )
         )}
       </div>
     </div>

@@ -65,6 +65,9 @@ export interface RouteStop {
   travelDistanceKm: number;            // distancia del tramo (OSRM o Haversine)
   travelMinutes: number;               // tiempo de traslado (derivado de distancia y velocidades)
   routeGeometry: GeoJSON.LineString | null;
+  dayBreak?: boolean;                  // fuerza el inicio de un día nuevo en esta parada
+  dayStartTime?: string;               // "HH:MM" hora de inicio del día forzado
+  priorityFormId?: string | null;      // form que se atiende primero en esta parada
 }
 
 const URBAN_THRESHOLD_KM = 20; // < 20 km = ciudad; ≥ = carretera
@@ -121,6 +124,11 @@ function minutesToHHMM(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function hhmmToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,12 +232,28 @@ export function calculateSchedule(stops: RouteStop[], startMinutes: number = WOR
 
   for (let i = 0; i < stops.length; i++) {
     const stop = stops[i];
-    const ids: (string | null)[] = stop.formIds.length > 0 ? stop.formIds : [null];
 
-    // Traslado desde la parada anterior (no antes del primer trabajo absoluto)
-    if (anyWorkPlaced) cursor += stop.travelMinutes;
+    // Forms de la parada, con el prioritario primero (si sigue seleccionado)
+    let orderedFormIds = stop.formIds;
+    if (stop.priorityFormId && stop.formIds.includes(stop.priorityFormId)) {
+      orderedFormIds = [stop.priorityFormId, ...stop.formIds.filter((id) => id !== stop.priorityFormId)];
+    }
+    const ids: (string | null)[] = orderedFormIds.length > 0 ? orderedFormIds : [null];
 
-    let tramo: Tramo = { arrival: cursor, day: dayIndex, travel: anyWorkPlaced ? stop.travelMinutes : 0, forms: [], work: 0 };
+    // Corte de día forzado: esta parada inicia un día nuevo a su hora (no antes
+    // de la 1ª parada). El traslado del día anterior no cuenta (parte aquí).
+    const forcedBreak = i > 0 && anyWorkPlaced && !!stop.dayBreak;
+    if (forcedBreak) {
+      dayIndex += 1;
+      cursor = stop.dayStartTime ? hhmmToMinutes(stop.dayStartTime) : startMinutes;
+      lunchTaken = false;
+    } else if (anyWorkPlaced) {
+      // Traslado desde la parada anterior (no antes del primer trabajo absoluto)
+      cursor += stop.travelMinutes;
+    }
+
+    const tramoTravel = forcedBreak || !anyWorkPlaced ? 0 : stop.travelMinutes;
+    let tramo: Tramo = { arrival: cursor, day: dayIndex, travel: tramoTravel, forms: [], work: 0 };
     const closeTramo = () => {
       if (tramo.forms.length === 0) return;
       entries.push({
@@ -674,6 +698,39 @@ export function useRouteBuilder() {
     ));
   }, []);
 
+  // Deseleccionar todos los forms de una parada (mantiene la parada y el tiempo recordado)
+  const clearFormsInStop = useCallback((locationId: string) => {
+    setStops((prev) => prev.map((s) =>
+      s.locationId === locationId
+        ? { ...s, formIds: [], priorityFormId: null }
+        : s,
+    ));
+  }, []);
+
+  // Marcar/desmarcar una parada como inicio de día (corte forzado, hora editable)
+  const toggleDayBreak = useCallback((locationId: string, dayStartTime?: string) => {
+    setStops((prev) => prev.map((s) => {
+      if (s.locationId !== locationId) return s;
+      const on = !s.dayBreak;
+      return { ...s, dayBreak: on, dayStartTime: on ? (dayStartTime ?? s.dayStartTime ?? startTime) : undefined };
+    }));
+  }, [startTime]);
+
+  const setDayStartTime = useCallback((locationId: string, time: string) => {
+    setStops((prev) => prev.map((s) =>
+      s.locationId === locationId ? { ...s, dayStartTime: time } : s,
+    ));
+  }, []);
+
+  // Fijar/quitar el form prioritario de una parada (se atiende primero)
+  const setPriorityForm = useCallback((locationId: string, formId: string | null) => {
+    setStops((prev) => prev.map((s) => {
+      if (s.locationId !== locationId) return s;
+      const next = s.priorityFormId === formId ? null : formId; // toggle
+      return { ...s, priorityFormId: next };
+    }));
+  }, []);
+
   const resetRoute = useCallback(() => {
     setOrigin(null); setStops([]); setRouteName("");
     setScheduledDate(""); setStartTime("09:00");
@@ -694,9 +751,12 @@ export function useRouteBuilder() {
       // Agrupar los TRAMOS (parada-día) por día. Una parada partida aparece en
       // varios días con sus forms respectivos (e.formIds).
       const byDay = new Map<number, { stopIndex: number; formIds: string[] }[]>();
+      const dayStartByIndex = new Map<number, string>();
       schedule.forEach((e) => {
         if (!byDay.has(e.dayIndex)) byDay.set(e.dayIndex, []);
         byDay.get(e.dayIndex)!.push({ stopIndex: e.stopIndex, formIds: e.formIds });
+        // Hora de inicio del día = llegada del primer tramo de ese día
+        if (!dayStartByIndex.has(e.dayIndex)) dayStartByIndex.set(e.dayIndex, e.arrivalTime);
       });
 
       const tourId = crypto.randomUUID();
@@ -720,7 +780,7 @@ export function useRouteBuilder() {
           status: "draft",
           tour_id: tourId,
           day_index: dayIndex,
-          start_time: startTime,
+          start_time: dayStartByIndex.get(dayIndex) ?? startTime,
         };
         let route: { id: string } | null = null;
         let routeErr: { message: string } | null = null;
@@ -796,8 +856,9 @@ export function useRouteBuilder() {
     saving,
     schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
     addStop, removeStop, reorderStops,
-    toggleFormInStop, addAllFormsToStop,
+    toggleFormInStop, addAllFormsToStop, clearFormsInStop,
     setFormMinutes, resetRoute, saveRoute,
+    toggleDayBreak, setDayStartTime, setPriorityForm,
     mergeForms, unmergeForms,
   };
 }

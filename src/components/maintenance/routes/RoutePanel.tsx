@@ -34,6 +34,7 @@ interface Props {
   onRemoveStop: (locationId: string) => void;
   onReorder: (stops: RouteStop[]) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
+  onSetDayStartTime?: (locationId: string, time: string) => void;
   onSave: () => void;
   onReset: () => void;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
@@ -136,7 +137,7 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  onRemoveStop, onReorder, onSetFormMinutes, onSave, onReset, onSelectLocation,
+  onRemoveStop, onReorder, onSetFormMinutes, onSetDayStartTime, onSave, onReset, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
@@ -195,20 +196,29 @@ export function RoutePanel({
               const dayForms = dayEntries.reduce((s, e) => s + e.formIds.length, 0);
               const firstArr = dayEntries[0]?.arrivalTime;
               const lastDep = dayEntries[dayEntries.length - 1]?.departureTime;
+              const firstStop = stops[dayEntries[0]?.stopIndex];
+              const isForcedDayStart = !!firstStop?.dayBreak;
               return (
                 <div key={`day-${day}`} className="border border-blue-100 rounded-lg overflow-hidden">
-                  <button
+                  <div
                     onClick={() => toggleDayCollapse(day)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-50 hover:bg-blue-100 transition-colors text-left cursor-pointer"
                   >
                     {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-blue-600" /> : <ChevronUp className="w-3.5 h-3.5 text-blue-600" />}
                     <span className="text-[11px] font-bold text-blue-700 flex-1">
                       📅 {dayDateLabel(scheduledDate, day)}
                     </span>
+                    {isForcedDayStart && onSetDayStartTime && (
+                      <input type="time" value={firstStop.dayStartTime ?? firstArr ?? "09:00"}
+                        onChange={(e) => onSetDayStartTime(firstStop.locationId, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Hora de inicio de este día (forzado)"
+                        className="h-5 border border-blue-300 rounded px-1 text-[10px] text-blue-700 focus:outline-none focus:border-blue-500" />
+                    )}
                     <span className="text-[10px] text-blue-500">
                       {dayEntries.length} parada{dayEntries.length !== 1 ? "s" : ""} · {dayForms} forms · {firstArr}–{lastDep}
                     </span>
-                  </button>
+                  </div>
                   {!collapsed && (
                     <div className="p-1 space-y-1">
                       {dayEntries.map((e, idxInDay) => (
