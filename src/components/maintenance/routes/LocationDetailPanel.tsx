@@ -26,8 +26,7 @@ interface Props {
   onClearForms: (locationId: string) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSetOrigin: (location: MaintenanceLocation) => void;
-  onToggleDayBreak: (locationId: string, dayStartTime?: string) => void;
-  onSetDayStartTime: (locationId: string, time: string) => void;
+  onToggleDayBreak: (locationId: string) => void;
   onSetPriorityForm: (locationId: string, formId: string | null) => void;
   onMergeForms?: (formIds: string[]) => Promise<void>;
   onUnmergeForms?: (groupId: string) => Promise<void>;
@@ -55,7 +54,7 @@ function formDescriptions(f: RouteForm): { label: string; text: string }[] {
 export function LocationDetailPanel({
   location, forms, existingStop, origin, isMultiDay, startTime, onStartTime,
   onAddStop, onToggleForm, onAddAllForms, onClearForms, onSetFormMinutes, onSetOrigin,
-  onToggleDayBreak, onSetDayStartTime, onSetPriorityForm, onMergeForms, onUnmergeForms,
+  onToggleDayBreak, onSetPriorityForm, onMergeForms, onUnmergeForms,
   onClose, onCollapse,
 }: Props) {
   const isInRoute = !!existingStop;
@@ -158,28 +157,21 @@ export function LocationDetailPanel({
             </div>
           )}
 
-          {/* #2 Inicio de día (solo si la ruta abarca varios días) */}
+          {/* #2 Inicio de día (solo si la ruta abarca varios días). La hora de cada
+              día se edita en la cabecera del día en "Ruta armada". */}
           {isInRoute && isMultiDay && (
-            <>
-              <button
-                onClick={() => onToggleDayBreak(location.id)}
-                title="Forzar que este local inicie un día nuevo"
-                className={`flex items-center gap-1 px-2 h-6 rounded text-[11px] font-medium border transition-colors ${
-                  isDayStart
-                    ? "bg-blue-100 border-blue-300 text-blue-700"
-                    : "bg-white border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600"
-                }`}
-              >
-                <CalendarClock className="w-3.5 h-3.5" />
-                {isDayStart ? "Inicio de día ✓" : "Marcar inicio de día"}
-              </button>
-              {isDayStart && (
-                <input type="time" value={existingStop?.dayStartTime ?? startTime}
-                  onChange={(e) => onSetDayStartTime(location.id, e.target.value)}
-                  title="Hora de inicio de este día"
-                  className="h-6 border border-blue-200 rounded px-1 text-[11px] focus:outline-none focus:border-blue-400" />
-              )}
-            </>
+            <button
+              onClick={() => onToggleDayBreak(location.id)}
+              title="Forzar que este local inicie un día nuevo (la hora se ajusta en Ruta armada)"
+              className={`flex items-center gap-1 px-2 h-6 rounded text-[11px] font-medium border transition-colors ${
+                isDayStart
+                  ? "bg-blue-100 border-blue-300 text-blue-700"
+                  : "bg-white border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600"
+              }`}
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              {isDayStart ? "Inicio de día ✓" : "Marcar inicio de día"}
+            </button>
           )}
 
           {/* #6 Fusionar forms — botón que activa las casillas */}

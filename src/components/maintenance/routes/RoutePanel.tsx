@@ -31,10 +31,11 @@ interface Props {
   onStartTime: (v: string) => void;
   onUrbanSpeed: (v: number) => void;
   onHighwaySpeed: (v: number) => void;
+  dayStartTimes: Record<number, string>;
   onRemoveStop: (locationId: string) => void;
   onReorder: (stops: RouteStop[]) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
-  onSetDayStartTime?: (locationId: string, time: string) => void;
+  onSetDayStartTimeForDay: (dayIndex: number, time: string) => void;
   onSave: () => void;
   onReset: () => void;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
@@ -149,7 +150,7 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  onRemoveStop, onReorder, onSetFormMinutes, onSetDayStartTime, onSave, onReset, onSelectLocation,
+  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetDayStartTimeForDay, onSave, onReset, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
@@ -221,23 +222,18 @@ export function RoutePanel({
                         <span className="text-[10px] font-medium text-purple-600 capitalize">{dayDateLabel(scheduledDate, day)}</span>
                       )}
                     </div>
-                    {/* Fila 2: local de inicio + hora */}
+                    {/* Fila 2: local de inicio + hora (editable en todos los días, default 09:00) */}
                     <div className="flex items-center gap-2 px-2 py-1 border-t border-purple-100">
                       <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
                       <span className="text-[11px] text-purple-700 truncate flex-1">
                         Inicio: {startLoc?.local_name || startLoc?.name || "—"}
+                        {isForcedDayStart && <span className="ml-1 text-[9px] text-blue-600">(forzado)</span>}
                       </span>
-                      {isFirstDay ? (
-                        <input type="time" value={startTime} onChange={(e) => onStartTime(e.target.value)}
-                          title="Hora de inicio" className="h-6 border border-purple-300 rounded px-1 text-[10px] text-purple-700 focus:outline-none focus:border-purple-500" />
-                      ) : isForcedDayStart && onSetDayStartTime ? (
-                        <input type="time" value={firstStop.dayStartTime ?? firstArr ?? "09:00"}
-                          onChange={(e) => onSetDayStartTime(firstStop.locationId, e.target.value)}
-                          title="Hora de inicio de este día (forzado)"
-                          className="h-6 border border-purple-300 rounded px-1 text-[10px] text-purple-700 focus:outline-none focus:border-purple-500" />
-                      ) : (
-                        <span className="text-[10px] text-purple-500">{firstArr}</span>
-                      )}
+                      <input type="time"
+                        value={isFirstDay ? startTime : (dayStartTimes[day] ?? "09:00")}
+                        onChange={(e) => onSetDayStartTimeForDay(day, e.target.value)}
+                        title="Hora de inicio de este día"
+                        className="h-6 border border-purple-300 rounded px-1 text-[10px] text-purple-700 focus:outline-none focus:border-purple-500" />
                     </div>
                     {/* Fila 3: resumen */}
                     <div className="px-2 py-0.5 border-t border-purple-100 text-[10px] text-purple-400">

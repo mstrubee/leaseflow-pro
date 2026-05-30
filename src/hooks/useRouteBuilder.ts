@@ -66,7 +66,6 @@ export interface RouteStop {
   travelMinutes: number;               // tiempo de traslado (derivado de distancia y velocidades)
   routeGeometry: GeoJSON.LineString | null;
   dayBreak?: boolean;                  // fuerza el inicio de un día nuevo en esta parada
-  dayStartTime?: string;               // "HH:MM" hora de inicio del día forzado
   priorityFormId?: string | null;      // form que se atiende primero en esta parada
 }
 
@@ -219,8 +218,17 @@ export function addBusinessDays(startISO: string, n: number): string {
 // (sus forms): genera un ScheduleEntry por (parada, día). El almuerzo (1.5h) se
 // aplica una vez por día, cruzando las 13:00.
 // ---------------------------------------------------------------------------
-export function calculateSchedule(stops: RouteStop[], startMinutes: number = WORK_START_MINUTES): ScheduleEntry[] {
+export function calculateSchedule(
+  stops: RouteStop[],
+  startMinutes: number = WORK_START_MINUTES,
+  dayStartTimes: Record<number, string> = {},
+): ScheduleEntry[] {
   interface Tramo { arrival: number; day: number; travel: number; forms: string[]; work: number; }
+  // Hora de inicio de cada día: día 0 = startMinutes (hora global); resto = override
+  // del usuario o 9:00 por defecto.
+  const dayStartOf = (d: number) =>
+    d === 0 ? startMinutes
+      : (dayStartTimes[d] != null ? hhmmToMinutes(dayStartTimes[d]) : WORK_START_MINUTES);
   const entries: ScheduleEntry[] = [];
   let cursor = startMinutes;
   let lunchTaken = false;
@@ -250,7 +258,7 @@ export function calculateSchedule(stops: RouteStop[], startMinutes: number = WOR
     const forcedBreak = i > 0 && anyWorkPlaced && !!stop.dayBreak;
     if (forcedBreak) {
       dayIndex += 1;
-      cursor = stop.dayStartTime ? hhmmToMinutes(stop.dayStartTime) : startMinutes;
+      cursor = dayStartOf(dayIndex);
       lunchTaken = false;
     } else if (anyWorkPlaced) {
       // Traslado desde la parada anterior (no antes del primer trabajo absoluto)
@@ -281,7 +289,7 @@ export function calculateSchedule(stops: RouteStop[], startMinutes: number = WOR
       if (anyWorkPlaced && cursor + lunchCost + work > WORK_END_MINUTES) {
         closeTramo();
         dayIndex += 1;
-        cursor = startMinutes;
+        cursor = dayStartOf(dayIndex);
         lunchTaken = false;
         tramo = { arrival: cursor, day: dayIndex, travel: 0, forms: [], work: 0 };
       }
@@ -328,6 +336,8 @@ export function useRouteBuilder() {
   );
   const [scheduledDate, setScheduledDate] = useState<string>("");
   const [startTime, setStartTime]         = useState<string>("09:00");
+  // Hora de inicio por día (índice de día → "HH:MM"); día 0 usa startTime. Default 9:00.
+  const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
   const [saving, setSaving]               = useState(false);
 
   // Velocidades editables por el usuario (km/h) para estimar el traslado
@@ -621,7 +631,7 @@ export function useRouteBuilder() {
     const [h, m] = startTime.split(":").map(Number);
     return (h || 9) * 60 + (m || 0);
   }, [startTime]);
-  const schedule = useMemo(() => calculateSchedule(stops, startMinutes), [stops, startMinutes]);
+  const schedule = useMemo(() => calculateSchedule(stops, startMinutes, dayStartTimes), [stops, startMinutes, dayStartTimes]);
 
   // Recalcular el tiempo de traslado de las paradas cuando cambian las velocidades
   useEffect(() => {
@@ -769,19 +779,18 @@ export function useRouteBuilder() {
     ));
   }, []);
 
-  // Marcar/desmarcar una parada como inicio de día (corte forzado, hora editable)
-  const toggleDayBreak = useCallback((locationId: string, dayStartTime?: string) => {
-    setStops((prev) => prev.map((s) => {
-      if (s.locationId !== locationId) return s;
-      const on = !s.dayBreak;
-      return { ...s, dayBreak: on, dayStartTime: on ? (dayStartTime ?? s.dayStartTime ?? startTime) : undefined };
-    }));
-  }, [startTime]);
-
-  const setDayStartTime = useCallback((locationId: string, time: string) => {
+  // Marcar/desmarcar una parada como inicio de día (corte forzado). La hora del
+  // día se edita por separado (setDayStartTimeForDay), no en la parada.
+  const toggleDayBreak = useCallback((locationId: string) => {
     setStops((prev) => prev.map((s) =>
-      s.locationId === locationId ? { ...s, dayStartTime: time } : s,
+      s.locationId === locationId ? { ...s, dayBreak: !s.dayBreak } : s,
     ));
+  }, []);
+
+  // Fijar la hora de inicio de un día concreto (por índice). Día 0 = startTime.
+  const setDayStartTimeForDay = useCallback((dayIndex: number, time: string) => {
+    if (dayIndex === 0) { setStartTime(time); return; }
+    setDayStartTimes((prev) => ({ ...prev, [dayIndex]: time }));
   }, []);
 
   // Fijar/quitar el form prioritario de una parada (se atiende primero)
@@ -796,7 +805,7 @@ export function useRouteBuilder() {
   const resetRoute = useCallback(() => {
     setOrigin(null); setStops([]);
     setRouteNameState(""); setRouteNameDirty(false); // vuelve a autogenerarse
-    setScheduledDate(""); setStartTime("09:00");
+    setScheduledDate(""); setStartTime("09:00"); setDayStartTimes({});
     // supplierId NO se resetea: mantiene el último usado como default
   }, []);
 
@@ -914,6 +923,7 @@ export function useRouteBuilder() {
     supplierId, setSupplierId,
     scheduledDate, setScheduledDate,
     startTime, setStartTime,
+    dayStartTimes, setDayStartTimeForDay,
     urbanSpeed, setUrbanSpeed,
     highwaySpeed, setHighwaySpeed,
     saving,
@@ -921,7 +931,7 @@ export function useRouteBuilder() {
     addStop, removeStop, reorderStops,
     toggleFormInStop, addAllFormsToStop, clearFormsInStop,
     setFormMinutes, resetRoute, saveRoute,
-    toggleDayBreak, setDayStartTime, setPriorityForm,
+    toggleDayBreak, setPriorityForm,
     mergeForms, unmergeForms,
   };
 }
