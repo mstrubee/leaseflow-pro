@@ -212,20 +212,20 @@ export function RoutePanel({
                     {/* Fila 1: día + fecha (calendario en el día 1) */}
                     <div onClick={() => toggleDayCollapse(day)}
                       className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-purple-100/60 transition-colors">
-                      {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-purple-600" /> : <ChevronUp className="w-3.5 h-3.5 text-purple-600" />}
-                      <span className="text-[11px] font-bold text-purple-700 flex-1">📅 Día {day + 1}</span>
+                      {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-purple-600 shrink-0" /> : <ChevronUp className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
+                      <span className="text-[11px] font-bold text-purple-700 flex-1 min-w-0 truncate">📅 Día {day + 1}</span>
                       {isFirstDay ? (
                         <input type="date" value={scheduledDate} onChange={(e) => onScheduledDate(e.target.value)}
                           onClick={(e) => e.stopPropagation()} title="Fecha de inicio de la gira"
-                          className="h-6 border border-purple-300 rounded px-1 text-[10px] text-purple-700 focus:outline-none focus:border-purple-500" />
+                          className="h-7 shrink-0 min-w-[8rem] border border-purple-300 rounded px-1.5 text-[11px] text-purple-700 focus:outline-none focus:border-purple-500" />
                       ) : (
-                        <span className="text-[10px] font-medium text-purple-600 capitalize">{dayDateLabel(scheduledDate, day)}</span>
+                        <span className="text-[10px] font-medium text-purple-600 capitalize shrink-0">{dayDateLabel(scheduledDate, day)}</span>
                       )}
                     </div>
                     {/* Fila 2: local de inicio + hora (editable en todos los días, default 09:00) */}
                     <div className="flex items-center gap-2 px-2 py-1 border-t border-purple-100">
                       <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
-                      <span className="text-[11px] text-purple-700 truncate flex-1">
+                      <span className="text-[11px] text-purple-700 truncate flex-1 min-w-0">
                         Inicio: {startLoc?.local_name || startLoc?.name || "—"}
                         {isForcedDayStart && <span className="ml-1 text-[9px] text-blue-600">(forzado)</span>}
                       </span>
@@ -233,7 +233,7 @@ export function RoutePanel({
                         value={isFirstDay ? startTime : (dayStartTimes[day] ?? "09:00")}
                         onChange={(e) => onSetDayStartTimeForDay(day, e.target.value)}
                         title="Hora de inicio de este día"
-                        className="h-6 border border-purple-300 rounded px-1 text-[10px] text-purple-700 focus:outline-none focus:border-purple-500" />
+                        className="h-7 shrink-0 min-w-[5.5rem] border border-purple-300 rounded px-1.5 text-[11px] text-purple-700 focus:outline-none focus:border-purple-500" />
                     </div>
                     {/* Fila 3: resumen */}
                     <div className="px-2 py-0.5 border-t border-purple-100 text-[10px] text-purple-400">
