@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getOsrmRoute } from "@/lib/osrmRoute";
@@ -254,6 +254,8 @@ export function useRouteBuilder() {
   const [allForms, setAllForms]           = useState<RouteForm[]>([]);
   const [loading, setLoading]             = useState(false);
   const [formsReloadKey, setFormsReloadKey] = useState(0);
+  // Memoria de tiempos por form (recuerda el tiempo aunque se deseleccione)
+  const formMinutesMemory = useRef<Record<string, number>>({});
 
   // Route state
   const [origin, setOrigin]               = useState<MaintenanceLocation | null>(null);
@@ -531,7 +533,10 @@ export function useRouteBuilder() {
   const addStop = useCallback(async (location: MaintenanceLocation, formIds?: string[]) => {
     const locForms       = formsByLocation.get(location.id) ?? [];
     const selectedIds    = formIds ?? locForms.map((f) => f.id);
-    const defaultMinutes = Object.fromEntries(selectedIds.map((id) => [id, DEFAULT_FORM_MINUTES]));
+    // Usar el tiempo recordado si existe (no perder lo configurado antes)
+    const defaultMinutes = Object.fromEntries(
+      selectedIds.map((id) => [id, formMinutesMemory.current[id] ?? DEFAULT_FORM_MINUTES]),
+    );
 
     // Get previous waypoint
     const prevPoint = stops.length > 0
@@ -586,7 +591,10 @@ export function useRouteBuilder() {
       const has = s.formIds.includes(formId);
       const formIds = has ? s.formIds.filter((id) => id !== formId) : [...s.formIds, formId];
       const formMinutes = { ...s.formMinutes };
-      if (!has) formMinutes[formId] = DEFAULT_FORM_MINUTES;
+      // Al re-seleccionar, recuperar el tiempo recordado (no resetear a default)
+      if (!has && formMinutes[formId] === undefined) {
+        formMinutes[formId] = formMinutesMemory.current[formId] ?? DEFAULT_FORM_MINUTES;
+      }
       return { ...s, formIds, formMinutes };
     }));
   }, []);
@@ -596,12 +604,15 @@ export function useRouteBuilder() {
       if (s.locationId !== locationId) return s;
       const formIds    = s.allForms.map((f) => f.id);
       const formMinutes = { ...s.formMinutes };
-      for (const id of formIds) if (!formMinutes[id]) formMinutes[id] = DEFAULT_FORM_MINUTES;
+      for (const id of formIds) if (formMinutes[id] === undefined) {
+        formMinutes[id] = formMinutesMemory.current[id] ?? DEFAULT_FORM_MINUTES;
+      }
       return { ...s, formIds, formMinutes };
     }));
   }, []);
 
   const setFormMinutes = useCallback((locationId: string, formId: string, minutes: number) => {
+    formMinutesMemory.current[formId] = minutes; // recordar para futuras (de)selecciones
     setStops((prev) => prev.map((s) =>
       s.locationId === locationId
         ? { ...s, formMinutes: { ...s.formMinutes, [formId]: minutes } }
