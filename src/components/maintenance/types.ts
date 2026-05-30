@@ -36,6 +36,7 @@ export interface MaintenanceForm {
   criticality_category_id: string | null;
   resolution_observations: string | null;
   ot_file_url: string | null;
+  merge_group_id: string | null;
 }
 
 export interface ParsedMaintenanceRow {

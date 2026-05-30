@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X, PanelRightClose,
-  Star, CalendarClock, CheckSquare, Square,
+  Star, CalendarClock, CheckSquare, Square, ChevronDown, ChevronRight,
 } from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
@@ -66,6 +66,10 @@ export function LocationDetailPanel({
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   const [merging, setMerging] = useState(false);
+  const [expandedMerge, setExpandedMerge] = useState<Set<string>>(new Set()); // grupos fusionados expandidos
+  const toggleExpandMerge = (id: string) => setExpandedMerge((prev) => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
 
   const toggleMergeSel = (id: string) => setMergeSel((prev) => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
@@ -238,8 +242,16 @@ export function LocationDetailPanel({
                     <div className="flex-1 min-w-0">
                       {f.mergedFormNumbers.length > 1 ? (
                         <span className="inline-flex items-center gap-1">
-                          <Link2 className="w-3 h-3 text-purple-500 shrink-0" />
-                          <span className="font-mono text-xs text-purple-700">{f.mergedFormNumbers.join(" + ")}</span>
+                          <button onClick={(e) => { e.stopPropagation(); toggleExpandMerge(f.id); }}
+                            className="text-purple-500 hover:text-purple-700 shrink-0"
+                            title={expandedMerge.has(f.id) ? "Colapsar fusionados" : "Ver forms fusionados"}>
+                            {expandedMerge.has(f.id) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                          </button>
+                          <span className="inline-flex items-center gap-0.5 rounded bg-purple-100 text-purple-700 text-[9px] font-bold px-1 leading-none py-0.5" title="Forms fusionados">
+                            <Link2 className="w-2.5 h-2.5" />F
+                          </span>
+                          <span className="font-mono text-xs text-purple-700">{f.form_number}</span>
+                          <span className="text-[10px] text-gray-400">+{f.mergedFormNumbers.length - 1}</span>
                         </span>
                       ) : (
                         <span className="font-mono text-xs text-gray-600">{f.form_number}</span>
@@ -263,6 +275,15 @@ export function LocationDetailPanel({
                     )}
                     {selected && !mergeMode && <span className="text-blue-500 text-xs shrink-0">✓</span>}
                   </div>
+
+                  {/* Hijos del grupo fusionado (colapsables) */}
+                  {f.mergedFormNumbers.length > 1 && expandedMerge.has(f.id) && (
+                    <div className="mt-1 ml-5 pl-2 border-l-2 border-purple-100 space-y-0.5">
+                      {f.mergedFormNumbers.slice(1).map((num) => (
+                        <div key={num} className="font-mono text-[10px] text-purple-600">↳ {num}</div>
+                      ))}
+                    </div>
+                  )}
 
                   {isPriority && (
                     <div className="mt-0.5 text-[10px] text-amber-600 font-medium">★ Tarea inicial (prioritaria)</div>

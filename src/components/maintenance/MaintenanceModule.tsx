@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, startTransition, useRef, memo } from "react";
+import { useState, useEffect, useMemo, useCallback, startTransition, useRef, memo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, MessageSquare, FileText } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -26,6 +26,14 @@ import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExpor
 import { OTDownloadOfferDialog } from "./OTDownloadOfferDialog";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
+
+/** "Resuelto con Observaciones": subestado dedicado resuelto_obs, o resuelto + observaciones. */
+const isResueltoObs = (f: MaintenanceForm) =>
+  (f.sub_status === "resuelto" && !!f.resolution_observations?.trim()) || f.sub_status === "resuelto_obs";
+
+/** Valor numérico de un form_number para comparar (el "padre" de una fusión es el más alto). */
+const formNumberValue = (s: string | null | undefined): number =>
+  parseInt((s ?? "").replace(/\D/g, ""), 10) || 0;
 
 /* ── Isolated CommentCell to prevent table re-renders ── */
 const CommentCell = memo(function CommentCell({
@@ -406,6 +414,7 @@ export function MaintenanceModule() {
   const [excelIncludeRevisado, setExcelIncludeRevisado] = useState(false);
   const hasFetchedRef = useRef(false);
   const [currentPage, setCurrentPage] = useState(0);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set()); // grupos de fusión expandidos
   const formsRef = useRef(forms);
   const [resolutionTarget, setResolutionTarget] = useState<string | null>(null);
   const [resolutionOpen, setResolutionOpen] = useState(false);
@@ -669,7 +678,7 @@ export function MaintenanceModule() {
   const filtered = useMemo(() => {
     const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter } = filters;
     let result = forms.filter(f => {
-      if (observationsFilter && !(f.sub_status === "resuelto" && f.resolution_observations?.trim())) return false;
+      if (observationsFilter && !isResueltoObs(f)) return false;
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
       if (companyFilteredContractIds !== null) {
         if (!f.contract_id || !companyFilteredContractIds.has(f.contract_id)) return false;
@@ -739,10 +748,42 @@ export function MaintenanceModule() {
     return result;
   }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap]);
 
+  // Agrupar forms fusionados: cada grupo es un item (el "padre" = nº más alto;
+  // los demás son hijos colapsables). Singles quedan como item suelto.
+  const groupedItems = useMemo(() => {
+    type Item =
+      | { type: "single"; form: MaintenanceForm }
+      | { type: "group"; groupId: string; parent: MaintenanceForm; children: MaintenanceForm[] };
+    const membersByGroup = new Map<string, MaintenanceForm[]>();
+    for (const f of filtered) {
+      if (f.merge_group_id) {
+        if (!membersByGroup.has(f.merge_group_id)) membersByGroup.set(f.merge_group_id, []);
+        membersByGroup.get(f.merge_group_id)!.push(f);
+      }
+    }
+    const items: Item[] = [];
+    const seen = new Set<string>();
+    for (const f of filtered) {
+      if (f.merge_group_id) {
+        if (seen.has(f.merge_group_id)) continue;
+        seen.add(f.merge_group_id);
+        const members = membersByGroup.get(f.merge_group_id)!;
+        if (members.length < 2) { items.push({ type: "single", form: members[0] }); continue; }
+        const parent = members.reduce((a, b) => formNumberValue(b.form_number) > formNumberValue(a.form_number) ? b : a);
+        const children = members.filter((m) => m.id !== parent.id);
+        items.push({ type: "group", groupId: f.merge_group_id, parent, children });
+      } else {
+        items.push({ type: "single", form: f });
+      }
+    }
+    return items;
+  }, [filtered]);
+
   const totalForms = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(totalForms / PAGE_SIZE));
+  const totalItems = groupedItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages - 1);
-  const paginatedForms = useMemo(() => filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE), [filtered, safePage]);
+  const paginatedItems = useMemo(() => groupedItems.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE), [groupedItems, safePage]);
   const enProceso = filtered.filter(f => f.status === "proceso").length;
   const solucionados = filtered.filter(f => f.status === "solucionado").length;
 
@@ -942,6 +983,163 @@ export function MaintenanceModule() {
     setResolutionTarget(null);
   }, [resolutionTarget]);
 
+  const toggleGroup = (groupId: string) => setExpandedGroups(prev => {
+    const n = new Set(prev); n.has(groupId) ? n.delete(groupId) : n.add(groupId); return n;
+  });
+
+  // Renderiza una fila de la tabla. opts marca si es el padre de un grupo fusionado
+  // (chevron + "F" morada) o un hijo colapsado (indentado).
+  const renderFormRow = (
+    f: MaintenanceForm,
+    opts: { groupId?: string; childCount?: number; expanded?: boolean; isChild?: boolean } = {},
+  ) => {
+    const cat = criticalityMap.get(f.criticality_category_id || "");
+    return (
+      <TableRow key={f.id} className={opts.isChild ? "bg-purple-50/40" : undefined}>
+        <TableCell className="font-mono text-xs">
+          {opts.groupId ? (
+            <div className="flex items-center gap-1">
+              <button onClick={() => toggleGroup(opts.groupId!)} className="text-purple-600 hover:text-purple-800"
+                title={opts.expanded ? "Colapsar forms fusionados" : "Expandir forms fusionados"}>
+                {opts.expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+              <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-200 text-[10px] px-1 py-0 gap-0.5" title="Forms fusionados">
+                <Link2 className="h-2.5 w-2.5" />F
+              </Badge>
+              <span>{f.form_number}</span>
+              <span className="text-[10px] text-muted-foreground">+{opts.childCount}</span>
+            </div>
+          ) : opts.isChild ? (
+            <div className="flex items-center gap-1 pl-5 text-muted-foreground">
+              <span className="text-purple-400">↳</span>
+              <span>{f.form_number}</span>
+            </div>
+          ) : (
+            f.form_number
+          )}
+        </TableCell>
+        <TableCell>
+          <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
+            {f.status === "solucionado" ? "Solucionado" : "En Proceso"}
+          </Badge>
+        </TableCell>
+        <TableCell>
+          <SubStatusCell
+            form={f}
+            subStatuses={subStatuses}
+            subStatusLabels={subStatusLabels}
+            subStatusInfo={subStatusInfo}
+            subStatusOrder={subStatusOrder}
+            onSubStatusChange={handleSubStatusChange}
+          />
+        </TableCell>
+        <TableCell>
+          <CriticalityCell
+            form={f}
+            cat={cat}
+            criticalityCategories={criticalityCategories}
+            onCriticalityChange={handleCriticalityChange}
+          />
+        </TableCell>
+        <TableCell className="text-xs">
+          <div>{f.created_date ? format(new Date(f.created_date + "T12:00:00"), "dd/MM/yyyy") : "-"}</div>
+          {f.created_date && (
+            <div className="text-[10px] text-muted-foreground">
+              {Math.floor((Date.now() - new Date(f.created_date + "T12:00:00").getTime()) / 86400000)} días
+            </div>
+          )}
+        </TableCell>
+        <TableCell className="text-xs">
+          <div className="flex items-center gap-1.5">
+            {f.contract_id && contractCompanyMap[f.contract_id] && (
+              <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
+            )}
+            <span className="truncate">{f.contract_name || "-"}</span>
+          </div>
+        </TableCell>
+        <TableCell className="text-xs truncate max-w-36">
+          {f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}
+        </TableCell>
+        <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
+        <TableCell className="text-xs max-w-48">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="truncate block max-w-48 text-left hover:text-primary transition-colors cursor-pointer">
+                {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 max-h-64 overflow-y-auto p-3 space-y-2">
+              {[
+                { label: "Descripción General", value: f.general_description },
+                { label: "Req. Eléctrico", value: f.electrical_description },
+                { label: "Req. Obra Civil", value: f.civil_description },
+                { label: "Req. Climatización", value: f.hvac_description },
+                { label: "Req. Activos Fijos", value: f.fixed_assets_description },
+              ].filter(d => d.value?.trim()).map((d, i) => (
+                <div key={i}>
+                  <p className="text-xs font-semibold text-muted-foreground">{d.label}</p>
+                  <p className="text-sm whitespace-pre-wrap">{d.value}</p>
+                </div>
+              ))}
+            </PopoverContent>
+          </Popover>
+        </TableCell>
+        <TableCell className="text-xs max-w-32">
+          <CommentCell form={f} onSave={saveComment} />
+        </TableCell>
+        <TableCell className="text-xs">
+          {f.supplier_name ? (
+            <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+              <span className="truncate">{f.supplier_name}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </button>
+          ) : <span className="text-muted-foreground">-</span>}
+        </TableCell>
+        <TableCell className="text-xs">
+          {f.purchase_order_number ? (
+            <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+              <span className="truncate">{f.purchase_order_number}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </button>
+          ) : <span className="text-muted-foreground">-</span>}
+        </TableCell>
+        <TableCell className="text-xs">
+          {f.evidence_links && f.evidence_links.length > 0 ? (
+            <div className="flex flex-col gap-0.5">
+              {f.evidence_links.map((link, idx) => (
+                <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                  <Link className="h-3 w-3" />Evidencia {idx + 1}
+                </a>
+              ))}
+            </div>
+          ) : "-"}
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center justify-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+              const critName = cat?.name;
+              if (f.sub_status === "resuelto") {
+                exportMergedFormAndOT(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
+              } else {
+                exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
+              }
+            }} title={f.sub_status === "resuelto" ? "Descargar FORM + OT" : "Descargar PDF"}>
+              <FileDown className="h-3.5 w-3.5" />
+            </Button>
+            {(f.sub_status === "cotizando" || f.sub_status === "Cotización y aviso" || f.sub_status === "en_ejecucion" || f.sub_status === "resuelto" || f.sub_status === "resuelto_obs") && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportOTPDF(f, contractCompanyMap)} title="Descargar OT">
+                <FileText className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            )}
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Stats */}
@@ -1031,7 +1229,7 @@ export function MaintenanceModule() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              {forms.filter(f => f.sub_status === "resuelto" && f.resolution_observations?.trim()).length}
+              {forms.filter(isResueltoObs).length}
             </div>
           </CardContent>
         </Card>
@@ -1413,131 +1611,14 @@ export function MaintenanceModule() {
                   ) : filtered.length === 0 ? (
                     <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                   ) : (
-                    paginatedForms.map(f => {
-                      const cat = criticalityMap.get(f.criticality_category_id || "");
+                    paginatedItems.map((item) => {
+                      if (item.type === "single") return renderFormRow(item.form);
+                      const expanded = expandedGroups.has(item.groupId);
                       return (
-                        <TableRow key={f.id}>
-                          <TableCell className="font-mono text-xs">{f.form_number}</TableCell>
-                          <TableCell>
-                            <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
-                              {f.status === "solucionado" ? "Solucionado" : "En Proceso"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <SubStatusCell
-                              form={f}
-                              subStatuses={subStatuses}
-                              subStatusLabels={subStatusLabels}
-                              subStatusInfo={subStatusInfo}
-                              subStatusOrder={subStatusOrder}
-                              onSubStatusChange={handleSubStatusChange}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <CriticalityCell
-                              form={f}
-                              cat={cat}
-                              criticalityCategories={criticalityCategories}
-                              onCriticalityChange={handleCriticalityChange}
-                            />
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <div>{f.created_date ? format(new Date(f.created_date + "T12:00:00"), "dd/MM/yyyy") : "-"}</div>
-                            {f.created_date && (
-                              <div className="text-[10px] text-muted-foreground">
-                                {Math.floor((Date.now() - new Date(f.created_date + "T12:00:00").getTime()) / 86400000)} días
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <div className="flex items-center gap-1.5">
-                              {f.contract_id && contractCompanyMap[f.contract_id] && (
-                                <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
-                              )}
-                              <span className="truncate">{f.contract_name || "-"}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs truncate max-w-36">
-                            {f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}
-                          </TableCell>
-                          <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
-                          <TableCell className="text-xs max-w-48">
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <button className="truncate block max-w-48 text-left hover:text-primary transition-colors cursor-pointer">
-                                  {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent align="start" className="w-80 max-h-64 overflow-y-auto p-3 space-y-2">
-                                {[
-                                  { label: "Descripción General", value: f.general_description },
-                                  { label: "Req. Eléctrico", value: f.electrical_description },
-                                  { label: "Req. Obra Civil", value: f.civil_description },
-                                  { label: "Req. Climatización", value: f.hvac_description },
-                                  { label: "Req. Activos Fijos", value: f.fixed_assets_description },
-                                ].filter(d => d.value?.trim()).map((d, i) => (
-                                  <div key={i}>
-                                    <p className="text-xs font-semibold text-muted-foreground">{d.label}</p>
-                                    <p className="text-sm whitespace-pre-wrap">{d.value}</p>
-                                  </div>
-                                ))}
-                              </PopoverContent>
-                            </Popover>
-                          </TableCell>
-                          {/* Comments cell - isolated component */}
-                          <TableCell className="text-xs max-w-32">
-                            <CommentCell form={f} onSave={saveComment} />
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {f.supplier_name ? (
-                              <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
-                                <span className="truncate">{f.supplier_name}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0" />
-                              </button>
-                            ) : <span className="text-muted-foreground">-</span>}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {f.purchase_order_number ? (
-                              <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
-                                <span className="truncate">{f.purchase_order_number}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0" />
-                              </button>
-                            ) : <span className="text-muted-foreground">-</span>}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {f.evidence_links && f.evidence_links.length > 0 ? (
-                              <div className="flex flex-col gap-0.5">
-                                {f.evidence_links.map((link, idx) => (
-                                  <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                                    <Link className="h-3 w-3" />Evidencia {idx + 1}
-                                  </a>
-                                ))}
-                              </div>
-                            ) : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-1">
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                const critName = cat?.name;
-                                if (f.sub_status === "resuelto") {
-                                  exportMergedFormAndOT(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
-                                } else {
-                                  exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
-                                }
-                              }} title={f.sub_status === "resuelto" ? "Descargar FORM + OT" : "Descargar PDF"}>
-                                <FileDown className="h-3.5 w-3.5" />
-                              </Button>
-                              {(f.sub_status === "cotizando" || f.sub_status === "Cotización y aviso" || f.sub_status === "en_ejecucion" || f.sub_status === "resuelto" || f.sub_status === "resuelto_obs") && (
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportOTPDF(f, contractCompanyMap)} title="Descargar OT">
-                                  <FileText className="h-3.5 w-3.5 text-destructive" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                        <Fragment key={item.groupId}>
+                          {renderFormRow(item.parent, { groupId: item.groupId, childCount: item.children.length, expanded })}
+                          {expanded && item.children.map((c) => renderFormRow(c, { isChild: true }))}
+                        </Fragment>
                       );
                     })
                   )}
@@ -1549,10 +1630,10 @@ export function MaintenanceModule() {
       </Card>
 
       {/* Pagination Controls */}
-      {totalForms > PAGE_SIZE && (
+      {totalItems > PAGE_SIZE && (
         <div className="flex items-center justify-between px-2">
           <p className="text-sm text-muted-foreground">
-            Mostrando {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, totalForms)} de {totalForms} resultados
+            Mostrando {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, totalItems)} de {totalItems} filas ({totalForms} forms)
           </p>
           <div className="flex items-center gap-2">
             <Button

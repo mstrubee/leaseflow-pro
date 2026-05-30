@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car } from "lucide-react";
+import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
@@ -106,7 +106,15 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
         <div className="px-2 pb-2 space-y-1 border-t border-gray-100 pt-1.5">
           {selected.map((f) => (
             <div key={f.id} className="flex items-center gap-1.5">
-              <span className="font-mono text-[10px] text-gray-500 flex-1 truncate">{f.form_number}</span>
+              {f.mergedFormNumbers.length > 1 ? (
+                <span className="flex-1 truncate inline-flex items-center gap-1" title={`Fusionados: ${f.mergedFormNumbers.join(" + ")}`}>
+                  <span className="inline-flex items-center gap-0.5 rounded bg-purple-100 text-purple-700 text-[8px] font-bold px-1 leading-none py-0.5"><Link2 className="w-2 h-2" />F</span>
+                  <span className="font-mono text-[10px] text-purple-700">{f.form_number}</span>
+                  <span className="text-[9px] text-gray-400">+{f.mergedFormNumbers.length - 1}</span>
+                </span>
+              ) : (
+                <span className="font-mono text-[10px] text-gray-500 flex-1 truncate">{f.form_number}</span>
+              )}
               {f.criticality_name && (
                 <span className="text-[9px] px-1 rounded shrink-0" style={{ background: f.criticality_color ?? "#6b7280", color: "#fff" }}>
                   {f.criticality_name}

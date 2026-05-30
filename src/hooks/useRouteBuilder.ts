@@ -131,6 +131,11 @@ function hhmmToMinutes(hhmm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+/** Valor numérico de un form_number para comparar (el "padre" es el más alto). */
+export function formNumberValue(s: string | null | undefined): number {
+  return parseInt((s ?? "").replace(/\D/g, ""), 10) || 0;
+}
+
 // ---------------------------------------------------------------------------
 // Match forms to location (independent of origin)
 // ---------------------------------------------------------------------------
@@ -439,12 +444,13 @@ export function useRouteBuilder() {
       }
       const merged: RouteForm[] = [];
       for (const [, gforms] of groups) {
-        const sorted = [...gforms].sort((a, b) => b.criticality_weight - a.criticality_weight);
+        // El "padre" del grupo es el de número de form más alto
+        const sorted = [...gforms].sort((a, b) => formNumberValue(b.form_number) - formNumberValue(a.form_number));
         const rep = sorted[0];
         merged.push({
           ...rep,
-          mergedFormIds: gforms.map((g) => g.id),
-          mergedFormNumbers: gforms.map((g) => g.form_number),
+          mergedFormIds: sorted.map((g) => g.id),
+          mergedFormNumbers: sorted.map((g) => g.form_number),
         });
       }
       const result = [...singles, ...merged]
@@ -453,6 +459,37 @@ export function useRouteBuilder() {
     }
     return map;
   }, [locations, allForms, companyByContract]);
+
+  // Reconciliar stops cuando cambian las fusiones: colapsar los forms de un grupo
+  // en su "padre" para que compartan UN solo tiempo (no varios por miembro).
+  useEffect(() => {
+    setStops((prev) => {
+      let changed = false;
+      const next = prev.map((stop) => {
+        const locForms = formsByLocation.get(stop.locationId) ?? [];
+        if (locForms.length === 0) return stop;
+        const repByMember = new Map<string, string>();
+        for (const rep of locForms) for (const mid of rep.mergedFormIds) repByMember.set(mid, rep.id);
+        const newFormIds = Array.from(new Set(stop.formIds.map((id) => repByMember.get(id) ?? id)));
+        const sameIds = newFormIds.length === stop.formIds.length && newFormIds.every((id, i) => id === stop.formIds[i]);
+        if (sameIds) return stop;
+        changed = true;
+        // Un tiempo por grupo: usa el del padre si existe, si no el de algún miembro
+        const newMinutes: Record<string, number> = {};
+        for (const newId of newFormIds) {
+          if (stop.formMinutes[newId] != null) { newMinutes[newId] = stop.formMinutes[newId]; continue; }
+          const rep = locForms.find((r) => r.id === newId);
+          const fromMember = rep?.mergedFormIds.map((mid) => stop.formMinutes[mid]).find((v) => v != null);
+          newMinutes[newId] = fromMember ?? formMinutesMemory.current[newId] ?? DEFAULT_FORM_MINUTES;
+        }
+        const newPriority = stop.priorityFormId
+          ? (repByMember.get(stop.priorityFormId) ?? stop.priorityFormId)
+          : stop.priorityFormId;
+        return { ...stop, formIds: newFormIds, allForms: locForms, formMinutes: newMinutes, priorityFormId: newPriority };
+      });
+      return changed ? next : prev;
+    });
+  }, [formsByLocation]);
 
   // Fusionar forms — directo en el cliente (no depende de RPC, que Lovable a
   // veces omite). Valida mismo local, asigna merge_group_id y registra historial.
