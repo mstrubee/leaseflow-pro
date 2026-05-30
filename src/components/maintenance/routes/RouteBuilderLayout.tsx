@@ -230,13 +230,7 @@ export function RouteBuilderLayout() {
                   onStartTime={rb.setStartTime}
                   onUrbanSpeed={rb.setUrbanSpeed}
                   onHighwaySpeed={rb.setHighwaySpeed}
-                  onScheduledDate={(v) => {
-                    rb.setScheduledDate(v);
-                    if (v && (!rb.routeName || rb.routeName.startsWith("Ruta "))) {
-                      const [y, m, d] = v.split("-");
-                      rb.setRouteName(`Ruta ${y}.${m}.${d}`);
-                    }
-                  }}
+                  onScheduledDate={rb.setScheduledDate}
                   onRemoveStop={rb.removeStop}
                   onReorder={rb.reorderStops}
                   onSetFormMinutes={rb.setFormMinutes}

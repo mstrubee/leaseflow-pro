@@ -316,7 +316,8 @@ export function useRouteBuilder() {
   // Route state
   const [origin, setOrigin]               = useState<MaintenanceLocation | null>(null);
   const [stops, setStops]                 = useState<RouteStop[]>([]);
-  const [routeName, setRouteName]         = useState("");
+  const [routeName, setRouteNameState]    = useState("");
+  const [routeNameDirty, setRouteNameDirty] = useState(false); // true si el usuario lo editó a mano
   const [supplierId, setSupplierId]       = useState<string | null>(
     () => localStorage.getItem("lastRouteSupplierId") || null,
   );
@@ -605,6 +606,30 @@ export function useRouteBuilder() {
   const totalDays = schedule.length > 0 ? Math.max(...schedule.map((e) => e.dayIndex)) + 1 : 1;
   const endDate = scheduledDate ? addBusinessDays(scheduledDate, totalDays - 1) : "";
 
+  // Nombre sugerido por defecto: "Ruta <fecha> <zonas>" (zonas de origin + paradas)
+  const suggestedRouteName = useMemo(() => {
+    const zonas = Array.from(new Set(
+      [origin, ...stops.map((s) => s.location)]
+        .map((l) => l?.zona?.trim())
+        .filter((z): z is string => !!z),
+    ));
+    const base = scheduledDate
+      ? `Ruta ${scheduledDate.split("-").join(".")}`
+      : "Ruta";
+    return zonas.length ? `${base} ${zonas.join(", ")}` : base;
+  }, [origin, stops, scheduledDate]);
+
+  // Aplicar el sugerido mientras el usuario no haya escrito un nombre propio
+  useEffect(() => {
+    if (!routeNameDirty) setRouteNameState(suggestedRouteName);
+  }, [suggestedRouteName, routeNameDirty]);
+
+  // Setter público: marca el nombre como "editado a mano" (deja de autogenerarse)
+  const setRouteName = useCallback((v: string) => {
+    setRouteNameDirty(true);
+    setRouteNameState(v);
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
@@ -732,7 +757,8 @@ export function useRouteBuilder() {
   }, []);
 
   const resetRoute = useCallback(() => {
-    setOrigin(null); setStops([]); setRouteName("");
+    setOrigin(null); setStops([]);
+    setRouteNameState(""); setRouteNameDirty(false); // vuelve a autogenerarse
     setScheduledDate(""); setStartTime("09:00");
     // supplierId NO se resetea: mantiene el último usado como default
   }, []);
