@@ -230,7 +230,24 @@ export function RouteCalendar() {
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", route.id)
       .select("id");
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      // La papelera requiere la columna deleted_at. Si la migración no se aplicó,
+      // ofrecer borrado definitivo (con confirmación clara) en vez de fallar.
+      if (/deleted_at|column|schema cache/i.test(error.message)) {
+        const ok = window.confirm(
+          `La papelera no está disponible (falta aplicar una migración en la base de datos).\n\n` +
+          `¿Eliminar la ruta "${route.name}" de forma DEFINITIVA? Esta acción no se puede deshacer.`,
+        );
+        if (!ok) return;
+        const { error: delErr } = await supabase.from("maintenance_routes").delete().eq("id", route.id);
+        if (delErr) { toast.error(delErr.message); return; }
+        setRoutes((prev) => prev.filter((r) => r.id !== route.id));
+        await loadRoutes();
+        toast.success("Ruta eliminada definitivamente");
+        return;
+      }
+      toast.error(error.message); return;
+    }
     if (!data || data.length === 0) {
       toast.error("No se pudo eliminar (sin permisos o ruta no encontrada)");
       return;
