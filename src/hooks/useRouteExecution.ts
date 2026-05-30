@@ -25,6 +25,8 @@ export interface ExecutionForm {
   completed_at: string | null;
   operator_notes: string | null;
   visit_evidence_urls: string[];
+  postponed_to: string | null;   // tarea pospuesta a esta fecha
+  postpone_note: string | null;
   // fusión
   merge_group_id: string | null;
   mergedCount: number;          // 1 si no está fusionado
@@ -67,16 +69,14 @@ export function useRouteExecution(routeId: string) {
     if (!routeId) return;
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("maintenance_routes")
-      .select(`
+    const buildSelect = (withFormPostpone: boolean) => `
         id, name, scheduled_date, status,
         suppliers ( name ),
         maintenance_route_stops (
           id, stop_order, status, completed_at, postponed_to, postpone_note,
           maintenance_locations ( id, name, local_name, lat, lng ),
           maintenance_route_forms (
-            id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls,
+            id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls${withFormPostpone ? ", postponed_to, postpone_note" : ""},
             maintenance_forms (
               form_number, general_description, electrical_description,
               civil_description, hvac_description, fixed_assets_description,
@@ -85,9 +85,19 @@ export function useRouteExecution(routeId: string) {
             )
           )
         )
-      `)
-      .eq("id", routeId)
-      .single();
+      `;
+
+    // Intento con las columnas de aplazamiento por form; si la migración no se
+    // aplicó, reintenta sin ellas para no bloquear la vista.
+    // (select con string dinámico → tipamos data como any, como el resto del map.)
+    const res1 = await supabase.from("maintenance_routes").select(buildSelect(true)).eq("id", routeId).single();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any = res1.data;
+    let error = res1.error;
+    if (error && /postponed_to|postpone_note|column|schema cache/i.test(error.message)) {
+      const res2 = await supabase.from("maintenance_routes").select(buildSelect(false)).eq("id", routeId).single();
+      data = res2.data; error = res2.error;
+    }
 
     if (error || !data) { setLoading(false); return; }
 
@@ -116,6 +126,8 @@ export function useRouteExecution(routeId: string) {
               completed_at: rf.completed_at as string ?? null,
               operator_notes: rf.operator_notes as string ?? null,
               visit_evidence_urls: (rf.visit_evidence_urls as string[]) ?? [],
+              postponed_to: rf.postponed_to as string ?? null,
+              postpone_note: rf.postpone_note as string ?? null,
               merge_group_id: null,
               mergedCount: 1,
             };
@@ -150,7 +162,7 @@ export function useRouteExecution(routeId: string) {
       if (mergeData) {
         const groupOf = new Map<string, string | null>();
         const countByGroup = new Map<string, number>();
-        for (const m of mergeData as { id: string; merge_group_id: string | null }[]) {
+        for (const m of mergeData as unknown as { id: string; merge_group_id: string | null }[]) {
           groupOf.set(m.id, m.merge_group_id);
           if (m.merge_group_id) countByGroup.set(m.merge_group_id, (countByGroup.get(m.merge_group_id) ?? 0) + 1);
         }
@@ -194,6 +206,58 @@ export function useRouteExecution(routeId: string) {
     }
     setSaving(null);
   }, [user, load]);
+
+  // Completar con observaciones: marca el form, guarda la nota y deja el
+  // maintenance_form como "resuelto_obs" (best-effort, robusto a columnas).
+  const completeFormWithObs = useCallback(async (routeFormId: string, maintenanceFormId: string, obs: string) => {
+    if (!user) return;
+    setSaving(routeFormId);
+    const now = new Date().toISOString();
+    await supabase
+      .from("maintenance_route_forms")
+      .update({ completed: true, completed_at: now, completed_by: user.id, operator_notes: obs })
+      .eq("id", routeFormId);
+    // Reflejar en el form de mantención: subestado "Resuelto Obs"
+    const { error: subErr } = await supabase
+      .from("maintenance_forms")
+      .update({ sub_status: "resuelto_obs", resolution_observations: obs })
+      .eq("id", maintenanceFormId);
+    if (subErr) {
+      // si falta resolution_observations u otra columna, al menos intentar el subestado
+      await supabase.from("maintenance_forms").update({ sub_status: "resuelto_obs" }).eq("id", maintenanceFormId);
+    }
+    await logEvent(routeFormId, null, "completed", obs);
+    await load();
+    setSaving(null);
+  }, [user, load]);
+
+  // Posponer una tarea (form) individual
+  const postponeForm = useCallback(async (routeFormId: string, postponedTo: string, note?: string) => {
+    if (!user) return;
+    setSaving(routeFormId);
+    const { error } = await supabase
+      .from("maintenance_route_forms")
+      .update({ postponed_to: postponedTo, postpone_note: note ?? null } as never)
+      .eq("id", routeFormId);
+    if (!error) {
+      await logEvent(routeFormId, null, "postponed", note, postponedTo);
+      await load();
+    } else {
+      console.error(error);
+    }
+    setSaving(null);
+  }, [user, load]);
+
+  // Reactivar una tarea pospuesta
+  const unpostponeForm = useCallback(async (routeFormId: string) => {
+    setSaving(routeFormId);
+    await supabase
+      .from("maintenance_route_forms")
+      .update({ postponed_to: null, postpone_note: null } as never)
+      .eq("id", routeFormId);
+    await load();
+    setSaving(null);
+  }, [load]);
 
   // Desmarcar un form completado
   const uncompleteForm = useCallback(async (routeFormId: string) => {
@@ -369,10 +433,13 @@ export function useRouteExecution(routeId: string) {
     loading,
     saving,
     completeForm,
+    completeFormWithObs,
     uncompleteForm,
     completeStop,
     reopenStop,
     postponeStop,
+    postponeForm,
+    unpostponeForm,
     saveNotes,
     uploadEvidence,
     autoCompleteStopIfDone,

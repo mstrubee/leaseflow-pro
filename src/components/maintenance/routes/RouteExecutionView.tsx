@@ -9,8 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
   MessageSquare, Camera, CalendarDays, Loader2, MapPin, ArrowLeft,
-  Image as ImageIcon, Link2, RotateCcw,
+  Image as ImageIcon, Link2, RotateCcw, Share2,
 } from "lucide-react";
+import { shareLocationReport } from "./exportLocationReportPDF";
+import { toast } from "sonner";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from "@/components/ui/sheet";
@@ -35,7 +37,7 @@ function PostponeSheet({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-amber-500" />
-            Posponer parada
+            Posponer tarea
           </SheetTitle>
         </SheetHeader>
         <div className="mt-4 space-y-3">
@@ -119,18 +121,63 @@ function NotesSheet({
 }
 
 // ---------------------------------------------------------------------------
+// Complete-with-observations sheet
+// ---------------------------------------------------------------------------
+function ObsSheet({
+  open, onClose, onConfirm, saving,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (obs: string) => void;
+  saving: boolean;
+}) {
+  const [text, setText] = useState("");
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="bottom" className="rounded-t-2xl pb-safe">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-orange-500" />
+            Completar con observaciones
+          </SheetTitle>
+        </SheetHeader>
+        <div className="mt-4">
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Describe la observación (ej: se completó pero requiere seguimiento)…"
+            rows={4}
+            className="text-sm resize-none"
+            autoFocus
+          />
+        </div>
+        <SheetFooter className="mt-4 flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
+          <Button className="flex-1 bg-orange-500 hover:bg-orange-600" disabled={!text.trim() || saving} onClick={() => onConfirm(text)}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Completar"}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Form card
 // ---------------------------------------------------------------------------
 function FormCard({
-  form, stopId, saving, onComplete, onUncomplete, onNotes, onPhoto,
+  form, stopId, saving, onComplete, onCompleteObs, onUncomplete, onNotes, onPhoto, onPostpone, onUnpostpone,
 }: {
   form: ExecutionForm;
   stopId: string;
   saving: string | null;
   onComplete: (routeFormId: string) => void;
+  onCompleteObs: (form: ExecutionForm) => void;
   onUncomplete: (routeFormId: string) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
+  onPostpone: (form: ExecutionForm) => void;
+  onUnpostpone: (routeFormId: string) => void;
 }) {
   function typeLabel() {
     if (form.electrical_description) return "Eléctrico";
@@ -199,38 +246,56 @@ function FormCard({
         </div>
       )}
 
-      {/* Action buttons */}
-      {!form.completed && (
-        <div className="flex gap-2 pt-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="flex-1 h-8 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50"
-            onClick={() => onNotes(form)}
-          >
-            <MessageSquare className="w-3.5 h-3.5 mr-1" />
-            Comentar
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="flex-1 h-8 text-xs text-purple-600 border border-purple-200 hover:bg-purple-50"
-            onClick={() => onPhoto(form)}
-          >
-            <Camera className="w-3.5 h-3.5 mr-1" />
-            Foto
-          </Button>
-          <Button
-            size="sm"
-            className="flex-1 h-8 text-xs bg-green-500 hover:bg-green-600 text-white"
-            disabled={isSaving}
-            onClick={() => onComplete(form.id)}
-          >
-            {isSaving
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Listo</>
-            }
-          </Button>
+      {/* Tarea pospuesta */}
+      {!form.completed && form.postponed_to && (
+        <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1.5">
+          <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1">
+            Pospuesta a {format(parseISO(form.postponed_to), "d MMM", { locale: es })}
+            {form.postpone_note && ` · ${form.postpone_note}`}
+          </span>
+          <button className="text-amber-700 underline shrink-0" onClick={() => onUnpostpone(form.id)} disabled={isSaving}>
+            Reactivar
+          </button>
+        </div>
+      )}
+
+      {/* Action buttons (tarea pendiente y no pospuesta) */}
+      {!form.completed && !form.postponed_to && (
+        <div className="space-y-1.5 pt-1">
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost"
+              className="flex-1 h-8 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50"
+              onClick={() => onNotes(form)}>
+              <MessageSquare className="w-3.5 h-3.5 mr-1" />Comentar
+            </Button>
+            <Button size="sm" variant="ghost"
+              className="flex-1 h-8 text-xs text-purple-600 border border-purple-200 hover:bg-purple-50"
+              onClick={() => onPhoto(form)}>
+              <Camera className="w-3.5 h-3.5 mr-1" />Foto
+            </Button>
+            <Button size="sm" variant="ghost"
+              className="flex-1 h-8 text-xs text-amber-600 border border-amber-200 hover:bg-amber-50"
+              onClick={() => onPostpone(form)}>
+              <Clock className="w-3.5 h-3.5 mr-1" />Posponer
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost"
+              className="flex-1 h-8 text-xs text-orange-600 border border-orange-200 hover:bg-orange-50"
+              disabled={isSaving}
+              onClick={() => onCompleteObs(form)}>
+              <MessageSquare className="w-3.5 h-3.5 mr-1" />Con obs.
+            </Button>
+            <Button size="sm"
+              className="flex-1 h-8 text-xs bg-green-500 hover:bg-green-600 text-white"
+              disabled={isSaving}
+              onClick={() => onComplete(form.id)}>
+              {isSaving
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Listo</>}
+            </Button>
+          </div>
         </div>
       )}
       {form.completed && (
@@ -263,15 +328,20 @@ function FormCard({
 // Stop card
 // ---------------------------------------------------------------------------
 function StopCard({
-  stop, saving, onCompleteForm, onUncompleteForm, onCompleteStop, onReopenStop, onPostpone, onNotes, onPhoto,
+  stop, saving, sharing, onCompleteForm, onCompleteObsForm, onUncompleteForm, onCompleteStop, onReopenStop,
+  onPostponeForm, onUnpostponeForm, onShare, onNotes, onPhoto,
 }: {
   stop: ExecutionStop;
   saving: string | null;
+  sharing: boolean;
   onCompleteForm: (routeFormId: string) => void;
+  onCompleteObsForm: (form: ExecutionForm) => void;
   onUncompleteForm: (routeFormId: string) => void;
   onCompleteStop: (stopId: string) => void;
   onReopenStop: (stopId: string) => void;
-  onPostpone: (stop: ExecutionStop) => void;
+  onPostponeForm: (form: ExecutionForm) => void;
+  onUnpostponeForm: (routeFormId: string) => void;
+  onShare: (stop: ExecutionStop) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
 }) {
@@ -328,9 +398,12 @@ function StopCard({
                 stopId={stop.id}
                 saving={saving}
                 onComplete={onCompleteForm}
+                onCompleteObs={onCompleteObsForm}
                 onUncomplete={onUncompleteForm}
                 onNotes={onNotes}
                 onPhoto={onPhoto}
+                onPostpone={onPostponeForm}
+                onUnpostpone={onUnpostponeForm}
               />
             ))
           )}
@@ -348,33 +421,33 @@ function StopCard({
             </Button>
           )}
 
-          {/* Stop-level actions */}
-          {stop.status === "pending" && (
-            <div className="flex gap-2 pt-1">
+          {/* Stop-level actions: compartir informe del local + marcar parada lista */}
+          <div className="flex gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 h-9 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+              disabled={sharing}
+              onClick={() => onShare(stop)}
+            >
+              {sharing
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <><Share2 className="w-3.5 h-3.5 mr-1" />Compartir informe</>}
+            </Button>
+            {stop.status === "pending" && allDone && (
               <Button
                 size="sm"
-                variant="outline"
-                className="flex-1 h-9 text-xs text-amber-600 border-amber-300 hover:bg-amber-50"
-                onClick={() => onPostpone(stop)}
+                className="flex-1 h-9 text-xs bg-green-500 hover:bg-green-600"
+                disabled={saving === stop.id}
+                onClick={() => onCompleteStop(stop.id)}
               >
-                <Clock className="w-3.5 h-3.5 mr-1" />
-                Posponer
+                {saving === stop.id
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Marcar parada lista</>
+                }
               </Button>
-              {allDone && (
-                <Button
-                  size="sm"
-                  className="flex-1 h-9 text-xs bg-green-500 hover:bg-green-600"
-                  disabled={saving === stop.id}
-                  onClick={() => onCompleteStop(stop.id)}
-                >
-                  {saving === stop.id
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Marcar parada lista</>
-                  }
-                </Button>
-              )}
-            </div>
-          )}
+            )}
+          </div>
           {stop.status === "postponed" && stop.postponed_to && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
               <CalendarDays className="w-3.5 h-3.5" />
@@ -396,11 +469,13 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
   const exec = useRouteExecution(routeId);
 
   // Sheet state
-  const [postponeStop, setPostponeStop] = useState<ExecutionStop | null>(null);
+  const [postponeForm, setPostponeForm] = useState<ExecutionForm | null>(null);
+  const [obsForm, setObsForm]           = useState<ExecutionForm | null>(null);
   const [notesForm, setNotesForm]       = useState<ExecutionForm | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [photoForm, setPhotoForm]       = useState<ExecutionForm | null>(null);
   const [uploading, setUploading]       = useState(false);
+  const [sharingStopId, setSharingStopId] = useState<string | null>(null);
 
   if (exec.loading) {
     return (
@@ -431,6 +506,17 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
     // Find which stop this form belongs to and auto-complete if all done
     const stop = route!.stops.find((s) => s.forms.some((f) => f.id === routeFormId));
     if (stop) await exec.autoCompleteStopIfDone(stop.id);
+  }
+
+  async function handleShare(stop: ExecutionStop) {
+    setSharingStopId(stop.id);
+    try {
+      await shareLocationReport(stop, route!.name, route!.scheduled_date);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo compartir el informe");
+    } finally {
+      setSharingStopId(null);
+    }
   }
 
   async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -486,11 +572,15 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
             key={stop.id}
             stop={stop}
             saving={exec.saving}
+            sharing={sharingStopId === stop.id}
             onCompleteForm={handleCompleteForm}
+            onCompleteObsForm={(f) => setObsForm(f)}
             onUncompleteForm={exec.uncompleteForm}
             onCompleteStop={exec.completeStop}
             onReopenStop={exec.reopenStop}
-            onPostpone={(s) => setPostponeStop(s)}
+            onPostponeForm={(f) => setPostponeForm(f)}
+            onUnpostponeForm={exec.unpostponeForm}
+            onShare={handleShare}
             onNotes={(f) => setNotesForm(f)}
             onPhoto={(f) => {
               setPhotoForm(f);
@@ -527,15 +617,29 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
         </div>
       )}
 
-      {/* Postpone sheet */}
+      {/* Postpone sheet (por tarea) */}
       <PostponeSheet
-        open={!!postponeStop}
-        onClose={() => setPostponeStop(null)}
-        saving={exec.saving === postponeStop?.id}
+        open={!!postponeForm}
+        onClose={() => setPostponeForm(null)}
+        saving={exec.saving === postponeForm?.id}
         onConfirm={async (date, note) => {
-          if (!postponeStop) return;
-          await exec.postponeStop(postponeStop.id, date, note);
-          setPostponeStop(null);
+          if (!postponeForm) return;
+          await exec.postponeForm(postponeForm.id, date, note);
+          setPostponeForm(null);
+        }}
+      />
+
+      {/* Complete-with-observations sheet */}
+      <ObsSheet
+        open={!!obsForm}
+        onClose={() => setObsForm(null)}
+        saving={exec.saving === obsForm?.id}
+        onConfirm={async (obs) => {
+          if (!obsForm) return;
+          await exec.completeFormWithObs(obsForm.id, obsForm.maintenance_form_id, obs);
+          const stop = route!.stops.find((s) => s.forms.some((f) => f.id === obsForm.id));
+          if (stop) await exec.autoCompleteStopIfDone(stop.id);
+          setObsForm(null);
         }}
       />
 
