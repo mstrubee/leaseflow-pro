@@ -126,26 +126,56 @@ function minutesToHHMM(minutes: number): string {
 // ---------------------------------------------------------------------------
 // Match forms to location (independent of origin)
 // ---------------------------------------------------------------------------
+
+/** Normaliza para comparar: minúsculas, sin acentos (diacríticos U+0300–U+036F), sin espacios extra. */
+const DIACRITICS = /[\u0300-\u036f]/g;
+function norm(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(DIACRITICS, "").replace(/\s+/g, " ").trim();
+}
+
+export type CompanyKey = "agroplanet" | "autoplanet" | null;
+
+/** Empresa canónica a partir de un texto (folder del local o nombre de empresa). */
+export function companyKeyFromText(s: string): CompanyKey {
+  const n = norm(s);
+  if (n.includes("agroplanet")) return "agroplanet";
+  if (n.includes("autoplanet")) return "autoplanet";
+  return null;
+}
+
 function matchFormsToLocation(
   loc: MaintenanceLocation,
   allForms: RouteForm[],
+  companyByContract: Map<string, CompanyKey>,
 ): RouteForm[] {
   if (allForms.length === 0) return [];
 
-  const localName = loc.local_name?.toLowerCase().trim() ?? "";
-  const localCode = loc.local_code?.toLowerCase().trim() ?? "";
-  const locName   = loc.name.toLowerCase().trim();
-  const locFolder = loc.folder.toLowerCase(); // 'autoplanet' | 'agroplanet'
+  const localName = norm(loc.local_name ?? "");
+  const localCode = norm(loc.local_code ?? "");
+  const locName   = norm(loc.name);
+  const locCompany = companyKeyFromText(loc.folder); // 'autoplanet' | 'agroplanet'
+  // Ciudad del local: el name sin el prefijo de empresa ("Agroplanet Casablanca" → "casablanca")
+  const locCity = locName.replace(/^(agro|auto)planet\s+/, "");
 
   return allForms.filter((f) => {
-    const cn = (f.contract_name ?? "").toLowerCase().trim();
+    const cn = norm(f.contract_name ?? "");
     if (!cn) return false;
-    return (
-      (localName && (cn.includes(localName) || localName.includes(cn))) ||
-      (localCode && (cn.includes(localCode) || cn === localCode))       ||
-      cn.includes(locName)                                               ||
-      cn.includes(locFolder)
-    );
+
+    // Filtro por empresa: si conocemos la del form y la del local, deben coincidir.
+    // Evita que un form "Casablanca" (Agroplanet) aparezca en "Autoplanet Casablanca".
+    const formCompany = f.contract_id ? companyByContract.get(f.contract_id) ?? null : null;
+    if (locCompany && formCompany && locCompany !== formCompany) return false;
+
+    // Código del local (Autoplanet: "AP0045")
+    if (localCode && (cn.includes(localCode) || cn === localCode)) return true;
+    // local_name completo (Autoplanet con nombre: "AP0045-Concon")
+    if (localName && (cn.includes(localName) || localName.includes(cn))) return true;
+    // Ciudad bidireccional ("casablanca" ↔ "agroplanet casablanca")
+    if (locCity && (cn === locCity || cn.includes(locCity) || locCity.includes(cn))) return true;
+    // Nombre completo bidireccional (último recurso)
+    if (cn.includes(locName) || locName.includes(cn)) return true;
+
+    return false;
   });
 }
 
@@ -254,6 +284,8 @@ export function useRouteBuilder() {
   const [allForms, setAllForms]           = useState<RouteForm[]>([]);
   const [loading, setLoading]             = useState(false);
   const [formsReloadKey, setFormsReloadKey] = useState(0);
+  // Empresa (Agroplanet/Autoplanet) por contract_id — distingue locales homónimos
+  const [companyByContract, setCompanyByContract] = useState<Map<string, CompanyKey>>(new Map());
   // Memoria de tiempos por form (recuerda el tiempo aunque se deseleccione)
   const formMinutesMemory = useRef<Record<string, number>>({});
 
@@ -292,6 +324,28 @@ export function useRouteBuilder() {
       if (catRes.data)  setCriticalities(catRes.data as CriticalityCategory[]);
       setLoading(false);
     });
+  }, [user]);
+
+  // ---------------------------------------------------------------------------
+  // Empresa por contrato (contract_id → agroplanet/autoplanet)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase
+        .from("contract_companies")
+        .select("contract_id, companies!inner(name)")
+        .returns<Array<{ contract_id: string; companies: { name: string } }>>();
+      if (!data) return;
+      const map = new Map<string, CompanyKey>();
+      for (const row of data) {
+        const key = companyKeyFromText(row.companies?.name ?? "");
+        // No sobreescribir una empresa ya detectada con null
+        if (key) map.set(row.contract_id, key);
+        else if (!map.has(row.contract_id)) map.set(row.contract_id, null);
+      }
+      setCompanyByContract(map);
+    })();
   }, [user]);
 
   // ---------------------------------------------------------------------------
@@ -346,7 +400,7 @@ export function useRouteBuilder() {
   const formsByLocation = useMemo(() => {
     const map = new Map<string, RouteForm[]>();
     for (const loc of locations) {
-      const matched = matchFormsToLocation(loc, allForms);
+      const matched = matchFormsToLocation(loc, allForms, companyByContract);
       // Colapsar forms fusionados en un representante (el de mayor criticidad del grupo)
       const groups = new Map<string, RouteForm[]>();
       const singles: RouteForm[] = [];
@@ -373,7 +427,7 @@ export function useRouteBuilder() {
       map.set(loc.id, result);
     }
     return map;
-  }, [locations, allForms]);
+  }, [locations, allForms, companyByContract]);
 
   // Fusionar forms — directo en el cliente (no depende de RPC, que Lovable a
   // veces omite). Valida mismo local, asigna merge_group_id y registra historial.
