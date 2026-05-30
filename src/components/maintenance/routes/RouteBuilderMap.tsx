@@ -6,7 +6,11 @@ import type { MaintenanceLocation, RouteStop, ScoredLocation, RouteForm } from "
 import { LocationPopup } from "./LocationPopup";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
-import { Search, Loader2, MapPin, X, Navigation2 } from "lucide-react";
+import { Search, Loader2, MapPin, X, Navigation2, Star } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+
+type Basemap = "light" | "satellite" | "hybrid";
+const BASEMAP_PREF_KEY = (uid: string | undefined) => `routeMapBasemap:${uid ?? "anon"}`;
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -259,7 +263,25 @@ export function RouteBuilderMap({
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
   const [pickingOrigin, setPickingOrigin] = useState(false);
   const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
-  const [basemap, setBasemap] = useState<"light" | "satellite" | "hybrid">("light");
+  const { user } = useAuth();
+  // Vista por defecto del usuario (persistida por inicio de sesión)
+  const [defaultBasemap, setDefaultBasemap] = useState<Basemap>(() =>
+    (localStorage.getItem(BASEMAP_PREF_KEY(user?.id)) as Basemap) || "light",
+  );
+  const [basemap, setBasemap] = useState<Basemap>(defaultBasemap);
+
+  // Si cambia el usuario (login), re-leer su preferencia
+  useEffect(() => {
+    const pref = (localStorage.getItem(BASEMAP_PREF_KEY(user?.id)) as Basemap) || "light";
+    setDefaultBasemap(pref);
+    setBasemap(pref);
+  }, [user?.id]);
+
+  const markDefaultBasemap = (b: Basemap) => {
+    localStorage.setItem(BASEMAP_PREF_KEY(user?.id), b);
+    setDefaultBasemap(b);
+    setBasemap(b);
+  };
 
   return (
     <div className="relative w-full h-full">
@@ -273,14 +295,22 @@ export function RouteBuilderMap({
         </div>
       )}
 
-      {/* Selector de capa: político / satélite / híbrido */}
+      {/* Selector de capa: político / satélite / híbrido + estrella de "por defecto" */}
       <div className="absolute top-3 right-3 z-[600] flex rounded-lg overflow-hidden shadow-md border border-gray-200 text-[11px] font-medium bg-white">
         {([["light", "Mapa"], ["satellite", "Satélite"], ["hybrid", "Híbrido"]] as const).map(([key, label]) => (
-          <button key={key}
-            onClick={() => setBasemap(key)}
-            className={`px-2.5 py-1 transition-colors ${basemap === key ? "bg-blue-500 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
-            {label}
-          </button>
+          <div key={key}
+            className={`flex items-center gap-1 px-2 py-1 transition-colors ${basemap === key ? "bg-blue-500 text-white" : "text-gray-600 hover:bg-gray-100"}`}>
+            <button onClick={() => setBasemap(key)}>{label}</button>
+            <button
+              onClick={() => markDefaultBasemap(key)}
+              title={defaultBasemap === key ? "Vista por defecto" : "Marcar como vista por defecto"}
+              className="shrink-0"
+            >
+              <Star className={`w-3 h-3 ${defaultBasemap === key
+                ? "fill-yellow-400 text-yellow-400"
+                : basemap === key ? "text-white/70 hover:fill-yellow-300 hover:text-yellow-300" : "text-gray-300 hover:text-yellow-400"}`} />
+            </button>
+          </div>
         ))}
       </div>
 
