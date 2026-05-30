@@ -260,6 +260,8 @@ const AdminPanel = () => {
   const [newUserRole, setNewUserRole] = useState<"admin" | "user" | "operador_terreno">("user");
   const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
   const [newUserSupplierIds, setNewUserSupplierIds] = useState<string[]>([]);
+  const [newSupplierSearch, setNewSupplierSearch] = useState("");
+  const [editSupplierSearch, setEditSupplierSearch] = useState("");
   const [allSuppliers, setAllSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -630,12 +632,15 @@ const AdminPanel = () => {
         throw new Error(result.error || 'Error al actualizar usuario');
       }
 
-      // Sync operator → supplier links (replace set)
-      await supabase.from("operator_suppliers").delete().eq("user_id", editingUserProfile.id);
+      // Sync operator → supplier links (replace set). Chequear errores para no
+      // reportar "guardado" en falso (ej. si la tabla operator_suppliers falta).
+      const { error: delErr } = await supabase.from("operator_suppliers").delete().eq("user_id", editingUserProfile.id);
+      if (delErr) throw new Error(`No se pudo actualizar el proveedor asignado: ${delErr.message}`);
       if (editUserRole === "operador_terreno" && editUserSupplierIds.length > 0) {
-        await supabase.from("operator_suppliers").insert(
+        const { error: insErr } = await supabase.from("operator_suppliers").insert(
           editUserSupplierIds.map((supplier_id) => ({ user_id: editingUserProfile.id, supplier_id })),
         );
+        if (insErr) throw new Error(`No se pudo asignar el proveedor: ${insErr.message}`);
       }
 
       toast({ title: "Usuario actualizado", description: "Los cambios se guardaron exitosamente" });
@@ -966,24 +971,34 @@ const AdminPanel = () => {
                       {allSuppliers.length === 0 ? (
                         <p className="text-xs text-muted-foreground italic">No hay proveedores creados</p>
                       ) : (
-                        <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                          {allSuppliers.map((s) => {
-                            const checked = newUserSupplierIds.includes(s.id);
-                            return (
-                              <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => setNewUserSupplierIds((prev) =>
-                                    prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
-                                  )}
-                                  className="rounded border-gray-300"
-                                />
-                                <span className="truncate">{s.name}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
+                        <>
+                          <Input
+                            value={newSupplierSearch}
+                            onChange={(e) => setNewSupplierSearch(e.target.value)}
+                            placeholder="Buscar proveedor…"
+                            className="h-8 text-sm"
+                          />
+                          <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                            {allSuppliers
+                              .filter((s) => s.name.toLowerCase().includes(newSupplierSearch.toLowerCase()))
+                              .map((s) => {
+                                const checked = newUserSupplierIds.includes(s.id);
+                                return (
+                                  <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => setNewUserSupplierIds((prev) =>
+                                        prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
+                                      )}
+                                      className="rounded border-gray-300"
+                                    />
+                                    <span className="truncate">{s.name}</span>
+                                  </label>
+                                );
+                              })}
+                          </div>
+                        </>
                       )}
                       <p className="text-[11px] text-muted-foreground border-t border-blue-100 pt-1.5">
                         Acceso por defecto: solo <strong>Mantenciones</strong> (rutas). Puedes agregar más accesos abajo.
@@ -1538,24 +1553,34 @@ const AdminPanel = () => {
                   {allSuppliers.length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">No hay proveedores creados</p>
                   ) : (
-                    <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                      {allSuppliers.map((s) => {
-                        const checked = editUserSupplierIds.includes(s.id);
-                        return (
-                          <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => setEditUserSupplierIds((prev) =>
-                                prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
-                              )}
-                              className="rounded border-gray-300"
-                            />
-                            <span className="truncate">{s.name}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    <>
+                      <Input
+                        value={editSupplierSearch}
+                        onChange={(e) => setEditSupplierSearch(e.target.value)}
+                        placeholder="Buscar proveedor…"
+                        className="h-8 text-sm"
+                      />
+                      <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                        {allSuppliers
+                          .filter((s) => s.name.toLowerCase().includes(editSupplierSearch.toLowerCase()))
+                          .map((s) => {
+                            const checked = editUserSupplierIds.includes(s.id);
+                            return (
+                              <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => setEditUserSupplierIds((prev) =>
+                                    prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
+                                  )}
+                                  className="rounded border-gray-300"
+                                />
+                                <span className="truncate">{s.name}</span>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </>
                   )}
                 </div>
               )}
