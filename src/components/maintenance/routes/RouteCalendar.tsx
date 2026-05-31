@@ -55,22 +55,48 @@ export function RouteCalendar() {
   const { isAdmin, isOperador, user } = useAuth();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  // Scroll del mouse/trackpad sobre el calendario → avanzar/retroceder mes
+  // Cambiar de mes con la rueda del mouse/trackpad (desktop) o con swipe (móvil).
   const gridRef = useRef<HTMLDivElement>(null);
   const lastWheelRef = useRef(0);
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 6) return;
-      e.preventDefault();
+    const step = (forward: boolean) => {
       const now = Date.now();
       if (now - lastWheelRef.current < 250) return; // throttle: 1 mes por gesto
       lastWheelRef.current = now;
-      setCurrentMonth((m) => (e.deltaY > 0 ? addMonths(m, 1) : subMonths(m, 1)));
+      setCurrentMonth((m) => (forward ? addMonths(m, 1) : subMonths(m, 1)));
     };
+
+    // Desktop: rueda del mouse / trackpad
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < 6) return;
+      e.preventDefault();
+      step(e.deltaY > 0);
+    };
+
+    // Móvil: swipe (vertical u horizontal). Arriba/izquierda = mes siguiente.
+    let startX = 0, startY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      const dx = e.changedTouches[0].clientX - startX;
+      const dy = e.changedTouches[0].clientY - startY;
+      if (Math.abs(dx) < 45 && Math.abs(dy) < 45) return; // tap, no swipe
+      const forward = Math.abs(dy) >= Math.abs(dx) ? dy < 0 : dx < 0;
+      step(forward);
+    };
+
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
   }, []);
   const [routes, setRoutes] = useState<CalendarRoute[]>([]);
   const [loading, setLoading] = useState(false);
@@ -397,7 +423,7 @@ export function RouteCalendar() {
       </div>
 
       {/* Grid */}
-      <div ref={gridRef} title="Usa la rueda del mouse para cambiar de mes"
+      <div ref={gridRef} title="Rueda del mouse o desliza para cambiar de mes"
         className={`grid grid-cols-7 gap-px flex-1 overflow-auto overscroll-contain ${loading ? "opacity-50" : ""}`}>
         {days.map((day) => {
           const key       = format(day, "yyyy-MM-dd");
