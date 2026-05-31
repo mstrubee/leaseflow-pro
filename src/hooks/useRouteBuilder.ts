@@ -516,7 +516,7 @@ export function useRouteBuilder() {
     if (contracts.size > 1) throw new Error("Solo se pueden fusionar forms del mismo local");
 
     const groupId = crypto.randomUUID();
-    const { error: uerr } = await supabase
+    const { error: uerr } = await (supabase as any)
       .from("maintenance_forms")
       .update({ merge_group_id: groupId })
       .in("id", formIds);
@@ -524,7 +524,7 @@ export function useRouteBuilder() {
 
     // Historial (best-effort: no bloquear la fusión si el log falla)
     try {
-      await supabase.from("maintenance_form_merge_log").insert({
+      await (supabase as any).from("maintenance_form_merge_log").insert({
         merge_group_id: groupId,
         form_ids: formIds,
         form_numbers: (fdata ?? []).map((f: { form_number: string }) => f.form_number),
