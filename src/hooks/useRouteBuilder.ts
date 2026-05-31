@@ -397,11 +397,11 @@ export function useRouteBuilder() {
     // Intento con columnas de fusión; si la migración aún no se aplicó, reintenta sin ellas
     const baseCols = "id,form_number,general_description,electrical_description,civil_description,hvac_description,fixed_assets_description,criticality_category_id,contract_id,contract_name";
     (async () => {
-      let res = await supabase.from("maintenance_forms")
+      let res = await (supabase as any).from("maintenance_forms")
         .select(`${baseCols},merge_group_id,merge_is_primary`)
         .eq("status", "proceso").is("deleted_at", null);
       if (res.error && /merge_group_id|column|schema cache/i.test(res.error.message)) {
-        res = await supabase.from("maintenance_forms").select(baseCols)
+        res = await (supabase as any).from("maintenance_forms").select(baseCols)
           .eq("status", "proceso").is("deleted_at", null);
       }
       const data = res.data;
