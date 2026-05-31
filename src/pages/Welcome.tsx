@@ -26,7 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
   BarChart3, Wrench, Shield, Users, LayoutDashboard,
-  LogOut, GripVertical, AlertTriangle, KeyRound, MapPin,
+  LogOut, GripVertical, AlertTriangle, KeyRound, MapPin, ScanSearch,
 } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { SelectableElement } from "@/components/admin/SelectableElement";
@@ -40,7 +40,13 @@ interface ModuleItem {
   path: string;
   resource: string | null;
   color: string;
+  external?: boolean; // si true, `path` es una URL externa (abre en pestaña nueva)
 }
+
+// ⬇️ URL pública del Contract Risk Reviewer. Reemplázala por la real cuando
+// despliegues su backend+frontend (Render/Railway/Fly). Mientras esté vacía,
+// la card avisa que falta configurarla.
+const CONTRACT_REVIEWER_URL = "";
 
 function SortableModuleCard({ module, onClick }: { module: ModuleItem; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: module.id });
@@ -91,6 +97,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "suppliers", label: "Proveedores", desc: "Gestión de proveedores", icon: Users, path: "/suppliers", resource: "suppliers", color: "text-teal-600 bg-teal-100" },
   { id: "maintenance", label: "Mantenciones", desc: "Mantenciones preventivas y correctivas", icon: Wrench, path: "/maintenance", resource: "maintenance", color: "text-rose-600 bg-rose-100" },
   { id: "geoloc", label: "GEOLOC", desc: "Sistema de información geográfica territorial", icon: MapPin, path: "/geoloc", resource: "geoloc", color: "text-green-600 bg-green-100" },
+  { id: "contract_review", label: "Revisor de Contratos (IA)", desc: "Analiza riesgos de un contrato Word con IA", icon: ScanSearch, path: CONTRACT_REVIEWER_URL, resource: null, color: "text-fuchsia-600 bg-fuchsia-100", external: true },
 ];
 
 const Welcome = () => {
@@ -211,7 +218,14 @@ const Welcome = () => {
           <SortableContext items={sortedModules.map(m => m.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {sortedModules.map((m) => (
-                <SortableModuleCard key={m.id} module={m} onClick={() => navigate(m.path)} />
+                <SortableModuleCard key={m.id} module={m} onClick={() => {
+                  if (m.external) {
+                    if (m.path) window.open(m.path, "_blank", "noopener,noreferrer");
+                    else alert("Esta herramienta aún no está configurada. Define su URL en CONTRACT_REVIEWER_URL.");
+                  } else {
+                    navigate(m.path);
+                  }
+                }} />
               ))}
 
               {isAdmin && (
