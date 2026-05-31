@@ -3,6 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { migrateStorageEvidenceToDrive } from "@/lib/driveEvidencia";
 
+// Subestados que fija el PROVEEDOR al completar una tarea en terreno.
+// (NO usar "resuelto"/"resuelto_obs", que son de Control de Gestión.)
+// names reales en maintenance_sub_statuses: "Ejecutado"=en_ejecucion, "Ejecutado C/Obs"=ejecutado_c/obs
+const SUBSTATUS_EJECUTADO = "en_ejecucion";
+const SUBSTATUS_EJECUTADO_OBS = "ejecutado_c/obs";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -192,7 +198,7 @@ export function useRouteExecution(routeId: string) {
   // ---------------------------------------------------------------------------
   // Mark form completed
   // ---------------------------------------------------------------------------
-  const completeForm = useCallback(async (routeFormId: string) => {
+  const completeForm = useCallback(async (routeFormId: string, maintenanceFormId?: string) => {
     if (!user) return;
     setSaving(routeFormId);
     const now = new Date().toISOString();
@@ -200,6 +206,10 @@ export function useRouteExecution(routeId: string) {
       .from("maintenance_route_forms")
       .update({ completed: true, completed_at: now, completed_by: user.id })
       .eq("id", routeFormId);
+    // Reflejar en el form de mantención: subestado "Ejecutado" (terreno)
+    if (maintenanceFormId) {
+      await supabase.from("maintenance_forms").update({ sub_status: SUBSTATUS_EJECUTADO }).eq("id", maintenanceFormId);
+    }
     if (!error) {
       await logEvent(routeFormId, null, "completed");
       await load();
@@ -208,7 +218,7 @@ export function useRouteExecution(routeId: string) {
   }, [user, load]);
 
   // Completar con observaciones: marca el form, guarda la nota y deja el
-  // maintenance_form como "resuelto_obs" (best-effort, robusto a columnas).
+  // maintenance_form como "Ejecutado C/Obs" (best-effort, robusto a columnas).
   const completeFormWithObs = useCallback(async (routeFormId: string, maintenanceFormId: string, obs: string) => {
     if (!user) return;
     setSaving(routeFormId);
@@ -217,14 +227,14 @@ export function useRouteExecution(routeId: string) {
       .from("maintenance_route_forms")
       .update({ completed: true, completed_at: now, completed_by: user.id, operator_notes: obs })
       .eq("id", routeFormId);
-    // Reflejar en el form de mantención: subestado "Resuelto Obs"
+    // Reflejar en el form de mantención: subestado "Ejecutado C/Obs"
     const { error: subErr } = await supabase
       .from("maintenance_forms")
-      .update({ sub_status: "resuelto_obs", resolution_observations: obs })
+      .update({ sub_status: SUBSTATUS_EJECUTADO_OBS, resolution_observations: obs })
       .eq("id", maintenanceFormId);
     if (subErr) {
       // si falta resolution_observations u otra columna, al menos intentar el subestado
-      await supabase.from("maintenance_forms").update({ sub_status: "resuelto_obs" }).eq("id", maintenanceFormId);
+      await supabase.from("maintenance_forms").update({ sub_status: SUBSTATUS_EJECUTADO_OBS }).eq("id", maintenanceFormId);
     }
     await logEvent(routeFormId, null, "completed", obs);
     await load();

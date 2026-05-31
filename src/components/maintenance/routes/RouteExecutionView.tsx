@@ -173,7 +173,7 @@ function FormCard({
   form: ExecutionForm;
   stopId: string;
   saving: string | null;
-  onComplete: (routeFormId: string) => void;
+  onComplete: (form: ExecutionForm) => void;
   onCompleteObs: (form: ExecutionForm) => void;
   onUncomplete: (routeFormId: string) => void;
   onNotes: (form: ExecutionForm) => void;
@@ -314,7 +314,7 @@ function FormCard({
             <Button size="sm"
               className="flex-1 h-8 text-xs bg-green-500 hover:bg-green-600 text-white"
               disabled={isSaving}
-              onClick={() => onComplete(form.id)}>
+              onClick={() => onComplete(form)}>
               {isSaving
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Listo</>}
@@ -368,7 +368,7 @@ function StopCard({
   saving: string | null;
   sharing: boolean;
   finalizing: boolean;
-  onCompleteForm: (routeFormId: string) => void;
+  onCompleteForm: (form: ExecutionForm) => void;
   onCompleteObsForm: (form: ExecutionForm) => void;
   onUncompleteForm: (routeFormId: string) => void;
   onReopenStop: (stopId: string) => void;
@@ -540,10 +540,10 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
   const totalStops     = route.stops.length;
   const pct            = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0;
 
-  async function handleCompleteForm(routeFormId: string) {
-    await exec.completeForm(routeFormId);
+  async function handleCompleteForm(form: ExecutionForm) {
+    await exec.completeForm(form.id, form.maintenance_form_id);
     // Find which stop this form belongs to and auto-complete if all done
-    const stop = route!.stops.find((s) => s.forms.some((f) => f.id === routeFormId));
+    const stop = route!.stops.find((s) => s.forms.some((f) => f.id === form.id));
     if (stop) await exec.autoCompleteStopIfDone(stop.id);
   }
 
