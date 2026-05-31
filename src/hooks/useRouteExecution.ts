@@ -392,6 +392,30 @@ export function useRouteExecution(routeId: string) {
   );
 
   // ---------------------------------------------------------------------------
+  // Eliminar una foto (solo mientras siga en Storage, es decir, no enviada)
+  // ---------------------------------------------------------------------------
+  const deleteEvidence = useCallback(async (routeFormId: string, maintenanceFormId: string, url: string) => {
+    setSaving(routeFormId);
+    // 1. Quitar de route_form.visit_evidence_urls
+    const { data: rf } = await supabase.from("maintenance_route_forms").select("visit_evidence_urls").eq("id", routeFormId).single();
+    const urls = ((rf?.visit_evidence_urls as string[]) ?? []).filter((u) => u !== url);
+    await supabase.from("maintenance_route_forms").update({ visit_evidence_urls: urls }).eq("id", routeFormId);
+    // 2. Quitar de maintenance_form.evidence_links (entrada con tag o cruda)
+    const { data: mf } = await supabase.from("maintenance_forms").select("evidence_links").eq("id", maintenanceFormId).single();
+    const links = ((mf?.evidence_links as string[]) ?? []).filter((l) => l !== `[Evidencia Visita] ${url}` && l !== url);
+    await supabase.from("maintenance_forms").update({ evidence_links: links }).eq("id", maintenanceFormId);
+    // 3. Borrar el archivo de Storage si la URL es de Storage
+    const marker = "/public/repository-files/";
+    const idx = url.indexOf(marker);
+    if (idx >= 0) {
+      const path = decodeURIComponent(url.slice(idx + marker.length).split("?")[0]);
+      await supabase.storage.from("repository-files").remove([path]).catch(() => {});
+    }
+    await load();
+    setSaving(null);
+  }, [load]);
+
+  // ---------------------------------------------------------------------------
   // Finalizar/Enviar: exige foto en cada form, migra las fotos de Storage a
   // Drive, libera Storage y cierra la parada. Devuelve { ok, error }.
   // ---------------------------------------------------------------------------
@@ -494,6 +518,7 @@ export function useRouteExecution(routeId: string) {
     unpostponeForm,
     saveNotes,
     uploadEvidence,
+    deleteEvidence,
     finalizeAndSendStop,
     autoCompleteStopIfDone,
     refresh: load,

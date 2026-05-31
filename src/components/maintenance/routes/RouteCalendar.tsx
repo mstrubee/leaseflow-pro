@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, startOfWeek, endOfWeek,
@@ -55,6 +55,23 @@ export function RouteCalendar() {
   const { isAdmin, isOperador, user } = useAuth();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  // Scroll del mouse/trackpad sobre el calendario → avanzar/retroceder mes
+  const gridRef = useRef<HTMLDivElement>(null);
+  const lastWheelRef = useRef(0);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < 6) return;
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastWheelRef.current < 250) return; // throttle: 1 mes por gesto
+      lastWheelRef.current = now;
+      setCurrentMonth((m) => (e.deltaY > 0 ? addMonths(m, 1) : subMonths(m, 1)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
   const [routes, setRoutes] = useState<CalendarRoute[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<CalendarRoute | null>(null);
@@ -380,7 +397,8 @@ export function RouteCalendar() {
       </div>
 
       {/* Grid */}
-      <div className={`grid grid-cols-7 gap-px flex-1 overflow-auto ${loading ? "opacity-50" : ""}`}>
+      <div ref={gridRef} title="Usa la rueda del mouse para cambiar de mes"
+        className={`grid grid-cols-7 gap-px flex-1 overflow-auto overscroll-contain ${loading ? "opacity-50" : ""}`}>
         {days.map((day) => {
           const key       = format(day, "yyyy-MM-dd");
           const dayRoutes = routesByDay.get(key) ?? [];

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
   MessageSquare, Camera, CalendarDays, Loader2, MapPin, ArrowLeft,
-  Image as ImageIcon, Link2, RotateCcw, Share2,
+  Image as ImageIcon, Link2, RotateCcw, Share2, X,
 } from "lucide-react";
 import { shareLocationReport } from "./exportLocationReportPDF";
 import { toast } from "sonner";
@@ -168,7 +168,7 @@ function ObsSheet({
 // Form card
 // ---------------------------------------------------------------------------
 function FormCard({
-  form, stopId, saving, onComplete, onCompleteObs, onUncomplete, onNotes, onPhoto, onPostpone, onUnpostpone,
+  form, stopId, saving, onComplete, onCompleteObs, onUncomplete, onNotes, onPhoto, onDeletePhoto, onPostpone, onUnpostpone,
 }: {
   form: ExecutionForm;
   stopId: string;
@@ -178,6 +178,7 @@ function FormCard({
   onUncomplete: (routeFormId: string) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
+  onDeletePhoto: (form: ExecutionForm, url: string) => void;
   onPostpone: (form: ExecutionForm) => void;
   onUnpostpone: (routeFormId: string) => void;
 }) {
@@ -240,16 +241,32 @@ function FormCard({
         </button>
       )}
 
-      {/* Evidencia: miniaturas tocables (la foto se ve dentro de la app) */}
+      {/* Evidencia: miniaturas tocables. Se pueden eliminar mientras no se haya
+          enviado el informe (la foto sigue en Storage). */}
       {form.visit_evidence_urls.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
-          {form.visit_evidence_urls.map((url, i) => (
-            <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-              className="block w-14 h-14 rounded-lg overflow-hidden border border-purple-200 bg-purple-50 shrink-0"
-              title={`Foto ${i + 1}`}>
-              <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
-            </a>
-          ))}
+          {form.visit_evidence_urls.map((url, i) => {
+            const enStorage = url.includes("/storage/v1/object/public/");
+            return (
+              <div key={i} className="relative w-14 h-14 shrink-0">
+                <a href={url} target="_blank" rel="noopener noreferrer"
+                  className="block w-full h-full rounded-lg overflow-hidden border border-purple-200 bg-purple-50"
+                  title={`Foto ${i + 1}`}>
+                  <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                </a>
+                {enStorage && (
+                  <button
+                    onClick={() => { if (window.confirm("¿Eliminar esta foto?")) onDeletePhoto(form, url); }}
+                    disabled={isSaving}
+                    title="Eliminar foto (solo antes de enviar el informe)"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shadow hover:bg-red-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -345,7 +362,7 @@ function FormCard({
 // ---------------------------------------------------------------------------
 function StopCard({
   stop, saving, sharing, finalizing, onCompleteForm, onCompleteObsForm, onUncompleteForm, onReopenStop,
-  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onNotes, onPhoto,
+  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onNotes, onPhoto, onDeletePhoto,
 }: {
   stop: ExecutionStop;
   saving: string | null;
@@ -361,6 +378,7 @@ function StopCard({
   onFinalize: (stop: ExecutionStop) => void;
   onNotes: (form: ExecutionForm) => void;
   onPhoto: (form: ExecutionForm) => void;
+  onDeletePhoto: (form: ExecutionForm, url: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const completedForms = stop.forms.filter((f) => f.completed).length;
@@ -420,6 +438,7 @@ function StopCard({
                 onUncomplete={onUncompleteForm}
                 onNotes={onNotes}
                 onPhoto={onPhoto}
+                onDeletePhoto={onDeletePhoto}
                 onPostpone={onPostponeForm}
                 onUnpostpone={onUnpostponeForm}
               />
@@ -626,6 +645,7 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
               setPhotoForm(f);
               setTimeout(() => photoInputRef.current?.click(), 100);
             }}
+            onDeletePhoto={(f, url) => exec.deleteEvidence(f.id, f.maintenance_form_id, url)}
           />
         ))}
 
