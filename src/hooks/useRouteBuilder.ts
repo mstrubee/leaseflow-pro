@@ -539,19 +539,19 @@ export function useRouteBuilder() {
 
   // Deshacer fusión — directo en el cliente.
   const unmergeForms = useCallback(async (groupId: string): Promise<void> => {
-    const { data: fdata } = await supabase
+    const { data: fdata } = await (supabase as any)
       .from("maintenance_forms")
       .select("id, form_number, contract_id")
       .eq("merge_group_id", groupId);
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("maintenance_forms")
       .update({ merge_group_id: null })
       .eq("merge_group_id", groupId);
     if (error) throw new Error(error.message);
 
     try {
-      await supabase.from("maintenance_form_merge_log").insert({
+      await (supabase as any).from("maintenance_form_merge_log").insert({
         merge_group_id: groupId,
         form_ids: (fdata ?? []).map((f: { id: string }) => f.id),
         form_numbers: (fdata ?? []).map((f: { form_number: string }) => f.form_number),
