@@ -217,6 +217,7 @@ interface ScheduleEntryLite {
   arrivalTime: string;
   departureTime: string;
   travelMinutes: number;
+  stopIndex: number;
 }
 
 // Un tramo de la ruta: línea sólida (OSRM o recta) + etiqueta de minutos al medio
