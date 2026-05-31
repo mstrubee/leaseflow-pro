@@ -12,7 +12,7 @@ interface PendingUserData {
   email: string;
   password: string;
   name: string;
-  role: "admin" | "user";
+  role: "admin" | "operador_terreno" | "user";
   userId?: string; // For editing existing users
 }
 

@@ -83,14 +83,14 @@ const SELECT_SAFE = `
 export async function fetchRoutesForExport(dates: string[]): Promise<ExportRoute[]> {
   const sorted = [...dates].sort();
 
-  let { data, error } = await supabase
+  let { data, error } = await (supabase as any)
     .from("maintenance_routes")
     .select(SELECT_FULL)
     .in("scheduled_date", sorted)
     .order("scheduled_date");
 
   if (error && /column|schema cache|estimated_minutes|start_time/i.test(error.message)) {
-    ({ data, error } = await supabase
+    ({ data, error } = await (supabase as any)
       .from("maintenance_routes")
       .select(SELECT_SAFE)
       .in("scheduled_date", sorted)
