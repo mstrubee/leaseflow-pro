@@ -397,11 +397,11 @@ export function useRouteBuilder() {
     // Intento con columnas de fusión; si la migración aún no se aplicó, reintenta sin ellas
     const baseCols = "id,form_number,general_description,electrical_description,civil_description,hvac_description,fixed_assets_description,criticality_category_id,contract_id,contract_name";
     (async () => {
-      let res = await supabase.from("maintenance_forms")
+      let res = await (supabase as any).from("maintenance_forms")
         .select(`${baseCols},merge_group_id,merge_is_primary`)
         .eq("status", "proceso").is("deleted_at", null);
       if (res.error && /merge_group_id|column|schema cache/i.test(res.error.message)) {
-        res = await supabase.from("maintenance_forms").select(baseCols)
+        res = await (supabase as any).from("maintenance_forms").select(baseCols)
           .eq("status", "proceso").is("deleted_at", null);
       }
       const data = res.data;
@@ -516,7 +516,7 @@ export function useRouteBuilder() {
     if (contracts.size > 1) throw new Error("Solo se pueden fusionar forms del mismo local");
 
     const groupId = crypto.randomUUID();
-    const { error: uerr } = await supabase
+    const { error: uerr } = await (supabase as any)
       .from("maintenance_forms")
       .update({ merge_group_id: groupId })
       .in("id", formIds);
@@ -524,7 +524,7 @@ export function useRouteBuilder() {
 
     // Historial (best-effort: no bloquear la fusión si el log falla)
     try {
-      await supabase.from("maintenance_form_merge_log").insert({
+      await (supabase as any).from("maintenance_form_merge_log").insert({
         merge_group_id: groupId,
         form_ids: formIds,
         form_numbers: (fdata ?? []).map((f: { form_number: string }) => f.form_number),
@@ -539,19 +539,19 @@ export function useRouteBuilder() {
 
   // Deshacer fusión — directo en el cliente.
   const unmergeForms = useCallback(async (groupId: string): Promise<void> => {
-    const { data: fdata } = await supabase
+    const { data: fdata } = await (supabase as any)
       .from("maintenance_forms")
       .select("id, form_number, contract_id")
       .eq("merge_group_id", groupId);
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("maintenance_forms")
       .update({ merge_group_id: null })
       .eq("merge_group_id", groupId);
     if (error) throw new Error(error.message);
 
     try {
-      await supabase.from("maintenance_form_merge_log").insert({
+      await (supabase as any).from("maintenance_form_merge_log").insert({
         merge_group_id: groupId,
         form_ids: (fdata ?? []).map((f: { id: string }) => f.id),
         form_numbers: (fdata ?? []).map((f: { form_number: string }) => f.form_number),
