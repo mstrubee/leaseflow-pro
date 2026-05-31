@@ -3215,9 +3215,12 @@ export type Database = {
           completed_at: string | null
           completed_by: string | null
           created_at: string
+          estimated_minutes: number | null
           id: string
           maintenance_form_id: string
           operator_notes: string | null
+          postpone_note: string | null
+          postponed_to: string | null
           route_stop_id: string
           visit_evidence_urls: string[] | null
         }
@@ -3226,9 +3229,12 @@ export type Database = {
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
+          estimated_minutes?: number | null
           id?: string
           maintenance_form_id: string
           operator_notes?: string | null
+          postpone_note?: string | null
+          postponed_to?: string | null
           route_stop_id: string
           visit_evidence_urls?: string[] | null
         }
@@ -3237,9 +3243,12 @@ export type Database = {
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
+          estimated_minutes?: number | null
           id?: string
           maintenance_form_id?: string
           operator_notes?: string | null
+          postpone_note?: string | null
+          postponed_to?: string | null
           route_stop_id?: string
           visit_evidence_urls?: string[] | null
         }
@@ -3321,6 +3330,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           id: string
           name: string
           notes: string | null
@@ -3332,6 +3342,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           name: string
           notes?: string | null
@@ -3343,6 +3354,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           name?: string
           notes?: string | null
@@ -3908,6 +3920,35 @@ export type Database = {
           },
           {
             foreignKeyName: "oc_requests_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_suppliers: {
+        Row: {
+          created_at: string
+          id: string
+          supplier_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          supplier_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          supplier_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_suppliers_supplier_id_fkey"
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
@@ -6237,6 +6278,7 @@ export type Database = {
         Returns: boolean
       }
       purge_deleted_pois: { Args: never; Returns: undefined }
+      purge_deleted_routes: { Args: never; Returns: undefined }
       set_cloud_storage_token: {
         Args: {
           p_access_token: string
