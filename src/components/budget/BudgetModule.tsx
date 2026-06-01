@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +31,10 @@ interface Budget {
   amount_uf: number;
   is_closed: boolean;
   closed_at: string | null;
+  // Monto aprobado por directorio (referencial). Si está, se muestra junto al total.
+  frozen_amount_uf?: number | null;
+  frozen_at?: string | null;
+  frozen_by?: string | null;
 }
 
 interface BudgetModuleProps {
@@ -67,6 +71,14 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+
+  // Ocultar líneas con monto 0
+  const [hideZeroLines, setHideZeroLines] = useState(false);
+
+  // Congelar monto (aprobado por directorio)
+  const [showFreezeDialog, setShowFreezeDialog] = useState(false);
+  const [freezeValue, setFreezeValue] = useState("");
+  const [freezing, setFreezing] = useState(false);
 
   const handleToggleSelectLine = useCallback((id: string) => {
     setSelectedLineIds((prev) => {
@@ -776,7 +788,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     }
   };
 
-  const handleDeleteLine = async (id: string) => {
+  const handleDeleteLine = async (id: string, opts?: { bulk?: boolean }) => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (budget?.is_closed) return;
 
@@ -873,18 +885,109 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         .in("id", allIdsToDelete);
         
       if (error) throw error;
-      
-      toast({ 
-        title: "Línea(s) eliminada(s)", 
-        description: `${allIdsToDelete.length} línea(s) movida(s) a la papelera` 
-      });
-      
+
+      if (!opts?.bulk) {
+        toast({
+          title: "Línea(s) eliminada(s)",
+          description: `${allIdsToDelete.length} línea(s) movida(s) a la papelera`
+        });
+        if (budget) loadLines(budget.id);
+        onRefresh?.();
+      }
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+      if (opts?.bulk) throw error; // que el bulk sepa que falló
+    }
+  };
+
+  // Eliminar (papelera) todas las líneas seleccionadas en modo selección
+  const handleDeleteSelectedLines = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (budget?.is_closed || forceReadOnly) return;
+    const ids = Array.from(selectedLineIds);
+    if (ids.length === 0) {
+      toast({ variant: "destructive", title: "Sin selección", description: "No hay líneas seleccionadas." });
+      return;
+    }
+    if (!window.confirm(`¿Eliminar ${ids.length} línea${ids.length === 1 ? "" : "s"} seleccionada${ids.length === 1 ? "" : "s"}? Se moverá${ids.length === 1 ? "" : "n"} a la papelera (incluyendo sus sublíneas).`)) return;
+    try {
+      for (const id of ids) {
+        await handleDeleteLine(id, { bulk: true });
+      }
+      toast({ title: "Líneas eliminadas", description: `${ids.length} línea(s) movida(s) a la papelera` });
       if (budget) loadLines(budget.id);
       onRefresh?.();
+      handleExitSelectionMode();
+    } catch {
+      // el toast de error ya se mostró en handleDeleteLine
+    }
+  };
+
+  // ---- Congelar monto (aprobado por directorio) ----
+  const handleOpenFreeze = () => {
+    const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
+    setFreezeValue(grandTotalUf.toFixed(2));
+    setShowFreezeDialog(true);
+  };
+
+  const handleConfirmFreeze = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+    const val = parseFloat(freezeValue.replace(",", "."));
+    if (!Number.isFinite(val) || val < 0) {
+      toast({ variant: "destructive", title: "Monto inválido", description: "Ingresa un monto en UF válido." });
+      return;
+    }
+    setFreezing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from("contract_budgets")
+        .update({ frozen_amount_uf: val, frozen_at: new Date().toISOString(), frozen_by: user?.id || null } as any)
+        .eq("id", budget.id);
+      if (error) throw error;
+      toast({ title: "Monto aprobado congelado", description: `Aprobado por directorio: UF ${formatUF(val)}` });
+      setShowFreezeDialog(false);
+      loadBudgets();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setFreezing(false);
+    }
+  };
+
+  const handleUnfreeze = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+    if (!window.confirm("¿Descongelar el monto aprobado por directorio? Dejará de mostrarse como referencia.")) return;
+    try {
+      const { error } = await supabase
+        .from("contract_budgets")
+        .update({ frozen_amount_uf: null, frozen_at: null, frozen_by: null } as any)
+        .eq("id", budget.id);
+      if (error) throw error;
+      toast({ title: "Monto descongelado" });
+      loadBudgets();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
+
+  // Líneas a mostrar: opcionalmente oculta las de monto 0 (los totales se siguen
+  // calculando sobre el set completo `lines`).
+  const displayLines = useMemo(() => {
+    if (!hideZeroLines) return lines;
+    const keep = (nodes: BudgetLine[]): BudgetLine[] =>
+      nodes.reduce<BudgetLine[]>((acc, n) => {
+        const children = n.children ? keep(n.children) : [];
+        const total = calculateGrandTotal([n], templatePricesMap, ufValue);
+        if (children.length > 0 || Math.abs(total) > 0.0001) {
+          acc.push(children.length ? { ...n, children } : n);
+        }
+        return acc;
+      }, []);
+    return keep(lines);
+  }, [hideZeroLines, lines, templatePricesMap, ufValue]);
 
   // Handle opening OC Request dialog from budget line
   const handleCreateOCRequestFromLine = async (budgetLineId: string, lineName: string) => {
@@ -1398,6 +1501,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const currentBudget = budgets.find((b) => b.year === selectedYear);
   const authorizedTotal = calculateAuthorizedTotal(lines, templatePricesMap, ufValue);
   const unauthorizedTotal = calculateUnauthorizedTotal(lines, templatePricesMap, ufValue);
+  const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
+  const frozenUf = currentBudget?.frozen_amount_uf ?? null;
   const budgetAmount = currentBudget?.amount_uf || 0;
   const isClosed = currentBudget?.is_closed || false;
   const unauthorizedCount = getUnauthorizedLines(lines).length;
@@ -1466,6 +1571,54 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 <p className="text-xs text-muted-foreground">Se arrastra al próx. año</p>
               </div>
             </div>
+
+            {/* Monto aprobado por directorio (congelado / referencial) */}
+            {frozenUf != null ? (
+              (() => {
+                const diff = grandTotalUf - frozenUf;
+                const exceeded = diff > 0.01;
+                return (
+                  <div className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 ${exceeded ? "border-destructive/40 bg-destructive/5" : "border-blue-300 bg-blue-50 dark:bg-blue-950/20"}`}>
+                    <div className="flex items-center gap-2">
+                      <Snowflake className={`h-4 w-4 ${exceeded ? "text-destructive" : "text-blue-600"}`} />
+                      <div>
+                        <p className="text-sm font-semibold">
+                          Aprobado por Directorio (referencial): UF {formatUF(frozenUf)}
+                          <span className="text-muted-foreground font-normal"> · {formatCLP(convertUFToPesos(frozenUf))}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Total actual: UF {formatUF(grandTotalUf)} ·{" "}
+                          {exceeded ? (
+                            <span className="text-destructive font-medium">Excede en UF {formatUF(diff)}</span>
+                          ) : (
+                            <span className="text-green-600 font-medium">Margen UF {formatUF(-diff)}</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    {!isClosed && !forceReadOnly && (
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2">
+                          <Snowflake className="h-4 w-4" /> Editar monto
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={handleUnfreeze} className="gap-2 text-muted-foreground">
+                          <X className="h-4 w-4" /> Descongelar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              !isClosed && !forceReadOnly && (
+                <div className="flex justify-end">
+                  <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2"
+                    title="Congelar el total actual como monto aprobado por directorio (referencial)">
+                    <Snowflake className="h-4 w-4" /> Congelar monto aprobado
+                  </Button>
+                </div>
+              )
+            )}
 
             {unauthorizedCount > 0 && !isClosed && !forceReadOnly && (
               <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
@@ -1550,6 +1703,16 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <Download className="h-4 w-4" />
                   Descargar Excel
                 </Button>
+                <Button
+                  variant={hideZeroLines ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setHideZeroLines((v) => !v)}
+                  className="gap-2"
+                  title="Ocultar las líneas con monto 0"
+                >
+                  {hideZeroLines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  {hideZeroLines ? "Mostrar 0" : "Ocultar 0"}
+                </Button>
                 {budgetType === "capex" && (
                   <Button
                     variant="outline"
@@ -1576,6 +1739,16 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                       >
                         <Move className="h-4 w-4" />
                         Mover ({selectedLineIds.size})
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleDeleteSelectedLines}
+                        disabled={selectedLineIds.size === 0}
+                        className="gap-2"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar ({selectedLineIds.size})
                       </Button>
                       <Button
                         variant="outline"
@@ -1612,7 +1785,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             )}
 
             <BudgetLineTree
-              lines={lines}
+              lines={displayLines}
               onAddLine={handleAddLine}
               onUpdateLine={handleUpdateLine}
               onDeleteLine={handleDeleteLine}
@@ -1644,6 +1817,44 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               selectedIds={Array.from(selectedLineIds)}
               onConfirm={handleConfirmMove}
             />
+
+            <Dialog open={showFreezeDialog} onOpenChange={setShowFreezeDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Congelar monto aprobado por directorio</DialogTitle>
+                  <DialogDescription>
+                    Este monto queda como <strong>referencia</strong> del aprobado por directorio. El cálculo del
+                    presupuesto sigue operando normalmente; el monto se mantiene visible para no excederlo.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 py-2">
+                  <div className="text-sm text-muted-foreground">
+                    Total calculado actual: <strong>UF {formatUF(grandTotalUf)}</strong> · {formatCLP(convertUFToPesos(grandTotalUf))}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="freeze-amount">Monto aprobado (UF)</Label>
+                    <Input
+                      id="freeze-amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={freezeValue}
+                      onChange={(e) => setFreezeValue(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Precargado con el total actual; puedes ajustarlo al monto exacto que aprobó directorio.
+                    </p>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowFreezeDialog(false)} disabled={freezing}>Cancelar</Button>
+                  <Button onClick={handleConfirmFreeze} disabled={freezing} className="gap-2">
+                    {freezing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Snowflake className="h-4 w-4" />}
+                    Congelar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Trash Panel - shows deleted lines and audit history */}
             {currentBudget && !forceReadOnly && (
