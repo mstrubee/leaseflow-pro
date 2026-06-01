@@ -32,6 +32,8 @@ export interface ExecutionForm {
   operator_notes: string | null;
   visit_evidence_urls: string[];
   estimated_minutes: number;     // tiempo previsto para ejecutar este form
+  started_at: string | null;     // cuándo el proveedor inició la tarea (botón Iniciar)
+  real_minutes: number | null;   // duración real de ejecución (medida o inferida)
   postponed_to: string | null;   // tarea pospuesta a esta fecha
   postpone_note: string | null;
   // fusión
@@ -86,7 +88,7 @@ export function useRouteExecution(routeId: string) {
           id, stop_order, status, completed_at, postponed_to, postpone_note,
           maintenance_locations ( id, name, local_name, lat, lng ),
           maintenance_route_forms (
-            id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls${withExtras ? ", estimated_minutes, postponed_to, postpone_note" : ""},
+            id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls${withExtras ? ", estimated_minutes, started_at, real_minutes, postponed_to, postpone_note" : ""},
             maintenance_forms (
               form_number, general_description, electrical_description,
               civil_description, hvac_description, fixed_assets_description,
@@ -103,7 +105,7 @@ export function useRouteExecution(routeId: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any = res1.data;
     let error = res1.error;
-    if (error && /start_time|estimated_minutes|postponed_to|postpone_note|column|schema cache/i.test(error.message)) {
+    if (error && /start_time|estimated_minutes|started_at|real_minutes|postponed_to|postpone_note|column|schema cache/i.test(error.message)) {
       const res2 = await supabase.from("maintenance_routes").select(buildSelect(false)).eq("id", routeId).single();
       data = res2.data; error = res2.error;
     }
@@ -136,6 +138,8 @@ export function useRouteExecution(routeId: string) {
               operator_notes: rf.operator_notes as string ?? null,
               visit_evidence_urls: (rf.visit_evidence_urls as string[]) ?? [],
               estimated_minutes: (rf.estimated_minutes as number) ?? 30,
+              started_at: (rf.started_at as string) ?? null,
+              real_minutes: (rf.real_minutes as number) ?? null,
               postponed_to: rf.postponed_to as string ?? null,
               postpone_note: rf.postpone_note as string ?? null,
               merge_group_id: null,
@@ -201,16 +205,56 @@ export function useRouteExecution(routeId: string) {
   useEffect(() => { load(); }, [load]);
 
   // ---------------------------------------------------------------------------
+  // Tiempo real de ejecución: por started_at (botón Iniciar) o inferido del
+  // orden de completado (fin del form anterior del stop, o hora de inicio del día).
+  // ---------------------------------------------------------------------------
+  const computeRealMinutes = useCallback((routeFormId: string): number | null => {
+    if (!route) return null;
+    let form: ExecutionForm | undefined;
+    let stop: ExecutionStop | undefined;
+    for (const s of route.stops) {
+      const f = s.forms.find((x) => x.id === routeFormId);
+      if (f) { form = f; stop = s; break; }
+    }
+    if (!form || !stop) return null;
+    const nowMs = Date.now();
+    if (form.started_at) {
+      return Math.max(1, Math.round((nowMs - new Date(form.started_at).getTime()) / 60000));
+    }
+    // Inferencia: último completed_at de otro form del stop, o inicio del día
+    const others = stop.forms
+      .filter((f) => f.id !== routeFormId && f.completed && f.completed_at)
+      .map((f) => new Date(f.completed_at as string).getTime());
+    let startMs: number | null = others.length ? Math.max(...others) : null;
+    if (startMs == null && route.scheduled_date && route.start_time) {
+      startMs = new Date(`${route.scheduled_date}T${route.start_time}:00`).getTime();
+    }
+    if (startMs == null) return null;
+    return Math.max(1, Math.round((nowMs - startMs) / 60000));
+  }, [route]);
+
+  // Marcar inicio de la tarea (para medir el tiempo real exacto)
+  const startForm = useCallback(async (routeFormId: string) => {
+    setSaving(routeFormId);
+    await supabase.from("maintenance_route_forms").update({ started_at: new Date().toISOString() } as never).eq("id", routeFormId);
+    await load();
+    setSaving(null);
+  }, [load]);
+
+  // ---------------------------------------------------------------------------
   // Mark form completed
   // ---------------------------------------------------------------------------
   const completeForm = useCallback(async (routeFormId: string, maintenanceFormId?: string) => {
     if (!user) return;
     setSaving(routeFormId);
     const now = new Date().toISOString();
+    const realMin = computeRealMinutes(routeFormId);
     const { error } = await supabase
       .from("maintenance_route_forms")
       .update({ completed: true, completed_at: now, completed_by: user.id })
       .eq("id", routeFormId);
+    // real_minutes en update aparte (best-effort: la columna puede no existir aún)
+    if (realMin != null) await supabase.from("maintenance_route_forms").update({ real_minutes: realMin } as never).eq("id", routeFormId);
     // Reflejar en el form de mantención: subestado "Ejecutado" (terreno)
     if (maintenanceFormId) {
       await supabase.from("maintenance_forms").update({ sub_status: SUBSTATUS_EJECUTADO }).eq("id", maintenanceFormId);
@@ -220,7 +264,7 @@ export function useRouteExecution(routeId: string) {
       await load();
     }
     setSaving(null);
-  }, [user, load]);
+  }, [user, load, computeRealMinutes]);
 
   // Completar con observaciones: marca el form, guarda la nota y deja el
   // maintenance_form como "Ejecutado C/Obs" (best-effort, robusto a columnas).
@@ -228,10 +272,12 @@ export function useRouteExecution(routeId: string) {
     if (!user) return;
     setSaving(routeFormId);
     const now = new Date().toISOString();
+    const realMin = computeRealMinutes(routeFormId);
     await supabase
       .from("maintenance_route_forms")
       .update({ completed: true, completed_at: now, completed_by: user.id, operator_notes: obs })
       .eq("id", routeFormId);
+    if (realMin != null) await supabase.from("maintenance_route_forms").update({ real_minutes: realMin } as never).eq("id", routeFormId);
     // Reflejar en el form de mantención: subestado "Ejecutado C/Obs"
     const { error: subErr } = await supabase
       .from("maintenance_forms")
@@ -244,7 +290,7 @@ export function useRouteExecution(routeId: string) {
     await logEvent(routeFormId, null, "completed", obs);
     await load();
     setSaving(null);
-  }, [user, load]);
+  }, [user, load, computeRealMinutes]);
 
   // Posponer una tarea (form) individual
   const postponeForm = useCallback(async (routeFormId: string, postponedTo: string, note?: string) => {
@@ -523,6 +569,7 @@ export function useRouteExecution(routeId: string) {
     route,
     loading,
     saving,
+    startForm,
     completeForm,
     completeFormWithObs,
     uncompleteForm,

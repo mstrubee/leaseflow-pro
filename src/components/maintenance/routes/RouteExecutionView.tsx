@@ -168,11 +168,12 @@ function ObsSheet({
 // Form card
 // ---------------------------------------------------------------------------
 function FormCard({
-  form, stopId, saving, onComplete, onCompleteObs, onUncomplete, onNotes, onPhoto, onDeletePhoto, onPostpone, onUnpostpone,
+  form, stopId, saving, onStart, onComplete, onCompleteObs, onUncomplete, onNotes, onPhoto, onDeletePhoto, onPostpone, onUnpostpone,
 }: {
   form: ExecutionForm;
   stopId: string;
   saving: string | null;
+  onStart: (routeFormId: string) => void;
   onComplete: (form: ExecutionForm) => void;
   onCompleteObs: (form: ExecutionForm) => void;
   onUncomplete: (routeFormId: string) => void;
@@ -205,6 +206,11 @@ function FormCard({
             <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 bg-gray-100 rounded px-1.5 py-0" title="Tiempo previsto">
               <Clock className="w-3 h-3" />{form.estimated_minutes} min
             </span>
+            {form.completed && form.real_minutes != null && (
+              <span className={`inline-flex items-center gap-0.5 text-[11px] rounded px-1.5 py-0 ${form.real_minutes > form.estimated_minutes ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`} title="Tiempo real de ejecución">
+                Real {form.real_minutes} min
+              </span>
+            )}
             {form.criticality_name && (
               <Badge
                 className="text-[10px] px-1.5 py-0 h-4"
@@ -290,6 +296,19 @@ function FormCard({
       {/* Action buttons (tarea pendiente y no pospuesta) */}
       {!form.completed && !form.postponed_to && (
         <div className="space-y-1.5 pt-1">
+          {/* Iniciar (mide el tiempo real). Si ya inició, muestra desde cuándo. */}
+          {form.started_at ? (
+            <div className="flex items-center gap-1 text-[11px] text-blue-600">
+              <Clock className="w-3.5 h-3.5" /> En curso desde {format(parseISO(form.started_at), "HH:mm")}
+            </div>
+          ) : (
+            <Button size="sm" variant="ghost"
+              className="w-full h-8 text-xs text-blue-700 border border-blue-300 hover:bg-blue-50"
+              disabled={isSaving}
+              onClick={() => onStart(form.id)}>
+              <Clock className="w-3.5 h-3.5 mr-1" />Iniciar tarea
+            </Button>
+          )}
           <div className="flex gap-2">
             <Button size="sm" variant="ghost"
               className="flex-1 h-8 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50"
@@ -365,12 +384,13 @@ function FormCard({
 // ---------------------------------------------------------------------------
 function StopCard({
   stop, saving, sharing, finalizing, onCompleteForm, onCompleteObsForm, onUncompleteForm, onReopenStop,
-  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onNotes, onPhoto, onDeletePhoto,
+  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onNotes, onPhoto, onDeletePhoto, onStartForm,
 }: {
   stop: ExecutionStop;
   saving: string | null;
   sharing: boolean;
   finalizing: boolean;
+  onStartForm: (routeFormId: string) => void;
   onCompleteForm: (form: ExecutionForm) => void;
   onCompleteObsForm: (form: ExecutionForm) => void;
   onUncompleteForm: (routeFormId: string) => void;
@@ -436,6 +456,7 @@ function StopCard({
                 form={f}
                 stopId={stop.id}
                 saving={saving}
+                onStart={onStartForm}
                 onComplete={onCompleteForm}
                 onCompleteObs={onCompleteObsForm}
                 onUncomplete={onUncompleteForm}
@@ -640,6 +661,7 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
             saving={exec.saving}
             sharing={sharingStopId === stop.id}
             finalizing={finalizingStopId === stop.id}
+            onStartForm={exec.startForm}
             onCompleteForm={handleCompleteForm}
             onCompleteObsForm={(f) => setObsForm(f)}
             onUncompleteForm={exec.uncompleteForm}
