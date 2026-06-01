@@ -202,6 +202,9 @@ function FormCard({
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-mono text-xs font-bold text-gray-600">{form.form_number}</span>
             <span className="text-xs text-gray-400">· {typeLabel()}</span>
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 bg-gray-100 rounded px-1.5 py-0" title="Tiempo previsto">
+              <Clock className="w-3 h-3" />{form.estimated_minutes} min
+            </span>
             {form.criticality_name && (
               <Badge
                 className="text-[10px] px-1.5 py-0 h-4"
@@ -603,11 +606,16 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="font-bold text-sm truncate">{route.name}</h1>
-            {route.scheduled_date && (
-              <p className="text-xs text-gray-400 capitalize">
-                {format(parseISO(route.scheduled_date), "EEEE d 'de' MMMM", { locale: es })}
-              </p>
-            )}
+            <p className="text-xs text-gray-400 capitalize flex items-center gap-1.5 flex-wrap">
+              {route.scheduled_date && (
+                <span>{format(parseISO(route.scheduled_date), "EEEE d 'de' MMMM", { locale: es })}</span>
+              )}
+              {route.start_time && (
+                <span className="inline-flex items-center gap-0.5 text-blue-600 font-medium normal-case">
+                  <Clock className="w-3 h-3" />Inicio {route.start_time}
+                </span>
+              )}
+            </p>
           </div>
           <div className="text-right shrink-0">
             <div className="text-lg font-bold text-blue-600">{pct}%</div>

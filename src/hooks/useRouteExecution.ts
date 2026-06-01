@@ -31,6 +31,7 @@ export interface ExecutionForm {
   completed_at: string | null;
   operator_notes: string | null;
   visit_evidence_urls: string[];
+  estimated_minutes: number;     // tiempo previsto para ejecutar este form
   postponed_to: string | null;   // tarea pospuesta a esta fecha
   postpone_note: string | null;
   // fusión
@@ -57,6 +58,7 @@ export interface ExecutionRoute {
   id: string;
   name: string;
   scheduled_date: string | null;
+  start_time: string | null;   // hora de inicio de la ruta de este día
   status: string;
   supplier_name: string | null;
   stops: ExecutionStop[];
@@ -75,14 +77,16 @@ export function useRouteExecution(routeId: string) {
     if (!routeId) return;
     setLoading(true);
 
-    const buildSelect = (withFormPostpone: boolean) => `
-        id, name, scheduled_date, status,
+    // withExtras agrupa columnas que pueden faltar si una migración no se aplicó:
+    // start_time (routes), estimated_minutes + postponed_to/postpone_note (forms).
+    const buildSelect = (withExtras: boolean) => `
+        id, name, scheduled_date, status${withExtras ? ", start_time" : ""},
         suppliers ( name ),
         maintenance_route_stops (
           id, stop_order, status, completed_at, postponed_to, postpone_note,
           maintenance_locations ( id, name, local_name, lat, lng ),
           maintenance_route_forms (
-            id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls${withFormPostpone ? ", postponed_to, postpone_note" : ""},
+            id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls${withExtras ? ", estimated_minutes, postponed_to, postpone_note" : ""},
             maintenance_forms (
               form_number, general_description, electrical_description,
               civil_description, hvac_description, fixed_assets_description,
@@ -93,14 +97,13 @@ export function useRouteExecution(routeId: string) {
         )
       `;
 
-    // Intento con las columnas de aplazamiento por form; si la migración no se
-    // aplicó, reintenta sin ellas para no bloquear la vista.
+    // Intento con las columnas extra; si alguna no existe, reintenta sin ellas.
     // (select con string dinámico → tipamos data como any, como el resto del map.)
     const res1 = await supabase.from("maintenance_routes").select(buildSelect(true)).eq("id", routeId).single();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any = res1.data;
     let error = res1.error;
-    if (error && /postponed_to|postpone_note|column|schema cache/i.test(error.message)) {
+    if (error && /start_time|estimated_minutes|postponed_to|postpone_note|column|schema cache/i.test(error.message)) {
       const res2 = await supabase.from("maintenance_routes").select(buildSelect(false)).eq("id", routeId).single();
       data = res2.data; error = res2.error;
     }
@@ -132,6 +135,7 @@ export function useRouteExecution(routeId: string) {
               completed_at: rf.completed_at as string ?? null,
               operator_notes: rf.operator_notes as string ?? null,
               visit_evidence_urls: (rf.visit_evidence_urls as string[]) ?? [],
+              estimated_minutes: (rf.estimated_minutes as number) ?? 30,
               postponed_to: rf.postponed_to as string ?? null,
               postpone_note: rf.postpone_note as string ?? null,
               merge_group_id: null,
@@ -186,6 +190,7 @@ export function useRouteExecution(routeId: string) {
       id: data.id,
       name: data.name,
       scheduled_date: data.scheduled_date,
+      start_time: (data.start_time as string) ?? null,
       status: data.status,
       supplier_name: suppliers?.name as string ?? null,
       stops,
