@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2 } from "lucide-react";
+import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
@@ -35,6 +35,8 @@ interface Props {
   onRemoveStop: (locationId: string) => void;
   onReorder: (stops: RouteStop[]) => void;
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
+  onSetStopMinutes: (stopId: string, minutes: number) => void;
+  onAddErrand: (label: string, minutes: number) => void;
   onSetDayStartTimeForDay: (dayIndex: number, time: string) => void;
   onSave: () => void;
   onReset: () => void;
@@ -57,7 +59,7 @@ function TravelDivider({ minutes, arrival }: { minutes: number; arrival?: string
   );
 }
 
-function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dragOver, onDragStart, onDragOver, onDrop, onRemove, onSetFormMinutes, onSelectLocation }: {
+function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dragOver, onDragStart, onDragOver, onDrop, onRemove, onSetFormMinutes, onSetStopMinutes, onSelectLocation }: {
   stop: RouteStop; index: number; order: number; schedule: ScheduleEntry | undefined;
   formIds: string[]; // forms de este tramo (día)
   partial: boolean;
@@ -67,10 +69,13 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
   onDrop: (i: number) => void;
   onRemove: (id: string) => void;
   onSetFormMinutes: (locId: string, formId: string, min: number) => void;
+  onSetStopMinutes: (stopId: string, min: number) => void;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const selected = stop.allForms.filter((f) => formIds.includes(f.id));
+  const isShopping = stop.kind === "shopping";
+  const noForms = stop.formIds.length === 0; // compras o "solo parada"
 
   return (
     <div draggable onDragStart={() => onDragStart(index)} onDragOver={(e) => onDragOver(e, index)} onDrop={() => onDrop(index)}
@@ -78,19 +83,32 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
 
       <div className="flex items-center gap-1.5 px-2 py-1.5">
         <GripVertical className="w-3 h-3 text-gray-300 shrink-0 cursor-grab" />
-        <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-[9px] flex items-center justify-center shrink-0 font-bold">{order}</span>
+        <span className={`w-5 h-5 rounded-full text-white text-[9px] flex items-center justify-center shrink-0 font-bold ${isShopping ? "bg-fuchsia-500" : "bg-blue-500"}`}>
+          {isShopping ? <ShoppingCart className="w-3 h-3" /> : order}
+        </span>
         <div className="flex-1 min-w-0">
           <div
-            className={`truncate font-medium ${onSelectLocation ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
-            onClick={() => onSelectLocation?.(stop.location)}
-            title={onSelectLocation ? "Ver detalle del local" : undefined}
+            className={`truncate font-medium ${(!noForms && onSelectLocation) ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
+            onClick={() => { if (!noForms) onSelectLocation?.(stop.location); }}
+            title={(!noForms && onSelectLocation) ? "Ver detalle del local" : undefined}
           >
-            {stop.location.local_name || stop.location.name}
+            {isShopping ? (stop.label || "Compras") : (stop.location.local_name || stop.location.name)}
+            {!isShopping && noForms && <span className="ml-1 text-[9px] text-gray-400 font-normal">(solo parada)</span>}
             {partial && <span className="ml-1 text-[9px] text-amber-600 font-normal">(continúa)</span>}
           </div>
-          <div className="text-gray-400 flex gap-2 flex-wrap">
+          <div className="text-gray-400 flex items-center gap-2 flex-wrap">
             {schedule && <span>{schedule.arrivalTime} – {schedule.departureTime}</span>}
             {selected.length > 0 && <span>{selected.length} form{selected.length !== 1 ? "s" : ""} · {fmt(schedule?.workMinutes ?? 0)}</span>}
+            {noForms && (
+              <span className="inline-flex items-center gap-1">
+                <MinutesInput
+                  value={stop.stopMinutes ?? 30}
+                  onChange={(m) => onSetStopMinutes(stop.locationId, m)}
+                  className="w-12 border border-gray-200 rounded px-1 py-0 text-[10px] text-center focus:outline-none focus:border-blue-400"
+                />
+                <span className="text-[9px]">min</span>
+              </span>
+            )}
           </div>
         </div>
         {selected.length > 0 && (
@@ -150,7 +168,7 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetDayStartTimeForDay, onSave, onReset, onSelectLocation,
+  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onSetDayStartTimeForDay, onSave, onReset, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
@@ -178,8 +196,15 @@ export function RoutePanel({
       <div className="flex items-center gap-2 shrink-0">
         <MapPin className="w-4 h-4 text-blue-500" />
         <span className="text-sm font-semibold text-gray-700">Ruta armada</span>
+        <button
+          onClick={() => onAddErrand("Compras", 30)}
+          title="Agregar una parada de compras (bloque de tiempo, sin local)"
+          className="ml-auto flex items-center gap-1 px-2 h-6 rounded text-[11px] font-medium border bg-white border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-50 transition-colors"
+        >
+          <ShoppingCart className="w-3.5 h-3.5" /> Compras
+        </button>
         {stops.length > 0 && (
-          <Badge variant="secondary" className="ml-auto text-[10px]">{stops.length} paradas · {totalForms} forms</Badge>
+          <Badge variant="secondary" className="text-[10px]">{stops.length} paradas · {totalForms} forms</Badge>
         )}
       </div>
 
@@ -254,6 +279,7 @@ export function RoutePanel({
                             onDrop={handleDrop}
                             onRemove={onRemoveStop}
                             onSetFormMinutes={onSetFormMinutes}
+                            onSetStopMinutes={onSetStopMinutes}
                             onSelectLocation={onSelectLocation}
                           />
                         </div>

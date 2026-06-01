@@ -28,6 +28,7 @@ interface Props {
   onSetOrigin: (location: MaintenanceLocation) => void;
   onToggleDayBreak: (locationId: string) => void;
   onSetPriorityForm: (locationId: string, formId: string | null) => void;
+  onSetStopMinutes?: (stopId: string, minutes: number) => void;
   onMergeForms?: (formIds: string[]) => Promise<void>;
   onUnmergeForms?: (groupId: string) => Promise<void>;
   onClose: () => void;
@@ -54,7 +55,7 @@ function formDescriptions(f: RouteForm): { label: string; text: string }[] {
 export function LocationDetailPanel({
   location, forms, existingStop, origin, isMultiDay, startTime, onStartTime,
   onAddStop, onToggleForm, onAddAllForms, onClearForms, onSetFormMinutes, onSetOrigin,
-  onToggleDayBreak, onSetPriorityForm, onMergeForms, onUnmergeForms,
+  onToggleDayBreak, onSetPriorityForm, onSetStopMinutes, onMergeForms, onUnmergeForms,
   onClose, onCollapse,
 }: Props) {
   const isInRoute = !!existingStop;
@@ -198,6 +199,20 @@ export function LocationDetailPanel({
               </button>
             )
           )}
+        </div>
+      )}
+
+      {/* Tiempo de "Solo parada": parada en ruta sin forms seleccionados */}
+      {isInRoute && existingStop!.formIds.length === 0 && onSetStopMinutes && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-amber-50/60">
+          <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span className="text-[11px] text-amber-700 flex-1">Solo parada · tiempo:</span>
+          <MinutesInput
+            value={existingStop!.stopMinutes ?? 30}
+            onChange={(m) => onSetStopMinutes(location.id, m)}
+            className="w-14 border border-amber-200 rounded px-1 py-0.5 text-[11px] text-center focus:outline-none focus:border-amber-400"
+          />
+          <span className="text-[10px] text-amber-500">min</span>
         </div>
       )}
 

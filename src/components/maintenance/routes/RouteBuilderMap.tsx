@@ -255,6 +255,8 @@ export function RouteBuilderMap({
   onSetOrigin, onSelectLocation,
 }: Props) {
   const stopSet   = new Set(stops.map((s) => s.locationId));
+  // Las paradas de compras no tienen coordenadas → se excluyen del trazado del mapa.
+  const routeStops = stops.filter((s) => s.kind !== "shopping");
   const scoredMap = new Map(scoredLocations.map((s, i) => [s.id, { rank: i }]));
   const [pickingOrigin, setPickingOrigin] = useState(false);
   const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
@@ -333,8 +335,8 @@ export function RouteBuilderMap({
         <MapSearchBar onFlyTo={(lat, lng, zoom) => setFlyTo({ lat, lng, zoom })} />
 
         {/* Trayecto por tramo: línea sólida real (OSRM) o recta, + etiqueta de minutos */}
-        {stops.map((stop, i) => {
-          const prev = i === 0 ? origin : stops[i - 1].location;
+        {routeStops.map((stop, i) => {
+          const prev = i === 0 ? origin : routeStops[i - 1].location;
           if (!prev) return null;
           const a: [number, number] = [prev.lat, prev.lng];
           const b: [number, number] = [stop.location.lat, stop.location.lng];

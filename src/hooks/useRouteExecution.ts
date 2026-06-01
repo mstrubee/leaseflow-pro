@@ -53,6 +53,9 @@ export interface ExecutionStop {
   location_local_name: string | null;
   location_lat: number;
   location_lng: number;
+  kind: "location" | "errand" | "shopping";
+  label: string | null;             // etiqueta de la parada sin forms (ej. "Compras")
+  stop_minutes: number | null;      // tiempo de la parada sin forms
   forms: ExecutionForm[];
 }
 
@@ -85,7 +88,7 @@ export function useRouteExecution(routeId: string) {
         id, name, scheduled_date, status${withExtras ? ", start_time" : ""},
         suppliers ( name ),
         maintenance_route_stops (
-          id, stop_order, status, completed_at, postponed_to, postpone_note,
+          id, stop_order, status, completed_at, postponed_to, postpone_note${withExtras ? ", stop_kind, stop_label, stop_minutes" : ""},
           maintenance_locations ( id, name, local_name, lat, lng ),
           maintenance_route_forms (
             id, maintenance_form_id, completed, completed_at, operator_notes, visit_evidence_urls${withExtras ? ", estimated_minutes, started_at, real_minutes, postponed_to, postpone_note" : ""},
@@ -105,7 +108,7 @@ export function useRouteExecution(routeId: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any = res1.data;
     let error = res1.error;
-    if (error && /start_time|estimated_minutes|started_at|real_minutes|postponed_to|postpone_note|column|schema cache/i.test(error.message)) {
+    if (error && /start_time|estimated_minutes|started_at|real_minutes|postponed_to|postpone_note|stop_kind|stop_label|stop_minutes|column|schema cache/i.test(error.message)) {
       const res2 = await supabase.from("maintenance_routes").select(buildSelect(false)).eq("id", routeId).single();
       data = res2.data; error = res2.error;
     }
@@ -160,6 +163,9 @@ export function useRouteExecution(routeId: string) {
           location_local_name: loc?.local_name as string ?? null,
           location_lat: loc?.lat as number ?? 0,
           location_lng: loc?.lng as number ?? 0,
+          kind: (s.stop_kind as ExecutionStop["kind"]) ?? "location",
+          label: (s.stop_label as string) ?? null,
+          stop_minutes: (s.stop_minutes as number) ?? null,
           forms,
         };
       });

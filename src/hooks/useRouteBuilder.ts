@@ -67,6 +67,9 @@ export interface RouteStop {
   routeGeometry: GeoJSON.LineString | null;
   dayBreak?: boolean;                  // fuerza el inicio de un día nuevo en esta parada
   priorityFormId?: string | null;      // form que se atiende primero en esta parada
+  kind?: "location" | "errand" | "shopping"; // tipo de parada (default location)
+  label?: string;                      // etiqueta para errand/shopping (ej. "Compras")
+  stopMinutes?: number;                // tiempo de una parada SIN forms (compras / solo parada)
 }
 
 const URBAN_THRESHOLD_KM = 20; // < 20 km = ciudad; ≥ = carretera
@@ -282,7 +285,8 @@ export function calculateSchedule(
     };
 
     for (const fid of ids) {
-      const work = fid === null ? DEFAULT_FORM_MINUTES : (stop.formMinutes[fid] || DEFAULT_FORM_MINUTES);
+      // Parada sin forms (compras / solo parada): usar su stopMinutes; si tiene forms, el tiempo del form.
+      const work = fid === null ? (stop.stopMinutes ?? DEFAULT_FORM_MINUTES) : (stop.formMinutes[fid] || DEFAULT_FORM_MINUTES);
       const lunchCost = (!lunchTaken && cursor + work > LUNCH_START && cursor < LUNCH_START + LUNCH_DURATION) ? LUNCH_DURATION : 0;
 
       // ¿Este form cabe antes de las 18:00? Si no, cerrar tramo y pasar al día siguiente
@@ -733,6 +737,28 @@ export function useRouteBuilder() {
     setStops((prev) => prev.filter((s) => s.locationId !== locationId));
   }, []);
 
+  // Parada de compras: bloque de tiempo SIN lugar (no entra al mapa, sin traslado).
+  const addErrandStop = useCallback((label: string, minutes: number) => {
+    const id = crypto.randomUUID();
+    const placeholder: MaintenanceLocation = {
+      id, poi_id: "", name: label, folder: "", local_code: null, local_name: null,
+      gerente_zonal: null, zona: null, centro_sap: null, lat: 0, lng: 0,
+    };
+    setStops((prev) => [...prev, {
+      locationId: id, location: placeholder, formIds: [], allForms: [],
+      formMinutes: {}, travelDistanceKm: 0, travelMinutes: 0, routeGeometry: null,
+      kind: "shopping", label, stopMinutes: minutes,
+    }]);
+  }, []);
+
+  // Tiempo / etiqueta de una parada sin forms (compras o "solo parada")
+  const setStopMinutes = useCallback((stopId: string, minutes: number) => {
+    setStops((prev) => prev.map((s) => s.locationId === stopId ? { ...s, stopMinutes: minutes } : s));
+  }, []);
+  const setStopLabel = useCallback((stopId: string, label: string) => {
+    setStops((prev) => prev.map((s) => s.locationId === stopId ? { ...s, label } : s));
+  }, []);
+
   const reorderStops = useCallback((newStops: RouteStop[]) => setStops(newStops), []);
 
   const toggleFormInStop = useCallback((locationId: string, formId: string) => {
@@ -874,15 +900,24 @@ export function useRouteBuilder() {
         for (let order = 0; order < dayTramos.length; order++) {
           const tramo = dayTramos[order];
           const stop = stops[tramo.stopIndex];
-          const { data: stopRow, error: stopErr } = await supabase
-            .from("maintenance_route_stops")
-            .insert({
-              route_id: route.id,
-              location_id: stop.locationId,
-              stop_order: order + 1,
+          const isShopping = stop.kind === "shopping";
+          const locId = isShopping ? null : stop.locationId; // compras = sin local
+          let stopRow: { id: string } | null = null;
+          let stopErr: { message: string } | null = null;
+          {
+            const res = await supabase.from("maintenance_route_stops").insert({
+              route_id: route.id, location_id: locId, stop_order: order + 1,
               estimated_travel_min: stop.travelMinutes,
-            })
-            .select("id").single();
+              stop_kind: stop.kind ?? "location", stop_label: stop.label ?? null, stop_minutes: stop.stopMinutes ?? null,
+            } as never).select("id").single();
+            stopRow = res.data; stopErr = res.error;
+            if (stopErr && /stop_kind|stop_label|stop_minutes|column|schema cache/i.test(stopErr.message)) {
+              const res2 = await supabase.from("maintenance_route_stops").insert({
+                route_id: route.id, location_id: locId, stop_order: order + 1, estimated_travel_min: stop.travelMinutes,
+              } as never).select("id").single();
+              stopRow = res2.data; stopErr = res2.error;
+            }
+          }
           if (stopErr || !stopRow) throw new Error(stopErr?.message ?? "Error al crear parada");
 
           // Solo los forms de ESTA parada que caen en ESTE día
@@ -928,7 +963,8 @@ export function useRouteBuilder() {
     highwaySpeed, setHighwaySpeed,
     saving,
     schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
-    addStop, removeStop, reorderStops,
+    addStop, addErrandStop, removeStop, reorderStops,
+    setStopMinutes, setStopLabel,
     toggleFormInStop, addAllFormsToStop, clearFormsInStop,
     setFormMinutes, resetRoute, saveRoute,
     toggleDayBreak, setPriorityForm,

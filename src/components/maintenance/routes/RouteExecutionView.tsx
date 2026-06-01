@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
   MessageSquare, Camera, CalendarDays, Loader2, MapPin, ArrowLeft,
-  Image as ImageIcon, Link2, RotateCcw, Share2, X,
+  Image as ImageIcon, Link2, RotateCcw, Share2, X, ShoppingCart,
 } from "lucide-react";
 import { shareLocationReport } from "./exportLocationReportPDF";
 import { toast } from "sonner";
@@ -384,13 +384,14 @@ function FormCard({
 // ---------------------------------------------------------------------------
 function StopCard({
   stop, saving, sharing, finalizing, onCompleteForm, onCompleteObsForm, onUncompleteForm, onReopenStop,
-  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onNotes, onPhoto, onDeletePhoto, onStartForm,
+  onPostponeForm, onUnpostponeForm, onShare, onFinalize, onCompleteStop, onNotes, onPhoto, onDeletePhoto, onStartForm,
 }: {
   stop: ExecutionStop;
   saving: string | null;
   sharing: boolean;
   finalizing: boolean;
   onStartForm: (routeFormId: string) => void;
+  onCompleteStop: (stopId: string) => void;
   onCompleteForm: (form: ExecutionForm) => void;
   onCompleteObsForm: (form: ExecutionForm) => void;
   onUncompleteForm: (routeFormId: string) => void;
@@ -407,6 +408,9 @@ function StopCard({
   const completedForms = stop.forms.filter((f) => f.completed).length;
   const allDone = stop.forms.length > 0 && completedForms === stop.forms.length;
   const allHavePhotos = stop.forms.length > 0 && stop.forms.every((f) => f.visit_evidence_urls.length > 0);
+  const isShopping = stop.kind === "shopping";
+  const noForms = stop.forms.length === 0; // compras / solo parada
+  const stopName = isShopping ? (stop.label || "Compras") : (stop.location_local_name || stop.location_name);
 
   const statusIcon = {
     completed: <CheckCircle2 className="w-5 h-5 text-green-500" />,
@@ -425,17 +429,22 @@ function StopCard({
         className="w-full flex items-center gap-3 p-4 text-left"
         onClick={() => setExpanded((e) => !e)}
       >
-        <div className="w-8 h-8 rounded-full bg-blue-500 text-white text-sm font-bold flex items-center justify-center shrink-0">
-          {stop.stop_order}
+        <div className={`w-8 h-8 rounded-full text-white text-sm font-bold flex items-center justify-center shrink-0 ${isShopping ? "bg-fuchsia-500" : "bg-blue-500"}`}>
+          {isShopping ? <ShoppingCart className="w-4 h-4" /> : stop.stop_order}
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm leading-tight truncate">
-            {stop.location_local_name || stop.location_name}
+            {stopName}
+            {!isShopping && noForms && <span className="ml-1 text-[11px] text-gray-400 font-normal">(solo parada)</span>}
           </div>
-          {stop.forms.length > 0 && (
+          {stop.forms.length > 0 ? (
             <div className="text-xs text-gray-400 mt-0.5">
               {completedForms}/{stop.forms.length} forms
               {stop.postponed_to && ` · Reagendado ${format(parseISO(stop.postponed_to), "d MMM", { locale: es })}`}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+              <Clock className="w-3 h-3" />{stop.stop_minutes ?? 30} min
             </div>
           )}
         </div>
@@ -482,33 +491,49 @@ function StopCard({
             </Button>
           )}
 
-          {/* Acciones del local: informe preliminar (sin requisitos) y finalizar/enviar */}
-          <div className="flex gap-2 pt-1">
-            <Button
-              size="sm"
-              variant="outline"
-              className="flex-1 h-9 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
-              disabled={sharing || finalizing}
-              onClick={() => onShare(stop)}
-            >
-              {sharing
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <><Share2 className="w-3.5 h-3.5 mr-1" />Informe Preliminar</>}
-            </Button>
-            <Button
-              size="sm"
-              className="flex-1 h-9 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50"
-              disabled={finalizing || sharing || !allHavePhotos}
-              title={allHavePhotos ? "Finalizar y enviar (archiva fotos en Drive)" : "Falta evidencia fotográfica en alguna tarea"}
-              onClick={() => onFinalize(stop)}
-            >
-              {finalizing
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Finalizar / Enviar</>}
-            </Button>
-          </div>
-          {!allHavePhotos && (
-            <p className="text-[10px] text-amber-600 text-center">Para finalizar, agrega una foto a cada tarea.</p>
+          {/* Acciones: parada sin forms (compras / solo parada) → "Hecho";
+              parada con forms → informe preliminar + finalizar/enviar. */}
+          {noForms ? (
+            stop.status === "pending" && (
+              <Button
+                size="sm"
+                className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
+                disabled={saving === stop.id}
+                onClick={() => onCompleteStop(stop.id)}
+              >
+                {saving === stop.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Hecho</>}
+              </Button>
+            )
+          ) : (
+            <>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-9 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                  disabled={sharing || finalizing}
+                  onClick={() => onShare(stop)}
+                >
+                  {sharing
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <><Share2 className="w-3.5 h-3.5 mr-1" />Informe Preliminar</>}
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 h-9 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                  disabled={finalizing || sharing || !allHavePhotos}
+                  title={allHavePhotos ? "Finalizar y enviar (archiva fotos en Drive)" : "Falta evidencia fotográfica en alguna tarea"}
+                  onClick={() => onFinalize(stop)}
+                >
+                  {finalizing
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Finalizar / Enviar</>}
+                </Button>
+              </div>
+              {!allHavePhotos && (
+                <p className="text-[10px] text-amber-600 text-center">Para finalizar, agrega una foto a cada tarea.</p>
+              )}
+            </>
           )}
           {stop.status === "postponed" && stop.postponed_to && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
@@ -662,6 +687,7 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
             sharing={sharingStopId === stop.id}
             finalizing={finalizingStopId === stop.id}
             onStartForm={exec.startForm}
+            onCompleteStop={exec.completeStop}
             onCompleteForm={handleCompleteForm}
             onCompleteObsForm={(f) => setObsForm(f)}
             onUncompleteForm={exec.uncompleteForm}

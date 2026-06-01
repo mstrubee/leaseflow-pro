@@ -188,6 +188,7 @@ export function RouteBuilderLayout() {
                   onSetOrigin={(l) => rb.setOrigin(l)}
                   onToggleDayBreak={rb.toggleDayBreak}
                   onSetPriorityForm={rb.setPriorityForm}
+                  onSetStopMinutes={rb.setStopMinutes}
                   onMergeForms={rb.mergeForms}
                   onUnmergeForms={rb.unmergeForms}
                   onClose={() => setSelectedLocation(null)}
@@ -234,6 +235,8 @@ export function RouteBuilderLayout() {
                   onRemoveStop={rb.removeStop}
                   onReorder={rb.reorderStops}
                   onSetFormMinutes={rb.setFormMinutes}
+                  onSetStopMinutes={rb.setStopMinutes}
+                  onAddErrand={rb.addErrandStop}
                   onSetDayStartTimeForDay={rb.setDayStartTimeForDay}
                   onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); return id; }}
                   onReset={rb.resetRoute}
