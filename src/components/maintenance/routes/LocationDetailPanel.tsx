@@ -29,6 +29,7 @@ interface Props {
   onToggleDayBreak: (locationId: string) => void;
   onSetPriorityForm: (locationId: string, formId: string | null) => void;
   onSetStopMinutes?: (stopId: string, minutes: number) => void;
+  suggestMinutes?: (form: RouteForm) => { minutes: number; count: number } | null;
   onMergeForms?: (formIds: string[]) => Promise<void>;
   onUnmergeForms?: (groupId: string) => Promise<void>;
   onClose: () => void;
@@ -56,7 +57,7 @@ export function LocationDetailPanel({
   location, forms, existingStop, origin, isMultiDay, startTime, onStartTime,
   onAddStop, onToggleForm, onAddAllForms, onClearForms, onSetFormMinutes, onSetOrigin,
   onToggleDayBreak, onSetPriorityForm, onSetStopMinutes, onMergeForms, onUnmergeForms,
-  onClose, onCollapse,
+  suggestMinutes, onClose, onCollapse,
 }: Props) {
   const isInRoute = !!existingStop;
   const isOrigin = origin?.id === location.id;
@@ -346,6 +347,18 @@ export function LocationDetailPanel({
                         onClick={(e) => e.stopPropagation()}
                         className="w-14 border border-gray-200 rounded px-1 py-0.5 text-[11px] text-center focus:outline-none focus:border-blue-400" />
                       <span className="text-[10px] text-gray-400">min</span>
+                      {(() => {
+                        const rec = suggestMinutes?.(f);
+                        if (!rec || rec.minutes === minutes) return null;
+                        return (
+                          <button type="button"
+                            onClick={(e) => { e.stopPropagation(); onSetFormMinutes(location.id, f.id, rec.minutes); }}
+                            title={`Promedio real de ${rec.count} tareas similares`}
+                            className="ml-1 text-[10px] text-emerald-600 hover:text-emerald-700 hover:underline">
+                            sugerido {rec.minutes}′
+                          </button>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

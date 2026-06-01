@@ -191,6 +191,7 @@ export function RouteBuilderLayout() {
                   onSetStopMinutes={rb.setStopMinutes}
                   onMergeForms={rb.mergeForms}
                   onUnmergeForms={rb.unmergeForms}
+                  suggestMinutes={rb.suggestMinutes}
                   onClose={() => setSelectedLocation(null)}
                   onCollapse={() => setDetailCollapsed(true)}
                 />

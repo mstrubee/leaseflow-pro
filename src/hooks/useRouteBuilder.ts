@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getOsrmRoute } from "@/lib/osrmRoute";
+import { detectMaintenanceType } from "@/components/maintenance/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,6 +101,8 @@ const WORK_END_MINUTES   = 18 * 60;       // 18:00
 const LUNCH_START        = 13 * 60;       // 13:00
 const LUNCH_DURATION     = 90;            // 1.5h
 const DEFAULT_FORM_MINUTES = 30;
+// Fase 2: mínimo de muestras reales para recomendar un tiempo por tipo
+const MIN_TIME_SAMPLES = 3;
 
 const WEIGHT_BY_NAME: Record<string, number> = {
   crítica: 4, critica: 4, alta: 3, media: 2, baja: 1,
@@ -327,6 +330,8 @@ export function useRouteBuilder() {
   const [formsReloadKey, setFormsReloadKey] = useState(0);
   // Empresa (Agroplanet/Autoplanet) por contract_id — distingue locales homónimos
   const [companyByContract, setCompanyByContract] = useState<Map<string, CompanyKey>>(new Map());
+  // Fase 2: recomendación de tiempos — mediana de minutos reales por tipo de form
+  const [timeStatsByType, setTimeStatsByType] = useState<Record<string, { median: number; count: number }>>({});
   // Memoria de tiempos por form (recuerda el tiempo aunque se deseleccione)
   const formMinutesMemory = useRef<Record<string, number>>({});
 
@@ -682,6 +687,60 @@ export function useRouteBuilder() {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Fase 2: cargar estadísticas de tiempos reales por tipo de form
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from("maintenance_route_forms")
+          .select("real_minutes, maintenance_forms(electrical_description, civil_description, hvac_description, fixed_assets_description, general_description)")
+          .eq("completed", true)
+          .not("real_minutes", "is", null)
+          .limit(3000);
+        if (error || !data || cancelled) return;
+        const byType: Record<string, number[]> = {};
+        for (const row of data as any[]) {
+          const mf = row.maintenance_forms;
+          const mins = Number(row.real_minutes);
+          if (!mf || !Number.isFinite(mins) || mins <= 0) continue;
+          const type = detectMaintenanceType(mf);
+          (byType[type] ??= []).push(mins);
+        }
+        const stats: Record<string, { median: number; count: number }> = {};
+        for (const [type, vals] of Object.entries(byType)) {
+          const sorted = [...vals].sort((a, b) => a - b);
+          const mid = Math.floor(sorted.length / 2);
+          const median = sorted.length % 2
+            ? sorted[mid]
+            : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+          stats[type] = { median, count: sorted.length };
+        }
+        if (!cancelled) setTimeStatsByType(stats);
+      } catch { /* sin recomendación si falla */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user, formsReloadKey]);
+
+  // Recomendación de minutos para un form (null si no hay muestras suficientes)
+  const suggestMinutes = useCallback((form: RouteForm): { minutes: number; count: number } | null => {
+    const type = detectMaintenanceType(form);
+    const s = timeStatsByType[type];
+    if (s && s.count >= MIN_TIME_SAMPLES) return { minutes: s.median, count: s.count };
+    return null;
+  }, [timeStatsByType]);
+
+  // Tiempo por defecto de un form: recordado > recomendado > default fijo
+  const defaultMinutesFor = useCallback((form?: RouteForm, id?: string): number => {
+    const key = id ?? form?.id;
+    if (key && formMinutesMemory.current[key] !== undefined) return formMinutesMemory.current[key];
+    const rec = form ? suggestMinutes(form) : null;
+    return rec?.minutes ?? DEFAULT_FORM_MINUTES;
+  }, [suggestMinutes]);
+
+  // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
   const addStop = useCallback(async (location: MaintenanceLocation, formIds?: string[]) => {
@@ -689,7 +748,7 @@ export function useRouteBuilder() {
     const selectedIds    = formIds ?? locForms.map((f) => f.id);
     // Usar el tiempo recordado si existe (no perder lo configurado antes)
     const defaultMinutes = Object.fromEntries(
-      selectedIds.map((id) => [id, formMinutesMemory.current[id] ?? DEFAULT_FORM_MINUTES]),
+      selectedIds.map((id) => [id, defaultMinutesFor(locForms.find((f) => f.id === id), id)]),
     );
 
     // Get previous waypoint
@@ -731,7 +790,7 @@ export function useRouteBuilder() {
         routeGeometry,
       },
     ]);
-  }, [formsByLocation, stops, origin, urbanSpeed, highwaySpeed]);
+  }, [formsByLocation, stops, origin, urbanSpeed, highwaySpeed, defaultMinutesFor]);
 
   const removeStop = useCallback((locationId: string) => {
     setStops((prev) => prev.filter((s) => s.locationId !== locationId));
@@ -767,13 +826,13 @@ export function useRouteBuilder() {
       const has = s.formIds.includes(formId);
       const formIds = has ? s.formIds.filter((id) => id !== formId) : [...s.formIds, formId];
       const formMinutes = { ...s.formMinutes };
-      // Al re-seleccionar, recuperar el tiempo recordado (no resetear a default)
+      // Al re-seleccionar, recuperar el tiempo recordado o recomendado (no resetear a default)
       if (!has && formMinutes[formId] === undefined) {
-        formMinutes[formId] = formMinutesMemory.current[formId] ?? DEFAULT_FORM_MINUTES;
+        formMinutes[formId] = defaultMinutesFor(s.allForms.find((f) => f.id === formId), formId);
       }
       return { ...s, formIds, formMinutes };
     }));
-  }, []);
+  }, [defaultMinutesFor]);
 
   const addAllFormsToStop = useCallback((locationId: string) => {
     setStops((prev) => prev.map((s) => {
@@ -781,11 +840,11 @@ export function useRouteBuilder() {
       const formIds    = s.allForms.map((f) => f.id);
       const formMinutes = { ...s.formMinutes };
       for (const id of formIds) if (formMinutes[id] === undefined) {
-        formMinutes[id] = formMinutesMemory.current[id] ?? DEFAULT_FORM_MINUTES;
+        formMinutes[id] = defaultMinutesFor(s.allForms.find((f) => f.id === id), id);
       }
       return { ...s, formIds, formMinutes };
     }));
-  }, []);
+  }, [defaultMinutesFor]);
 
   const setFormMinutes = useCallback((locationId: string, formId: string, minutes: number) => {
     formMinutesMemory.current[formId] = minutes; // recordar para futuras (de)selecciones
@@ -969,5 +1028,6 @@ export function useRouteBuilder() {
     setFormMinutes, resetRoute, saveRoute,
     toggleDayBreak, setPriorityForm,
     mergeForms, unmergeForms,
+    suggestMinutes, timeStatsByType,
   };
 }
