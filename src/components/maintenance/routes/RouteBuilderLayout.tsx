@@ -192,6 +192,7 @@ export function RouteBuilderLayout() {
                   onMergeForms={rb.mergeForms}
                   onUnmergeForms={rb.unmergeForms}
                   suggestMinutes={rb.suggestMinutes}
+                  estimateMinutesAI={rb.estimateMinutesAI}
                   onClose={() => setSelectedLocation(null)}
                   onCollapse={() => setDetailCollapsed(true)}
                 />

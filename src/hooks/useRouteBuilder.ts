@@ -732,6 +732,29 @@ export function useRouteBuilder() {
     return null;
   }, [timeStatsByType]);
 
+  // Fase 3: estimación contextual con IA (Gemini) bajo demanda
+  const estimateMinutesAI = useCallback(async (form: RouteForm): Promise<{ minutes: number; reason: string } | null> => {
+    const type = detectMaintenanceType(form);
+    const stat = timeStatsByType[type];
+    const descriptions = [
+      { label: "Eléctrico", text: form.electrical_description },
+      { label: "Obra Civil", text: form.civil_description },
+      { label: "Climatización", text: form.hvac_description },
+      { label: "Activos Fijos", text: form.fixed_assets_description },
+      { label: "General", text: form.general_description },
+    ].filter((d) => d.text?.trim());
+    const { data, error } = await supabase.functions.invoke("recommend-form-time", {
+      body: {
+        descriptions,
+        formType: type,
+        baseMinutes: stat?.median ?? DEFAULT_FORM_MINUTES,
+        sampleCount: stat?.count ?? 0,
+      },
+    });
+    if (error || !data || !Number.isFinite(Number((data as any).minutes))) return null;
+    return { minutes: Math.round(Number((data as any).minutes)), reason: String((data as any).reason ?? "") };
+  }, [timeStatsByType]);
+
   // Tiempo por defecto de un form: recordado > recomendado > default fijo
   const defaultMinutesFor = useCallback((form?: RouteForm, id?: string): number => {
     const key = id ?? form?.id;
@@ -1028,6 +1051,6 @@ export function useRouteBuilder() {
     setFormMinutes, resetRoute, saveRoute,
     toggleDayBreak, setPriorityForm,
     mergeForms, unmergeForms,
-    suggestMinutes, timeStatsByType,
+    suggestMinutes, timeStatsByType, estimateMinutesAI,
   };
 }

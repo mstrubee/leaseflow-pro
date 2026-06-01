@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X, PanelRightClose,
-  Star, CalendarClock, CheckSquare, Square, ChevronDown, ChevronRight,
+  Star, CalendarClock, CheckSquare, Square, ChevronDown, ChevronRight, Sparkles,
 } from "lucide-react";
 import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import logoAgroplanet from "@/assets/logo-agroplanet.png";
@@ -30,6 +30,7 @@ interface Props {
   onSetPriorityForm: (locationId: string, formId: string | null) => void;
   onSetStopMinutes?: (stopId: string, minutes: number) => void;
   suggestMinutes?: (form: RouteForm) => { minutes: number; count: number } | null;
+  estimateMinutesAI?: (form: RouteForm) => Promise<{ minutes: number; reason: string } | null>;
   onMergeForms?: (formIds: string[]) => Promise<void>;
   onUnmergeForms?: (groupId: string) => Promise<void>;
   onClose: () => void;
@@ -57,8 +58,10 @@ export function LocationDetailPanel({
   location, forms, existingStop, origin, isMultiDay, startTime, onStartTime,
   onAddStop, onToggleForm, onAddAllForms, onClearForms, onSetFormMinutes, onSetOrigin,
   onToggleDayBreak, onSetPriorityForm, onSetStopMinutes, onMergeForms, onUnmergeForms,
-  suggestMinutes, onClose, onCollapse,
+  suggestMinutes, estimateMinutesAI, onClose, onCollapse,
 }: Props) {
+  const [aiBusy, setAiBusy] = useState<string | null>(null);
+  const [aiReason, setAiReason] = useState<Record<string, string>>({});
   const isInRoute = !!existingStop;
   const isOrigin = origin?.id === location.id;
   const isDayStart = !!existingStop?.dayBreak;
@@ -359,6 +362,32 @@ export function LocationDetailPanel({
                           </button>
                         );
                       })()}
+                      {estimateMinutesAI && (
+                        <button type="button" disabled={aiBusy === f.id}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setAiBusy(f.id);
+                            try {
+                              const res = await estimateMinutesAI(f);
+                              if (res) {
+                                onSetFormMinutes(location.id, f.id, res.minutes);
+                                setAiReason((p) => ({ ...p, [f.id]: res.reason }));
+                                toast.success(`IA: ${res.minutes} min`, { description: res.reason || undefined });
+                              } else {
+                                toast.error("La IA no pudo estimar el tiempo");
+                              }
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Error al estimar con IA");
+                            } finally { setAiBusy(null); }
+                          }}
+                          title={aiReason[f.id] || "Estimar con IA según la magnitud del trabajo"}
+                          className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-violet-600 hover:text-violet-700 hover:underline disabled:opacity-50">
+                          {aiBusy === f.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Sparkles className="w-3 h-3" />}
+                          IA
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
