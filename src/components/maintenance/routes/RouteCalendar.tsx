@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, startOfWeek, endOfWeek,
@@ -28,6 +28,7 @@ interface CalendarRoute {
   name: string;
   scheduled_date: string;
   status: string;
+  supplier_id: string | null;
   supplier_name: string | null;
   stop_count: number;
   completed_stops: number;
@@ -40,6 +41,14 @@ const STATUS_COLOR: Record<string, string> = {
   in_progress: "bg-amber-500",
   completed:   "bg-green-500",
 };
+
+// Paleta para colorear las rutas por proveedor en el calendario.
+const SUPPLIER_PALETTE = [
+  "#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2",
+  "#db2777", "#65a30d", "#ea580c", "#4f46e5", "#0d9488", "#be123c",
+];
+const supplierColorOf = (map: Map<string, string>, id: string | null) =>
+  (id && map.get(id)) || "#9ca3af";
 
 const STATUS_LABEL: Record<string, string> = {
   draft:       "Borrador",
@@ -194,6 +203,7 @@ export function RouteCalendar() {
             name:             r.name as string,
             scheduled_date:   r.scheduled_date as string,
             status:           r.status as string,
+            supplier_id:      (r.supplier_id as string) ?? null,
             supplier_name:    suppliers?.name ?? null,
             stop_count:       stops.length,
             completed_stops:  stops.filter((s) => s.status === "completed").length,
@@ -214,11 +224,31 @@ export function RouteCalendar() {
   const gridEnd     = endOfWeek(monthEnd,     { weekStartsOn: 1 });
   const days        = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
+  // Color estable por proveedor (orden alfabético → paleta).
+  const supplierColor = useMemo(() => {
+    const m = new Map<string, string>();
+    [...supplierOptions]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((s, i) => m.set(s.id, SUPPLIER_PALETTE[i % SUPPLIER_PALETTE.length]));
+    return m;
+  }, [supplierOptions]);
+
+  // Proveedores presentes en el mes (para la leyenda).
+  const suppliersInView = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of routes) if (r.supplier_id) seen.set(r.supplier_id, r.supplier_name ?? "—");
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [routes]);
+
   const routesByDay = new Map<string, CalendarRoute[]>();
   for (const r of routes) {
     const key = r.scheduled_date;
     if (!routesByDay.has(key)) routesByDay.set(key, []);
     routesByDay.get(key)!.push(r);
+  }
+  // Ordenar las rutas de cada día por proveedor (visual ordenado y consistente).
+  for (const list of routesByDay.values()) {
+    list.sort((a, b) => (a.supplier_name ?? "").localeCompare(b.supplier_name ?? "") || a.name.localeCompare(b.name));
   }
 
   const completionPct = (r: CalendarRoute) =>
@@ -317,7 +347,8 @@ export function RouteCalendar() {
       const stops = (r.maintenance_route_stops as { status: string }[]) ?? [];
       return {
         id: r.id as string, name: r.name as string, scheduled_date: r.scheduled_date as string,
-        status: r.status as string, supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
+        status: r.status as string, supplier_id: (r.supplier_id as string) ?? null,
+        supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
         stop_count: stops.length, completed_stops: 0, postponed_stops: 0,
       };
     }));
@@ -475,8 +506,9 @@ export function RouteCalendar() {
                     setCtxMenu({ x: e.clientX, y: e.clientY, route: r });
                   }}
                 >
-                  <div className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium text-white
-                    ${STATUS_COLOR[r.status] ?? "bg-gray-400"} hover:opacity-90 transition-opacity`}>
+                  <div className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium text-white hover:opacity-90 transition-opacity"
+                    style={{ backgroundColor: supplierColorOf(supplierColor, r.supplier_id) }}
+                    title={r.supplier_name ?? undefined}>
                     <span className="truncate flex-1">{r.name}</span>
                     {r.completed_stops > 0 && r.completed_stops === r.stop_count && (
                       <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
@@ -495,14 +527,21 @@ export function RouteCalendar() {
         })}
       </div>
 
-      {/* Legend */}
+      {/* Legend: color por proveedor + íconos de estado */}
       <div className="flex items-center gap-3 shrink-0 text-xs text-gray-500 flex-wrap">
-        {Object.entries(STATUS_LABEL).map(([k, v]) => (
-          <div key={k} className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-sm ${STATUS_COLOR[k]}`} />
-            {v}
-          </div>
-        ))}
+        {suppliersInView.length > 0 ? (
+          suppliersInView.map(([id, name]) => (
+            <div key={id} className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: supplierColorOf(supplierColor, id) }} />
+              <span className="truncate max-w-[120px]">{name}</span>
+            </div>
+          ))
+        ) : (
+          <span className="italic text-gray-400">Sin rutas este mes</span>
+        )}
+        <span className="text-gray-300">|</span>
+        <div className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-gray-500" /> Completada</div>
+        <div className="flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-500" /> Pospuesta</div>
       </div>
 
       {/* Route detail sheet */}
