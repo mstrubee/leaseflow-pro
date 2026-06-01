@@ -5,8 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, PlusCircle, Navigation2, Clock, Link2, Loader2 } from "lucide-react";
-import logoAutoplanet from "@/assets/logo-autoplanet.png";
-import logoAgroplanet from "@/assets/logo-agroplanet.png";
+import { useAppLogos } from "@/hooks/useAppLogos";
+import { locationCompanyKey, logoUrlForKey } from "@/lib/companyLogo";
 import { MinutesInput } from "./MinutesInput";
 import { toast } from "sonner";
 
@@ -45,6 +45,7 @@ export function LocationPopup({
   location, forms, existingStop,
   onAddStop, onToggleForm, onAddAllForms, onSetFormMinutes, onSetOrigin, onMergeForms, onUnmergeForms,
 }: Props) {
+  const { logos } = useAppLogos();
   const isInRoute = !!existingStop;
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   const [merging, setMerging] = useState(false);
@@ -86,7 +87,7 @@ export function LocationPopup({
         {/* Header */}
         <div className="flex items-center gap-2">
           <img
-            src={location.folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet}
+            src={logoUrlForKey(logos, locationCompanyKey(location))}
             alt={location.folder}
             className="w-7 h-7 rounded-full object-contain border border-gray-100 bg-white shrink-0"
           />

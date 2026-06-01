@@ -7,8 +7,8 @@ import {
   Plus, PlusCircle, Navigation2, Clock, Link2, Loader2, X, PanelRightClose,
   Star, CalendarClock, CheckSquare, Square, ChevronDown, ChevronRight, Sparkles,
 } from "lucide-react";
-import logoAutoplanet from "@/assets/logo-autoplanet.png";
-import logoAgroplanet from "@/assets/logo-agroplanet.png";
+import { useAppLogos } from "@/hooks/useAppLogos";
+import { locationCompanyKey, logoUrlForKey } from "@/lib/companyLogo";
 import { MinutesInput } from "./MinutesInput";
 import { toast } from "sonner";
 
@@ -60,6 +60,7 @@ export function LocationDetailPanel({
   onToggleDayBreak, onSetPriorityForm, onSetStopMinutes, onMergeForms, onUnmergeForms,
   suggestMinutes, estimateMinutesAI, onClose, onCollapse,
 }: Props) {
+  const { logos } = useAppLogos();
   const [aiBusy, setAiBusy] = useState<string | null>(null);
   const [aiReason, setAiReason] = useState<Record<string, string>>({});
   const isInRoute = !!existingStop;
@@ -115,7 +116,7 @@ export function LocationDetailPanel({
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b bg-gray-50 shrink-0">
         <img
-          src={location.folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet}
+          src={logoUrlForKey(logos, locationCompanyKey(location))}
           alt={location.folder}
           className="w-7 h-7 rounded-full object-contain border border-gray-100 bg-white shrink-0"
         />

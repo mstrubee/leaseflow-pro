@@ -32,41 +32,38 @@ export const CompanyLogo = ({ companyName, companyNames, size = "sm", className 
   // Check which companies are present
   let hasAgroplanet = false;
   let hasAutoplanet = false;
+  let hasGrupoPlanet = false;
 
   for (const name of namesToCheck) {
     const lowerName = name.toLowerCase();
-    if (lowerName.includes("agroplanet")) hasAgroplanet = true;
-    if (lowerName.includes("autoplanet")) hasAutoplanet = true;
+    if (/grupo\s*planet/.test(lowerName)) hasGrupoPlanet = true;
+    else if (lowerName.includes("agroplanet")) hasAgroplanet = true;
+    else if (lowerName.includes("autoplanet")) hasAutoplanet = true;
   }
 
-  if (!hasAgroplanet && !hasAutoplanet) return null;
+  if (!hasAgroplanet && !hasAutoplanet && !hasGrupoPlanet) return null;
 
-  // If both companies, show both logos
-  if (hasAgroplanet && hasAutoplanet) {
+  // Mostrar todos los logos presentes (Agroplanet / Autoplanet / Grupo Planet)
+  const present: { src: string; alt: string }[] = [];
+  if (hasGrupoPlanet) present.push({ src: logos.grupoPlanet, alt: "Grupo Planet" });
+  if (hasAgroplanet) present.push({ src: logos.agroplanet, alt: "Agroplanet" });
+  if (hasAutoplanet) present.push({ src: logos.autoplanet, alt: "Autoplanet" });
+
+  if (present.length > 1) {
     return (
       <div className="flex flex-row gap-0.5 flex-shrink-0">
-        <img
-          src={logos.agroplanet}
-          alt="Agroplanet"
-          className={cn(sizeClasses[size], "rounded object-contain", className)}
-        />
-        <img
-          src={logos.autoplanet}
-          alt="Autoplanet"
-          className={cn(sizeClasses[size], "rounded object-contain", className)}
-        />
+        {present.map((p) => (
+          <img key={p.alt} src={p.src} alt={p.alt}
+            className={cn(sizeClasses[size], "rounded object-contain", className)} />
+        ))}
       </div>
     );
   }
 
-  // Single company logo
-  const logo = hasAgroplanet ? logos.agroplanet : logos.autoplanet;
-  const alt = hasAgroplanet ? "Agroplanet" : "Autoplanet";
-
   return (
     <img
-      src={logo}
-      alt={alt}
+      src={present[0].src}
+      alt={present[0].alt}
       className={cn(
         sizeClasses[size],
         "rounded object-contain flex-shrink-0",
@@ -101,7 +98,7 @@ export const getPrimaryCompanyName = (
   // First, try to find Agroplanet or Autoplanet
   for (const cc of contractCompanies) {
     const name = cc.companies?.name?.toLowerCase() || "";
-    if (name.includes("agroplanet") || name.includes("autoplanet")) {
+    if (name.includes("agroplanet") || name.includes("autoplanet") || /grupo\s*planet/.test(name)) {
       return cc.companies?.name || null;
     }
   }

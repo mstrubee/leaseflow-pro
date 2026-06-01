@@ -15,10 +15,20 @@ interface AppLogo {
   is_active: boolean;
 }
 
-interface LogoUrls {
+export interface LogoUrls {
   agroplanet: string;
   autoplanet: string;
   dashboard_header: string;
+  grupoPlanet: string;
+}
+
+// ¿Es la fila del logo "Grupo Planet"? (por clave o por nombre, robusto al slug)
+function isGrupoPlanet(logoKey: string, displayName?: string | null): boolean {
+  const norm = (s: string) => (s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const k = norm(logoKey);
+  const n = norm(displayName ?? "");
+  return k.includes("grupo") && (k.includes("planet") || k.includes("plant"))
+    || /grupo\s*planet/.test(n);
 }
 
 // Cache for logo URLs to avoid refetching
@@ -32,6 +42,7 @@ export function useAppLogos() {
     agroplanet: logoAgroplanetFallback,
     autoplanet: logoAutoplanetFallback,
     dashboard_header: logosHeaderFallback,
+    grupoPlanet: logoAgroplanetFallback,
   });
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +64,7 @@ export function useAppLogos() {
         const { data, error } = await withRetry(() =>
           supabase
             .from("app_logos")
-            .select("logo_key, storage_path")
+            .select("logo_key, storage_path, display_name")
             .eq("is_active", true)
         );
 
@@ -63,6 +74,7 @@ export function useAppLogos() {
           agroplanet: logoAgroplanetFallback,
           autoplanet: logoAutoplanetFallback,
           dashboard_header: logosHeaderFallback,
+          grupoPlanet: logoAgroplanetFallback,
         };
 
         for (const logo of data || []) {
@@ -78,6 +90,8 @@ export function useAppLogos() {
                 newLogos.autoplanet = urlData.publicUrl;
               } else if (logo.logo_key === "dashboard_header") {
                 newLogos.dashboard_header = urlData.publicUrl;
+              } else if (isGrupoPlanet(logo.logo_key, (logo as any).display_name)) {
+                newLogos.grupoPlanet = urlData.publicUrl;
               }
             }
           }
@@ -119,7 +133,7 @@ export async function getLogoUrls(): Promise<LogoUrls> {
   const { data } = await withRetry(() =>
     supabase
       .from("app_logos")
-      .select("logo_key, storage_path")
+      .select("logo_key, storage_path, display_name")
       .eq("is_active", true)
   ).catch(() => ({ data: null as any }));
 
@@ -127,6 +141,7 @@ export async function getLogoUrls(): Promise<LogoUrls> {
     agroplanet: logoAgroplanetFallback,
     autoplanet: logoAutoplanetFallback,
     dashboard_header: logosHeaderFallback,
+    grupoPlanet: logoAgroplanetFallback,
   };
 
   for (const logo of data || []) {
@@ -142,6 +157,8 @@ export async function getLogoUrls(): Promise<LogoUrls> {
           logos.autoplanet = urlData.publicUrl;
         } else if (logo.logo_key === "dashboard_header") {
           logos.dashboard_header = urlData.publicUrl;
+        } else if (isGrupoPlanet(logo.logo_key, (logo as any).display_name)) {
+          logos.grupoPlanet = urlData.publicUrl;
         }
       }
     }

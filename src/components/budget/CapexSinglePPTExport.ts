@@ -1,6 +1,7 @@
 import PptxGenJS from "pptxgenjs";
 import { supabase } from "@/integrations/supabase/client";
 import { getLogoUrls } from "@/hooks/useAppLogos";
+import { companyKeyFromNames, logoUrlForKey } from "@/lib/companyLogo";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 
 const TITLE_RED = "B71C1C";
@@ -119,9 +120,11 @@ export async function generateSingleContractPPT(data: SingleContractPPTData) {
   pres.author = "GPlanet";
   pres.title = `Plan Expansión - ${data.contractName}`;
 
-  const isAgroplanet = data.companyNames.some(n => n.toLowerCase().includes("agroplanet"));
   const logos = await getLogoUrls();
-  const logoUrl = isAgroplanet ? logos.agroplanet : logos.autoplanet;
+  const companyKey = companyKeyFromNames(data.companyNames);
+  const logoUrl = companyKey
+    ? logoUrlForKey(logos, companyKey)
+    : (data.companyNames.some(n => n.toLowerCase().includes("agroplanet")) ? logos.agroplanet : logos.autoplanet);
 
   let logoImg: ImgData | null = null;
   try { logoImg = await loadImage(logoUrl); } catch { /* ignore */ }

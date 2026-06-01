@@ -3,10 +3,10 @@ import { MapContainer, TileLayer, Polyline, Marker, useMap, useMapEvents, GeoJSO
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MaintenanceLocation, RouteStop, ScoredLocation, RouteForm } from "@/hooks/useRouteBuilder";
-import logoAutoplanet from "@/assets/logo-autoplanet.png";
-import logoAgroplanet from "@/assets/logo-agroplanet.png";
 import { Search, Loader2, MapPin, X, Navigation2, Star } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppLogos } from "@/hooks/useAppLogos";
+import { locationCompanyKey, logoUrlForKey } from "@/lib/companyLogo";
 
 type Basemap = "light" | "satellite" | "hybrid";
 const BASEMAP_PREF_KEY = (uid: string | undefined) => `routeMapBasemap:${uid ?? "anon"}`;
@@ -31,9 +31,10 @@ function buildIcon(
   isOrigin: boolean, isStop: boolean,
   stopIndex: number, formCount: number,
   rank: number, total: number,
+  logoUrl: string,
   timeLabel?: string,
 ) {
-  const logo = loc.folder === "Autoplanet" ? logoAutoplanet : logoAgroplanet;
+  const logo = logoUrl;
   let size = 28, border = "2px solid #fff", shadow = "0 1px 4px rgba(0,0,0,0.25)";
   if (isOrigin)     { size = 38; border = "3px solid #7c3aed"; shadow = "0 2px 10px rgba(124,58,237,0.5)"; }
   else if (isStop)  { size = 33; border = "3px solid #3b82f6"; shadow = "0 2px 8px rgba(59,130,246,0.5)"; }
@@ -254,6 +255,7 @@ export function RouteBuilderMap({
   origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
   onSetOrigin, onSelectLocation,
 }: Props) {
+  const { logos } = useAppLogos();
   const stopSet   = new Set(stops.map((s) => s.locationId));
   // Las paradas de compras no tienen coordenadas → se excluyen del trazado del mapa.
   const routeStops = stops.filter((s) => s.kind !== "shopping");
@@ -368,7 +370,7 @@ export function RouteBuilderMap({
           const firstEntry = isStop ? schedule.find((e) => e.stopIndex === stopIndex) : undefined;
           const timeLabel = isOrigin ? startTime : firstEntry?.arrivalTime;
 
-          const icon = buildIcon(loc, isOrigin, isStop, stopIndex, forms.length, scored?.rank ?? 0, scoredLocations.length, timeLabel);
+          const icon = buildIcon(loc, isOrigin, isStop, stopIndex, forms.length, scored?.rank ?? 0, scoredLocations.length, logoUrlForKey(logos, locationCompanyKey(loc)), timeLabel);
 
           return (
             <Marker key={loc.id} position={[loc.lat, loc.lng]} icon={icon}

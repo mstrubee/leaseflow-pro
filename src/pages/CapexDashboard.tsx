@@ -193,10 +193,12 @@ export default function CapexDashboard() {
       const names = cBudgets[0].company_names;
       const hasAgroplanet = names.some(n => n.toLowerCase().includes("agroplanet"));
       const hasAutoplanet = names.some(n => n.toLowerCase().includes("autoplanet"));
+      const hasGrupoPlanet = names.some(n => /grupo\s*planet/.test(n.toLowerCase()));
       // Multi-company contracts go to Agroplanet
       const companyKey = (hasAgroplanet && hasAutoplanet) ? "Agroplanet"
         : hasAutoplanet ? "Autoplanet"
         : hasAgroplanet ? "Agroplanet"
+        : hasGrupoPlanet ? "Grupo Planet"
         : "Otra";
 
       // Todos los contratos con registro CAPEX se muestran, sin filtrar por monto
@@ -205,7 +207,7 @@ export default function CapexDashboard() {
       existing.push(entry);
       groups.set(companyKey, existing);
     });
-    const order = ["Autoplanet", "Agroplanet", "Otra"];
+    const order = ["Autoplanet", "Agroplanet", "Grupo Planet", "Otra"];
     return order
       .filter(k => groups.has(k))
       .map(k => ({ company: k, contracts: groups.get(k)! }));

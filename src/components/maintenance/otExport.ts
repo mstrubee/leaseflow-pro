@@ -4,8 +4,8 @@ import * as XLSX from "xlsx";
 import { MaintenanceForm } from "./types";
 import { supabase } from "@/integrations/supabase/client";
 import logosHeader from "@/assets/logos-header.png";
-import logoAutoplanet from "@/assets/logo-autoplanet.png";
-import logoAgroplanet from "@/assets/logo-agroplanet.png";
+import { getLogoUrls } from "@/hooks/useAppLogos";
+import { companyKeyFromNames, logoUrlForKey } from "@/lib/companyLogo";
 
 interface OTData {
   empresa: string;
@@ -89,11 +89,11 @@ async function getOTData(form: MaintenanceForm, contractCompanyMap?: Record<stri
   };
 }
 
-function getCompanyLogo(empresa: string): string | null {
-  const lower = empresa.toLowerCase();
-  if (lower.includes("autoplanet")) return logoAutoplanet;
-  if (lower.includes("agroplanet")) return logoAgroplanet;
-  return null;
+async function getCompanyLogo(empresa: string): Promise<string | null> {
+  const key = companyKeyFromNames([empresa]);
+  if (!key) return null;
+  const logos = await getLogoUrls();
+  return logoUrlForKey(logos, key);
 }
 
 export async function exportOTPDF(form: MaintenanceForm, contractCompanyMap?: Record<string, string[]>) {
@@ -119,7 +119,7 @@ export async function exportOTPDF(form: MaintenanceForm, contractCompanyMap?: Re
   doc.setTextColor(0, 0, 0);
 
   // Company logo next to empresa
-  const companyLogo = getCompanyLogo(data.empresa);
+  const companyLogo = await getCompanyLogo(data.empresa);
 
   // Data table
   const rows: [string, string][] = [
