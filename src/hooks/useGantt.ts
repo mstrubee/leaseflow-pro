@@ -415,57 +415,56 @@ export function useGantt(contractId: string) {
     }
   };
 
-  // Helper function to propagate date changes to dependent tasks.
-  // Returns a map of taskId -> partial updates so caller can patch local state without a full reload.
-  const propagateDateChanges = async (
+  // Computes, IN MEMORY, the date changes to cascade to all dependent tasks.
+  // Uses the dependencies already attached to each in-memory task (t.dependencies),
+  // so no DB round-trips are needed — the cascade is instant.
+  // Returns a map of taskId -> partial updates.
+  const computeDateCascade = (
+    allTasks: GanttTask[],
     taskId: string,
     newStartDate: string,
     newEndDate: string,
-    processedTasks: Set<string> = new Set(),
-    accumulator: Map<string, Partial<GanttTask>> = new Map()
-  ): Promise<Map<string, Partial<GanttTask>>> => {
-    if (processedTasks.has(taskId)) return accumulator;
-    processedTasks.add(taskId);
+  ): Map<string, Partial<GanttTask>> => {
+    const result = new Map<string, Partial<GanttTask>>();
+    const taskById = new Map(allTasks.map((t) => [t.id, t]));
 
-    const { data: dependencies } = await supabase
-      .from("gantt_task_dependencies")
-      .select("task_id, dep_type, lag_days")
-      .eq("depends_on_task_id", taskId);
-
-    if (!dependencies || dependencies.length === 0) return accumulator;
-
-    for (const dep of dependencies) {
-      const { data: dependentTask } = await supabase
-        .from("gantt_tasks")
-        .select("*")
-        .eq("id", dep.task_id)
-        .single();
-
-      if (!dependentTask) continue;
-
-      const anchor = (dep as any).dep_type === "start" ? newStartDate : newEndDate;
-      const anchorDate = parseISO(anchor);
-      const lag = (dep as any).lag_days ?? 0;
-      // base offset: end-anchor → next day; start-anchor → same day
-      const baseOffset = (dep as any).dep_type === "start" ? 0 : 1;
-      const newDependentStart = addDays(anchorDate, baseOffset + lag);
-
-      const duration = dependentTask.duration_days || 1;
-      const newDependentEnd = addDays(newDependentStart, duration - 1);
-      const newStartStr = format(newDependentStart, "yyyy-MM-dd");
-      const newEndStr = format(newDependentEnd, "yyyy-MM-dd");
-
-      await supabase
-        .from("gantt_tasks")
-        .update({ start_date: newStartStr, end_date: newEndStr })
-        .eq("id", dep.task_id);
-
-      accumulator.set(dep.task_id, { start_date: newStartStr, end_date: newEndStr });
-
-      await propagateDateChanges(dep.task_id, newStartStr, newEndStr, processedTasks, accumulator);
+    // Reverse adjacency: predecessorId -> [{ task_id, dep_type, lag_days }]
+    const successorsOf = new Map<string, { task_id: string; dep_type: "start" | "end"; lag_days: number }[]>();
+    for (const t of allTasks) {
+      for (const dep of t.dependencies || []) {
+        const arr = successorsOf.get(dep.depends_on_task_id) || [];
+        arr.push({ task_id: t.id, dep_type: dep.dep_type, lag_days: dep.lag_days ?? 0 });
+        successorsOf.set(dep.depends_on_task_id, arr);
+      }
     }
 
-    return accumulator;
+    const processed = new Set<string>();
+    const queue: { id: string; start: string; end: string }[] = [
+      { id: taskId, start: newStartDate, end: newEndDate },
+    ];
+    while (queue.length > 0) {
+      const { id, start, end } = queue.shift()!;
+      if (processed.has(id)) continue;
+      processed.add(id);
+
+      for (const s of successorsOf.get(id) || []) {
+        const dependent = taskById.get(s.task_id);
+        if (!dependent) continue;
+        const anchor = s.dep_type === "start" ? start : end;
+        const anchorDate = parseISO(anchor);
+        // base offset: end-anchor → next day; start-anchor → same day
+        const baseOffset = s.dep_type === "start" ? 0 : 1;
+        const newDependentStart = addDays(anchorDate, baseOffset + (s.lag_days ?? 0));
+        const duration = dependent.duration_days || 1;
+        const newDependentEnd = addDays(newDependentStart, duration - 1);
+        const newStartStr = format(newDependentStart, "yyyy-MM-dd");
+        const newEndStr = format(newDependentEnd, "yyyy-MM-dd");
+        result.set(s.task_id, { start_date: newStartStr, end_date: newEndStr });
+        queue.push({ id: s.task_id, start: newStartStr, end: newEndStr });
+      }
+    }
+
+    return result;
   };
 
   const updateTask = async (
@@ -473,16 +472,36 @@ export function useGantt(contractId: string) {
     updates: Partial<GanttTask>,
     options?: { skipPropagation?: boolean; breakDependencies?: boolean }
   ) => {
+    // 1) Compute the dependent cascade synchronously from in-memory state (instant).
+    let cascade = new Map<string, Partial<GanttTask>>();
+    if ((updates.end_date || updates.start_date) && !options?.skipPropagation) {
+      const current = tasks.find((t) => t.id === taskId);
+      const startStr = updates.start_date || current?.start_date || updates.end_date!;
+      const endStr = updates.end_date || current?.end_date || updates.start_date!;
+      cascade = computeDateCascade(tasks, taskId, startStr, endStr);
+    }
+
+    // 2) Optimistic local update FIRST — edited task + all dependents at once.
+    //    The UI reflects the change immediately; DB writes happen afterwards.
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id === taskId) {
+          return { ...t, ...updates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
+        }
+        if (cascade.has(t.id)) return { ...t, ...cascade.get(t.id)! };
+        return t;
+      })
+    );
+
+    // 3) Persist in the background (the edited task + dependents in parallel).
     setSaving(true);
     try {
       const { error } = await supabase
         .from("gantt_tasks")
         .update(updates as any)
         .eq("id", taskId);
-
       if (error) throw error;
 
-      // If user chose to break dependencies, remove this task's incoming dependencies
       if (options?.breakDependencies) {
         await supabase
           .from("gantt_task_dependencies")
@@ -490,30 +509,14 @@ export function useGantt(contractId: string) {
           .eq("task_id", taskId);
       }
 
-      // Optimistic local update — avoids full reload that would collapse rows / lose UI state
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                ...updates,
-                ...(options?.breakDependencies ? { dependencies: [] } : {}),
-              }
-            : t
-        )
-      );
-
-      // If dates were updated and propagation not skipped, propagate to dependent tasks
-      if ((updates.end_date || updates.start_date) && !options?.skipPropagation) {
-        const current = tasks.find((t) => t.id === taskId);
-        const startStr = updates.start_date || current?.start_date || updates.end_date!;
-        const endStr = updates.end_date || current?.end_date || updates.start_date!;
-        const propagated = await propagateDateChanges(taskId, startStr, endStr);
-        if (propagated.size > 0) {
-          setTasks((prev) =>
-            prev.map((t) => (propagated.has(t.id) ? { ...t, ...propagated.get(t.id)! } : t))
-          );
-        }
+      if (cascade.size > 0) {
+        const results = await Promise.all(
+          Array.from(cascade.entries()).map(([id, u]) =>
+            supabase.from("gantt_tasks").update(u as any).eq("id", id)
+          )
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
       }
     } catch (error: any) {
       toast({
