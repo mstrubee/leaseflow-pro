@@ -258,6 +258,8 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                   onSetFormMinutes={rb.setFormMinutes}
                   onSetStopMinutes={rb.setStopMinutes}
                   onAddErrand={rb.addErrandStop}
+                  onAddPurchaseStop={rb.addPurchaseStop}
+                  workingPoint={rb.workingPoint}
                   onSetDayStartTimeForDay={rb.setDayStartTimeForDay}
                   onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); onExitEdit?.(); return id; }}
                   onReset={() => { rb.resetRoute(); onExitEdit?.(); }}

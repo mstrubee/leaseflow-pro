@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart } from "lucide-react";
+import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store } from "lucide-react";
 import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { findNearestHardwareStore, type HardwareStore } from "@/lib/findHardwareStore";
 
 interface Props {
   origin: MaintenanceLocation | null;
@@ -37,6 +39,8 @@ interface Props {
   onSetFormMinutes: (locationId: string, formId: string, minutes: number) => void;
   onSetStopMinutes: (stopId: string, minutes: number) => void;
   onAddErrand: (label: string, minutes: number) => void;
+  onAddPurchaseStop: (store: { name: string; lat: number; lng: number }, minutes: number) => void;
+  workingPoint: { lat: number; lng: number } | null;
   onSetDayStartTimeForDay: (dayIndex: number, time: string) => void;
   onSave: () => void;
   onReset: () => void;
@@ -169,11 +173,39 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation,
+  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onAddPurchaseStop, workingPoint, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Set<number>>(new Set());
+
+  // Diálogo de compras (ferretería sugerida por OSM)
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [foundStore, setFoundStore] = useState<HardwareStore | null>(null);
+  const [purchaseMinutes, setPurchaseMinutes] = useState(30);
+
+  const searchStore = async () => {
+    if (!workingPoint) { setFoundStore(null); return; }
+    setSearching(true);
+    setFoundStore(null);
+    try {
+      const store = await findNearestHardwareStore(workingPoint.lat, workingPoint.lng);
+      setFoundStore(store);
+      if (!store) toast.message("No se encontró una ferretería cercana", { description: "Puedes agregar una compra sin lugar." });
+    } catch {
+      toast.error("No se pudo buscar la ferretería");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const openPurchaseDialog = () => {
+    setPurchaseMinutes(30);
+    setFoundStore(null);
+    setPurchaseOpen(true);
+    searchStore();
+  };
 
   const toggleDayCollapse = (day: number) =>
     setCollapsedDays((prev) => {
@@ -198,8 +230,8 @@ export function RoutePanel({
         <MapPin className="w-4 h-4 text-blue-500" />
         <span className="text-sm font-semibold text-gray-700">Ruta armada</span>
         <button
-          onClick={() => onAddErrand("Compras", 30)}
-          title="Agregar una parada de compras (bloque de tiempo, sin local)"
+          onClick={openPurchaseDialog}
+          title="Buscar la ferretería más cercana (Sodimac, Easy, etc.) y agregarla como parada de compras"
           className="ml-auto flex items-center gap-1 px-2 h-6 rounded text-[11px] font-medium border bg-white border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-50 transition-colors"
         >
           <ShoppingCart className="w-3.5 h-3.5" /> Compras
@@ -360,6 +392,84 @@ export function RoutePanel({
           </Button>
         </div>
       </div>
+
+      {/* Diálogo: ferretería de compras sugerida (OSM) */}
+      <Dialog open={purchaseOpen} onOpenChange={setPurchaseOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Store className="w-4 h-4 text-fuchsia-600" /> Parada de compras
+            </DialogTitle>
+            <DialogDescription>
+              Ferretería más cercana al punto donde estás trabajando (según OpenStreetMap).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            {!workingPoint && (
+              <p className="text-sm text-amber-600">
+                Aún no hay un punto de referencia. Agrega un punto de partida o una parada para sugerir la ferretería más cercana.
+              </p>
+            )}
+
+            {workingPoint && searching && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Buscando ferretería cercana…
+              </div>
+            )}
+
+            {workingPoint && !searching && foundStore && (
+              <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-fuchsia-800">
+                  <Store className="w-4 h-4" /> {foundStore.name}
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  A {foundStore.distanceKm.toFixed(1)} km del punto de trabajo
+                </p>
+              </div>
+            )}
+
+            {workingPoint && !searching && !foundStore && (
+              <div className="text-sm text-gray-500">
+                No se encontró una ferretería cercana.{" "}
+                <button onClick={searchStore} className="text-fuchsia-700 underline">Reintentar</button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-gray-400" />
+              <Label className="text-xs text-gray-600">Tiempo de compra (min)</Label>
+              <MinutesInput
+                value={purchaseMinutes}
+                onChange={(m) => setPurchaseMinutes(m)}
+                className="w-20 border border-gray-200 rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-fuchsia-400"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { onAddErrand("Compras", purchaseMinutes); setPurchaseOpen(false); toast.success("Parada de compras agregada"); }}
+            >
+              Compra sin lugar
+            </Button>
+            <Button
+              size="sm"
+              disabled={!foundStore}
+              onClick={() => {
+                if (!foundStore) return;
+                onAddPurchaseStop({ name: foundStore.name, lat: foundStore.lat, lng: foundStore.lng }, purchaseMinutes);
+                setPurchaseOpen(false);
+                toast.success(`Agregada: ${foundStore.name}`);
+              }}
+            >
+              <ShoppingCart className="w-4 h-4 mr-1" /> Agregar ferretería
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

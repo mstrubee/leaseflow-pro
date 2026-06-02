@@ -894,6 +894,50 @@ export function useRouteBuilder(editTourId?: string | null) {
     ));
   }, [stops, origin, urbanSpeed, highwaySpeed]);
 
+  // Parada de compras CON lugar (ferretería sugerida por OSM): tiene coordenadas,
+  // entra al mapa y suma traslado real desde la parada previa.
+  const addPurchaseStop = useCallback(async (store: { name: string; lat: number; lng: number }, minutes: number) => {
+    const id = crypto.randomUUID();
+    const loc: MaintenanceLocation = {
+      id, poi_id: "", name: store.name, folder: "", local_code: null, local_name: null,
+      gerente_zonal: null, zona: null, centro_sap: null, lat: store.lat, lng: store.lng,
+    };
+    // Punto previo = última parada real (omitiendo compras sin coords) o el origen.
+    let prevPoint: { lat: number; lng: number } | null = origin;
+    for (let j = stops.length - 1; j >= 0; j--) {
+      if (stops[j].kind !== "shopping") { prevPoint = stops[j].location; break; }
+    }
+    let km = 0;
+    let geom: GeoJSON.LineString | null = null;
+    if (prevPoint) {
+      km = haversine(prevPoint.lat, prevPoint.lng, loc.lat, loc.lng);
+      try {
+        const osrm = await getOsrmRoute([
+          { lat: prevPoint.lat, lng: prevPoint.lng },
+          { lat: loc.lat, lng: loc.lng },
+        ]);
+        if (osrm) { km = osrm.distance / 1000; geom = osrm.geometry; }
+      } catch { /* keep haversine */ }
+    }
+    const travelMinutes = prevPoint ? travelMinutesFromKm(km, urbanSpeed, highwaySpeed) : 0;
+    setStops((prev) => [...prev, {
+      locationId: id, location: loc, formIds: [], allForms: [], formMinutes: {},
+      travelDistanceKm: km, travelMinutes, routeGeometry: geom,
+      kind: "errand", label: store.name, stopMinutes: minutes,
+    }]);
+  }, [stops, origin, urbanSpeed, highwaySpeed]);
+
+  // Punto de trabajo actual = última parada real o el origen (para sugerir ferretería)
+  const workingPoint = useMemo<{ lat: number; lng: number } | null>(() => {
+    for (let j = stops.length - 1; j >= 0; j--) {
+      const s = stops[j];
+      if (s.kind !== "shopping" && (s.location.lat || s.location.lng)) {
+        return { lat: s.location.lat, lng: s.location.lng };
+      }
+    }
+    return origin ? { lat: origin.lat, lng: origin.lng } : null;
+  }, [stops, origin]);
+
   // Parada de compras: bloque de tiempo SIN lugar (no entra al mapa, sin traslado).
   const addErrandStop = useCallback((label: string, minutes: number) => {
     const id = crypto.randomUUID();
@@ -1047,12 +1091,19 @@ export function useRouteBuilder(editTourId?: string | null) {
       const dayStops = (stopsByRoute.get(r.id) || []).sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
       dayStops.forEach((s, idxInDay) => {
         const kind = (s.stop_kind ?? "location") as RouteStop["kind"];
-        const isShopping = kind === "shopping";
         const locId: string | null = s.location_id;
-        const loc: MaintenanceLocation | undefined = isShopping || !locId
-          ? { id: locId ?? crypto.randomUUID(), poi_id: "", name: s.stop_label ?? "Parada", folder: "",
-              local_code: null, local_name: null, gerente_zonal: null, zona: null, centro_sap: null, lat: 0, lng: 0 }
-          : locById.get(locId);
+        let loc: MaintenanceLocation | undefined;
+        if (locId && locById.has(locId)) {
+          loc = locById.get(locId);
+        } else {
+          // Parada ad-hoc (ferretería sugerida / compras): usar coords guardadas
+          const lat = Number(s.stop_lat ?? 0);
+          const lng = Number(s.stop_lng ?? 0);
+          loc = {
+            id: locId ?? crypto.randomUUID(), poi_id: "", name: s.stop_label ?? "Parada", folder: "",
+            local_code: null, local_name: null, gerente_zonal: null, zona: null, centro_sap: null, lat, lng,
+          };
+        }
         if (!loc) return; // local eliminado: omitir
 
         const stopForms = formsByStop.get(s.id) || [];
@@ -1129,6 +1180,9 @@ export function useRouteBuilder(editTourId?: string | null) {
           .in("id", editingRouteIds);
       }
 
+      // Ids de locales de mantención reales (para distinguir paradas ad-hoc)
+      const realLocIds = new Set(locations.map((l) => l.id));
+
       // Agrupar los TRAMOS (parada-día) por día. Una parada partida aparece en
       // varios días con sus forms respectivos (e.formIds).
       const byDay = new Map<number, { stopIndex: number; formIds: string[] }[]>();
@@ -1184,7 +1238,13 @@ export function useRouteBuilder(editTourId?: string | null) {
           const tramo = dayTramos[order];
           const stop = stops[tramo.stopIndex];
           const isShopping = stop.kind === "shopping";
-          const locId = isShopping ? null : stop.locationId; // compras = sin local
+          // location_id solo si es un local de mantención real; las ferreterías
+          // sugeridas (ad-hoc) y las compras genéricas no tienen location_id, pero
+          // sí guardan sus coordenadas en stop_lat/stop_lng.
+          const hasRealLoc = !isShopping && realLocIds.has(stop.locationId);
+          const locId = hasRealLoc ? stop.locationId : null;
+          const adHocLat = !hasRealLoc && (stop.location.lat || stop.location.lng) ? stop.location.lat : null;
+          const adHocLng = !hasRealLoc && (stop.location.lat || stop.location.lng) ? stop.location.lng : null;
           let stopRow: { id: string } | null = null;
           let stopErr: { message: string } | null = null;
           {
@@ -1192,9 +1252,10 @@ export function useRouteBuilder(editTourId?: string | null) {
               route_id: route.id, location_id: locId, stop_order: order + 1,
               estimated_travel_min: stop.travelMinutes,
               stop_kind: stop.kind ?? "location", stop_label: stop.label ?? null, stop_minutes: stop.stopMinutes ?? null,
+              stop_lat: adHocLat, stop_lng: adHocLng,
             } as never).select("id").single();
             stopRow = res.data; stopErr = res.error;
-            if (stopErr && /stop_kind|stop_label|stop_minutes|column|schema cache/i.test(stopErr.message)) {
+            if (stopErr && /stop_kind|stop_label|stop_minutes|stop_lat|stop_lng|column|schema cache/i.test(stopErr.message)) {
               const res2 = await supabase.from("maintenance_route_stops").insert({
                 route_id: route.id, location_id: locId, stop_order: order + 1, estimated_travel_min: stop.travelMinutes,
               } as never).select("id").single();
@@ -1229,7 +1290,7 @@ export function useRouteBuilder(editTourId?: string | null) {
       setEditingTourId(null); setEditingRouteIds([]); loadedTourRef.current = null;
       return firstRouteId;
     } finally { setSaving(false); }
-  }, [user, routeName, supplierId, scheduledDate, startTime, stops, schedule, editingRouteIds]);
+  }, [user, routeName, supplierId, scheduledDate, startTime, stops, schedule, editingRouteIds, locations]);
 
   return {
     locations, criticalities, allForms, formsByLocation,
@@ -1248,7 +1309,7 @@ export function useRouteBuilder(editTourId?: string | null) {
     highwaySpeed, setHighwaySpeed,
     saving,
     schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
-    addStop, addErrandStop, removeStop, reorderStops,
+    addStop, addErrandStop, addPurchaseStop, workingPoint, removeStop, reorderStops,
     setStopMinutes, setStopLabel,
     toggleFormInStop, addAllFormsToStop, clearFormsInStop,
     setFormMinutes, resetRoute, saveRoute,

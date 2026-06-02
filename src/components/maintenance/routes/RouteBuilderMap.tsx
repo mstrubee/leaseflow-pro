@@ -384,6 +384,31 @@ export function RouteBuilderMap({
           );
         })}
 
+        {/* Paradas ad-hoc con coords (ferreterías sugeridas) — no están en `locations` */}
+        {stops.map((stop, i) => {
+          if (stop.kind === "shopping") return null;
+          if (locations.some((l) => l.id === stop.locationId)) return null; // ya tiene marcador
+          if (!stop.location.lat && !stop.location.lng) return null;
+          const stopIndex = stops.findIndex((s) => s.locationId === stop.locationId);
+          return (
+            <Marker
+              key={`adhoc-${stop.locationId}`}
+              position={[stop.location.lat, stop.location.lng]}
+              icon={L.divIcon({
+                html: `<div style="position:relative;width:30px;height:30px">
+                  <div style="width:30px;height:30px;border-radius:50%;background:#f59e0b;border:3px solid #fff;
+                    box-shadow:0 2px 8px rgba(245,158,11,0.5);display:flex;align-items:center;justify-content:center;
+                    font-size:15px">🛒</div>
+                  <span style="position:absolute;top:-7px;right:-7px;background:#3b82f6;color:white;border-radius:50%;
+                    width:18px;height:18px;font-size:10px;font-weight:bold;display:flex;align-items:center;
+                    justify-content:center;border:2px solid white">${stopIndex + 1}</span>
+                </div>`,
+                className: "", iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -20],
+              })}
+            />
+          );
+        })}
+
         {/* Legend */}
         <div className="leaflet-bottom leaflet-left">
           <div className="leaflet-control bg-white rounded-xl shadow p-2.5 text-xs space-y-1.5 m-2 min-w-[160px]">
