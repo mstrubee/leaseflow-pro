@@ -854,9 +854,45 @@ export function useRouteBuilder(editTourId?: string | null) {
     ]);
   }, [formsByLocation, stops, origin, urbanSpeed, highwaySpeed, defaultMinutesFor]);
 
-  const removeStop = useCallback((locationId: string) => {
-    setStops((prev) => prev.filter((s) => s.locationId !== locationId));
-  }, []);
+  const removeStop = useCallback(async (locationId: string) => {
+    const idx = stops.findIndex((s) => s.locationId === locationId);
+    if (idx === -1) return;
+    const remaining = stops.filter((s) => s.locationId !== locationId);
+
+    // El tramo que SEGUÍA a la parada eliminada queda ahora en la posición idx;
+    // hay que recalcular su traslado (distancia + geometría OSRM + minutos) para
+    // que la ruta deje de pasar por el local eliminado.
+    const affected = remaining[idx];
+    if (!affected || affected.kind === "shopping") {
+      setStops(remaining);
+      return;
+    }
+
+    // Punto previo = parada real anterior (omitiendo compras sin coords) o el origen.
+    let prevPoint: { lat: number; lng: number } | null = origin;
+    for (let j = idx - 1; j >= 0; j--) {
+      if (remaining[j].kind !== "shopping") { prevPoint = remaining[j].location; break; }
+    }
+
+    let km = 0;
+    let geom: GeoJSON.LineString | null = null;
+    let minutes = 0;
+    if (prevPoint) {
+      km = haversine(prevPoint.lat, prevPoint.lng, affected.location.lat, affected.location.lng);
+      try {
+        const osrm = await getOsrmRoute([
+          { lat: prevPoint.lat, lng: prevPoint.lng },
+          { lat: affected.location.lat, lng: affected.location.lng },
+        ]);
+        if (osrm) { km = osrm.distance / 1000; geom = osrm.geometry; }
+      } catch { /* keep haversine */ }
+      minutes = travelMinutesFromKm(km, urbanSpeed, highwaySpeed);
+    }
+
+    setStops(remaining.map((s, i) =>
+      i === idx ? { ...s, travelDistanceKm: km, travelMinutes: minutes, routeGeometry: geom } : s,
+    ));
+  }, [stops, origin, urbanSpeed, highwaySpeed]);
 
   // Parada de compras: bloque de tiempo SIN lugar (no entra al mapa, sin traslado).
   const addErrandStop = useCallback((label: string, minutes: number) => {
