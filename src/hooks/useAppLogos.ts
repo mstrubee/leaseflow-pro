@@ -31,6 +31,19 @@ function isGrupoPlanet(logoKey: string, displayName?: string | null): boolean {
     || /grupo\s*planet/.test(n);
 }
 
+// Fallback NEUTRO para Grupo Planet: NO usar el logo de Agroplanet (mostraría una
+// marca equivocada en Garage/Egakat mientras carga o si la carga falla). Un PNG
+// transparente 1x1 evita el "flash" del logo incorrecto.
+const NEUTRAL_FALLBACK =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+const DEFAULT_LOGOS: LogoUrls = {
+  agroplanet: logoAgroplanetFallback,
+  autoplanet: logoAutoplanetFallback,
+  dashboard_header: logosHeaderFallback,
+  grupoPlanet: NEUTRAL_FALLBACK,
+};
+
 // Cache for logo URLs to avoid refetching
 let cachedLogos: LogoUrls | null = null;
 let cacheTimestamp: number = 0;
@@ -44,12 +57,9 @@ export function clearLogoCache() {
 }
 
 export function useAppLogos() {
-  const [logos, setLogos] = useState<LogoUrls>({
-    agroplanet: logoAgroplanetFallback,
-    autoplanet: logoAutoplanetFallback,
-    dashboard_header: logosHeaderFallback,
-    grupoPlanet: logoAgroplanetFallback,
-  });
+  // Inicializar desde la caché tibia si existe: evita un render inicial con los
+  // logos por defecto (que mostraba Agroplanet en Garage/Egakat).
+  const [logos, setLogos] = useState<LogoUrls>(() => cachedLogos ?? DEFAULT_LOGOS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -80,7 +90,7 @@ export function useAppLogos() {
           agroplanet: logoAgroplanetFallback,
           autoplanet: logoAutoplanetFallback,
           dashboard_header: logosHeaderFallback,
-          grupoPlanet: logoAgroplanetFallback,
+          grupoPlanet: NEUTRAL_FALLBACK,
         };
 
         for (const logo of data || []) {
@@ -146,7 +156,7 @@ export async function getLogoUrls(): Promise<LogoUrls> {
     agroplanet: logoAgroplanetFallback,
     autoplanet: logoAutoplanetFallback,
     dashboard_header: logosHeaderFallback,
-    grupoPlanet: logoAgroplanetFallback,
+    grupoPlanet: NEUTRAL_FALLBACK,
   };
 
   for (const logo of data || []) {
