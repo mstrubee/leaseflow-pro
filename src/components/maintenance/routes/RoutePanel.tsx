@@ -40,6 +40,7 @@ interface Props {
   onSetDayStartTimeForDay: (dayIndex: number, time: string) => void;
   onSave: () => void;
   onReset: () => void;
+  isEditing?: boolean;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
 }
 
@@ -168,7 +169,7 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onSetDayStartTimeForDay, onSave, onReset, onSelectLocation,
+  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
@@ -353,9 +354,9 @@ export function RoutePanel({
             <RotateCcw className="w-3 h-3 mr-1" />Limpiar
           </Button>
           <Button size="sm" className="flex-1 text-xs h-8"
-            onClick={async () => { try { await onSave(); toast.success("Ruta guardada"); } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); } }}
+            onClick={async () => { try { await onSave(); toast.success(isEditing ? "Cambios guardados" : "Ruta guardada"); } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); } }}
             disabled={saving || stops.length === 0 || !routeName.trim()}>
-            <Save className="w-3 h-3 mr-1" />{saving ? "Guardando…" : "Guardar ruta"}
+            <Save className="w-3 h-3 mr-1" />{saving ? "Guardando…" : isEditing ? "Guardar cambios" : "Guardar ruta"}
           </Button>
         </div>
       </div>

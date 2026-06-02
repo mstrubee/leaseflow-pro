@@ -48,8 +48,13 @@ function CollapsedTab({ label, icon, onClick }: { label: string; icon: React.Rea
   );
 }
 
-export function RouteBuilderLayout() {
-  const rb = useRouteBuilder();
+interface RouteBuilderLayoutProps {
+  editTourId?: string | null;
+  onExitEdit?: () => void;
+}
+
+export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuilderLayoutProps = {}) {
+  const rb = useRouteBuilder(editTourId);
   const [search, setSearch] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<MaintenanceLocation | null>(null);
 
@@ -89,7 +94,21 @@ export function RouteBuilderLayout() {
       {/* Top bar */}
       <div className="flex items-center gap-3 shrink-0">
         <Navigation className="w-5 h-5 text-blue-500 shrink-0" />
-        <h2 className="text-base font-semibold text-gray-800">Armar Ruta de Mantención</h2>
+        <h2 className="text-base font-semibold text-gray-800">
+          {rb.isEditing ? "Editar Ruta de Mantención" : "Armar Ruta de Mantención"}
+        </h2>
+        {rb.isEditing && (
+          <div className="flex items-center gap-2 px-2 py-1 rounded bg-amber-50 border border-amber-200">
+            <span className="text-xs text-amber-700 font-medium">Editando ruta existente</span>
+            <button
+              onClick={() => { rb.resetRoute(); onExitEdit?.(); }}
+              className="text-xs text-amber-700 underline hover:text-amber-800"
+              title="Descartar la edición y empezar una ruta nueva"
+            >
+              Nueva ruta
+            </button>
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <Select
             value={rb.origin?.id ?? "none"}
@@ -240,8 +259,9 @@ export function RouteBuilderLayout() {
                   onSetStopMinutes={rb.setStopMinutes}
                   onAddErrand={rb.addErrandStop}
                   onSetDayStartTimeForDay={rb.setDayStartTimeForDay}
-                  onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); return id; }}
-                  onReset={rb.resetRoute}
+                  onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); onExitEdit?.(); return id; }}
+                  onReset={() => { rb.resetRoute(); onExitEdit?.(); }}
+                  isEditing={rb.isEditing}
                   onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
                 />
               </div>

@@ -6,7 +6,7 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { ChevronLeft, ChevronRight, CalendarDays, MapPin, Clock, CheckCircle2, AlertCircle, Download, FileDown, X, Loader2, Trash2, RotateCcw, Trash } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, MapPin, Clock, CheckCircle2, AlertCircle, Download, FileDown, X, Loader2, Trash2, RotateCcw, Trash, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -60,7 +60,12 @@ const STATUS_LABEL: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export function RouteCalendar() {
+interface RouteCalendarProps {
+  // Permite editar una ruta/gira: recibe el id de la ruta clickeada.
+  onEditRoute?: (routeId: string) => void;
+}
+
+export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
   const { isAdmin, isOperador, user } = useAuth();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -662,6 +667,16 @@ export function RouteCalendar() {
                       }}
                     >
                       {isOperador ? "Ejecutar ruta" : "Ver ejecución"}
+                    </Button>
+                  )}
+                  {onEditRoute && !isOperador && (
+                    <Button
+                      variant="outline"
+                      className="w-full gap-2"
+                      onClick={() => { onEditRoute(selected.id); setSelected(null); }}
+                    >
+                      <Pencil className="w-4 h-4" />
+                      Editar ruta
                     </Button>
                   )}
                   <Button

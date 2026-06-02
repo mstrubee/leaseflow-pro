@@ -320,7 +320,7 @@ export function calculateSchedule(
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
-export function useRouteBuilder() {
+export function useRouteBuilder(editTourId?: string | null) {
   const { user } = useAuth();
 
   const [locations, setLocations]         = useState<MaintenanceLocation[]>([]);
@@ -352,6 +352,12 @@ export function useRouteBuilder() {
   // Velocidades editables por el usuario (km/h) para estimar el traslado
   const [urbanSpeed, setUrbanSpeed]     = useState(20);
   const [highwaySpeed, setHighwaySpeed] = useState(100);
+  const speedsLoadedRef = useRef(false);
+
+  // Edición de una ruta/gira existente
+  const [editingTourId, setEditingTourId]     = useState<string | null>(null);
+  const [editingRouteIds, setEditingRouteIds] = useState<string[]>([]);
+  const loadedTourRef = useRef<string | null>(null);
 
   // Filtros / orden de la lista de locales (afectan también el mapa)
   const [sortBy, setSortBy] = useState<"priority" | "distance" | "forms">("priority");
@@ -374,6 +380,39 @@ export function useRouteBuilder() {
       setLoading(false);
     });
   }, [user]);
+
+  // Cargar la última selección GLOBAL de velocidades (de cualquier usuario)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from("app_settings").select("value").eq("key", "route_travel_speeds").maybeSingle();
+        const v = data?.value;
+        if (v && typeof v === "object") {
+          if (Number.isFinite(Number(v.urban)))   setUrbanSpeed(Number(v.urban));
+          if (Number.isFinite(Number(v.highway))) setHighwaySpeed(Number(v.highway));
+        }
+      } catch { /* tabla ausente → usar defaults */ }
+      finally { speedsLoadedRef.current = true; }
+    })();
+  }, []);
+
+  // Persistir (global) la última selección de velocidades, con debounce.
+  useEffect(() => {
+    if (!speedsLoadedRef.current || !user) return;
+    const t = setTimeout(() => {
+      (supabase as any).from("app_settings").upsert(
+        {
+          key: "route_travel_speeds",
+          value: { urban: urbanSpeed, highway: highwaySpeed },
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        },
+        { onConflict: "key" },
+      ).then(() => {}, () => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [urbanSpeed, highwaySpeed, user]);
 
   // ---------------------------------------------------------------------------
   // Empresa por contrato (contract_id → agroplanet/autoplanet)
@@ -914,8 +953,126 @@ export function useRouteBuilder() {
     setOrigin(null); setStops([]);
     setRouteNameState(""); setRouteNameDirty(false); // vuelve a autogenerarse
     setScheduledDate(""); setStartTime("09:00"); setDayStartTimes({});
+    setEditingTourId(null); setEditingRouteIds([]); loadedTourRef.current = null;
     // supplierId NO se resetea: mantiene el último usado como default
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Cargar una ruta/gira existente en el armador para editarla
+  // ---------------------------------------------------------------------------
+  const loadTour = useCallback(async (routeOrTourId: string) => {
+    // 1) Tomar la ruta clickeada para conocer su tour_id (si es una gira)
+    const { data: clicked } = await (supabase as any)
+      .from("maintenance_routes").select("*").eq("id", routeOrTourId).maybeSingle();
+    const tid: string | null = clicked?.tour_id ?? null;
+
+    let routeRows: any[] = [];
+    if (tid) {
+      const res = await (supabase as any).from("maintenance_routes")
+        .select("*").eq("tour_id", tid).is("deleted_at", null);
+      routeRows = (res.data as any[]) ?? [];
+    }
+    if (routeRows.length === 0) routeRows = clicked ? [clicked] : [];
+    if (routeRows.length === 0) return;
+
+    routeRows.sort((a, b) =>
+      (a.day_index ?? 0) - (b.day_index ?? 0) ||
+      String(a.scheduled_date).localeCompare(String(b.scheduled_date)),
+    );
+
+    const routeIds = routeRows.map((r) => r.id);
+    const stopsRes = await (supabase as any).from("maintenance_route_stops")
+      .select("*").in("route_id", routeIds);
+    const stopRows = (stopsRes.data as any[]) ?? [];
+    const stopIds = stopRows.map((s) => s.id);
+    const formsRes = stopIds.length
+      ? await (supabase as any).from("maintenance_route_forms").select("*").in("route_stop_id", stopIds)
+      : { data: [] };
+    const formRows = (formsRes.data as any[]) ?? [];
+
+    const formsByStop = new Map<string, any[]>();
+    for (const f of formRows) {
+      const a = formsByStop.get(f.route_stop_id) || []; a.push(f); formsByStop.set(f.route_stop_id, a);
+    }
+    const stopsByRoute = new Map<string, any[]>();
+    for (const s of stopRows) {
+      const a = stopsByRoute.get(s.route_id) || []; a.push(s); stopsByRoute.set(s.route_id, a);
+    }
+
+    const allFormById = new Map(allForms.map((f) => [f.id, f]));
+    const locById = new Map(locations.map((l) => [l.id, l]));
+
+    const newStops: RouteStop[] = [];
+    const newDayStartTimes: Record<number, string> = {};
+
+    routeRows.forEach((r, dayIdx) => {
+      const di = r.day_index ?? dayIdx;
+      if (r.start_time) newDayStartTimes[di] = String(r.start_time).slice(0, 5);
+      const dayStops = (stopsByRoute.get(r.id) || []).sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0));
+      dayStops.forEach((s, idxInDay) => {
+        const kind = (s.stop_kind ?? "location") as RouteStop["kind"];
+        const isShopping = kind === "shopping";
+        const locId: string | null = s.location_id;
+        const loc: MaintenanceLocation | undefined = isShopping || !locId
+          ? { id: locId ?? crypto.randomUUID(), poi_id: "", name: s.stop_label ?? "Parada", folder: "",
+              local_code: null, local_name: null, gerente_zonal: null, zona: null, centro_sap: null, lat: 0, lng: 0 }
+          : locById.get(locId);
+        if (!loc) return; // local eliminado: omitir
+
+        const stopForms = formsByStop.get(s.id) || [];
+        const formIds = stopForms.map((f) => f.maintenance_form_id).filter((fid: string) => allFormById.has(fid));
+        const formMinutes: Record<string, number> = {};
+        for (const f of stopForms) formMinutes[f.maintenance_form_id] = f.estimated_minutes ?? DEFAULT_FORM_MINUTES;
+        // allForms del local = todos los del local (para poder añadir/quitar al editar)
+        const allFs = formsByLocation.get(loc.id) ?? formIds.map((fid) => allFormById.get(fid)!).filter(Boolean);
+
+        newStops.push({
+          locationId: loc.id, location: loc,
+          formIds, allForms: allFs, formMinutes,
+          travelDistanceKm: 0, travelMinutes: s.estimated_travel_min ?? 0, routeGeometry: null,
+          dayBreak: di > 0 && idxInDay === 0 ? true : undefined,
+          kind, label: s.stop_label ?? undefined, stopMinutes: s.stop_minutes ?? undefined,
+        });
+      });
+    });
+
+    // Recalcular distancias/tiempos por tramo (haversine), para que el efecto de
+    // velocidades no los ponga en 0 y el cronograma sea correcto.
+    let prev: { lat: number; lng: number } | null = null;
+    for (const st of newStops) {
+      if (st.kind === "shopping") { st.travelDistanceKm = 0; st.travelMinutes = 0; continue; }
+      if (prev) {
+        const km = haversine(prev.lat, prev.lng, st.location.lat, st.location.lng);
+        st.travelDistanceKm = km;
+        st.travelMinutes = travelMinutesFromKm(km, urbanSpeed, highwaySpeed);
+      } else {
+        st.travelDistanceKm = 0; st.travelMinutes = 0;
+      }
+      prev = { lat: st.location.lat, lng: st.location.lng };
+    }
+
+    // Hidratar estado del armador
+    setOrigin(null);
+    setStops(newStops);
+    setDayStartTimes(newDayStartTimes);
+    setSupplierId(routeRows[0].supplier_id ?? null);
+    setScheduledDate(String(routeRows[0].scheduled_date));
+    if (newDayStartTimes[0]) setStartTime(newDayStartTimes[0]);
+    const baseName = String(routeRows[0].name ?? "").replace(/\s—\sDía\s.*$/u, "").trim();
+    setRouteNameState(baseName);
+    setRouteNameDirty(true); // conservar el nombre cargado
+    setEditingTourId(tid ?? routeOrTourId);
+    setEditingRouteIds(routeIds);
+  }, [allForms, locations, formsByLocation, urbanSpeed, highwaySpeed]);
+
+  // Disparar la carga cuando el contenedor pide editar una ruta/gira
+  useEffect(() => {
+    if (!editTourId || loading) return;
+    if (locations.length === 0 || allForms.length === 0) return;
+    if (loadedTourRef.current === editTourId) return;
+    loadedTourRef.current = editTourId;
+    loadTour(editTourId);
+  }, [editTourId, loading, locations, allForms, loadTour]);
 
   // ---------------------------------------------------------------------------
   // Save
@@ -928,6 +1085,14 @@ export function useRouteBuilder() {
 
     setSaving(true);
     try {
+      // Si estamos EDITANDO una ruta/gira: enviar a la papelera las rutas previas
+      // (recuperables) antes de volver a insertar la versión actualizada.
+      if (editingRouteIds.length > 0) {
+        await (supabase as any).from("maintenance_routes")
+          .update({ deleted_at: new Date().toISOString() })
+          .in("id", editingRouteIds);
+      }
+
       // Agrupar los TRAMOS (parada-día) por día. Una parada partida aparece en
       // varios días con sus forms respectivos (e.formIds).
       const byDay = new Map<number, { stopIndex: number; formIds: string[] }[]>();
@@ -1024,9 +1189,11 @@ export function useRouteBuilder() {
       }
 
       if (supplierId) localStorage.setItem("lastRouteSupplierId", supplierId);
+      // Edición completada: limpiar estado de edición
+      setEditingTourId(null); setEditingRouteIds([]); loadedTourRef.current = null;
       return firstRouteId;
     } finally { setSaving(false); }
-  }, [user, routeName, supplierId, scheduledDate, startTime, stops, schedule]);
+  }, [user, routeName, supplierId, scheduledDate, startTime, stops, schedule, editingRouteIds]);
 
   return {
     locations, criticalities, allForms, formsByLocation,
@@ -1052,5 +1219,6 @@ export function useRouteBuilder() {
     toggleDayBreak, setPriorityForm,
     mergeForms, unmergeForms,
     suggestMinutes, timeStatsByType, estimateMinutesAI,
+    editingTourId, isEditing: editingRouteIds.length > 0, loadTour,
   };
 }

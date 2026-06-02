@@ -14,6 +14,8 @@ export default function MaintenanceRoutesPage() {
   const navigate = useNavigate();
   // Operadores de terreno van directo al calendario
   const [tab, setTab] = useState<Tab>(isOperador ? "calendar" : "builder");
+  // Ruta que se está editando (id de ruta o de gira) — null = armar una nueva
+  const [editRouteId, setEditRouteId] = useState<string | null>(null);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; hide?: boolean }[] = [
     { id: "builder",  label: "Armar Ruta",    icon: <Navigation className="w-4 h-4" />,   hide: isOperador },
@@ -53,8 +55,17 @@ export default function MaintenanceRoutesPage() {
 
       {/* Content */}
       <div className="flex-1 min-h-0 p-4">
-        {tab === "builder"  && <RouteBuilderLayout />}
-        {tab === "calendar" && <RouteCalendar />}
+        {tab === "builder"  && (
+          <RouteBuilderLayout
+            editTourId={editRouteId}
+            onExitEdit={() => setEditRouteId(null)}
+          />
+        )}
+        {tab === "calendar" && (
+          <RouteCalendar
+            onEditRoute={isOperador ? undefined : (routeId) => { setEditRouteId(routeId); setTab("builder"); }}
+          />
+        )}
         {tab === "stats"    && <RouteComplianceStats />}
       </div>
     </div>
