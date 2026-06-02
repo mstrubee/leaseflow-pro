@@ -2,6 +2,8 @@
 // (Overpass API). Reconoce cadenas comunes en Chile (Sodimac, Easy, Construmart,
 // Imperial, MTS, Homecenter…) y cualquier shop=doityourself/hardware/trade.
 
+import { supabase } from "@/integrations/supabase/client";
+
 export interface HardwareStore {
   name: string;
   lat: number;
@@ -62,6 +64,28 @@ const MAX_RESULTS = 12;
 // Devuelve TODAS las ferreterías cercanas ordenadas por distancia (la más cercana
 // primero). Amplía el radio si no encuentra nada. Lista vacía si no hay resultados.
 export async function findNearbyHardwareStores(
+  lat: number,
+  lng: number,
+): Promise<HardwareStore[]> {
+  // 1) Preferir la edge function (servidor): evita CORS / mod_security / rate-limits
+  //    del navegador. Si no está disponible o falla, se usa el fetch directo abajo.
+  try {
+    const { data, error } = await supabase.functions.invoke("nearby-hardware-stores", {
+      body: { lat, lng },
+    });
+    if (!error && data && Array.isArray((data as any).stores)) {
+      const stores = (data as any).stores as HardwareStore[];
+      if (stores.length > 0) return stores.slice(0, MAX_RESULTS);
+      // La función respondió OK pero vacío: aún así intentamos el fetch directo
+      // (por si el navegador sí tiene acceso) antes de rendirnos.
+    }
+  } catch { /* edge function no disponible → fetch directo */ }
+
+  return await findNearbyHardwareStoresDirect(lat, lng);
+}
+
+// Búsqueda directa desde el navegador (fallback).
+async function findNearbyHardwareStoresDirect(
   lat: number,
   lng: number,
 ): Promise<HardwareStore[]> {

@@ -33,6 +33,9 @@ verify_jwt = false
 [functions.recommend-form-time]
 verify_jwt = false
 
+[functions.nearby-hardware-stores]
+verify_jwt = false
+
 [functions.refresh-economic-indicators]
 verify_jwt = false
 
