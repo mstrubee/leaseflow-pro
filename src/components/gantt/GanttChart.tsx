@@ -1129,6 +1129,15 @@ export function GanttChart({
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
+    // Líneas madre (con hijas): inicio/plazo/término se calculan automáticamente
+    // desde las hijas → no se permiten editar por ninguna vía.
+    if (
+      (field === "start_date" || field === "end_date" || field === "duration_days") &&
+      tasks.some((t) => t.parent_id === taskId)
+    ) {
+      return;
+    }
+
     // Date-field edits with dependencies → ask the user
     if ((field === "start_date" || field === "end_date") && value) {
       const outgoing = hasOutgoingDependents(taskId);
@@ -1952,20 +1961,29 @@ export function GanttChart({
                   </div>
 
                   <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                    {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
                       value={task.start_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
                       placeholder="Inicio"
-                      editable={isAdmin}
+                      editable={isAdmin && !hasChildren}
                     />
                   </div>
 
                   {/* Duration */}
                   <div className="flex-shrink-0 border-r flex items-center px-1" style={{ width: DURATION_COL_WIDTH }}>
-                    <DurationInput
-                      value={task.duration_days || 1}
-                      onCommit={(n) => handleUpdateTaskField(task.id, "duration_days", n)}
-                    />
+                    {hasChildren ? (
+                      <span className="text-xs px-1 text-muted-foreground" title="Calculado según las líneas hijas">
+                        {task.start_date && task.end_date
+                          ? Math.max(1, Math.round((parseISO(task.end_date).getTime() - parseISO(task.start_date).getTime()) / 86400000) + 1)
+                          : "—"}
+                      </span>
+                    ) : (
+                      <DurationInput
+                        value={task.duration_days || 1}
+                        onCommit={(n) => handleUpdateTaskField(task.id, "duration_days", n)}
+                      />
+                    )}
                     <span className="text-[10px] text-muted-foreground">
                       {task.duration_type === "business" ? "háb" : "días"}
                     </span>
@@ -1977,7 +1995,7 @@ export function GanttChart({
                       value={task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
-                      editable={isAdmin}
+                      editable={isAdmin && !hasChildren}
                     />
                   </div>
 
