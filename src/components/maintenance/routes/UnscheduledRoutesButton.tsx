@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { CalendarClock, Pencil, Trash2, X, CheckSquare, Square } from "lucide-react";
+import { CalendarClock, Pencil, Trash2, Trash, RotateCcw, X, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
@@ -11,20 +11,40 @@ interface Props {
 
 interface UnscheduledRoute {
   id: string;          // id representativo (primer día) — para editar
-  ids: string[];       // todos los ids de la gira (para borrar completa)
+  ids: string[];       // todos los ids de la gira (para borrar/restaurar completa)
   name: string;
   supplier_name: string | null;
 }
 
-// Botón + cajón con las rutas guardadas SIN agendar (scheduled_date null).
+type Tab = "activas" | "papelera";
+
+// Agrupa filas por nombre base (las giras comparten nombre, difieren en "— Día N")
+function groupRoutes(data: Record<string, unknown>[]): UnscheduledRoute[] {
+  const map = new Map<string, UnscheduledRoute>();
+  for (const r of data) {
+    const base = String(r.name ?? "").replace(/\s—\sDía\s.*$/u, "").trim();
+    const key = `${base}|${(r.supplier_id as string) ?? ""}`;
+    const id = r.id as string;
+    const existing = map.get(key);
+    if (existing) existing.ids.push(id);
+    else map.set(key, {
+      id, ids: [id], name: base || (r.name as string),
+      supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
+    });
+  }
+  return [...map.values()];
+}
+
 export function UnscheduledRoutesButton({ onEdit }: Props) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("activas");
   const [routes, setRoutes] = useState<UnscheduledRoute[]>([]);
+  const [trashed, setTrashed] = useState<UnscheduledRoute[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const load = async () => {
+  const loadActive = async () => {
     setLoading(true);
     const { data } = await supabase
       .from("maintenance_routes")
@@ -32,66 +52,74 @@ export function UnscheduledRoutesButton({ onEdit }: Props) {
       .is("scheduled_date", null)
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
-    // Agrupar por nombre base (las giras comparten nombre, difieren en "— Día N")
-    const map = new Map<string, UnscheduledRoute>();
-    for (const r of (data ?? []) as Record<string, unknown>[]) {
-      const base = String(r.name ?? "").replace(/\s—\sDía\s.*$/u, "").trim();
-      const key = `${base}|${(r.supplier_id as string) ?? ""}`;
-      const id = r.id as string;
-      const existing = map.get(key);
-      if (existing) {
-        existing.ids.push(id);
-      } else {
-        map.set(key, {
-          id,
-          ids: [id],
-          name: base || (r.name as string),
-          supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
-        });
-      }
-    }
-    setRoutes([...map.values()]);
+    setRoutes(groupRoutes((data ?? []) as Record<string, unknown>[]));
     setLoading(false);
   };
 
-  const openSheet = async () => { setOpen(true); setSelectMode(false); setSelected(new Set()); await load(); };
-
-  const softDelete = async (ids: string[]) => {
-    const { error } = await supabase
+  const loadTrash = async () => {
+    setLoading(true);
+    const { data } = await supabase
       .from("maintenance_routes")
-      .update({ deleted_at: new Date().toISOString() })
-      .in("id", ids);
+      .select("id, name, supplier_id, suppliers ( name )")
+      .is("scheduled_date", null)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false });
+    setTrashed(groupRoutes((data ?? []) as Record<string, unknown>[]));
+    setLoading(false);
+  };
+
+  const openSheet = async () => {
+    setOpen(true); setTab("activas"); setSelectMode(false); setSelected(new Set());
+    await loadActive();
+  };
+
+  const switchTab = async (t: Tab) => {
+    setTab(t); setSelectMode(false); setSelected(new Set());
+    t === "papelera" ? await loadTrash() : await loadActive();
+  };
+
+  // ── Acciones papelera ──
+  const softDelete = async (ids: string[]) => {
+    const { error } = await supabase.from("maintenance_routes")
+      .update({ deleted_at: new Date().toISOString() }).in("id", ids);
     if (error) { toast.error(error.message); return false; }
     return true;
   };
-
-  const deleteOne = async (r: UnscheduledRoute) => {
-    if (!window.confirm(`¿Eliminar la ruta "${r.name}"? Irá a la papelera.`)) return;
-    if (await softDelete(r.ids)) {
-      toast.success("Ruta eliminada");
-      await load();
-    }
+  const restore = async (r: UnscheduledRoute) => {
+    const { error } = await supabase.from("maintenance_routes")
+      .update({ deleted_at: null }).in("id", r.ids);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Ruta restaurada");
+    await loadTrash();
+  };
+  const purge = async (r: UnscheduledRoute) => {
+    if (!window.confirm(`¿Eliminar DEFINITIVAMENTE la ruta "${r.name}"? Esta acción no se puede deshacer.`)) return;
+    const { error } = await supabase.from("maintenance_routes").delete().in("id", r.ids);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Ruta eliminada definitivamente");
+    await loadTrash();
   };
 
+  // ── Acciones activas ──
+  const deleteOne = async (r: UnscheduledRoute) => {
+    if (!window.confirm(`¿Eliminar la ruta "${r.name}"? Irá a la papelera.`)) return;
+    if (await softDelete(r.ids)) { toast.success("Ruta eliminada"); await loadActive(); }
+  };
   const toggleSel = (key: string) =>
     setSelected((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
-
   const allSelected = routes.length > 0 && routes.every((r) => selected.has(r.id));
-  const toggleAll = () =>
-    setSelected(allSelected ? new Set() : new Set(routes.map((r) => r.id)));
-
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(routes.map((r) => r.id)));
   const deleteSelected = async () => {
     const groups = routes.filter((r) => selected.has(r.id));
     if (groups.length === 0) return;
     if (!window.confirm(`¿Eliminar ${groups.length} ruta${groups.length === 1 ? "" : "s"} seleccionada${groups.length === 1 ? "" : "s"}? Irán a la papelera.`)) return;
-    const ids = groups.flatMap((g) => g.ids);
-    if (await softDelete(ids)) {
+    if (await softDelete(groups.flatMap((g) => g.ids))) {
       toast.success(`${groups.length} ruta(s) eliminada(s)`);
-      setSelectMode(false);
-      setSelected(new Set());
-      await load();
+      setSelectMode(false); setSelected(new Set()); await loadActive();
     }
   };
+
+  const list = tab === "papelera" ? trashed : routes;
 
   return (
     <>
@@ -107,12 +135,31 @@ export function UnscheduledRoutesButton({ onEdit }: Props) {
               <CalendarClock className="w-4 h-4 text-gray-500" /> Rutas Sin Agendar (guardadas)
             </SheetTitle>
           </SheetHeader>
+
+          {/* Pestañas: Activas / Papelera */}
+          <div className="flex gap-1 mt-3 border-b">
+            {([["activas", "Activas"], ["papelera", "Papelera"]] as [Tab, string][]).map(([t, label]) => (
+              <button
+                key={t}
+                onClick={() => switchTab(t)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                  tab === t ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {t === "papelera" ? <Trash2 className="w-3.5 h-3.5" /> : <CalendarClock className="w-3.5 h-3.5" />}
+                {label}
+              </button>
+            ))}
+          </div>
+
           <p className="text-xs text-gray-400 mt-2">
-            Rutas guardadas sin fecha. Edítalas para asignarles fecha y calendarizarlas.
+            {tab === "papelera"
+              ? "Rutas sin agendar eliminadas. Puedes restaurarlas o borrarlas definitivamente."
+              : "Rutas guardadas sin fecha. Edítalas para asignarles fecha y calendarizarlas."}
           </p>
 
-          {/* Barra de acciones */}
-          {routes.length > 0 && (
+          {/* Barra de selección (solo en Activas) */}
+          {tab === "activas" && routes.length > 0 && (
             <div className="flex items-center gap-2 mt-3">
               {!selectMode ? (
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setSelectMode(true)}>
@@ -140,11 +187,13 @@ export function UnscheduledRoutesButton({ onEdit }: Props) {
           <div className="mt-3 space-y-2">
             {loading ? (
               <p className="text-sm text-gray-400 text-center py-8">Cargando…</p>
-            ) : routes.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">No hay rutas sin agendar</p>
-            ) : routes.map((r) => (
+            ) : list.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">
+                {tab === "papelera" ? "La papelera está vacía" : "No hay rutas sin agendar"}
+              </p>
+            ) : list.map((r) => (
               <div key={r.id} className="rounded-lg border border-gray-200 p-2.5 flex items-center gap-2">
-                {selectMode && (
+                {tab === "activas" && selectMode && (
                   <button onClick={() => toggleSel(r.id)} className="shrink-0">
                     {selected.has(r.id)
                       ? <CheckSquare className="w-4 h-4 text-blue-600" />
@@ -155,7 +204,8 @@ export function UnscheduledRoutesButton({ onEdit }: Props) {
                   <div className="text-sm font-medium truncate">{r.name}</div>
                   {r.supplier_name && <div className="text-xs text-gray-400 truncate">{r.supplier_name}</div>}
                 </div>
-                {!selectMode && (
+
+                {tab === "activas" && !selectMode && (
                   <>
                     <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-blue-600"
                       onClick={() => { onEdit(r.id); setOpen(false); }}>
@@ -164,6 +214,19 @@ export function UnscheduledRoutesButton({ onEdit }: Props) {
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
                       onClick={() => deleteOne(r)} title="Eliminar ruta">
                       <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
+                )}
+
+                {tab === "papelera" && (
+                  <>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-blue-600"
+                      onClick={() => restore(r)}>
+                      <RotateCcw className="w-3.5 h-3.5" /> Restaurar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
+                      onClick={() => purge(r)} title="Eliminar definitivamente">
+                      <Trash className="w-3.5 h-3.5" />
                     </Button>
                   </>
                 )}
