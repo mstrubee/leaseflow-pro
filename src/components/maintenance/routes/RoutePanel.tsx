@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { RouteStop, MaintenanceLocation, ScheduleEntry } from "@/hooks/useRouteBuilder";
 import { addBusinessDays } from "@/hooks/useRouteBuilder";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,29 @@ import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { findNearestHardwareStore, type HardwareStore } from "@/lib/findHardwareStore";
+import { type HardwareStore } from "@/lib/findHardwareStore";
+
+// Input de velocidad que permite borrar el campo para reescribir; si queda vacío
+// o en 0, conserva el valor anterior.
+function SpeedInput({ value, min, max, onCommit }: { value: number; min: number; max: number; onCommit: (n: number) => void }) {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setText(String(value)); }, [value, focused]);
+  return (
+    <Input
+      type="number" min={min} max={max} value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        const n = parseInt(text, 10);
+        if (Number.isFinite(n) && n > 0) { onCommit(n); setText(String(n)); }
+        else setText(String(value)); // vacío o 0 → mantener la anterior
+      }}
+      className="h-8 text-xs mt-0.5"
+    />
+  );
+}
 
 interface Props {
   origin: MaintenanceLocation | null;
@@ -41,6 +63,10 @@ interface Props {
   onAddErrand: (label: string, minutes: number) => void;
   onAddPurchaseStop: (store: { name: string; lat: number; lng: number }, minutes: number) => void;
   workingPoint: { lat: number; lng: number } | null;
+  purchaseCandidates: HardwareStore[];
+  searchingPurchase: boolean;
+  onSearchPurchase: () => void;
+  onClearPurchase: () => void;
   onSetDayStartTimeForDay: (dayIndex: number, time: string) => void;
   onSave: () => void;
   onReset: () => void;
@@ -173,39 +199,28 @@ export function RoutePanel({
   origin, stops, schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
-  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onAddPurchaseStop, workingPoint, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation,
+  dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onAddPurchaseStop, workingPoint,
+  purchaseCandidates, searchingPurchase, onSearchPurchase, onClearPurchase, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Set<number>>(new Set());
 
-  // Diálogo de compras (ferretería sugerida por OSM)
+  // Diálogo de compras (ferreterías sugeridas por OSM)
   const [purchaseOpen, setPurchaseOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [foundStore, setFoundStore] = useState<HardwareStore | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState(0);
   const [purchaseMinutes, setPurchaseMinutes] = useState(30);
 
-  const searchStore = async () => {
-    if (!workingPoint) { setFoundStore(null); return; }
-    setSearching(true);
-    setFoundStore(null);
-    try {
-      const store = await findNearestHardwareStore(workingPoint.lat, workingPoint.lng);
-      setFoundStore(store);
-      if (!store) toast.message("No se encontró una ferretería cercana", { description: "Puedes agregar una compra sin lugar." });
-    } catch {
-      toast.error("No se pudo buscar la ferretería");
-    } finally {
-      setSearching(false);
-    }
-  };
+  // Al recibir candidatas nuevas, seleccionar la más cercana (#1)
+  useEffect(() => { setSelectedIdx(0); }, [purchaseCandidates]);
 
   const openPurchaseDialog = () => {
     setPurchaseMinutes(30);
-    setFoundStore(null);
+    setSelectedIdx(0);
     setPurchaseOpen(true);
-    searchStore();
+    onSearchPurchase();
   };
+  const selectedStore = purchaseCandidates[selectedIdx] ?? null;
 
   const toggleDayCollapse = (day: number) =>
     setCollapsedDays((prev) => {
@@ -370,15 +385,11 @@ export function RoutePanel({
           <Car className="w-3.5 h-3.5 text-gray-400 mb-2 shrink-0" />
           <div className="flex-1">
             <Label className="text-[10px] text-gray-500">Vel. ciudad (km/h)</Label>
-            <Input type="number" min={5} max={120} value={urbanSpeed}
-              onChange={(e) => onUrbanSpeed(parseInt(e.target.value) || 20)}
-              className="h-8 text-xs mt-0.5" />
+            <SpeedInput value={urbanSpeed} min={5} max={120} onCommit={onUrbanSpeed} />
           </div>
           <div className="flex-1">
             <Label className="text-[10px] text-gray-500">Vel. carretera (km/h)</Label>
-            <Input type="number" min={20} max={140} value={highwaySpeed}
-              onChange={(e) => onHighwaySpeed(parseInt(e.target.value) || 100)}
-              className="h-8 text-xs mt-0.5" />
+            <SpeedInput value={highwaySpeed} min={20} max={140} onCommit={onHighwaySpeed} />
           </div>
         </div>
         <div className="flex gap-2">
@@ -394,7 +405,7 @@ export function RoutePanel({
       </div>
 
       {/* Diálogo: ferretería de compras sugerida (OSM) */}
-      <Dialog open={purchaseOpen} onOpenChange={setPurchaseOpen}>
+      <Dialog open={purchaseOpen} onOpenChange={(o) => { setPurchaseOpen(o); if (!o) onClearPurchase(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -408,35 +419,49 @@ export function RoutePanel({
           <div className="py-2 space-y-3">
             {!workingPoint && (
               <p className="text-sm text-amber-600">
-                Aún no hay un punto de referencia. Agrega un punto de partida o una parada para sugerir la ferretería más cercana.
+                Aún no hay un punto de referencia. Agrega un punto de partida o una parada para sugerir ferreterías cercanas.
               </p>
             )}
 
-            {workingPoint && searching && (
+            {workingPoint && searchingPurchase && (
               <div className="flex items-center gap-2 text-sm text-gray-500">
-                <Loader2 className="w-4 h-4 animate-spin" /> Buscando ferretería cercana…
+                <Loader2 className="w-4 h-4 animate-spin" /> Buscando ferreterías cercanas…
               </div>
             )}
 
-            {workingPoint && !searching && foundStore && (
-              <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-fuchsia-800">
-                  <Store className="w-4 h-4" /> {foundStore.name}
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  A {foundStore.distanceKm.toFixed(1)} km del punto de trabajo
+            {workingPoint && !searchingPurchase && purchaseCandidates.length > 0 && (
+              <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+                <p className="text-xs text-gray-500">
+                  {purchaseCandidates.length} ferretería{purchaseCandidates.length === 1 ? "" : "s"} cerca (1 = la más cercana). Elige una:
                 </p>
+                {purchaseCandidates.map((s, i) => (
+                  <button
+                    key={`${s.name}-${i}`}
+                    onClick={() => setSelectedIdx(i)}
+                    className={`w-full flex items-center gap-2 text-left rounded-lg border px-2 py-1.5 transition-colors ${
+                      selectedIdx === i ? "border-fuchsia-400 bg-fuchsia-50" : "border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    <span className={`w-5 h-5 shrink-0 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
+                      selectedIdx === i ? "bg-fuchsia-600" : "bg-gray-400"
+                    }`}>{i + 1}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium truncate">{s.name}</span>
+                    </span>
+                    <span className="text-xs text-gray-500 shrink-0">{s.distanceKm.toFixed(1)} km</span>
+                  </button>
+                ))}
               </div>
             )}
 
-            {workingPoint && !searching && !foundStore && (
+            {workingPoint && !searchingPurchase && purchaseCandidates.length === 0 && (
               <div className="text-sm text-gray-500">
-                No se encontró una ferretería cercana.{" "}
-                <button onClick={searchStore} className="text-fuchsia-700 underline">Reintentar</button>
+                No se encontraron ferreterías cercanas.{" "}
+                <button onClick={onSearchPurchase} className="text-fuchsia-700 underline">Reintentar</button>
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pt-1 border-t">
               <Clock className="w-4 h-4 text-gray-400" />
               <Label className="text-xs text-gray-600">Tiempo de compra (min)</Label>
               <MinutesInput
@@ -451,21 +476,22 @@ export function RoutePanel({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { onAddErrand("Compras", purchaseMinutes); setPurchaseOpen(false); toast.success("Parada de compras agregada"); }}
+              onClick={() => { onAddErrand("Compras", purchaseMinutes); setPurchaseOpen(false); onClearPurchase(); toast.success("Parada de compras agregada"); }}
             >
               Compra sin lugar
             </Button>
             <Button
               size="sm"
-              disabled={!foundStore}
+              disabled={!selectedStore}
               onClick={() => {
-                if (!foundStore) return;
-                onAddPurchaseStop({ name: foundStore.name, lat: foundStore.lat, lng: foundStore.lng }, purchaseMinutes);
+                if (!selectedStore) return;
+                onAddPurchaseStop({ name: selectedStore.name, lat: selectedStore.lat, lng: selectedStore.lng }, purchaseMinutes);
                 setPurchaseOpen(false);
-                toast.success(`Agregada: ${foundStore.name}`);
+                onClearPurchase();
+                toast.success(`Agregada: ${selectedStore.name}`);
               }}
             >
-              <ShoppingCart className="w-4 h-4 mr-1" /> Agregar ferretería
+              <ShoppingCart className="w-4 h-4 mr-1" /> Agregar #{selectedIdx + 1}
             </Button>
           </DialogFooter>
         </DialogContent>

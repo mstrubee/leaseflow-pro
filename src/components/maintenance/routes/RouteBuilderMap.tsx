@@ -246,6 +246,7 @@ interface Props {
   schedule?: ScheduleEntryLite[];
   startTime?: string;
   visibleLocationIds?: Set<string> | null;
+  purchaseCandidates?: { name: string; lat: number; lng: number; distanceKm: number }[];
   onSetOrigin: (location: MaintenanceLocation) => void;
   onSelectLocation: (location: MaintenanceLocation) => void;
 }
@@ -253,6 +254,7 @@ interface Props {
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
   origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
+  purchaseCandidates = [],
   onSetOrigin, onSelectLocation,
 }: Props) {
   const { logos } = useAppLogos();
@@ -408,6 +410,24 @@ export function RouteBuilderMap({
             />
           );
         })}
+
+        {/* Ferreterías candidatas (OSM): globos numerados, #1 = más cercana */}
+        {purchaseCandidates.map((c, i) => (
+          <Marker
+            key={`cand-${i}-${c.lat}-${c.lng}`}
+            position={[c.lat, c.lng]}
+            icon={L.divIcon({
+              html: `<div style="position:relative;width:26px;height:34px">
+                <div style="width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+                  background:${i === 0 ? "#d946ef" : "#a855f7"};border:2px solid #fff;
+                  box-shadow:0 2px 6px rgba(0,0,0,0.35);position:absolute;top:0;left:0"></div>
+                <span style="position:absolute;top:3px;left:0;width:26px;height:22px;color:white;font-size:12px;
+                  font-weight:bold;display:flex;align-items:center;justify-content:center">${i + 1}</span>
+              </div>`,
+              className: "", iconSize: [26, 34], iconAnchor: [13, 30], popupAnchor: [0, -28],
+            })}
+          />
+        ))}
 
         {/* Legend */}
         <div className="leaflet-bottom leaflet-left">

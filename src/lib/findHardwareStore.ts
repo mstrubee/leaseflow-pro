@@ -36,10 +36,14 @@ function buildQuery(lat: number, lng: number, radius: number): string {
   );
 }
 
-export async function findNearestHardwareStore(
+const MAX_RESULTS = 12;
+
+// Devuelve TODAS las ferreterías cercanas ordenadas por distancia (la más cercana
+// primero). Amplía el radio si no encuentra nada. Lista vacía si no hay resultados.
+export async function findNearbyHardwareStores(
   lat: number,
   lng: number,
-): Promise<HardwareStore | null> {
+): Promise<HardwareStore[]> {
   const radii = [5000, 15000, 40000]; // metros: ampliar si no hay nada cerca
   for (const radius of radii) {
     const query = buildQuery(lat, lng, radius);
@@ -62,9 +66,18 @@ export async function findNearestHardwareStore(
             return { name, lat: elat, lng: elng, distanceKm: haversineKm(lat, lng, elat, elng) } as HardwareStore;
           })
           .filter((s): s is HardwareStore => !!s);
+
         if (stores.length > 0) {
-          stores.sort((a, b) => a.distanceKm - b.distanceKm);
-          return stores[0];
+          // Dedupe (un mismo local puede venir como node + way) por nombre + coords aprox.
+          const seen = new Set<string>();
+          const unique: HardwareStore[] = [];
+          for (const s of stores.sort((a, b) => a.distanceKm - b.distanceKm)) {
+            const key = `${s.name.toLowerCase()}|${s.lat.toFixed(3)}|${s.lng.toFixed(3)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            unique.push(s);
+          }
+          return unique.slice(0, MAX_RESULTS);
         }
         // endpoint respondió OK pero sin resultados → probar radio mayor
         break;
@@ -73,5 +86,5 @@ export async function findNearestHardwareStore(
       }
     }
   }
-  return null;
+  return [];
 }

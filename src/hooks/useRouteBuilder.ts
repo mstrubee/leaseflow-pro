@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getOsrmRoute } from "@/lib/osrmRoute";
 import { detectMaintenanceType } from "@/components/maintenance/types";
+import { findNearbyHardwareStores, type HardwareStore } from "@/lib/findHardwareStore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -938,6 +939,23 @@ export function useRouteBuilder(editTourId?: string | null) {
     return origin ? { lat: origin.lat, lng: origin.lng } : null;
   }, [stops, origin]);
 
+  // Ferreterías candidatas cercanas (para el diálogo de compras y los globos del mapa)
+  const [purchaseCandidates, setPurchaseCandidates] = useState<HardwareStore[]>([]);
+  const [searchingPurchase, setSearchingPurchase] = useState(false);
+  const searchPurchaseCandidates = useCallback(async () => {
+    if (!workingPoint) { setPurchaseCandidates([]); return; }
+    setSearchingPurchase(true);
+    try {
+      const list = await findNearbyHardwareStores(workingPoint.lat, workingPoint.lng);
+      setPurchaseCandidates(list);
+    } catch {
+      setPurchaseCandidates([]);
+    } finally {
+      setSearchingPurchase(false);
+    }
+  }, [workingPoint]);
+  const clearPurchaseCandidates = useCallback(() => setPurchaseCandidates([]), []);
+
   // Parada de compras: bloque de tiempo SIN lugar (no entra al mapa, sin traslado).
   const addErrandStop = useCallback((label: string, minutes: number) => {
     const id = crypto.randomUUID();
@@ -1310,6 +1328,7 @@ export function useRouteBuilder(editTourId?: string | null) {
     saving,
     schedule, totalWorkMinutes, totalTravelMinutes, totalDays, endDate,
     addStop, addErrandStop, addPurchaseStop, workingPoint, removeStop, reorderStops,
+    purchaseCandidates, searchingPurchase, searchPurchaseCandidates, clearPurchaseCandidates,
     setStopMinutes, setStopLabel,
     toggleFormInStop, addAllFormsToStop, clearFormsInStop,
     setFormMinutes, resetRoute, saveRoute,

@@ -142,6 +142,7 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
             schedule={rb.schedule}
             startTime={rb.startTime}
             visibleLocationIds={rb.visibleLocationIds}
+            purchaseCandidates={rb.purchaseCandidates}
             onSetOrigin={rb.setOrigin}
             onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
           />
@@ -260,6 +261,10 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                   onAddErrand={rb.addErrandStop}
                   onAddPurchaseStop={rb.addPurchaseStop}
                   workingPoint={rb.workingPoint}
+                  purchaseCandidates={rb.purchaseCandidates}
+                  searchingPurchase={rb.searchingPurchase}
+                  onSearchPurchase={rb.searchPurchaseCandidates}
+                  onClearPurchase={rb.clearPurchaseCandidates}
                   onSetDayStartTimeForDay={rb.setDayStartTimeForDay}
                   onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); onExitEdit?.(); return id; }}
                   onReset={() => { rb.resetRoute(); onExitEdit?.(); }}
