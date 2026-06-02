@@ -941,11 +941,26 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setFreezing(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+      let { error } = await supabase
         .from("contract_budgets")
         .update({ frozen_amount_uf: val, frozen_at: new Date().toISOString(), frozen_by: user?.id || null } as any)
         .eq("id", budget.id);
-      if (error) throw error;
+      // Reintento: tal vez solo exista frozen_amount_uf (no frozen_at/frozen_by)
+      if (error && /frozen_at|frozen_by|column|schema cache/i.test(error.message)) {
+        ({ error } = await supabase
+          .from("contract_budgets")
+          .update({ frozen_amount_uf: val } as any)
+          .eq("id", budget.id));
+      }
+      if (error) {
+        if (/frozen_amount_uf|column|schema cache/i.test(error.message)) {
+          throw new Error(
+            "Falta aplicar una migración en la base de datos para esta función " +
+            "(columna frozen_amount_uf en contract_budgets). Avísale al administrador.",
+          );
+        }
+        throw error;
+      }
       toast({ title: "Monto aprobado congelado", description: `Aprobado por directorio: UF ${formatUF(val)}` });
       setShowFreezeDialog(false);
       loadBudgets();
@@ -961,10 +976,16 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     if (!budget) return;
     if (!window.confirm("¿Descongelar el monto aprobado por directorio? Dejará de mostrarse como referencia.")) return;
     try {
-      const { error } = await supabase
+      let { error } = await supabase
         .from("contract_budgets")
         .update({ frozen_amount_uf: null, frozen_at: null, frozen_by: null } as any)
         .eq("id", budget.id);
+      if (error && /frozen_at|frozen_by|column|schema cache/i.test(error.message)) {
+        ({ error } = await supabase
+          .from("contract_budgets")
+          .update({ frozen_amount_uf: null } as any)
+          .eq("id", budget.id));
+      }
       if (error) throw error;
       toast({ title: "Monto descongelado" });
       loadBudgets();
