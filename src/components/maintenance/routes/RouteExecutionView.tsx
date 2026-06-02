@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
   MessageSquare, Camera, CalendarDays, Loader2, MapPin, ArrowLeft,
-  Image as ImageIcon, Link2, RotateCcw, Share2, X, ShoppingCart,
+  Image as ImageIcon, Link2, RotateCcw, Share2, X, ShoppingCart, LogOut,
 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 import { shareLocationReport } from "./exportLocationReportPDF";
 import { toast } from "sonner";
 import {
@@ -553,6 +554,7 @@ function StopCard({
 // ---------------------------------------------------------------------------
 export function RouteExecutionView({ routeId }: { routeId: string }) {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const exec = useRouteExecution(routeId);
 
   // Sheet state
@@ -667,6 +669,15 @@ export function RouteExecutionView({ routeId }: { routeId: string }) {
             <div className="text-lg font-bold text-blue-600">{pct}%</div>
             <div className="text-[10px] text-gray-400">{completedStops}/{totalStops} paradas</div>
           </div>
+          <button
+            onClick={async () => {
+              if (window.confirm("¿Cerrar sesión?")) { await signOut(); navigate("/auth"); }
+            }}
+            title="Cerrar sesión"
+            className="p-1.5 -mr-1 text-gray-400 hover:text-red-600 shrink-0"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
         </div>
         {/* Progress bar */}
         <div className="w-full bg-gray-100 rounded-full h-1.5">

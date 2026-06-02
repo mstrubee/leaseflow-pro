@@ -5,11 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store } from "lucide-react";
+import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store, X } from "lucide-react";
 import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type HardwareStore } from "@/lib/findHardwareStore";
 
 // Input de velocidad que permite borrar el campo para reescribir; si queda vacío
@@ -256,6 +255,83 @@ export function RoutePanel({
         )}
       </div>
 
+      {/* Panel inline de compras: NO tapa el mapa, para ver los globos numerados */}
+      {purchaseOpen && (
+        <div className="shrink-0 rounded-lg border border-fuchsia-200 bg-white shadow-sm p-2 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Store className="w-3.5 h-3.5 text-fuchsia-600" />
+            <span className="text-xs font-semibold text-fuchsia-800">Ferreterías cercanas</span>
+            <button onClick={() => { setPurchaseOpen(false); onClearPurchase(); }} className="ml-auto text-gray-400 hover:text-gray-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {!workingPoint && (
+            <p className="text-[11px] text-amber-600">Agrega un punto de partida o una parada para sugerir ferreterías cercanas.</p>
+          )}
+          {workingPoint && searchingPurchase && (
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando ferreterías cercanas…
+            </div>
+          )}
+          {workingPoint && !searchingPurchase && purchaseCandidates.length > 0 && (
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              <p className="text-[10px] text-gray-500">
+                {purchaseCandidates.length} cerca · #1 = más cercana (también numeradas en el mapa)
+              </p>
+              {purchaseCandidates.map((s, i) => (
+                <button
+                  key={`${s.name}-${i}`}
+                  onClick={() => setSelectedIdx(i)}
+                  className={`w-full flex items-center gap-2 text-left rounded border px-1.5 py-1 transition-colors ${
+                    selectedIdx === i ? "border-fuchsia-400 bg-fuchsia-50" : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className={`w-4 h-4 shrink-0 rounded-full text-white text-[9px] font-bold flex items-center justify-center ${
+                    selectedIdx === i ? "bg-fuchsia-600" : "bg-gray-400"
+                  }`}>{i + 1}</span>
+                  <span className="flex-1 min-w-0 text-[11px] font-medium truncate">{s.name}</span>
+                  <span className="text-[10px] text-gray-500 shrink-0">{s.distanceKm.toFixed(1)} km</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {workingPoint && !searchingPurchase && purchaseCandidates.length === 0 && (
+            <div className="text-[11px] text-gray-500">
+              Sin ferreterías cercanas.{" "}
+              <button onClick={onSearchPurchase} className="text-fuchsia-700 underline">Reintentar</button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 pt-1 border-t">
+            <Clock className="w-3.5 h-3.5 text-gray-400" />
+            <Label className="text-[10px] text-gray-600">Tiempo compra (min)</Label>
+            <MinutesInput
+              value={purchaseMinutes}
+              onChange={(m) => setPurchaseMinutes(m)}
+              className="w-16 border border-gray-200 rounded px-1.5 py-0.5 text-xs text-center focus:outline-none focus:border-fuchsia-400"
+            />
+          </div>
+
+          <div className="flex gap-1.5">
+            <Button variant="ghost" size="sm" className="text-[11px] h-7"
+              onClick={() => { onAddErrand("Compras", purchaseMinutes); setPurchaseOpen(false); onClearPurchase(); toast.success("Parada de compras agregada"); }}>
+              Sin lugar
+            </Button>
+            <Button size="sm" className="flex-1 text-[11px] h-7" disabled={!selectedStore}
+              onClick={() => {
+                if (!selectedStore) return;
+                onAddPurchaseStop({ name: selectedStore.name, lat: selectedStore.lat, lng: selectedStore.lng }, purchaseMinutes);
+                setPurchaseOpen(false);
+                onClearPurchase();
+                toast.success(`Agregada: ${selectedStore.name}`);
+              }}>
+              <ShoppingCart className="w-3.5 h-3.5 mr-1" /> Agregar #{selectedIdx + 1}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
         {stops.length === 0 || schedule.length === 0 ? (
           <p className="text-xs text-gray-400 italic text-center mt-4">Agrega paradas desde el mapa</p>
@@ -404,98 +480,6 @@ export function RoutePanel({
         </div>
       </div>
 
-      {/* Diálogo: ferretería de compras sugerida (OSM) */}
-      <Dialog open={purchaseOpen} onOpenChange={(o) => { setPurchaseOpen(o); if (!o) onClearPurchase(); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-fuchsia-600" /> Parada de compras
-            </DialogTitle>
-            <DialogDescription>
-              Ferretería más cercana al punto donde estás trabajando (según OpenStreetMap).
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-2 space-y-3">
-            {!workingPoint && (
-              <p className="text-sm text-amber-600">
-                Aún no hay un punto de referencia. Agrega un punto de partida o una parada para sugerir ferreterías cercanas.
-              </p>
-            )}
-
-            {workingPoint && searchingPurchase && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <Loader2 className="w-4 h-4 animate-spin" /> Buscando ferreterías cercanas…
-              </div>
-            )}
-
-            {workingPoint && !searchingPurchase && purchaseCandidates.length > 0 && (
-              <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-                <p className="text-xs text-gray-500">
-                  {purchaseCandidates.length} ferretería{purchaseCandidates.length === 1 ? "" : "s"} cerca (1 = la más cercana). Elige una:
-                </p>
-                {purchaseCandidates.map((s, i) => (
-                  <button
-                    key={`${s.name}-${i}`}
-                    onClick={() => setSelectedIdx(i)}
-                    className={`w-full flex items-center gap-2 text-left rounded-lg border px-2 py-1.5 transition-colors ${
-                      selectedIdx === i ? "border-fuchsia-400 bg-fuchsia-50" : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <span className={`w-5 h-5 shrink-0 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
-                      selectedIdx === i ? "bg-fuchsia-600" : "bg-gray-400"
-                    }`}>{i + 1}</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium truncate">{s.name}</span>
-                    </span>
-                    <span className="text-xs text-gray-500 shrink-0">{s.distanceKm.toFixed(1)} km</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {workingPoint && !searchingPurchase && purchaseCandidates.length === 0 && (
-              <div className="text-sm text-gray-500">
-                No se encontraron ferreterías cercanas.{" "}
-                <button onClick={onSearchPurchase} className="text-fuchsia-700 underline">Reintentar</button>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-1 border-t">
-              <Clock className="w-4 h-4 text-gray-400" />
-              <Label className="text-xs text-gray-600">Tiempo de compra (min)</Label>
-              <MinutesInput
-                value={purchaseMinutes}
-                onChange={(m) => setPurchaseMinutes(m)}
-                className="w-20 border border-gray-200 rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-fuchsia-400"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { onAddErrand("Compras", purchaseMinutes); setPurchaseOpen(false); onClearPurchase(); toast.success("Parada de compras agregada"); }}
-            >
-              Compra sin lugar
-            </Button>
-            <Button
-              size="sm"
-              disabled={!selectedStore}
-              onClick={() => {
-                if (!selectedStore) return;
-                onAddPurchaseStop({ name: selectedStore.name, lat: selectedStore.lat, lng: selectedStore.lng }, purchaseMinutes);
-                setPurchaseOpen(false);
-                onClearPurchase();
-                toast.success(`Agregada: ${selectedStore.name}`);
-              }}
-            >
-              <ShoppingCart className="w-4 h-4 mr-1" /> Agregar #{selectedIdx + 1}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
