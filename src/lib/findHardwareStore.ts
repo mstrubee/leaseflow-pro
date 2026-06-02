@@ -1,8 +1,7 @@
-// Busca la ferretería / homecenter más cercana a un punto usando OpenStreetMap
-// (Overpass API). Reconoce cadenas comunes en Chile (Sodimac, Easy, Construmart,
-// Imperial, MTS, Homecenter…) y cualquier shop=doityourself/hardware/trade.
-
-import { supabase } from "@/integrations/supabase/client";
+// Busca ferreterías / homecenters cercanos usando Nominatim (OpenStreetMap), que
+// SÍ permite CORS desde el navegador (a diferencia de Overpass, bloqueado por
+// mod_security). Reconoce cadenas comunes en Chile + el término genérico
+// "ferretería". Devuelve la lista ordenada por distancia (más cercana primero).
 
 export interface HardwareStore {
   name: string;
@@ -11,31 +10,11 @@ export interface HardwareStore {
   distanceKm: number;
 }
 
-const OVERPASS_ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-];
-
-const REQUEST_TIMEOUT_MS = 12000;
-
-// fetch con timeout para que la petición nunca quede colgada (deja el spinner girando).
-async function fetchWithTimeout(url: string, body: string): Promise<Response | null> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "data=" + encodeURIComponent(body),
-      signal: ctrl.signal,
-    });
-  } catch {
-    return null; // timeout / red / CORS
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+const SEARCH_TERMS = ["ferretería", "Sodimac", "Easy", "Construmart", "Homecenter", "Imperial", "MTS"];
+const RADIUS_KM = 25;
+const REQUEST_TIMEOUT_MS = 10000;
+const MAX_RESULTS = 12;
 
 function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
   const R = 6371;
@@ -47,87 +26,54 @@ function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
 
-function buildQuery(lat: number, lng: number, radius: number): string {
-  const f = `(around:${radius},${lat},${lng})`;
-  return (
-    `[out:json][timeout:25];(` +
-    `nwr["shop"="doityourself"]${f};` +
-    `nwr["shop"="hardware"]${f};` +
-    `nwr["shop"="trade"]${f};` +
-    `nwr["name"~"sodimac|easy|construmart|imperial|homecenter|home center|ferreter|mts|chilemat",i]${f};` +
-    `);out center;`
-  );
+async function fetchJson(url: string): Promise<any[] | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: ctrl.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-const MAX_RESULTS = 12;
-
-// Devuelve TODAS las ferreterías cercanas ordenadas por distancia (la más cercana
-// primero). Amplía el radio si no encuentra nada. Lista vacía si no hay resultados.
 export async function findNearbyHardwareStores(
   lat: number,
   lng: number,
 ): Promise<HardwareStore[]> {
-  // 1) Preferir la edge function (servidor): evita CORS / mod_security / rate-limits
-  //    del navegador. Si no está disponible o falla, se usa el fetch directo abajo.
-  try {
-    const { data, error } = await supabase.functions.invoke("nearby-hardware-stores", {
-      body: { lat, lng },
-    });
-    if (!error && data && Array.isArray((data as any).stores)) {
-      const stores = (data as any).stores as HardwareStore[];
-      if (stores.length > 0) return stores.slice(0, MAX_RESULTS);
-      // La función respondió OK pero vacío: aún así intentamos el fetch directo
-      // (por si el navegador sí tiene acceso) antes de rendirnos.
-    }
-  } catch { /* edge function no disponible → fetch directo */ }
+  // Caja de búsqueda (~RADIUS_KM alrededor del punto)
+  const dLat = RADIUS_KM / 111;
+  const dLng = RADIUS_KM / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  const viewbox = `${lng - dLng},${lat + dLat},${lng + dLng},${lat - dLat}`;
 
-  return await findNearbyHardwareStoresDirect(lat, lng);
-}
+  const byKey = new Map<string, HardwareStore>();
 
-// Búsqueda directa desde el navegador (fallback).
-async function findNearbyHardwareStoresDirect(
-  lat: number,
-  lng: number,
-): Promise<HardwareStore[]> {
-  const radii = [5000, 15000, 40000]; // metros: ampliar si no hay nada cerca
-  const dead = new Set<string>(); // endpoints que ya fallaron/timeout → no reintentar
-  for (const radius of radii) {
-    const query = buildQuery(lat, lng, radius);
-    for (const endpoint of OVERPASS_ENDPOINTS) {
-      if (dead.has(endpoint)) continue;
-      try {
-        const res = await fetchWithTimeout(endpoint, query);
-        if (!res || !res.ok) { dead.add(endpoint); continue; } // sin respuesta → no reintentar este
-        const data = await res.json();
-        const elements: any[] = data?.elements ?? [];
-        const stores = elements
-          .map((e) => {
-            const elat = e.lat ?? e.center?.lat;
-            const elng = e.lon ?? e.center?.lon;
-            if (elat == null || elng == null) return null;
-            const name = e.tags?.name || e.tags?.brand || "Ferretería";
-            return { name, lat: elat, lng: elng, distanceKm: haversineKm(lat, lng, elat, elng) } as HardwareStore;
-          })
-          .filter((s): s is HardwareStore => !!s);
-
-        if (stores.length > 0) {
-          // Dedupe (un mismo local puede venir como node + way) por nombre + coords aprox.
-          const seen = new Set<string>();
-          const unique: HardwareStore[] = [];
-          for (const s of stores.sort((a, b) => a.distanceKm - b.distanceKm)) {
-            const key = `${s.name.toLowerCase()}|${s.lat.toFixed(3)}|${s.lng.toFixed(3)}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            unique.push(s);
-          }
-          return unique.slice(0, MAX_RESULTS);
-        }
-        // endpoint respondió OK pero sin resultados → probar radio mayor con el mismo endpoint
-        break;
-      } catch {
-        dead.add(endpoint); // error de parseo/red → no reintentar este endpoint
+  for (const term of SEARCH_TERMS) {
+    const url =
+      `${NOMINATIM}?q=${encodeURIComponent(term)}&format=jsonv2&limit=12` +
+      `&viewbox=${encodeURIComponent(viewbox)}&bounded=1&countrycodes=cl&addressdetails=0`;
+    const items = await fetchJson(url);
+    if (!items) continue;
+    for (const it of items) {
+      const elat = parseFloat(it.lat);
+      const elng = parseFloat(it.lon);
+      if (!Number.isFinite(elat) || !Number.isFinite(elng)) continue;
+      const distanceKm = haversineKm(lat, lng, elat, elng);
+      if (distanceKm > RADIUS_KM * 1.5) continue; // fuera del radio razonable
+      const rawName: string = it.name || String(it.display_name || "").split(",")[0] || "Ferretería";
+      const name = rawName.trim() || "Ferretería";
+      const key = `${name.toLowerCase()}|${elat.toFixed(3)}|${elng.toFixed(3)}`;
+      const existing = byKey.get(key);
+      if (!existing || distanceKm < existing.distanceKm) {
+        byKey.set(key, { name, lat: elat, lng: elng, distanceKm });
       }
     }
   }
-  return [];
+
+  return Array.from(byKey.values())
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, MAX_RESULTS);
 }
