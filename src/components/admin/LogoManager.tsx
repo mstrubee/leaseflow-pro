@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { clearLogoCache } from "@/hooks/useAppLogos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,9 @@ export function LogoManager() {
   }, []);
 
   const loadLogos = async () => {
+    // Invalida la caché global para que el resto de la app recargue los logos
+    // (mapa, contratos, etc.) tras cualquier alta/cambio/borrado.
+    clearLogoCache();
     setLoading(true);
     const { data, error } = await supabase
       .from("app_logos")

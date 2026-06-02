@@ -37,6 +37,12 @@ let cacheTimestamp: number = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 let pendingPromise: Promise<LogoUrls> | null = null;
 
+// Invalida la caché global de logos (llamar tras crear/cambiar/eliminar un logo).
+export function clearLogoCache() {
+  cachedLogos = null;
+  cacheTimestamp = 0;
+}
+
 export function useAppLogos() {
   const [logos, setLogos] = useState<LogoUrls>({
     agroplanet: logoAgroplanetFallback,
@@ -116,8 +122,7 @@ export function useAppLogos() {
   };
 
   const refreshLogos = () => {
-    cachedLogos = null;
-    cacheTimestamp = 0;
+    clearLogoCache();
     loadLogos();
   };
 
