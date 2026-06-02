@@ -857,7 +857,10 @@ export function useGantt(contractId: string) {
           default_duration_days: t.duration_days || 1,
           duration_type: t.duration_type,
           display_order: t.display_order,
-        })
+          // Guardar responsable y origen en la plantilla (editables luego)
+          default_responsible_member_id: (t as any).responsible_member_id ?? null,
+          default_origin: (t as any).origin ?? null,
+        } as any)
         .select()
         .single();
       if (insErr || !insertedRow) throw insErr || new Error("No se pudo insertar tarea de plantilla");

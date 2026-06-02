@@ -1171,6 +1171,19 @@ export function GanttChart({
 
     await onUpdateTask(taskId, updates);
 
+    // Al asignar responsable a una línea madre, las hijas SIN responsable heredan
+    // el mismo por defecto (cada una puede editarse después).
+    if (field === "responsible_member_id" && value) {
+      const collectDesc = (pid: string): GanttTask[] => {
+        const direct = tasks.filter((t) => t.parent_id === pid);
+        return direct.flatMap((c) => [c, ...collectDesc(c.id)]);
+      };
+      const inherit = collectDesc(taskId).filter((c) => !c.responsible_member_id);
+      for (const c of inherit) {
+        await onUpdateTask(c.id, { responsible_member_id: value } as Partial<GanttTask>);
+      }
+    }
+
     if (
       task.parent_id &&
       ["start_date", "end_date", "duration_days", "duration_type"].includes(field)
