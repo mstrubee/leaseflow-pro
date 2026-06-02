@@ -281,6 +281,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             name: templateForm.name,
             description: templateForm.description || null,
             created_by: user?.id,
+            is_active: true,
           });
         toast({ title: "Plantilla creada" });
       }

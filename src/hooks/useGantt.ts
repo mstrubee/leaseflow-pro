@@ -126,10 +126,12 @@ export function useGantt(contractId: string) {
   }, []);
 
   const loadTemplates = useCallback(async () => {
+    // Activas = is_active true O null (plantillas antiguas creadas sin el flag).
+    // Solo se excluyen las desactivadas explícitamente (is_active = false).
     const { data } = await supabase
       .from("gantt_templates")
       .select("*")
-      .eq("is_active", true)
+      .or("is_active.is.null,is_active.eq.true")
       .order("name");
     if (data) setTemplates(data);
   }, []);
