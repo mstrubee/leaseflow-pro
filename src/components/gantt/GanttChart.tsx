@@ -607,12 +607,29 @@ export function GanttChart({
     return map;
   }, [visibleTasks]);
 
+  // Fechas efectivas: una línea madre abarca de la hija más temprana a la más tardía
+  // (recursivo). Una hoja usa sus propias fechas. Garantiza que la madre siempre
+  // refleje a sus hijas aunque el valor guardado esté desactualizado.
+  const getEffectiveDates = useCallback((task: GanttTask): { start: string | null; end: string | null } => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) return { start: task.start_date, end: task.end_date };
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of children) {
+      const { start, end } = getEffectiveDates(c);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    return { start: minStart, end: maxEnd };
+  }, [tasks]);
+
   // Get task position - uses dragPreview for the task being dragged
   const getTaskPosition = useCallback((task: GanttTask) => {
     // Use preview state if this task is being dragged
     const isBeingDragged = barDragTaskId === task.id && dragPreview;
-    const startDateStr = isBeingDragged ? dragPreview.start : task.start_date;
-    const endDateStr = isBeingDragged ? dragPreview.end : task.end_date;
+    const eff = getEffectiveDates(task);
+    const startDateStr = isBeingDragged ? dragPreview.start : eff.start;
+    const endDateStr = isBeingDragged ? dragPreview.end : eff.end;
     
     if (!startDateStr || !endDateStr) {
       return { left: 0, width: 0, visible: false };
@@ -628,7 +645,7 @@ export function GanttChart({
       width,
       visible: true,
     };
-  }, [barDragTaskId, dragPreview, resolveVisibleIndex]);
+  }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
@@ -1265,6 +1282,23 @@ export function GanttChart({
     }
     return { color: null, inherited: false };
   }, [taskById]);
+
+  // Progreso efectivo: una línea madre muestra el progreso agregado de sus hijas
+  // (promedio ponderado por duración); una hoja usa su progreso manual o automático.
+  const getEffectiveProgress = useCallback((task: GanttTask): number => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
+    }
+    let totalW = 0;
+    let acc = 0;
+    for (const c of children) {
+      const w = c.duration_days && c.duration_days > 0 ? c.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveProgress(c);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [tasks]);
 
   const handleSetColor = async (taskId: string, color: string | null) => {
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
@@ -1976,7 +2010,7 @@ export function GanttChart({
                   <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                     {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
-                      value={task.start_date}
+                      value={hasChildren ? getEffectiveDates(task).start : task.start_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
                       placeholder="Inicio"
                       editable={isAdmin && !hasChildren}
@@ -1987,9 +2021,12 @@ export function GanttChart({
                   <div className="flex-shrink-0 border-r flex items-center px-1" style={{ width: DURATION_COL_WIDTH }}>
                     {hasChildren ? (
                       <span className="text-xs px-1 text-muted-foreground" title="Calculado según las líneas hijas">
-                        {task.start_date && task.end_date
-                          ? Math.max(1, Math.round((parseISO(task.end_date).getTime() - parseISO(task.start_date).getTime()) / 86400000) + 1)
-                          : "—"}
+                        {(() => {
+                          const { start, end } = getEffectiveDates(task);
+                          return start && end
+                            ? Math.max(1, Math.round((parseISO(end).getTime() - parseISO(start).getTime()) / 86400000) + 1)
+                            : "—";
+                        })()}
                       </span>
                     ) : (
                       <DurationInput
@@ -2005,7 +2042,7 @@ export function GanttChart({
                   {/* End date */}
                   <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                     <DatePickerCell
-                      value={task.end_date}
+                      value={hasChildren ? getEffectiveDates(task).end : task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
@@ -2018,7 +2055,9 @@ export function GanttChart({
                       type="number"
                       min={0}
                       max={100}
-                      value={task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task)}
+                      value={hasChildren
+                        ? getEffectiveProgress(task)
+                        : (task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task))}
                       onChange={(e) => {
                         const str = e.target.value;
                         if (str === "") {
@@ -2032,9 +2071,11 @@ export function GanttChart({
                         else if (task.status === "completed") updates.status = "in_progress";
                         onUpdateTask(task.id, updates, { skipPropagation: true });
                       }}
-                      disabled={!isAdmin}
+                      disabled={!isAdmin || hasChildren}
                       className="h-7 text-xs w-16 text-center px-1"
-                      title="Se calcula automáticamente según la fecha actual. Escribe un valor para fijarlo manualmente."
+                      title={hasChildren
+                        ? "Progreso agregado de las líneas hijas (no editable)."
+                        : "Se calcula automáticamente según la fecha actual. Escribe un valor para fijarlo manualmente."}
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
@@ -2132,7 +2173,7 @@ export function GanttChart({
                               
                               {/* Progress line at bottom: blue < 100%, green at 100% */}
                               {(() => {
-                                const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
+                                const effectiveProgress = getEffectiveProgress(task);
                                 if (effectiveProgress <= 0) return null;
                                 const isComplete = effectiveProgress >= 100;
                                 return (
@@ -2161,7 +2202,7 @@ export function GanttChart({
                               <p className="text-xs">
                                 Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
                               </p>
-                              <p className="text-xs">Progreso: {task.progress && task.progress > 0 ? `${task.progress}% (manual)` : `${computeAutoProgress(task)}% (auto)`}</p>
+                              <p className="text-xs">Progreso: {hasChildren ? `${getEffectiveProgress(task)}% (hijas)` : (task.progress && task.progress > 0 ? `${task.progress}% (manual)` : `${computeAutoProgress(task)}% (auto)`)}</p>
                               <p className="text-xs text-muted-foreground mt-1">
                                 Arrastra bordes para cambiar fechas • Centro para mover • A otra tarea para dependencia
                               </p>
