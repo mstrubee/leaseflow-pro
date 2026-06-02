@@ -133,10 +133,6 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
 
-  // Rutas guardadas sin agendar (scheduled_date null)
-  const [unschedOpen, setUnschedOpen] = useState(false);
-  const [unscheduled, setUnscheduled] = useState<{ id: string; name: string; supplier_name: string | null }[]>([]);
-
   // Papelera de rutas
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; route: CalendarRoute } | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -365,31 +361,6 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
 
   const openTrash = async () => { await loadTrash(); setTrashOpen(true); };
 
-  // ── Rutas sin agendar ───────────────────────────────────────────────────────
-  const loadUnscheduled = async () => {
-    const { data } = await supabase.from("maintenance_routes")
-      .select("id, name, supplier_id, suppliers ( name )")
-      .is("scheduled_date", null)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false });
-    // Agrupar por nombre base (las giras comparten nombre, difieren en "— Día N")
-    const seen = new Set<string>();
-    const list: { id: string; name: string; supplier_name: string | null }[] = [];
-    for (const r of (data ?? []) as Record<string, unknown>[]) {
-      const base = String(r.name ?? "").replace(/\s—\sDía\s.*$/u, "").trim();
-      const key = `${base}|${(r.supplier_id as string) ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      list.push({
-        id: r.id as string,
-        name: base || (r.name as string),
-        supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
-      });
-    }
-    setUnscheduled(list);
-  };
-  const openUnscheduled = async () => { await loadUnscheduled(); setUnschedOpen(true); };
-
   const restoreFromTrash = async (id: string) => {
     await supabase.from("maintenance_routes").update({ deleted_at: null }).eq("id", id);
     setTrashed((prev) => prev.filter((r) => r.id !== id));
@@ -458,11 +429,6 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
           </div>
         )}
 
-        {!isOperador && !exportMode && (
-          <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-gray-500" onClick={openUnscheduled}>
-            <CalendarDays className="w-3.5 h-3.5" /> Sin agendar
-          </Button>
-        )}
         {!isOperador && !exportMode && (
           <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-gray-500" onClick={openTrash}>
             <Trash2 className="w-3.5 h-3.5" /> Papelera
@@ -752,36 +718,6 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
           </button>
         </div>
       )}
-
-      {/* Rutas sin agendar */}
-      <Sheet open={unschedOpen} onOpenChange={setUnschedOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="w-4 h-4 text-gray-500" /> Rutas sin agendar
-            </SheetTitle>
-          </SheetHeader>
-          <p className="text-xs text-gray-400 mt-2">Rutas guardadas sin fecha. Edítalas para calendarizarlas.</p>
-          <div className="mt-4 space-y-2">
-            {unscheduled.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">No hay rutas sin agendar</p>
-            ) : unscheduled.map((r) => (
-              <div key={r.id} className="rounded-lg border border-gray-200 p-2.5 flex items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{r.name}</div>
-                  {r.supplier_name && <div className="text-xs text-gray-400 truncate">{r.supplier_name}</div>}
-                </div>
-                {onEditRoute && (
-                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-blue-600"
-                    onClick={() => { onEditRoute(r.id); setUnschedOpen(false); }}>
-                    <Pencil className="w-3.5 h-3.5" /> Editar
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
 
       {/* Papelera */}
       <Sheet open={trashOpen} onOpenChange={setTrashOpen}>

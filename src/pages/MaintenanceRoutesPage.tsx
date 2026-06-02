@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { RouteBuilderLayout } from "@/components/maintenance/routes/RouteBuilderLayout";
 import { RouteCalendar } from "@/components/maintenance/routes/RouteCalendar";
 import { RouteComplianceStats } from "@/components/maintenance/routes/RouteComplianceStats";
+import { UnscheduledRoutesButton } from "@/components/maintenance/routes/UnscheduledRoutesButton";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Navigation, CalendarDays, BarChart2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -51,6 +52,14 @@ export default function MaintenanceRoutesPage() {
             </button>
           ))}
         </div>
+
+        {!isOperador && (
+          <div className="ml-auto">
+            <UnscheduledRoutesButton
+              onEdit={(routeId) => { setEditRouteId(routeId); setTab("builder"); }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Content */}
