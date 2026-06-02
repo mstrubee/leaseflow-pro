@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store, X } from "lucide-react";
+import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store, X, CalendarCheck } from "lucide-react";
 import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type HardwareStore } from "@/lib/findHardwareStore";
 
 // Input de velocidad que permite borrar el campo para reescribir; si queda vacío
@@ -67,7 +68,7 @@ interface Props {
   onSearchPurchase: () => void;
   onClearPurchase: () => void;
   onSetDayStartTimeForDay: (dayIndex: number, time: string) => void;
-  onSave: () => void;
+  onSave: (schedule: boolean) => void | Promise<unknown>;
   onReset: () => void;
   isEditing?: boolean;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
@@ -220,6 +221,21 @@ export function RoutePanel({
     onSearchPurchase();
   };
   const selectedStore = purchaseCandidates[selectedIdx] ?? null;
+
+  // Diálogo de guardado (3 opciones)
+  const [saveOpen, setSaveOpen] = useState(false);
+  const handleSave = async (schedule: boolean) => {
+    try {
+      await onSave(schedule);
+      toast.success(
+        isEditing ? "Cambios guardados"
+          : schedule ? "Ruta guardada y calendarizada" : "Ruta guardada sin agendar",
+      );
+      setSaveOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error al guardar");
+    }
+  };
 
   const toggleDayCollapse = (day: number) =>
     setCollapsedDays((prev) => {
@@ -473,13 +489,53 @@ export function RoutePanel({
             <RotateCcw className="w-3 h-3 mr-1" />Limpiar
           </Button>
           <Button size="sm" className="flex-1 text-xs h-8"
-            onClick={async () => { try { await onSave(); toast.success(isEditing ? "Cambios guardados" : "Ruta guardada"); } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); } }}
+            onClick={() => setSaveOpen(true)}
             disabled={saving || stops.length === 0 || !routeName.trim()}>
             <Save className="w-3 h-3 mr-1" />{saving ? "Guardando…" : isEditing ? "Guardar cambios" : "Guardar ruta"}
           </Button>
         </div>
       </div>
 
+      {/* Diálogo de guardado: 3 opciones */}
+      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Guardar ruta</DialogTitle>
+            <DialogDescription>
+              {isEditing
+                ? "¿Cómo quieres guardar los cambios de esta ruta?"
+                : "Elige cómo guardar la ruta."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 py-1">
+            <Button
+              onClick={() => handleSave(true)}
+              disabled={saving || !scheduledDate}
+              className="w-full gap-2"
+            >
+              <CalendarCheck className="w-4 h-4" />
+              Guardar y Calendarizar
+            </Button>
+            {!scheduledDate && (
+              <p className="text-[11px] text-amber-600 -mt-1">
+                Fija una fecha de inicio para poder calendarizar.
+              </p>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => handleSave(false)}
+              disabled={saving}
+              className="w-full gap-2"
+            >
+              <Save className="w-4 h-4" />
+              Guardar Sin Agendar
+            </Button>
+            <Button variant="ghost" onClick={() => setSaveOpen(false)} disabled={saving} className="w-full">
+              Cancelar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

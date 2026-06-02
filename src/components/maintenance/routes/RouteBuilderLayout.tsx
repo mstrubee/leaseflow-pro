@@ -266,7 +266,7 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                   onSearchPurchase={rb.searchPurchaseCandidates}
                   onClearPurchase={rb.clearPurchaseCandidates}
                   onSetDayStartTimeForDay={rb.setDayStartTimeForDay}
-                  onSave={async () => { const id = await rb.saveRoute(); rb.resetRoute(); onExitEdit?.(); return id; }}
+                  onSave={async (schedule: boolean) => { const id = await rb.saveRoute({ schedule }); rb.resetRoute(); onExitEdit?.(); return id; }}
                   onReset={() => { rb.resetRoute(); onExitEdit?.(); }}
                   isEditing={rb.isEditing}
                   onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}

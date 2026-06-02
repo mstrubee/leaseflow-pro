@@ -1161,7 +1161,7 @@ export function useRouteBuilder(editTourId?: string | null) {
     setStops(newStops);
     setDayStartTimes(newDayStartTimes);
     setSupplierId(routeRows[0].supplier_id ?? null);
-    setScheduledDate(String(routeRows[0].scheduled_date));
+    setScheduledDate(routeRows[0].scheduled_date ? String(routeRows[0].scheduled_date) : "");
     if (newDayStartTimes[0]) setStartTime(newDayStartTimes[0]);
     const baseName = String(routeRows[0].name ?? "").replace(/\s—\sDía\s.*$/u, "").trim();
     setRouteNameState(baseName);
@@ -1182,11 +1182,12 @@ export function useRouteBuilder(editTourId?: string | null) {
   // ---------------------------------------------------------------------------
   // Save
   // ---------------------------------------------------------------------------
-  const saveRoute = useCallback(async (): Promise<string> => {
+  const saveRoute = useCallback(async (opts?: { schedule?: boolean }): Promise<string> => {
+    const calendarize = opts?.schedule !== false; // por defecto, calendarizar
     if (!user)              throw new Error("No autenticado");
     if (!routeName.trim())  throw new Error("Ingresa un nombre para la ruta");
     if (stops.length === 0) throw new Error("Agrega al menos una parada");
-    if (!scheduledDate)     throw new Error("Selecciona la fecha de inicio");
+    if (calendarize && !scheduledDate) throw new Error("Selecciona la fecha de inicio");
 
     setSaving(true);
     try {
@@ -1218,9 +1219,10 @@ export function useRouteBuilder(editTourId?: string | null) {
       let firstRouteId = "";
 
       for (const dayIndex of days) {
-        const dayDate = addBusinessDays(scheduledDate, dayIndex);
+        // Sin agendar (calendarize=false) → sin fecha (scheduled_date null)
+        const dayDate = calendarize && scheduledDate ? addBusinessDays(scheduledDate, dayIndex) : null;
         const dayName = multiDay
-          ? `${routeName.trim()} — Día ${dayIndex + 1} (${dayDate})`
+          ? `${routeName.trim()} — Día ${dayIndex + 1}${dayDate ? ` (${dayDate})` : ""}`
           : routeName.trim();
 
         // Insert robusto: si la migración de tour_id/day_index/start_time aún
