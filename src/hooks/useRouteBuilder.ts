@@ -195,20 +195,22 @@ function matchFormsToLocation(
     const formCompany = f.contract_id ? companyByContract.get(f.contract_id) ?? null : null;
     if (locCompany && formCompany && locCompany !== formCompany) return false;
 
+    // IMPORTANTE: solo emparejar cuando el NOMBRE DEL CONTRATO es igual o CONTIENE
+    // el identificador del local — nunca al revés. Si el nombre del LOCAL contuviera
+    // al del contrato, un local específico ("Chillán VIVO") capturaría forms de un
+    // contrato genérico ("Chillán"). La ciudad solo matchea por igualdad exacta.
     for (const cn of candidates) {
-      // Código del local (Autoplanet: "AP0045")
-      if (localCode && (cn.includes(localCode) || cn === localCode)) return true;
-      // local_name completo (Autoplanet con nombre: "AP0045-Concon")
-      if (localName && (cn.includes(localName) || localName.includes(cn))) return true;
-      // Ciudad bidireccional ("casablanca" ↔ "agroplanet casablanca")
-      if (locCity && (cn === locCity || cn.includes(locCity) || locCity.includes(cn))) return true;
-      // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ↔ "Rotonda Atenas")
-      if (bareName) {
-        if (cn === bareName) return true;
-        if (bareName.length >= 5 && (cn.includes(bareName) || bareName.includes(cn))) return true;
-      }
-      // Nombre completo bidireccional (último recurso)
-      if (cn.includes(locName) || locName.includes(cn)) return true;
+      // Código del local (Autoplanet: "AP0045"): el contrato lo contiene ("AP0045-Concon")
+      if (localCode && (cn === localCode || cn.includes(localCode))) return true;
+      // local_name completo
+      if (localName && (cn === localName || cn.includes(localName))) return true;
+      // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ⊂ "Rotonda Atenas")
+      if (bareName && bareName.length >= 5 && (cn === bareName || cn.includes(bareName))) return true;
+      // Ciudad: SOLO igualdad exacta ("casablanca" === "casablanca"), para no mezclar
+      // locales distintos de la misma ciudad.
+      if (locCity && cn === locCity) return true;
+      // Nombre completo: igualdad o el contrato lo contiene (nunca al revés)
+      if (cn === locName || cn.includes(locName)) return true;
     }
 
     return false;
