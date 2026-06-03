@@ -779,28 +779,29 @@ export function useGantt(contractId: string) {
   const taskTree = buildTaskTree(tasks);
 
   const reorderTask = async (taskId: string, newIndex: number, siblingIds: string[]) => {
+    // 1) Actualización local optimista (instantánea, sin recargar toda la sección)
+    const orderMap = new Map(siblingIds.map((id, idx) => [id, idx]));
+    setTasks((prev) =>
+      prev.map((t) => (orderMap.has(t.id) ? { ...t, display_order: orderMap.get(t.id)! } : t)),
+    );
+
+    // 2) Persistir en segundo plano, en paralelo
     setSaving(true);
     try {
-      // Update display_order for all affected siblings
-      const updates = siblingIds.map((id, idx) => ({
-        id,
-        display_order: idx,
-      }));
-
-      for (const update of updates) {
-        await supabase
-          .from("gantt_tasks")
-          .update({ display_order: update.display_order })
-          .eq("id", update.id);
-      }
-
-      await loadTimeline();
+      const results = await Promise.all(
+        siblingIds.map((id, idx) =>
+          supabase.from("gantt_tasks").update({ display_order: idx }).eq("id", id),
+        ),
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "No se pudo reordenar la tarea",
       });
+      await loadTimeline(); // resync solo si falló
     } finally {
       setSaving(false);
     }

@@ -773,7 +773,8 @@ export function GanttChart({
       if (newTaskRow.parent_id && newTaskRow.start_date && newTaskRow.end_date) {
         await syncAncestorsDates(newTaskRow.parent_id);
       }
-      setNewTaskRow(createEmptyNewTask());
+      // Cerrar el formulario tras guardar (no reabrir una línea nueva automáticamente)
+      setNewTaskRow(null);
     } finally {
       setIsSaving(false);
     }
@@ -1155,16 +1156,18 @@ export function GanttChart({
       return;
     }
 
-    // Date-field edits with dependencies → ask the user
+    // Solo preguntar si esta tarea DEPENDE de otra (entrante): editar su fecha
+    // manualmente entra en conflicto con su predecesora → ofrecer romper/mantener.
+    // Si solo tiene DEPENDIENTES (salientes), no se pregunta: se mueven en cascada
+    // automáticamente (es el comportamiento esperado de una dependencia).
     if ((field === "start_date" || field === "end_date") && value) {
-      const outgoing = hasOutgoingDependents(taskId);
       const incoming = hasIncomingDependencies(taskId);
-      if (outgoing || incoming) {
+      if (incoming) {
         setPendingDateEdit({
           taskId,
           field: field as "start_date" | "end_date",
           newDate: value,
-          hasOutgoing: outgoing,
+          hasOutgoing: hasOutgoingDependents(taskId),
           hasIncoming: incoming,
         });
         return;
