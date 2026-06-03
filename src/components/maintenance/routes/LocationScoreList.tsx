@@ -1,6 +1,8 @@
 import type { ScoredLocation, MaintenanceLocation } from "@/hooks/useRouteBuilder";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, AlertTriangle, ChevronRight } from "lucide-react";
+import { useAppLogos } from "@/hooks/useAppLogos";
+import { locationCompanyKey, logoUrlForKey } from "@/lib/companyLogo";
 
 interface Props {
   scoredLocations: ScoredLocation[];
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export function LocationScoreList({ scoredLocations, origin, selectedLocationId, onSelectLocation }: Props) {
+  const { logos } = useAppLogos();
   if (!origin) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
@@ -44,6 +47,13 @@ export function LocationScoreList({ scoredLocations, origin, selectedLocationId,
         >
           {/* Rank badge */}
           <span className="text-xs font-mono text-gray-400 w-5 shrink-0 text-center">{i + 1}</span>
+
+          {/* Logo de la empresa según el nombre del local */}
+          <img
+            src={logoUrlForKey(logos, locationCompanyKey(loc))}
+            alt=""
+            className="w-6 h-6 rounded-full object-contain border border-gray-100 bg-white shrink-0"
+          />
 
           {/* Info */}
           <div className="flex-1 min-w-0">
