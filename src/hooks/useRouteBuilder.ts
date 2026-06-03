@@ -166,6 +166,7 @@ function matchFormsToLocation(
   loc: MaintenanceLocation,
   allForms: RouteForm[],
   companyByContract: Map<string, CompanyKey>,
+  contractNameById: Map<string, string>,
 ): RouteForm[] {
   if (allForms.length === 0) return [];
 
@@ -181,27 +182,34 @@ function matchFormsToLocation(
   const bareName = stripCode(localName || locName);
 
   return allForms.filter((f) => {
-    const cn = norm(f.contract_name ?? "");
-    if (!cn) return false;
+    // Candidatos de nombre de contrato: el guardado en el form Y el nombre real del
+    // contrato (de la tabla contracts, que lleva el código del local, ej. "AP0049-…").
+    const candidates = [
+      norm(f.contract_name ?? ""),
+      norm((f.contract_id ? contractNameById.get(f.contract_id) : "") ?? ""),
+    ].filter(Boolean);
+    if (candidates.length === 0) return false;
 
     // Filtro por empresa: si conocemos la del form y la del local, deben coincidir.
     // Evita que un form "Casablanca" (Agroplanet) aparezca en "Autoplanet Casablanca".
     const formCompany = f.contract_id ? companyByContract.get(f.contract_id) ?? null : null;
     if (locCompany && formCompany && locCompany !== formCompany) return false;
 
-    // Código del local (Autoplanet: "AP0045")
-    if (localCode && (cn.includes(localCode) || cn === localCode)) return true;
-    // local_name completo (Autoplanet con nombre: "AP0045-Concon")
-    if (localName && (cn.includes(localName) || localName.includes(cn))) return true;
-    // Ciudad bidireccional ("casablanca" ↔ "agroplanet casablanca")
-    if (locCity && (cn === locCity || cn.includes(locCity) || locCity.includes(cn))) return true;
-    // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ↔ "Rotonda Atenas")
-    if (bareName) {
-      if (cn === bareName) return true;
-      if (bareName.length >= 5 && (cn.includes(bareName) || bareName.includes(cn))) return true;
+    for (const cn of candidates) {
+      // Código del local (Autoplanet: "AP0045")
+      if (localCode && (cn.includes(localCode) || cn === localCode)) return true;
+      // local_name completo (Autoplanet con nombre: "AP0045-Concon")
+      if (localName && (cn.includes(localName) || localName.includes(cn))) return true;
+      // Ciudad bidireccional ("casablanca" ↔ "agroplanet casablanca")
+      if (locCity && (cn === locCity || cn.includes(locCity) || locCity.includes(cn))) return true;
+      // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ↔ "Rotonda Atenas")
+      if (bareName) {
+        if (cn === bareName) return true;
+        if (bareName.length >= 5 && (cn.includes(bareName) || bareName.includes(cn))) return true;
+      }
+      // Nombre completo bidireccional (último recurso)
+      if (cn.includes(locName) || locName.includes(cn)) return true;
     }
-    // Nombre completo bidireccional (último recurso)
-    if (cn.includes(locName) || locName.includes(cn)) return true;
 
     return false;
   });
@@ -340,6 +348,9 @@ export function useRouteBuilder(editTourId?: string | null) {
   const [formsReloadKey, setFormsReloadKey] = useState(0);
   // Empresa (Agroplanet/Autoplanet) por contract_id — distingue locales homónimos
   const [companyByContract, setCompanyByContract] = useState<Map<string, CompanyKey>>(new Map());
+  // Nombre REAL del contrato por id (lleva el código del local, ej. "AP0049-…").
+  // El contract_name guardado en el form a veces es una etiqueta corta ("P20").
+  const [contractNameById, setContractNameById] = useState<Map<string, string>>(new Map());
   // Fase 2: recomendación de tiempos — mediana de minutos reales por tipo de form
   const [timeStatsByType, setTimeStatsByType] = useState<Record<string, { median: number; count: number }>>({});
   // Memoria de tiempos por form (recuerda el tiempo aunque se deseleccione)
@@ -446,6 +457,16 @@ export function useRouteBuilder(editTourId?: string | null) {
     })();
   }, [user]);
 
+  // Nombre real de cada contrato (id → name), para emparejar forms por código de local
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase.from("contracts").select("id, name").is("deleted_at", null);
+      if (!data) return;
+      setContractNameById(new Map((data as Array<{ id: string; name: string }>).map((c) => [c.id, c.name])));
+    })();
+  }, [user]);
+
   // ---------------------------------------------------------------------------
   // Load forms — runs once criticalities are ready (or immediately if empty)
   // ---------------------------------------------------------------------------
@@ -498,7 +519,7 @@ export function useRouteBuilder(editTourId?: string | null) {
   const formsByLocation = useMemo(() => {
     const map = new Map<string, RouteForm[]>();
     for (const loc of locations) {
-      const matched = matchFormsToLocation(loc, allForms, companyByContract);
+      const matched = matchFormsToLocation(loc, allForms, companyByContract, contractNameById);
       // Colapsar forms fusionados en un representante (el de mayor criticidad del grupo)
       const groups = new Map<string, RouteForm[]>();
       const singles: RouteForm[] = [];
@@ -526,7 +547,7 @@ export function useRouteBuilder(editTourId?: string | null) {
       map.set(loc.id, result);
     }
     return map;
-  }, [locations, allForms, companyByContract]);
+  }, [locations, allForms, companyByContract, contractNameById]);
 
   // Reconciliar stops cuando cambian las fusiones: colapsar los forms de un grupo
   // en su "padre" para que compartan UN solo tiempo (no varios por miembro).
