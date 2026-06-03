@@ -21,6 +21,7 @@ export interface MaintenanceLocation {
   centro_sap: string | null;
   lat: number;
   lng: number;
+  contract_id?: string | null; // vínculo directo a un contrato (emparejamiento exacto de forms)
 }
 
 export interface CriticalityCategory {
@@ -169,6 +170,13 @@ function matchFormsToLocation(
   contractNameById: Map<string, string>,
 ): RouteForm[] {
   if (allForms.length === 0) return [];
+
+  // Si el local está VINCULADO a un contrato (asignado por el admin al renombrar/
+  // agregar), emparejar EXACTO por contract_id. Evita falsos positivos por ciudad
+  // (ej. un "Casablanca" nuevo capturando forms del "Casablanca" original).
+  if (loc.contract_id) {
+    return allForms.filter((f) => f.contract_id === loc.contract_id);
+  }
 
   const localName = norm(loc.local_name ?? "");
   const localCode = norm(loc.local_code ?? "");
@@ -479,19 +487,29 @@ export function useRouteBuilder(editTourId?: string | null) {
 
   // Renombrar un local del mapa asignándole el nombre de un contrato vigente (solo admin).
   // Setea name/local_name y deriva el código (AP0044, AG0031…) para que matcheen los forms.
-  const renameLocation = useCallback(async (locationId: string, contractName: string) => {
+  const renameLocation = useCallback(async (locationId: string, contractName: string, contractId?: string | null) => {
     const code = contractName.match(/\b([A-Za-z]{2}\d{3,})\b/)?.[1] ?? null;
     const patch: Record<string, unknown> = { name: contractName, local_name: contractName };
     if (code) patch.local_code = code.toUpperCase();
+    if (contractId !== undefined) patch.contract_id = contractId; // vínculo exacto para forms
     // Optimista
     setLocations((prev) => prev.map((l) =>
       l.id === locationId ? { ...l, ...(patch as Partial<MaintenanceLocation>) } : l,
     ));
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("maintenance_locations")
       .update(patch as never)
       .eq("id", locationId)
       .select("id");
+    // Si la columna contract_id aún no existe, reintentar sin ella (no bloquear el rename)
+    if (error && /contract_id|column|schema cache/i.test(error.message)) {
+      const { contract_id, ...rest } = patch as Record<string, unknown>;
+      ({ data, error } = await supabase
+        .from("maintenance_locations")
+        .update(rest as never)
+        .eq("id", locationId)
+        .select("id"));
+    }
     if (error) throw error;
     if (!data || data.length === 0) {
       throw new Error(
@@ -503,19 +521,29 @@ export function useRouteBuilder(editTourId?: string | null) {
 
   // Crear un punto nuevo en el mapa (solo admin) en lat/lng, asignándole un contrato.
   const createLocation = useCallback(async (
-    lat: number, lng: number, contractName: string, company: CompanyKey,
+    lat: number, lng: number, contractName: string, company: CompanyKey, contractId?: string | null,
   ) => {
     const code = contractName.match(/\b([A-Za-z]{2}\d{3,})\b/)?.[1]?.toUpperCase() ?? null;
     const folder = company === "autoplanet" ? "Autoplanet" : company === "agroplanet" ? "Agroplanet" : "Autoplanet";
-    const row = {
+    const row: Record<string, unknown> = {
       poi_id: crypto.randomUUID(), name: contractName, local_name: contractName,
       local_code: code, folder, lat, lng, is_active: true,
     };
-    const { data, error } = await supabase
+    if (contractId) row.contract_id = contractId;
+    let { data, error } = await supabase
       .from("maintenance_locations")
       .insert(row as never)
       .select("*")
       .single();
+    // Reintento sin contract_id si la columna aún no existe
+    if (error && /contract_id|column|schema cache/i.test(error.message)) {
+      const { contract_id, ...rest } = row;
+      ({ data, error } = await supabase
+        .from("maintenance_locations")
+        .insert(rest as never)
+        .select("*")
+        .single());
+    }
     if (error) {
       if (/permission|denied|row-level|policy/i.test(error.message)) {
         throw new Error(

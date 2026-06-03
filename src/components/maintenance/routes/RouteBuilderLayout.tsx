@@ -320,10 +320,10 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                   onSelect={async () => {
                     try {
                       if (addPointAt) {
-                        await rb.createLocation(addPointAt.lat, addPointAt.lng, c.name, ck);
+                        await rb.createLocation(addPointAt.lat, addPointAt.lng, c.name, ck, c.id);
                         toast.success(`Punto "${c.name}" agregado`);
                       } else if (renameTarget) {
-                        await rb.renameLocation(renameTarget.id, c.name);
+                        await rb.renameLocation(renameTarget.id, c.name, c.id);
                         toast.success(`Punto renombrado a "${c.name}"`);
                       }
                     } catch (e) {
