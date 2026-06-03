@@ -457,15 +457,37 @@ export function useRouteBuilder(editTourId?: string | null) {
     })();
   }, [user]);
 
-  // Nombre real de cada contrato (id → name), para emparejar forms por código de local
+  // Nombre real de cada contrato (id → name), para emparejar forms por código de local.
+  // También se expone la lista de contratos vigentes (firmados) para renombrar locales.
+  const [vigentContracts, setVigentContracts] = useState<Array<{ id: string; name: string }>>([]);
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data } = await supabase.from("contracts").select("id, name").is("deleted_at", null);
+      const { data } = await supabase.from("contracts").select("id, name, status").is("deleted_at", null);
       if (!data) return;
-      setContractNameById(new Map((data as Array<{ id: string; name: string }>).map((c) => [c.id, c.name])));
+      const rows = data as Array<{ id: string; name: string; status: string }>;
+      setContractNameById(new Map(rows.map((c) => [c.id, c.name])));
+      setVigentContracts(
+        rows.filter((c) => c.status === "firmado")
+          .map((c) => ({ id: c.id, name: c.name }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
     })();
   }, [user]);
+
+  // Renombrar un local del mapa asignándole el nombre de un contrato vigente (solo admin).
+  // Setea name/local_name y deriva el código (AP0044, AG0031…) para que matcheen los forms.
+  const renameLocation = useCallback(async (locationId: string, contractName: string) => {
+    const code = contractName.match(/\b([A-Za-z]{2}\d{3,})\b/)?.[1] ?? null;
+    const patch: Record<string, unknown> = { name: contractName, local_name: contractName };
+    if (code) patch.local_code = code.toUpperCase();
+    // Optimista
+    setLocations((prev) => prev.map((l) =>
+      l.id === locationId ? { ...l, ...(patch as Partial<MaintenanceLocation>) } : l,
+    ));
+    const { error } = await supabase.from("maintenance_locations").update(patch as never).eq("id", locationId);
+    if (error) throw error;
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Load forms — runs once criticalities are ready (or immediately if empty)
@@ -1368,5 +1390,6 @@ export function useRouteBuilder(editTourId?: string | null) {
     mergeForms, unmergeForms,
     suggestMinutes, timeStatsByType, estimateMinutesAI,
     editingTourId, isEditing: editingRouteIds.length > 0, loadTour,
+    vigentContracts, renameLocation,
   };
 }

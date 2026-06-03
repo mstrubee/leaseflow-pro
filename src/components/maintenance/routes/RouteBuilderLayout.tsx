@@ -9,6 +9,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered, MapPin, Route as RouteIcon } from "lucide-react";
 
 // Divisor arrastrable: arrastrar a la izquierda agranda la columna (que está a la derecha)
@@ -55,8 +59,10 @@ interface RouteBuilderLayoutProps {
 
 export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuilderLayoutProps = {}) {
   const rb = useRouteBuilder(editTourId);
+  const { isAdmin } = useAuth();
   const [search, setSearch] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<MaintenanceLocation | null>(null);
+  const [renameTarget, setRenameTarget] = useState<MaintenanceLocation | null>(null);
 
   const [listCollapsed, setListCollapsed] = useState(false);
   const [listWidth, setListWidth] = useState(360);
@@ -145,6 +151,7 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
             purchaseCandidates={rb.purchaseCandidates}
             onSetOrigin={rb.setOrigin}
             onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
+            onRenameLocation={isAdmin ? (loc) => setRenameTarget(loc) : undefined}
           />
         </div>
 
@@ -276,6 +283,44 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
           </>
         )}
       </div>
+
+      {/* Renombrar local: elegir un contrato vigente (solo admin, clic derecho en el mapa) */}
+      <Dialog open={!!renameTarget} onOpenChange={(o) => { if (!o) setRenameTarget(null); }}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <DialogHeader className="px-4 pt-4">
+            <DialogTitle>Renombrar punto del mapa</DialogTitle>
+            <DialogDescription>
+              {renameTarget ? `Actual: ${renameTarget.local_name || renameTarget.name}. ` : ""}
+              Elige el contrato vigente que corresponde a este punto.
+            </DialogDescription>
+          </DialogHeader>
+          <Command className="border-t">
+            <CommandInput placeholder="Buscar contrato vigente…" />
+            <CommandList className="max-h-72">
+              <CommandEmpty>No se encontraron contratos vigentes.</CommandEmpty>
+              {rb.vigentContracts.map((c) => (
+                <CommandItem
+                  key={c.id}
+                  value={c.name}
+                  onSelect={async () => {
+                    if (!renameTarget) return;
+                    try {
+                      await rb.renameLocation(renameTarget.id, c.name);
+                      toast.success(`Punto renombrado a "${c.name}"`);
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "No se pudo renombrar");
+                    } finally {
+                      setRenameTarget(null);
+                    }
+                  }}
+                >
+                  {c.name}
+                </CommandItem>
+              ))}
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

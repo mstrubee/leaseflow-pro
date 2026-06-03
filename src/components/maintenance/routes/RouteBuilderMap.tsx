@@ -249,13 +249,14 @@ interface Props {
   purchaseCandidates?: { name: string; lat: number; lng: number; distanceKm: number }[];
   onSetOrigin: (location: MaintenanceLocation) => void;
   onSelectLocation: (location: MaintenanceLocation) => void;
+  onRenameLocation?: (location: MaintenanceLocation) => void; // clic derecho (solo admin)
 }
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
   origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
   purchaseCandidates = [],
-  onSetOrigin, onSelectLocation,
+  onSetOrigin, onSelectLocation, onRenameLocation,
 }: Props) {
   const { logos } = useAppLogos();
   const stopSet   = new Set(stops.map((s) => s.locationId));
@@ -380,6 +381,11 @@ export function RouteBuilderMap({
                 click: () => {
                   if (pickingOrigin) { onSetOrigin(loc); setPickingOrigin(false); }
                   else onSelectLocation(loc); // abre el panel lateral de detalle
+                },
+                contextmenu: (e) => {
+                  if (!onRenameLocation) return;
+                  (e as any).originalEvent?.preventDefault?.();
+                  onRenameLocation(loc);
                 },
               }}
             />
