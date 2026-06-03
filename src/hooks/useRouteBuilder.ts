@@ -1402,6 +1402,6 @@ export function useRouteBuilder(editTourId?: string | null) {
     mergeForms, unmergeForms,
     suggestMinutes, timeStatsByType, estimateMinutesAI,
     editingTourId, isEditing: editingRouteIds.length > 0, loadTour,
-    vigentContracts, renameLocation,
+    vigentContracts, renameLocation, companyByContract,
   };
 }

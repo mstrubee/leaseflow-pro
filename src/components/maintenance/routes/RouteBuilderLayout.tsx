@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppLogos } from "@/hooks/useAppLogos";
+import { logoUrlForKey, type CompanyLogoKey } from "@/lib/companyLogo";
 import { toast } from "sonner";
 import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered, MapPin, Route as RouteIcon } from "lucide-react";
 
@@ -60,6 +62,7 @@ interface RouteBuilderLayoutProps {
 export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuilderLayoutProps = {}) {
   const rb = useRouteBuilder(editTourId);
   const { isAdmin } = useAuth();
+  const { logos } = useAppLogos();
   const [search, setSearch] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<MaintenanceLocation | null>(null);
   const [renameTarget, setRenameTarget] = useState<MaintenanceLocation | null>(null);
@@ -298,10 +301,18 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
             <CommandInput placeholder="Buscar contrato vigente…" />
             <CommandList className="max-h-72">
               <CommandEmpty>No se encontraron contratos vigentes.</CommandEmpty>
-              {rb.vigentContracts.map((c) => (
+              {rb.vigentContracts.map((c) => {
+                const ck = rb.companyByContract.get(c.id) ?? null;
+                const logoKey: CompanyLogoKey | null =
+                  ck === "autoplanet" ? "autoplanet"
+                  : ck === "agroplanet" ? "agroplanet"
+                  : /grupo\s*planet|garage|egakat/i.test(c.name) ? "grupo_planet"
+                  : null;
+                return (
                 <CommandItem
                   key={c.id}
-                  value={c.name}
+                  value={`${c.name} ${ck ?? ""} ${c.id}`}
+                  className="flex items-center gap-2"
                   onSelect={async () => {
                     if (!renameTarget) return;
                     try {
@@ -314,9 +325,16 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                     }
                   }}
                 >
-                  {c.name}
+                  {logoKey ? (
+                    <img src={logoUrlForKey(logos, logoKey)} alt=""
+                      className="w-5 h-5 rounded-full object-contain border border-gray-100 bg-white shrink-0" />
+                  ) : (
+                    <span className="w-5 h-5 shrink-0" />
+                  )}
+                  <span className="flex-1 truncate">{c.name}</span>
                 </CommandItem>
-              ))}
+                );
+              })}
             </CommandList>
           </Command>
         </DialogContent>
