@@ -66,6 +66,7 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
   const [search, setSearch] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<MaintenanceLocation | null>(null);
   const [renameTarget, setRenameTarget] = useState<MaintenanceLocation | null>(null);
+  const [addPointAt, setAddPointAt] = useState<{ lat: number; lng: number } | null>(null);
 
   const [listCollapsed, setListCollapsed] = useState(false);
   const [listWidth, setListWidth] = useState(360);
@@ -155,6 +156,7 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
             onSetOrigin={rb.setOrigin}
             onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
             onRenameLocation={isAdmin ? (loc) => setRenameTarget(loc) : undefined}
+            onAddPointAt={isAdmin ? (lat, lng) => setAddPointAt({ lat, lng }) : undefined}
           />
         </div>
 
@@ -287,14 +289,16 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
         )}
       </div>
 
-      {/* Renombrar local: elegir un contrato vigente (solo admin, clic derecho en el mapa) */}
-      <Dialog open={!!renameTarget} onOpenChange={(o) => { if (!o) setRenameTarget(null); }}>
+      {/* Asignar contrato vigente a un punto (solo admin): renombrar uno existente
+          (clic derecho en marcador) o crear uno nuevo (clic derecho en el mapa). */}
+      <Dialog open={!!renameTarget || !!addPointAt} onOpenChange={(o) => { if (!o) { setRenameTarget(null); setAddPointAt(null); } }}>
         <DialogContent className="sm:max-w-md p-0 overflow-hidden">
           <DialogHeader className="px-4 pt-4">
-            <DialogTitle>Renombrar punto del mapa</DialogTitle>
+            <DialogTitle>{addPointAt ? "Agregar punto al mapa" : "Renombrar punto del mapa"}</DialogTitle>
             <DialogDescription>
-              {renameTarget ? `Actual: ${renameTarget.local_name || renameTarget.name}. ` : ""}
-              Elige el contrato vigente que corresponde a este punto.
+              {addPointAt
+                ? "Elige el contrato vigente para el punto nuevo (se ubicará donde hiciste clic)."
+                : `${renameTarget ? `Actual: ${renameTarget.local_name || renameTarget.name}. ` : ""}Elige el contrato vigente que corresponde a este punto.`}
             </DialogDescription>
           </DialogHeader>
           <Command className="border-t">
@@ -314,14 +318,19 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                   value={`${c.name} ${ck ?? ""} ${c.id}`}
                   className="flex items-center gap-2"
                   onSelect={async () => {
-                    if (!renameTarget) return;
                     try {
-                      await rb.renameLocation(renameTarget.id, c.name);
-                      toast.success(`Punto renombrado a "${c.name}"`);
+                      if (addPointAt) {
+                        await rb.createLocation(addPointAt.lat, addPointAt.lng, c.name, ck);
+                        toast.success(`Punto "${c.name}" agregado`);
+                      } else if (renameTarget) {
+                        await rb.renameLocation(renameTarget.id, c.name);
+                        toast.success(`Punto renombrado a "${c.name}"`);
+                      }
                     } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "No se pudo renombrar");
+                      toast.error(e instanceof Error ? e.message : "No se pudo guardar");
                     } finally {
                       setRenameTarget(null);
+                      setAddPointAt(null);
                     }
                   }}
                 >

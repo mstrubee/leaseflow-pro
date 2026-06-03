@@ -251,14 +251,27 @@ interface Props {
   purchaseCandidates?: { name: string; lat: number; lng: number; distanceKm: number }[];
   onSetOrigin: (location: MaintenanceLocation) => void;
   onSelectLocation: (location: MaintenanceLocation) => void;
-  onRenameLocation?: (location: MaintenanceLocation) => void; // clic derecho (solo admin)
+  onRenameLocation?: (location: MaintenanceLocation) => void; // clic derecho en marcador (solo admin)
+  onAddPointAt?: (lat: number, lng: number) => void; // clic derecho en mapa vacío (solo admin)
+}
+
+// Clic derecho sobre el mapa (zona vacía) → agregar un punto nuevo (solo admin).
+function MapContextMenuHandler({ onAddPointAt }: { onAddPointAt?: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    contextmenu: (e) => {
+      if (!onAddPointAt) return;
+      e.originalEvent?.preventDefault?.();
+      onAddPointAt(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
 }
 
 export function RouteBuilderMap({
   locations, scoredLocations, formsByLocation,
   origin, stops, schedule = [], startTime = "09:00", visibleLocationIds = null,
   purchaseCandidates = [],
-  onSetOrigin, onSelectLocation, onRenameLocation,
+  onSetOrigin, onSelectLocation, onRenameLocation, onAddPointAt,
 }: Props) {
   const { logos } = useAppLogos();
   const stopSet   = new Set(stops.map((s) => s.locationId));
@@ -339,6 +352,7 @@ export function RouteBuilderMap({
         <MapClickHandler pickingOrigin={pickingOrigin} locations={locations}
           onSetOrigin={(loc) => { onSetOrigin(loc); setPickingOrigin(false); }}
           onDone={() => setPickingOrigin(false)} />
+        <MapContextMenuHandler onAddPointAt={onAddPointAt} />
         <MapSearchBar onFlyTo={(lat, lng, zoom) => setFlyTo({ lat, lng, zoom })} />
 
         {/* Trayecto por tramo: línea sólida real (OSRM) o recta, + etiqueta de minutos */}

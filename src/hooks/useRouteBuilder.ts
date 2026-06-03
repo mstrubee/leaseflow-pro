@@ -501,6 +501,33 @@ export function useRouteBuilder(editTourId?: string | null) {
     }
   }, []);
 
+  // Crear un punto nuevo en el mapa (solo admin) en lat/lng, asignándole un contrato.
+  const createLocation = useCallback(async (
+    lat: number, lng: number, contractName: string, company: CompanyKey,
+  ) => {
+    const code = contractName.match(/\b([A-Za-z]{2}\d{3,})\b/)?.[1]?.toUpperCase() ?? null;
+    const folder = company === "autoplanet" ? "Autoplanet" : company === "agroplanet" ? "Agroplanet" : "Autoplanet";
+    const row = {
+      poi_id: crypto.randomUUID(), name: contractName, local_name: contractName,
+      local_code: code, folder, lat, lng, is_active: true,
+    };
+    const { data, error } = await supabase
+      .from("maintenance_locations")
+      .insert(row as never)
+      .select("*")
+      .single();
+    if (error) {
+      if (/permission|denied|row-level|policy/i.test(error.message)) {
+        throw new Error(
+          "No se pudo crear el punto (permisos insuficientes). Falta la migración: " +
+          "grant insert + política de insert para admins en maintenance_locations.",
+        );
+      }
+      throw error;
+    }
+    if (data) setLocations((prev) => [...prev, data as MaintenanceLocation]);
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Load forms — runs once criticalities are ready (or immediately if empty)
   // ---------------------------------------------------------------------------
@@ -1402,6 +1429,6 @@ export function useRouteBuilder(editTourId?: string | null) {
     mergeForms, unmergeForms,
     suggestMinutes, timeStatsByType, estimateMinutesAI,
     editingTourId, isEditing: editingRouteIds.length > 0, loadTour,
-    vigentContracts, renameLocation, companyByContract,
+    vigentContracts, renameLocation, createLocation, companyByContract,
   };
 }
