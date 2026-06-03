@@ -1745,12 +1745,21 @@ export function GanttChart({
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
                   </div>
 
-                  {/* Row number */}
+                  {/* Row number — con marco del color de la línea (padre: su color; hija: tono más claro) */}
                   <div
-                    className="flex-shrink-0 border-r flex items-center justify-center text-[11px] font-medium text-muted-foreground"
+                    className="flex-shrink-0 border-r flex items-center justify-center"
                     style={{ width: INDEX_COL_WIDTH }}
                   >
-                    {rowNumber}
+                    <span
+                      className="inline-flex items-center justify-center text-[11px] font-semibold rounded min-w-[22px] h-5 px-1"
+                      style={
+                        effective.color
+                          ? { border: `2px solid ${effective.color}`, backgroundColor: `${effective.color}1a`, color: "#374151" }
+                          : { color: "#9ca3af" }
+                      }
+                    >
+                      {rowNumber}
+                    </span>
                   </div>
 
                   {/* Task name */}
