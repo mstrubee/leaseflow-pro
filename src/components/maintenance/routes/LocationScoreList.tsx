@@ -66,11 +66,13 @@ export function LocationScoreList({ scoredLocations, origin, selectedLocationId,
                   ? `${(loc.distanceKm * 1000).toFixed(0)} m`
                   : `${loc.distanceKm.toFixed(1)} km`}
               </span>
-              {loc.totalForms > 0 && (
+              {loc.totalForms > 0 ? (
                 <span className="flex items-center gap-0.5 text-xs text-orange-600 font-medium">
                   <AlertTriangle className="w-3 h-3" />
                   {loc.totalForms} form{loc.totalForms !== 1 ? "s" : ""}
                 </span>
+              ) : (
+                <span className="text-xs text-gray-400 italic">No tiene forms</span>
               )}
               {loc.zona && <span className="text-xs text-gray-300">{loc.zona}</span>}
             </div>

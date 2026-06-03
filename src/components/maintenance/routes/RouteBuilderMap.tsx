@@ -45,8 +45,10 @@ function buildIcon(
         border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:bold;
         display:flex;align-items:center;justify-content:center;border:2px solid white;
         box-shadow:0 1px 3px rgba(0,0,0,0.3)">${stopIndex + 1}</span>` : "";
-  const formBadge = formCount > 0 && !isStop && !isOrigin
-    ? `<span style="position:absolute;top:-6px;right:-6px;background:#ef4444;color:white;
+  // Badge de cantidad de forms. Rojo si >0; gris con "0" si no tiene forms
+  // (para identificar claramente locales sin pendientes, no errores de búsqueda).
+  const formBadge = !isStop && !isOrigin
+    ? `<span style="position:absolute;top:-6px;right:-6px;background:${formCount > 0 ? "#ef4444" : "#9ca3af"};color:white;
         border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:bold;
         display:flex;align-items:center;justify-content:center;border:1.5px solid white">${formCount}</span>` : "";
 
