@@ -1754,7 +1754,7 @@ export function GanttChart({
                       className="inline-flex items-center justify-center text-[11px] font-semibold rounded min-w-[22px] h-5 px-1"
                       style={
                         effective.color
-                          ? { border: `2px solid ${effective.color}`, backgroundColor: `${effective.color}1a`, color: "#374151" }
+                          ? { border: `${hasChildren ? 4 : 2}px solid ${effective.color}`, backgroundColor: `${effective.color}1a`, color: "#374151" }
                           : { color: "#9ca3af" }
                       }
                     >
