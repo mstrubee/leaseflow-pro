@@ -485,8 +485,18 @@ export function useRouteBuilder(editTourId?: string | null) {
     setLocations((prev) => prev.map((l) =>
       l.id === locationId ? { ...l, ...(patch as Partial<MaintenanceLocation>) } : l,
     ));
-    const { error } = await supabase.from("maintenance_locations").update(patch as never).eq("id", locationId);
+    const { data, error } = await supabase
+      .from("maintenance_locations")
+      .update(patch as never)
+      .eq("id", locationId)
+      .select("id");
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error(
+        "No se pudo guardar el renombrado (permisos insuficientes). " +
+        "Falta aplicar la migración: grant update + política de update para admins en maintenance_locations.",
+      );
+    }
   }, []);
 
   // ---------------------------------------------------------------------------
