@@ -163,6 +163,14 @@ export function companyKeyFromText(s: string): CompanyKey {
   return null;
 }
 
+/** Detecta empresa por texto O por código de local (AP… = Autoplanet, AG… = Agroplanet). */
+function detectCompany(...texts: (string | null | undefined)[]): CompanyKey {
+  const t = norm(texts.filter(Boolean).join(" "));
+  if (t.includes("autoplanet") || /\bap\d/.test(t)) return "autoplanet";
+  if (t.includes("agroplanet") || /\bag\d/.test(t)) return "agroplanet";
+  return null;
+}
+
 function matchFormsToLocation(
   loc: MaintenanceLocation,
   allForms: RouteForm[],
@@ -181,7 +189,8 @@ function matchFormsToLocation(
   const localName = norm(loc.local_name ?? "");
   const localCode = norm(loc.local_code ?? "");
   const locName   = norm(loc.name);
-  const locCompany = companyKeyFromText(loc.folder); // 'autoplanet' | 'agroplanet'
+  // Empresa del local: folder + código + nombre (robusto para diferenciar AG/AP)
+  const locCompany = detectCompany(loc.folder, loc.local_code, loc.local_name, loc.name);
   // Ciudad del local: el name sin el prefijo de empresa ("Agroplanet Casablanca" → "casablanca")
   const locCity = locName.replace(/^(agro|auto)planet\s+/, "");
   // Nombre "pelado": sin el prefijo de código del local ("AP0048-Rotonda Atena" → "rotonda atena").
@@ -198,10 +207,15 @@ function matchFormsToLocation(
     ].filter(Boolean);
     if (candidates.length === 0) return false;
 
-    // Filtro por empresa: si conocemos la del form y la del local, deben coincidir.
-    // Evita que un form "Casablanca" (Agroplanet) aparezca en "Autoplanet Casablanca".
-    const formCompany = f.contract_id ? companyByContract.get(f.contract_id) ?? null : null;
+    // Empresa del form: contract_companies > nombre real del contrato > contract_name.
+    const formCompany =
+      (f.contract_id ? companyByContract.get(f.contract_id) ?? null : null) ??
+      detectCompany(f.contract_id ? contractNameById.get(f.contract_id) : null, f.contract_name);
+    // Si conocemos ambas empresas y difieren, NO emparejar (separa AG de AP).
     if (locCompany && formCompany && locCompany !== formCompany) return false;
+    // Para emparejar por CIUDAD (ambiguo: varios locales por ciudad), exigir que la
+    // empresa del form esté confirmada y coincida con la del local.
+    const cityNeedsSameCompany = !!locCompany && formCompany === locCompany;
 
     // IMPORTANTE: solo emparejar cuando el NOMBRE DEL CONTRATO es igual o CONTIENE
     // el identificador del local — nunca al revés. Si el nombre del LOCAL contuviera
@@ -214,9 +228,9 @@ function matchFormsToLocation(
       if (localName && (cn === localName || cn.includes(localName))) return true;
       // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ⊂ "Rotonda Atenas")
       if (bareName && bareName.length >= 5 && (cn === bareName || cn.includes(bareName))) return true;
-      // Ciudad: SOLO igualdad exacta ("casablanca" === "casablanca"), para no mezclar
-      // locales distintos de la misma ciudad.
-      if (locCity && cn === locCity) return true;
+      // Ciudad: igualdad exacta Y misma empresa confirmada (no mezclar AG/AP ni
+      // distintos locales de la misma ciudad).
+      if (locCity && cn === locCity && cityNeedsSameCompany) return true;
       // Nombre completo: igualdad o el contrato lo contiene (nunca al revés)
       if (cn === locName || cn.includes(locName)) return true;
     }
