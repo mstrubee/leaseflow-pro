@@ -593,27 +593,54 @@ export function useGantt(contractId: string) {
     const snap = lastDeletedRef.current;
     if (!snap || snap.tasks.length === 0) return;
     lastDeletedRef.current = null;
+
+    // 1) Restaurar en el estado local de inmediato (sin recargar la sección)
+    const nowIso = new Date().toISOString();
+    const restored = snap.tasks.map((t) => ({
+      ...t,
+      children: [],
+      dependencies: [] as any[],
+      purchase_orders: [],
+      created_at: nowIso,
+      updated_at: nowIso,
+    })) as unknown as GanttTask[];
+    setTasks((prev) => {
+      const all = [...prev, ...restored];
+      if (snap.deps.length === 0) return all;
+      const depsByOwner = new Map<string, any[]>();
+      for (const d of snap.deps) {
+        const arr = depsByOwner.get(d.task_id) || [];
+        arr.push(d);
+        depsByOwner.set(d.task_id, arr);
+      }
+      return all.map((t) => {
+        const add = depsByOwner.get(t.id);
+        if (!add) return t;
+        const merged = [...(t.dependencies || [])];
+        for (const d of add) if (!merged.some((x) => x.id === d.id)) merged.push(d as any);
+        return { ...t, dependencies: merged };
+      });
+    });
+
+    // 2) Persistir en segundo plano
     setSaving(true);
     try {
-      // 1) Re-insertar tareas SIN parent_id (preservando ids; evita conflictos de FK)
+      // Re-insertar tareas SIN parent_id (preservando ids; evita conflictos de FK)
       const noParent = snap.tasks.map((t) => ({ ...t, parent_id: null }));
       const { error: insErr } = await supabase.from("gantt_tasks").insert(noParent as any);
       if (insErr) throw insErr;
-      // 2) Restaurar parent_id
       for (const t of snap.tasks) {
         if (t.parent_id) {
           await supabase.from("gantt_tasks").update({ parent_id: t.parent_id }).eq("id", t.id);
         }
       }
-      // 3) Re-insertar dependencias
       if (snap.deps.length > 0) {
         await supabase.from("gantt_task_dependencies").insert(snap.deps as any);
       }
       toast({ title: "Eliminación deshecha" });
-      await loadTimeline();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo deshacer la eliminación" });
-      await loadTimeline();
+      await loadTimeline(); // resync solo si falló
     } finally {
       setSaving(false);
     }
