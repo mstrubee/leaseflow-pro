@@ -534,27 +534,31 @@ export function useGantt(contractId: string) {
   };
 
   const deleteTask = async (taskId: string) => {
+    // ids a eliminar: la tarea + sus descendientes (la BD cascada; lo replicamos local)
+    const collectIds = (id: string): string[] => {
+      const kids = tasks.filter((t) => t.parent_id === id);
+      return [id, ...kids.flatMap((k) => collectIds(k.id))];
+    };
+    const idsToRemove = new Set(collectIds(taskId));
+
+    // Actualización local optimista (instantánea, sin recargar la sección)
+    setTasks((prev) => prev.filter((t) => !idsToRemove.has(t.id)));
+
     setSaving(true);
     try {
       const { error } = await supabase
         .from("gantt_tasks")
         .delete()
         .eq("id", taskId);
-
       if (error) throw error;
-
-      toast({
-        title: "Tarea eliminada",
-        description: "La tarea ha sido eliminada",
-      });
-
-      await loadTimeline();
+      toast({ title: "Tarea eliminada", description: "La tarea ha sido eliminada" });
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "No se pudo eliminar la tarea",
       });
+      await loadTimeline(); // resync solo si falló
     } finally {
       setSaving(false);
     }
