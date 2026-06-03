@@ -303,6 +303,27 @@ export type Database = {
         }
         Relationships: []
       }
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string | null
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string | null
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string | null
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       budget_carryover: {
         Row: {
           amount_uf: number
@@ -1024,6 +1045,9 @@ export type Database = {
           closed_by: string | null
           contract_id: string
           created_at: string
+          frozen_amount_uf: number | null
+          frozen_at: string | null
+          frozen_by: string | null
           id: string
           is_closed: boolean | null
           updated_at: string
@@ -1036,6 +1060,9 @@ export type Database = {
           closed_by?: string | null
           contract_id: string
           created_at?: string
+          frozen_amount_uf?: number | null
+          frozen_at?: string | null
+          frozen_by?: string | null
           id?: string
           is_closed?: boolean | null
           updated_at?: string
@@ -1048,6 +1075,9 @@ export type Database = {
           closed_by?: string | null
           contract_id?: string
           created_at?: string
+          frozen_amount_uf?: number | null
+          frozen_at?: string | null
+          frozen_by?: string | null
           id?: string
           is_closed?: boolean | null
           updated_at?: string
@@ -3221,7 +3251,9 @@ export type Database = {
           operator_notes: string | null
           postpone_note: string | null
           postponed_to: string | null
+          real_minutes: number | null
           route_stop_id: string
+          started_at: string | null
           visit_evidence_urls: string[] | null
         }
         Insert: {
@@ -3235,7 +3267,9 @@ export type Database = {
           operator_notes?: string | null
           postpone_note?: string | null
           postponed_to?: string | null
+          real_minutes?: number | null
           route_stop_id: string
+          started_at?: string | null
           visit_evidence_urls?: string[] | null
         }
         Update: {
@@ -3249,7 +3283,9 @@ export type Database = {
           operator_notes?: string | null
           postpone_note?: string | null
           postponed_to?: string | null
+          real_minutes?: number | null
           route_stop_id?: string
+          started_at?: string | null
           visit_evidence_urls?: string[] | null
         }
         Relationships: [
@@ -3276,11 +3312,16 @@ export type Database = {
           created_at: string
           estimated_travel_min: number | null
           id: string
-          location_id: string
+          location_id: string | null
           postpone_note: string | null
           postponed_to: string | null
           route_id: string
           status: string
+          stop_kind: string | null
+          stop_label: string | null
+          stop_lat: number | null
+          stop_lng: number | null
+          stop_minutes: number | null
           stop_order: number
         }
         Insert: {
@@ -3289,11 +3330,16 @@ export type Database = {
           created_at?: string
           estimated_travel_min?: number | null
           id?: string
-          location_id: string
+          location_id?: string | null
           postpone_note?: string | null
           postponed_to?: string | null
           route_id: string
           status?: string
+          stop_kind?: string | null
+          stop_label?: string | null
+          stop_lat?: number | null
+          stop_lng?: number | null
+          stop_minutes?: number | null
           stop_order: number
         }
         Update: {
@@ -3302,11 +3348,16 @@ export type Database = {
           created_at?: string
           estimated_travel_min?: number | null
           id?: string
-          location_id?: string
+          location_id?: string | null
           postpone_note?: string | null
           postponed_to?: string | null
           route_id?: string
           status?: string
+          stop_kind?: string | null
+          stop_label?: string | null
+          stop_lat?: number | null
+          stop_lng?: number | null
+          stop_minutes?: number | null
           stop_order?: number
         }
         Relationships: [
