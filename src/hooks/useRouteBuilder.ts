@@ -175,6 +175,10 @@ function matchFormsToLocation(
   const locCompany = companyKeyFromText(loc.folder); // 'autoplanet' | 'agroplanet'
   // Ciudad del local: el name sin el prefijo de empresa ("Agroplanet Casablanca" → "casablanca")
   const locCity = locName.replace(/^(agro|auto)planet\s+/, "");
+  // Nombre "pelado": sin el prefijo de código del local ("AP0048-Rotonda Atena" → "rotonda atena").
+  // Permite emparejar con contract_name sin código ("Rotonda Atenas").
+  const stripCode = (s: string) => s.replace(/^[a-z]{1,4}\s*\d+\s*[-–]\s*/, "").trim();
+  const bareName = stripCode(localName || locName);
 
   return allForms.filter((f) => {
     const cn = norm(f.contract_name ?? "");
@@ -191,6 +195,11 @@ function matchFormsToLocation(
     if (localName && (cn.includes(localName) || localName.includes(cn))) return true;
     // Ciudad bidireccional ("casablanca" ↔ "agroplanet casablanca")
     if (locCity && (cn === locCity || cn.includes(locCity) || locCity.includes(cn))) return true;
+    // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ↔ "Rotonda Atenas")
+    if (bareName) {
+      if (cn === bareName) return true;
+      if (bareName.length >= 5 && (cn.includes(bareName) || bareName.includes(cn))) return true;
+    }
     // Nombre completo bidireccional (último recurso)
     if (cn.includes(locName) || locName.includes(cn)) return true;
 
