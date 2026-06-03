@@ -11,6 +11,8 @@ import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type HardwareStore } from "@/lib/findHardwareStore";
+import { useAppLogos } from "@/hooks/useAppLogos";
+import { locationCompanyKey, logoUrlForKey } from "@/lib/companyLogo";
 
 // Input de velocidad que permite borrar el campo para reescribir; si queda vacío
 // o en 0, conserva el valor anterior.
@@ -103,9 +105,11 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
   onSetStopMinutes: (stopId: string, min: number) => void;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
 }) {
+  const { logos } = useAppLogos();
   const [expanded, setExpanded] = useState(false);
   const selected = stop.allForms.filter((f) => formIds.includes(f.id));
   const isShopping = stop.kind === "shopping";
+  const isErrand = stop.kind === "errand"; // ferretería ad-hoc: sin logo de empresa
   const noForms = stop.formIds.length === 0; // compras o "solo parada"
 
   return (
@@ -117,6 +121,13 @@ function StopRow({ stop, index, order, schedule, formIds, partial, dragging, dra
         <span className={`w-5 h-5 rounded-full text-white text-[9px] flex items-center justify-center shrink-0 font-bold ${isShopping ? "bg-fuchsia-500" : "bg-blue-500"}`}>
           {isShopping ? <ShoppingCart className="w-3 h-3" /> : order}
         </span>
+        {!isShopping && !isErrand && (
+          <img
+            src={logoUrlForKey(logos, locationCompanyKey(stop.location))}
+            alt=""
+            className="w-5 h-5 rounded-full object-contain border border-gray-100 bg-white shrink-0"
+          />
+        )}
         <div className="flex-1 min-w-0">
           <div
             className={`truncate font-medium ${(!noForms && onSelectLocation) ? "cursor-pointer hover:text-blue-600 transition-colors" : ""}`}
