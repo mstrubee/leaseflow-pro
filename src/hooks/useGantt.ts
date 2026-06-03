@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, addDays, differenceInDays } from "date-fns";
@@ -533,13 +533,38 @@ export function useGantt(contractId: string) {
     }
   };
 
+  // Snapshot de la última eliminación para poder deshacer (Ctrl/Cmd+Z)
+  const lastDeletedRef = useRef<{ tasks: any[]; deps: any[] } | null>(null);
+
+  const pickTaskCols = (t: GanttTask) => ({
+    id: t.id, timeline_id: t.timeline_id, parent_id: t.parent_id, template_task_id: t.template_task_id,
+    name: t.name, start_date: t.start_date, end_date: t.end_date, duration_days: t.duration_days,
+    duration_type: t.duration_type, progress: t.progress, status: t.status, has_lag: t.has_lag,
+    lag_days: t.lag_days, lag_type: t.lag_type, notes: t.notes, color: t.color, display_order: t.display_order,
+    responsible_member_id: t.responsible_member_id, origin: t.origin,
+  });
+
   const deleteTask = async (taskId: string) => {
     // ids a eliminar: la tarea + sus descendientes (la BD cascada; lo replicamos local)
     const collectIds = (id: string): string[] => {
       const kids = tasks.filter((t) => t.parent_id === id);
       return [id, ...kids.flatMap((k) => collectIds(k.id))];
     };
-    const idsToRemove = new Set(collectIds(taskId));
+    const ids = collectIds(taskId);
+    const idsToRemove = new Set(ids);
+
+    // Snapshot para deshacer: filas de tareas + sus dependencias (cascada de la BD)
+    const snapTasks = tasks.filter((t) => idsToRemove.has(t.id)).map(pickTaskCols);
+    let snapDeps: any[] = [];
+    try {
+      const list = ids.join(",");
+      const { data } = await (supabase as any)
+        .from("gantt_task_dependencies")
+        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type")
+        .or(`task_id.in.(${list}),depends_on_task_id.in.(${list})`);
+      snapDeps = data ?? [];
+    } catch { /* sin deps */ }
+    lastDeletedRef.current = { tasks: snapTasks, deps: snapDeps };
 
     // Actualización local optimista (instantánea, sin recargar la sección)
     setTasks((prev) => prev.filter((t) => !idsToRemove.has(t.id)));
@@ -551,7 +576,7 @@ export function useGantt(contractId: string) {
         .delete()
         .eq("id", taskId);
       if (error) throw error;
-      toast({ title: "Tarea eliminada", description: "La tarea ha sido eliminada" });
+      toast({ title: "Tarea eliminada", description: "Pulsa Ctrl+Z (Cmd+Z) para deshacer" });
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -559,6 +584,36 @@ export function useGantt(contractId: string) {
         description: "No se pudo eliminar la tarea",
       });
       await loadTimeline(); // resync solo si falló
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const undoDelete = async () => {
+    const snap = lastDeletedRef.current;
+    if (!snap || snap.tasks.length === 0) return;
+    lastDeletedRef.current = null;
+    setSaving(true);
+    try {
+      // 1) Re-insertar tareas SIN parent_id (preservando ids; evita conflictos de FK)
+      const noParent = snap.tasks.map((t) => ({ ...t, parent_id: null }));
+      const { error: insErr } = await supabase.from("gantt_tasks").insert(noParent as any);
+      if (insErr) throw insErr;
+      // 2) Restaurar parent_id
+      for (const t of snap.tasks) {
+        if (t.parent_id) {
+          await supabase.from("gantt_tasks").update({ parent_id: t.parent_id }).eq("id", t.id);
+        }
+      }
+      // 3) Re-insertar dependencias
+      if (snap.deps.length > 0) {
+        await supabase.from("gantt_task_dependencies").insert(snap.deps as any);
+      }
+      toast({ title: "Eliminación deshecha" });
+      await loadTimeline();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo deshacer la eliminación" });
+      await loadTimeline();
     } finally {
       setSaving(false);
     }
@@ -1094,6 +1149,7 @@ export function useGantt(contractId: string) {
     addTask,
     updateTask,
     deleteTask,
+    undoDelete,
     addDependency,
     removeDependency,
     updateDependency,

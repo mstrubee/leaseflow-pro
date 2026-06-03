@@ -39,6 +39,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     addTask,
     updateTask,
     deleteTask,
+    undoDelete,
     addDependency,
     updateDependency,
     removeDependency,
@@ -399,6 +400,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onUpdateTask={updateTask}
               onAddTask={addTask}
               onDeleteTask={deleteTask}
+              onUndoDelete={undoDelete}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onUpdateDependency={updateDependency}

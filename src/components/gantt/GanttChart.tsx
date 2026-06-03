@@ -266,6 +266,7 @@ interface GanttChartProps {
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
+  onUndoDelete?: () => Promise<void>;
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
@@ -376,6 +377,7 @@ export function GanttChart({
   onUpdateTask,
   onAddTask,
   onDeleteTask,
+  onUndoDelete,
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
@@ -500,6 +502,24 @@ export function GanttChart({
       nameInputRef.current.focus();
     }
   }, [newTaskRow]);
+
+  // Deshacer la última eliminación con Ctrl+Z (PC) / Cmd+Z (Mac).
+  // No interferir cuando se está escribiendo en un campo de texto.
+  useEffect(() => {
+    if (!onUndoDelete || !isAdmin) return;
+    const onKey = (e: KeyboardEvent) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z");
+      if (!isUndo) return;
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      const typing = tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement | null)?.isContentEditable;
+      if (typing) return; // dejar que el navegador deshaga el texto
+      e.preventDefault();
+      onUndoDelete();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onUndoDelete, isAdmin]);
 
   const toggleExpand = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -1941,6 +1961,11 @@ export function GanttChart({
                       size="sm"
                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
                       onClick={async () => {
+                        if (!window.confirm(
+                          hasChildren
+                            ? `¿Eliminar "${task.name}" y todas sus subtareas? Podrás deshacerlo con Ctrl+Z (Cmd+Z).`
+                            : `¿Eliminar "${task.name}"? Podrás deshacerlo con Ctrl+Z (Cmd+Z).`,
+                        )) return;
                         const parentId = task.parent_id;
                         // Collect this task and all descendants to exclude from sync
                         const collectIds = (id: string): string[] => {
