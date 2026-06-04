@@ -3194,6 +3194,7 @@ export type Database = {
       maintenance_locations: {
         Row: {
           centro_sap: string | null
+          contract_id: string | null
           created_at: string
           folder: string
           gerente_zonal: string | null
@@ -3209,6 +3210,7 @@ export type Database = {
         }
         Insert: {
           centro_sap?: string | null
+          contract_id?: string | null
           created_at?: string
           folder: string
           gerente_zonal?: string | null
@@ -3224,6 +3226,7 @@ export type Database = {
         }
         Update: {
           centro_sap?: string | null
+          contract_id?: string | null
           created_at?: string
           folder?: string
           gerente_zonal?: string | null

@@ -208,8 +208,9 @@ function matchFormsToLocation(
     if (candidates.length === 0) return false;
 
     // Empresa del form: contract_companies > nombre real del contrato > contract_name.
+    const knownCompany = f.contract_id ? companyByContract.get(f.contract_id) : null;
     const formCompany =
-      (f.contract_id ? companyByContract.get(f.contract_id) ?? null : null) ??
+      knownCompany ??
       detectCompany(f.contract_id ? contractNameById.get(f.contract_id) : null, f.contract_name);
     // Si conocemos ambas empresas y difieren, NO emparejar (separa AG de AP).
     if (locCompany && formCompany && locCompany !== formCompany) return false;
