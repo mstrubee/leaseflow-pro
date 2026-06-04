@@ -162,9 +162,19 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           if (upperText.includes(prefix)) return { match: contract };
         }
 
+        // Coincidencia por nombre: juntar TODOS los contratos que matchean. Si hay
+        // más de uno (ej. "Casablanca" → Casablanca y Casablanca AG), NO elegir uno
+        // al azar: marcar como AMBIGUO para que el usuario seleccione manualmente.
+        const nameMatches: { id: string; name: string }[] = [];
+        const seenIds = new Set<string>();
         for (const [name, contract] of contractsByName) {
-          if (normText.includes(name) || name.includes(normText)) return { match: contract };
+          if ((normText.includes(name) || name.includes(normText)) && !seenIds.has(contract.id)) {
+            seenIds.add(contract.id);
+            nameMatches.push(contract);
+          }
         }
+        if (nameMatches.length === 1) return { match: nameMatches[0] };
+        if (nameMatches.length > 1) return { match: null, ambiguous: nameMatches };
         return { match: null };
       };
 
@@ -218,7 +228,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             contractName = result.match.name;
           } else if (result.ambiguous) {
             ambiguousCandidates = result.ambiguous;
-            warnings.push("CEBE duplicado — seleccione contrato");
+            warnings.push("Nombre ambiguo — seleccione contrato");
           } else {
             warnings.push("Contrato no encontrado");
           }
@@ -440,7 +450,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
   const resolveAmbiguous = (rowIndex: number, contract: { id: string; name: string }) => {
     setParsedRows(prev => prev.map(r =>
       r.rowIndex === rowIndex
-        ? { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "CEBE duplicado — seleccione contrato") }
+        ? { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "Nombre ambiguo — seleccione contrato") }
         : r
     ));
   };
@@ -448,7 +458,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
   const resolveAllAmbiguous = (candidateIds: string[], contract: { id: string; name: string }) => {
     setParsedRows(prev => prev.map(r => {
       if (r.ambiguousCandidates && !r.contract_id && r.ambiguousCandidates.some(c => candidateIds.includes(c.id))) {
-        return { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "CEBE duplicado — seleccione contrato") };
+        return { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "Nombre ambiguo — seleccione contrato") };
       }
       return r;
     }));
