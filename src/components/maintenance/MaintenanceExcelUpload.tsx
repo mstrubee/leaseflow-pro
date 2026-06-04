@@ -263,8 +263,10 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         });
       }
 
-      // AI matching for unmatched rows
-      const unmatchedRows = parsed.filter(r => !r.contract_id && r.contract_name && !r.ambiguousCandidates);
+      // AI matching: filas sin contrato resuelto (incluye las AMBIGUAS, para que la IA
+      // lea el nombre del local y elija la mejor coincidencia; el selector manual queda
+      // como override de la sugerencia de la IA).
+      const unmatchedRows = parsed.filter(r => !r.contract_id && r.contract_name);
       if (unmatchedRows.length > 0 && contracts?.length) {
         setParsedRows(parsed);
         setAiLoading(true);
@@ -312,8 +314,9 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                     const match = matchMap.get(row.contract_name)!;
                     row.contract_id = match.contractId;
                     row.contract_name = match.contractName;
-                    row.warnings = row.warnings.filter(w => w !== "Contrato no encontrado");
+                    row.warnings = row.warnings.filter(w => w !== "Contrato no encontrado" && w !== "Nombre ambiguo — seleccione contrato");
                     (row as any).aiMatched = true;
+                    // Si era ambigua, mantener los candidatos para permitir override manual.
                   }
                 }
               }
@@ -450,7 +453,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
   const resolveAmbiguous = (rowIndex: number, contract: { id: string; name: string }) => {
     setParsedRows(prev => prev.map(r =>
       r.rowIndex === rowIndex
-        ? { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "Nombre ambiguo — seleccione contrato") }
+        ? { ...r, contract_id: contract.id, contract_name: contract.name, aiMatched: false, warnings: r.warnings.filter(w => w !== "Nombre ambiguo — seleccione contrato") }
         : r
     ));
   };
@@ -541,17 +544,23 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                       </TableCell>
                       <TableCell className="text-xs">{row.created_date || "-"}</TableCell>
                       <TableCell className="text-xs">
-                        {row.ambiguousCandidates && !row.contract_id ? (
+                        {row.ambiguousCandidates && (!row.contract_id || (row as any).aiMatched) ? (
                           <div className="space-y-1">
-                            <span className="text-orange-600 font-medium text-[11px] block">CEBE duplicado — Seleccione:</span>
+                            <span className="text-orange-600 font-medium text-[11px] block">
+                              {(row as any).aiMatched ? "IA sugirió — confirma o cambia:" : "Nombre ambiguo — Seleccione:"}
+                            </span>
                             <div className="flex flex-col gap-1">
                               {row.ambiguousCandidates.map(c => (
                                 <button
                                   key={c.id}
                                   onClick={() => resolveAmbiguous(row.rowIndex, c)}
-                                  className="text-left text-[11px] px-2 py-1 rounded border border-border hover:bg-accent hover:text-accent-foreground transition-colors"
+                                  className={`text-left text-[11px] px-2 py-1 rounded border transition-colors ${
+                                    c.id === row.contract_id
+                                      ? "border-primary bg-primary/10 font-medium"
+                                      : "border-border hover:bg-accent hover:text-accent-foreground"
+                                  }`}
                                 >
-                                  {c.name}
+                                  {c.id === row.contract_id && (row as any).aiMatched ? "✓ " : ""}{c.name}
                                 </button>
                               ))}
                             </div>
