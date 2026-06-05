@@ -4,15 +4,18 @@
  * unlike jsPDF's `doc.save()` which can be silently blocked.
  */
 export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
+  const fileBlob = blob.type ? blob : new Blob([blob], { type: "application/pdf" });
+  const url = URL.createObjectURL(fileBlob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.target = "_self";
   a.rel = "noopener";
+  a.style.display = "none";
   document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
+  a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  window.setTimeout(() => {
+    a.remove();
     URL.revokeObjectURL(url);
-  }, 0);
+  }, 1000);
 }
