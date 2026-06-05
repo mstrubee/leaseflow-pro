@@ -7,10 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   CalendarPlus, ChevronDown, ChevronRight, ChevronsUpDown, FileDown,
   Plus, Trash2, X, Users, Loader2, Star, BookUser, Check,
 } from "lucide-react";
@@ -81,6 +77,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const [expandedMeetings, setExpandedMeetings] = useState<Set<string>>(new Set());
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [newMeetingOpen, setNewMeetingOpen] = useState(true);
 
   const load = useCallback(async () => {
@@ -141,6 +138,10 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     if (open) {
       load();
       loadDirectory();
+    } else {
+      setPickerOpen(false);
+      setDeleteId(null);
+      document.body.style.pointerEvents = "";
     }
   }, [open, load, loadDirectory]);
 
@@ -356,15 +357,17 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
-    const meeting = meetings.find(m => m.id === deleteId);
+    const id = deleteId;
+    if (!id) return;
+    setDeletingId(id);
+    const meeting = meetings.find(m => m.id === id);
     if (meeting?.pdf_path) {
       await supabase.storage.from("repository-files").remove([meeting.pdf_path]);
     }
     const { error } = await supabase
       .from("special_attention_meetings")
       .delete()
-      .eq("id", deleteId);
+      .eq("id", id);
     if (error) {
       toast.error("Error al eliminar");
     } else {
@@ -372,6 +375,8 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
       await load();
     }
     setDeleteId(null);
+    setDeletingId(null);
+    document.body.style.pointerEvents = "";
   };
 
   const fmt = (iso: string) => {
