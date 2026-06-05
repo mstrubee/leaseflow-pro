@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, Trash2, CalendarCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, Trash2, CalendarCheck, Loader2 } from "lucide-react";
 import { MeetingsRegistryDialog } from "@/components/special-attention/MeetingsRegistryDialog";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { exportSpecialAttentionPDF } from "@/components/special-attention/exportSpecialAttentionPDF";
@@ -77,6 +77,7 @@ const SpecialAttentionPage = () => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
   const [meetingsOpen, setMeetingsOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -179,6 +180,22 @@ const SpecialAttentionPage = () => {
     setRemoveConfirmId(null);
   };
 
+  const handleDownloadPDF = async () => {
+    if (contracts.length === 0 || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const result = await exportSpecialAttentionPDF(contracts, { returnBlob: true });
+      if (!result) throw new Error("No se generó el PDF");
+      downloadBlob(result.blob, result.filename);
+      toast.success("PDF descargado");
+    } catch (err) {
+      console.error("special attention PDF download failed", err);
+      toast.error("No se pudo descargar el PDF");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   return (
     <SelectableElement elementId="special_attention" label="Atención Especial">
     <div className="min-h-screen bg-background">
@@ -219,14 +236,11 @@ const SpecialAttentionPage = () => {
             variant="outline"
             size="sm"
             className="gap-1.5 shrink-0"
-            disabled={loading || contracts.length === 0}
-            onClick={async () => {
-              const result = await exportSpecialAttentionPDF(contracts, { returnBlob: true });
-              if (result) downloadBlob(result.blob, result.filename);
-            }}
+            disabled={loading || contracts.length === 0 || pdfBusy}
+            onClick={handleDownloadPDF}
           >
-            <FileDown className="h-4 w-4" />
-            PDF
+            {pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            {pdfBusy ? "Generando" : "PDF"}
           </Button>
           <Button
             variant="outline"
