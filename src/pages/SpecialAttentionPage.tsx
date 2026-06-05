@@ -219,7 +219,10 @@ const SpecialAttentionPage = () => {
             size="sm"
             className="gap-1.5 shrink-0"
             disabled={loading || contracts.length === 0}
-            onClick={() => exportSpecialAttentionPDF(contracts)}
+            onClick={async () => {
+              const result = await exportSpecialAttentionPDF(contracts, { returnBlob: true });
+              if (result) downloadBlob(result.blob, result.filename);
+            }}
           >
             <FileDown className="h-4 w-4" />
             PDF
