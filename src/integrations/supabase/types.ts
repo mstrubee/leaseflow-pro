@@ -1093,6 +1093,47 @@ export type Database = {
           },
         ]
       }
+      contract_business_cases: {
+        Row: {
+          computed: Json
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          inputs: Json
+          overrides: Json
+          updated_at: string
+        }
+        Insert: {
+          computed?: Json
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inputs?: Json
+          overrides?: Json
+          updated_at?: string
+        }
+        Update: {
+          computed?: Json
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inputs?: Json
+          overrides?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_business_cases_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: true
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_companies: {
         Row: {
           company_id: string
