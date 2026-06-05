@@ -109,7 +109,8 @@ export function useBusinessCase({ contractId, seed, enabled }: UseBusinessCaseAr
       };
       const { data, error } = await supabase
         .from("contract_business_cases")
-        .upsert(payload, { onConflict: "contract_id" })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .upsert(payload as any, { onConflict: "contract_id" })
         .select("id")
         .single();
       if (error) throw error;
