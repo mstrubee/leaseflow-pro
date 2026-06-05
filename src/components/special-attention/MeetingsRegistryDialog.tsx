@@ -79,6 +79,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const [newMeetingOpen, setNewMeetingOpen] = useState(true);
 
   const load = useCallback(async () => {
@@ -383,6 +384,30 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const fmt = (iso: string) => {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} · ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} hrs`;
+  };
+
+  // Generate the "Acta de Reunión" PDF on-the-fly (participants + notes + contracts)
+  // and download it. This guarantees up-to-date content and forces a download
+  // instead of opening a new tab.
+  const handleDownloadMeetingPDF = async (meeting: MeetingRow) => {
+    setPdfBusyId(meeting.id);
+    try {
+      const snapshot = (meeting.snapshot && meeting.snapshot.length > 0)
+        ? meeting.snapshot
+        : (contracts as MeetingContractSnapshot[]);
+      const { blob, filename } = await generateMeetingPDF({
+        meetingDate: new Date(meeting.meeting_date),
+        notes: meeting.notes,
+        participants: meeting.participants.map(p => ({ name: p.name, role: p.role })),
+        contracts: snapshot,
+      });
+      downloadBlob(blob, filename);
+    } catch (err: any) {
+      console.error("meeting PDF download failed", err);
+      toast.error("No se pudo generar el PDF de la reunión");
+    } finally {
+      setPdfBusyId(null);
+    }
   };
 
   return (
