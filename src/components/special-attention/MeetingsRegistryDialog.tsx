@@ -85,7 +85,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     setLoading(true);
     const { data, error } = await supabase
       .from("special_attention_meetings")
-      .select("id, meeting_date, notes, pdf_url, pdf_path, special_attention_meeting_participants(id, name, role)")
+      .select("id, meeting_date, notes, pdf_url, pdf_path, snapshot, special_attention_meeting_participants(id, name, role)")
       .order("meeting_date", { ascending: false });
     if (error) {
       toast.error("Error al cargar reuniones");
@@ -98,6 +98,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
       notes: r.notes,
       pdf_url: r.pdf_url,
       pdf_path: r.pdf_path,
+      snapshot: Array.isArray(r.snapshot) ? r.snapshot : null,
       participants: (r.special_attention_meeting_participants || []).map((p: any) => ({
         id: p.id, name: p.name, role: p.role,
       })),
