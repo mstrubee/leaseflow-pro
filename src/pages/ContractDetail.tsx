@@ -891,6 +891,33 @@ const ContractDetail = () => {
                 onOpenChange={setBusinessCaseOpen}
                 contractId={contract.id}
               />
+              {/* Business Case Financiero */}
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setBusinessCaseFinOpen(true)}
+              >
+                <BarChart3 className="h-4 w-4" />
+                Business Case Financiero
+              </Button>
+              <BusinessCaseFinanciero
+                open={businessCaseFinOpen}
+                onOpenChange={setBusinessCaseFinOpen}
+                contractId={contract.id}
+                canEdit={isAdmin}
+                seed={{
+                  nombre: contract.name,
+                  direccion: address ? `${address.street} ${address.number}`.trim() : "",
+                  comuna: address?.commune ?? "",
+                  empresa: contract.contract_companies?.[0]?.companies?.name ?? "",
+                  superficieM2: contract.superficie_edificada_local,
+                  canonUf: displayVersion?.initial_rent || displayVersion?.regime_rent || null,
+                  gastoComunUf: displayVersion?.gastos_comunes_fixed_admin_uf ?? null,
+                  plazoAnios: displayVersion?.duration_months ? Math.round(displayVersion.duration_months / 12) : null,
+                  fechaEntrega: displayVersion?.effective_date ?? null,
+                  graciaMeses: displayVersion?.grace_months ?? null,
+                }}
+              />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               <Button
                 variant="outline"
