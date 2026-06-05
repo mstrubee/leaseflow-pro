@@ -144,6 +144,23 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     }
   }, [open, load, loadDirectory]);
 
+  // Fix Radix freeze: nested modals can leave `pointer-events: none` stuck on
+  // the body after the confirm dialog closes, freezing the whole app.
+  useEffect(() => {
+    if (!deleteId) {
+      const t = setTimeout(() => {
+        document.body.style.pointerEvents = "";
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, [deleteId]);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.pointerEvents = "";
+    };
+  }, []);
+
   // Group meetings by year > month
   const grouped = useMemo(() => {
     const tree: Record<string, Record<string, MeetingRow[]>> = {};
@@ -363,6 +380,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
@@ -664,21 +682,22 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
           </section>
         </div>
       </DialogContent>
-
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar reunión?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminará el registro, sus participantes y el PDF asociado. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Eliminar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Dialog>
+
+    <AlertDialog open={!!deleteId} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Eliminar reunión?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Se eliminará el registro, sus participantes y el PDF asociado. Esta acción no se puede deshacer.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={handleDelete}>Eliminar</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
