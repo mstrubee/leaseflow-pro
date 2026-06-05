@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { generateMeetingPDF, type MeetingContractSnapshot } from "./exportMeetingPDF";
+import { downloadBlob } from "@/lib/downloadBlob";
 
 interface Props {
   open: boolean;
@@ -44,6 +45,7 @@ interface MeetingRow {
   notes: string | null;
   pdf_url: string | null;
   pdf_path: string | null;
+  snapshot: MeetingContractSnapshot[] | null;
   participants: Participant[];
 }
 
