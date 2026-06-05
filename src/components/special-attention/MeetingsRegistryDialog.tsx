@@ -653,17 +653,18 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
                                             {meeting.participants.length} participante{meeting.participants.length !== 1 ? "s" : ""}
                                           </p>
                                         </div>
-                                        {meeting.pdf_url && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="gap-1.5 h-7"
-                                            onClick={() => window.open(meeting.pdf_url!, "_blank")}
-                                          >
-                                            <FileDown className="h-3.5 w-3.5" />
-                                            PDF
-                                          </Button>
-                                        )}
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="gap-1.5 h-7"
+                                          disabled={pdfBusyId === meeting.id}
+                                          onClick={() => handleDownloadMeetingPDF(meeting)}
+                                        >
+                                          {pdfBusyId === meeting.id
+                                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            : <FileDown className="h-3.5 w-3.5" />}
+                                          PDF
+                                        </Button>
                                         {isAdmin && deleteId === meeting.id ? (
                                           <div className="flex items-center gap-1.5">
                                             <Button
