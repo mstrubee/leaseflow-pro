@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { generateMeetingPDF, type MeetingContractSnapshot } from "./exportMeetingPDF";
+import { downloadBlob } from "@/lib/downloadBlob";
 
 interface Props {
   open: boolean;
@@ -44,6 +45,7 @@ interface MeetingRow {
   notes: string | null;
   pdf_url: string | null;
   pdf_path: string | null;
+  snapshot: MeetingContractSnapshot[] | null;
   participants: Participant[];
 }
 
@@ -77,13 +79,14 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const [newMeetingOpen, setNewMeetingOpen] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("special_attention_meetings")
-      .select("id, meeting_date, notes, pdf_url, pdf_path, special_attention_meeting_participants(id, name, role)")
+      .select("id, meeting_date, notes, pdf_url, pdf_path, snapshot, special_attention_meeting_participants(id, name, role)")
       .order("meeting_date", { ascending: false });
     if (error) {
       toast.error("Error al cargar reuniones");
@@ -96,6 +99,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
       notes: r.notes,
       pdf_url: r.pdf_url,
       pdf_path: r.pdf_path,
+      snapshot: Array.isArray(r.snapshot) ? r.snapshot : null,
       participants: (r.special_attention_meeting_participants || []).map((p: any) => ({
         id: p.id, name: p.name, role: p.role,
       })),
@@ -382,6 +386,30 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} · ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} hrs`;
   };
 
+  // Generate the "Acta de Reunión" PDF on-the-fly (participants + notes + contracts)
+  // and download it. This guarantees up-to-date content and forces a download
+  // instead of opening a new tab.
+  const handleDownloadMeetingPDF = async (meeting: MeetingRow) => {
+    setPdfBusyId(meeting.id);
+    try {
+      const snapshot = (meeting.snapshot && meeting.snapshot.length > 0)
+        ? meeting.snapshot
+        : (contracts as MeetingContractSnapshot[]);
+      const { blob, filename } = await generateMeetingPDF({
+        meetingDate: new Date(meeting.meeting_date),
+        notes: meeting.notes,
+        participants: meeting.participants.map(p => ({ name: p.name, role: p.role })),
+        contracts: snapshot,
+      });
+      downloadBlob(blob, filename);
+    } catch (err: any) {
+      console.error("meeting PDF download failed", err);
+      toast.error("No se pudo generar el PDF de la reunión");
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -625,17 +653,18 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
                                             {meeting.participants.length} participante{meeting.participants.length !== 1 ? "s" : ""}
                                           </p>
                                         </div>
-                                        {meeting.pdf_url && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="gap-1.5 h-7"
-                                            onClick={() => window.open(meeting.pdf_url!, "_blank")}
-                                          >
-                                            <FileDown className="h-3.5 w-3.5" />
-                                            PDF
-                                          </Button>
-                                        )}
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="gap-1.5 h-7"
+                                          disabled={pdfBusyId === meeting.id}
+                                          onClick={() => handleDownloadMeetingPDF(meeting)}
+                                        >
+                                          {pdfBusyId === meeting.id
+                                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            : <FileDown className="h-3.5 w-3.5" />}
+                                          PDF
+                                        </Button>
                                         {isAdmin && deleteId === meeting.id ? (
                                           <div className="flex items-center gap-1.5">
                                             <Button

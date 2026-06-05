@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { downloadBlob } from "@/lib/downloadBlob";
 
 interface SpecialContract {
   id: string;
@@ -219,7 +220,10 @@ const SpecialAttentionPage = () => {
             size="sm"
             className="gap-1.5 shrink-0"
             disabled={loading || contracts.length === 0}
-            onClick={() => exportSpecialAttentionPDF(contracts)}
+            onClick={async () => {
+              const result = await exportSpecialAttentionPDF(contracts, { returnBlob: true });
+              if (result) downloadBlob(result.blob, result.filename);
+            }}
           >
             <FileDown className="h-4 w-4" />
             PDF
