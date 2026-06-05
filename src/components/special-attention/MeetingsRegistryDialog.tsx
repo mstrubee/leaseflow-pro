@@ -144,6 +144,23 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     }
   }, [open, load, loadDirectory]);
 
+  // Fix Radix freeze: nested modals can leave `pointer-events: none` stuck on
+  // the body after the confirm dialog closes, freezing the whole app.
+  useEffect(() => {
+    if (!deleteId) {
+      const t = setTimeout(() => {
+        document.body.style.pointerEvents = "";
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, [deleteId]);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.pointerEvents = "";
+    };
+  }, []);
+
   // Group meetings by year > month
   const grouped = useMemo(() => {
     const tree: Record<string, Record<string, MeetingRow[]>> = {};

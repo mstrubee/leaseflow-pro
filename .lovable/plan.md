@@ -1,56 +1,25 @@
-# Business Case Financiero por Contrato
+## Problema
 
-Crear una nueva función dentro de la sección de contrato que genere un **Business Case financiero visual**, replicando el modelo del archivo `Tipo.xlsx`. Es una feature in-app (no un "skill"): un skill solo serviría si quisieras que yo genere estos archivos en el chat repetidamente; para un botón que usan los usuarios, lo correcto es construirlo como feature.
+En **Registro de Reuniones** (Atención Especial), al presionar el botón de eliminar (papelera) y luego confirmar o cancelar, la aplicación se "colapsa": el diálogo sigue viéndose pero **nada se puede clickear** en toda la página.
 
-## Qué se construye
+### Causa confirmada (reproducida en el preview)
 
-1. **Botón nuevo** "Business Case Financiero" en el header del contrato, junto al botón actual "Business Case" (que seguirá siendo la galería de imágenes). Abre un diálogo a pantalla casi completa.
+El `AlertDialog` de confirmación de borrado está anidado **dentro** del `Dialog` principal del registro de reuniones (`src/components/special-attention/MeetingsRegistryDialog.tsx`). Cuando se cierra el `AlertDialog` interno, la librería de UI (Radix) deja por error el estilo `pointer-events: none` pegado en el `<body>`, lo que bloquea todos los clicks de la app. Es un bug conocido al anidar dos modales.
 
-2. **Formulario de entrada** con autocompletado desde el contrato + edición por admin:
-   - Autollenado: Nombre, Dirección, Comuna, Empresa, Superficie (m²), Canon (UF), Gastos Comunes, plazo (años), garantía, fecha inicio/gracia.
-   - Editables por admin: Ventas proyectadas (venta/mes por año), Margen directo %, Inventario, Inversiones (Habilitación, Mobiliario, Tecnología, Marketing en CLP), tasa de descuento, bases de gastos (Personal, Generales, Tecnología, Ocupación, Publicidad), depreciación, impuesto %, UF proyectada por año.
-   - **Todos los valores calculados también son editables** (override manual "en caso de errores"), guardando el override.
-   - Sección "Otros" para campos extra que defina el admin.
+## Solución
 
-3. **Motor de cálculo** (módulo TS puro) que reproduce el Excel: P&L años 0–5, Margen de contribución, GAVs, EBITDA, Depreciación, EBIT, Impuesto, UDI, Capex, Flujo operativo, **TIR (IRR), VAN (NPV), Payback, Capital empleado, Rentabilidad**.
+Eliminar el congelamiento de forma robusta, sin cambiar el comportamiento ni el diseño:
 
-4. **Panel visual** con: tarjetas KPI (TIR, VAN, Payback, EBITDA año estable, Inversión total, Canon), tabla P&L proyectada, y gráficos (ventas/EBITDA por año, flujo acumulado/payback, composición de inversión).
+1. **Limpiar el bloqueo de `pointer-events`** cuando se cierra la confirmación de borrado. Agregar un `useEffect` que, cuando `deleteId` vuelve a `null` (y al desmontar el componente), restablezca `document.body.style.pointerEvents` para que la página vuelva a ser clickeable.
 
-5. **Exportación**: botón PDF (panel visual en una hoja apaisada) y botón Excel (mismo formato de hojas Datos / Resumen business case).
-
-6. **Persistencia**: tabla nueva por contrato que guarda inputs, overrides y resultados; se recalcula al abrir y se puede guardar.
-
-## Modelo financiero (resumen)
-
-Unidades en MM CLP. Año 1 opera meses parciales según fecha de apertura (gracia).
-- Canon UF = Superficie × Valor UF/m² (o canon directo del contrato).
-- Ingresos = venta/mes × meses operativos del año.
-- Costo de ventas = Ingresos × (1 − Margen directo%); + Otros costos directos y Costos variables (% de ingresos).
-- Margen de contribución = Ingresos − costos.
-- GAVs = Personal + Publicidad + Generales + Tecnología + Ocupación + Canon (UF×UF del año) + Gasto común.
-- EBITDA = Margen − GAVs; EBIT = EBITDA − Depreciación; Impuesto = EBIT×27% (si >0); UDI = EBIT − Impuesto.
-- Capex año 0 = −(Habilitación + Mobiliario + Inventario + Tecnología + Marketing).
-- Flujo operativo = UDI + Depreciación; año 0 = Capex.
-- TIR = IRR(flujos); VAN = NPV(tasa, flujos); Payback = año en que el acumulado cruza 0.
-- UF proyectada por año seedeada desde el indicador UF actual (cache de la app), crecimiento editable (~3,4%/año).
-
-## Detalles técnicos
-
-**Base de datos (migración):**
-- Tabla `contract_business_cases`: `contract_id` (único, FK contracts), `inputs jsonb`, `overrides jsonb`, `computed jsonb`, `created_by`, timestamps.
-- GRANTs a `authenticated` y `service_role`; RLS: ver/crear/editar para usuarios con permiso de contratos o admin (mismo patrón que las tablas hijas de contratos). Trigger `updated_at`.
-
-**Frontend:**
-- `src/lib/businessCase/calc.ts` — motor de cálculo puro + IRR/NPV.
-- `src/lib/businessCase/exportPDF.ts` y `exportExcel.ts` — reusan jsPDF y la librería `xlsx` ya presentes en el proyecto (Gantt/KPI exports).
-- `src/components/contracts/BusinessCaseFinanciero/` — diálogo, formulario, panel KPI, tabla P&L, gráficos (recharts).
-- `src/hooks/useBusinessCase.ts` — cargar/guardar por contrato, autollenado desde el contrato.
-- Botón nuevo en `src/pages/ContractDetail.tsx`.
-
-**Sin IA por ahora** (según tu elección). El motor es 100% determinístico; si más adelante quieres que Gemini redacte el resumen ejecutivo o la ficha de mercado, se agrega como paso opcional.
-
-**Moneda:** se respeta el estándar del proyecto (CLP primario, UF secundaria) en la presentación de los KPIs.
+2. **Sacar el `AlertDialog` del anidamiento.** Reestructurar el `return` para que el `AlertDialog` de confirmación se renderice como hermano del `Dialog` (dentro de un fragmento), no dentro de él. Esto evita el conflicto de focus/scroll-lock entre los dos modales y previene la causa raíz.
 
 ## Validación
-- Cargar el contrato actual, comprobar autollenado y que TIR/VAN/Payback coincidan con la lógica del Excel usando los datos de ejemplo (TIR ≈ 47%, VAN ≈ 331, Payback año 3).
-- Verificar export PDF y Excel (QA visual del PDF).
+
+- Reproducir en el preview: abrir Registro de Reuniones → eliminar una reunión → confirmar; y repetir → cancelar.
+- Verificar que tras cerrar la confirmación la página/diálogo sigue siendo interactivo (botones "Expandir todo", "Registrar", cerrar X funcionan).
+- Confirmar que el borrado sigue funcionando (la reunión desaparece del historial) y que no hay errores en consola.
+
+## Archivos afectados
+
+- `src/components/special-attention/MeetingsRegistryDialog.tsx`
