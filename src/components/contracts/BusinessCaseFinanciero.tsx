@@ -1,382 +1,265 @@
-import { useMemo } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Check } from "lucide-react";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Loader2,
-  Save,
-  FileDown,
-  FileSpreadsheet,
-  RotateCcw,
-  TrendingUp,
-  DollarSign,
-  CalendarClock,
-  Wallet,
-  Percent,
-} from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
+  ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip as RTooltip, Legend, CartesianGrid,
 } from "recharts";
-import { toast } from "sonner";
-import { useBusinessCase } from "@/hooks/useBusinessCase";
-import { ContractSeed, BusinessCaseInputs } from "@/lib/businessCase/calc";
-import { fmtMM, fmtPct, fmtUf } from "@/lib/businessCase/format";
-import { exportBusinessCaseExcel } from "@/lib/businessCase/exportExcel";
-import { exportBusinessCasePDF } from "@/lib/businessCase/exportPDF";
+import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
+import type { BCSeed, BCInputs } from "@/lib/businessCase/model";
+import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contractId: string;
-  seed: ContractSeed;
-  canEdit: boolean;
+  seed: BCSeed;
+  canEdit?: boolean;
 }
 
-const NumField = ({
-  label,
-  value,
-  onChange,
-  disabled,
-  step = "any",
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  disabled?: boolean;
-  step?: string;
-}) => (
-  <div className="space-y-1">
-    <Label className="text-xs text-muted-foreground">{label}</Label>
-    <Input
-      type="number"
-      step={step}
-      value={Number.isFinite(value) ? value : 0}
-      disabled={disabled}
-      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-      className="h-8"
-    />
-  </div>
-);
+const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#64748b", "#f43f5e", "#06b6d4"];
+const yearCols = [0, 1, 2, 3, 4, 5];
 
-const TextField = ({
-  label,
-  value,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) => (
-  <div className="space-y-1">
-    <Label className="text-xs text-muted-foreground">{label}</Label>
-    <Input value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="h-8" />
-  </div>
-);
+function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
+  return (
+    <Input type="number" step={step} value={Number.isFinite(value) ? value : 0}
+      onChange={(e) => onChange(parseFloat(e.target.value) || 0)} disabled={disabled}
+      className={`h-7 ${w} text-xs text-right px-1`} />
+  );
+}
 
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, canEdit }: Props) {
-  const {
-    inputs,
-    result,
-    loading,
-    saving,
-    dirty,
-    updateInput,
-    updateArrayInput,
-    resetToDefaults,
-    save,
-  } = useBusinessCase({ contractId, seed, enabled: open });
-
-  const chartData = useMemo(() => {
-    if (!result) return [];
-    return result.years.map((y) => ({
-      year: String(y.year),
-      Ingresos: Math.round(y.ingresos * 10) / 10,
-      EBITDA: Math.round(y.ebitda * 10) / 10,
-      Flujo: Math.round(y.flujoOperativo * 10) / 10,
-      Acumulado: Math.round(y.flujoAcumulado * 10) / 10,
-    }));
-  }, [result]);
-
-  const handleSave = async () => {
-    try {
-      await save();
-      toast.success("Business case guardado");
-    } catch {
-      toast.error("No se pudo guardar el business case");
-    }
-  };
-
-  const set = <K extends keyof BusinessCaseInputs>(k: K) => (v: BusinessCaseInputs[K]) => updateInput(k, v);
-
-  const kpis = result
-    ? [
-        { icon: TrendingUp, label: "TIR", value: result.tir != null ? fmtPct(result.tir, 1) : "N/A" },
-        { icon: DollarSign, label: "VAN", value: `MM$ ${fmtMM(result.van)}` },
-        {
-          icon: CalendarClock,
-          label: "Payback",
-          value: result.paybackAnios != null ? `${fmtMM(result.paybackAnios)} años` : "N/A",
-        },
-        { icon: Wallet, label: "Inversión total", value: `MM$ ${fmtMM(result.inversionTotal)}` },
-        { icon: Percent, label: "Canon", value: fmtUf(result.canonUfMensual) },
-      ]
-    : [];
+  const { config, inputs, result, loading, saving, update, updateArr, setInvOverride } =
+    useBusinessCaseV2({ contractId, seed, enabled: open });
+  const ro = !canEdit;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between gap-4">
-            <span>Business Case Financiero</span>
-            <div className="flex items-center gap-2 pr-6">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!result}
-                onClick={() => inputs && result && exportBusinessCasePDF(inputs, result)}
-              >
-                <FileDown className="h-4 w-4 mr-1" /> PDF
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!result}
-                onClick={() => inputs && result && exportBusinessCaseExcel(inputs, result)}
-              >
-                <FileSpreadsheet className="h-4 w-4 mr-1" /> Excel
-              </Button>
-              {canEdit && (
-                <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
-                  {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-                  Guardar
-                </Button>
-              )}
-            </div>
+          <DialogTitle className="flex items-center gap-2">
+            Business Case Financiero
+            {saving && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> guardando…</span>}
+            {!saving && !loading && <span className="text-xs text-green-600 inline-flex items-center gap-1"><Check className="h-3 w-3" /> guardado</span>}
           </DialogTitle>
         </DialogHeader>
 
         {loading || !inputs || !result ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
+          <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : (
-          <Tabs defaultValue="resultados" className="w-full">
-            <TabsList>
-              <TabsTrigger value="resultados">Resultados</TabsTrigger>
-              <TabsTrigger value="datos">Datos & Supuestos</TabsTrigger>
-              <TabsTrigger value="pl">Estado de Resultados</TabsTrigger>
+          <Tabs defaultValue="resumen" className="w-full">
+            <TabsList className="flex flex-wrap h-auto">
+              <TabsTrigger value="resumen">📋 Resumen</TabsTrigger>
+              <TabsTrigger value="inversion">💰 Inversión</TabsTrigger>
+              <TabsTrigger value="proyecciones">📈 Proyecciones</TabsTrigger>
+              <TabsTrigger value="retorno">🎯 Retorno</TabsTrigger>
+              <TabsTrigger value="supuestos">⚙️ Supuestos</TabsTrigger>
             </TabsList>
 
-            {/* ---------- RESULTADOS ---------- */}
-            <TabsContent value="resultados" className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {kpis.map((k) => (
-                  <Card key={k.label}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
-                        <k.icon className="h-4 w-4" />
-                        {k.label}
-                      </div>
-                      <div className="text-xl font-bold text-primary">{k.value}</div>
-                    </CardContent>
-                  </Card>
-                ))}
+            {/* ───────── RESUMEN ───────── */}
+            <TabsContent value="resumen" className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Kpi label="TIR" value={result.tir != null ? fmtPct(result.tir) : "N/A"} sub={`Hurdle ${inputs.waccRate}%`} good={result.tir != null && result.tir > inputs.waccRate / 100} />
+                <Kpi label="VAN (MM CLP)" value={`$${fmtMM(result.van)}`} good={result.van > 0} />
+                <Kpi label="Payback" value={result.paybackAnio > 0 ? `${result.paybackAnio} año${result.paybackAnio === 1 ? "" : "s"}` : ">5 años"} />
+                <Kpi label="Inversión (MM)" value={`$${fmtMM(result.totalCapex)}`} />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardContent className="p-4">
-                    <h4 className="text-sm font-semibold mb-3">Ingresos vs EBITDA (MM$)</h4>
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="year" fontSize={12} />
-                        <YAxis fontSize={12} />
-                        <Tooltip />
-                        <Bar dataKey="Ingresos" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="EBITDA" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-4">
-                    <h4 className="text-sm font-semibold mb-3">Flujo acumulado (MM$)</h4>
-                    <ResponsiveContainer width="100%" height={260}>
-                      <LineChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="year" fontSize={12} />
-                        <YAxis fontSize={12} />
-                        <Tooltip />
-                        <ReferenceLine y={0} stroke="hsl(var(--destructive))" strokeDasharray="4 4" />
-                        <Line type="monotone" dataKey="Flujo" stroke="hsl(var(--muted-foreground))" strokeWidth={2} />
-                        <Line type="monotone" dataKey="Acumulado" stroke="hsl(var(--primary))" strokeWidth={2.5} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* ---------- DATOS ---------- */}
-            <TabsContent value="datos" className="space-y-6">
-              {!canEdit && (
-                <p className="text-xs text-muted-foreground">
-                  Solo lectura. Los administradores pueden editar y guardar.
-                </p>
-              )}
-              <section className="space-y-3">
-                <h4 className="text-sm font-semibold">Ficha</h4>
+              <Card title="Información del Proyecto">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <TextField label="Nombre" value={inputs.nombre} onChange={set("nombre")} disabled={!canEdit} />
-                  <TextField label="Dirección" value={inputs.direccion} onChange={set("direccion")} disabled={!canEdit} />
-                  <TextField label="Comuna" value={inputs.comuna} onChange={set("comuna")} disabled={!canEdit} />
-                  <TextField label="Empresa" value={inputs.empresa} onChange={set("empresa")} disabled={!canEdit} />
-                  <TextField label="Tipo" value={inputs.tipo} onChange={set("tipo")} disabled={!canEdit} />
+                  <Field label="Nombre"><Input value={inputs.nombre} disabled={ro} onChange={(e) => update("nombre", e.target.value)} className="h-8 text-sm" /></Field>
+                  <Field label="Dirección"><Input value={inputs.direccion} disabled={ro} onChange={(e) => update("direccion", e.target.value)} className="h-8 text-sm" /></Field>
+                  <Field label="Comuna"><Input value={inputs.comuna} disabled={ro} onChange={(e) => update("comuna", e.target.value)} className="h-8 text-sm" /></Field>
+                  <Field label="Tipo">
+                    <Select value={inputs.tipo} disabled={ro} onValueChange={(v) => update("tipo", v)}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>{config.tiposProyecto.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Categoría">
+                    <Select value={inputs.categoria} disabled={ro} onValueChange={(v) => update("categoria", v)}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>{config.categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </Field>
                 </div>
-              </section>
+              </Card>
 
-              <section className="space-y-3">
-                <h4 className="text-sm font-semibold">Contrato</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <NumField label="Superficie (m²)" value={inputs.superficieM2} onChange={set("superficieM2")} disabled={!canEdit} />
-                  <NumField label="Valor UF / m²" value={inputs.valorUfM2} onChange={set("valorUfM2")} disabled={!canEdit} />
-                  <NumField label="Canon (UF/mes)" value={inputs.canonUf} onChange={set("canonUf")} disabled={!canEdit} />
-                  <NumField label="Gasto común (UF/mes)" value={inputs.gastoComunUf} onChange={set("gastoComunUf")} disabled={!canEdit} />
-                  <NumField label="Plazo (años)" value={inputs.plazoAnios} onChange={set("plazoAnios")} disabled={!canEdit} />
-                  <NumField label="Garantía (UF)" value={inputs.garantiaUf} onChange={set("garantiaUf")} disabled={!canEdit} />
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Fecha entrega</Label>
-                    <Input
-                      type="date"
-                      value={inputs.fechaEntrega}
-                      disabled={!canEdit}
-                      onChange={(e) => updateInput("fechaEntrega", e.target.value)}
-                      className="h-8"
-                    />
-                  </div>
-                  <NumField label="Gracia (meses)" value={inputs.graciaMeses} onChange={set("graciaMeses")} disabled={!canEdit} />
+              <Card title="Contrato (resumen)">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Stat label="Canon" value={`${fmtMM(result.canonUF)} UF/mes`} />
+                  <Stat label="Garantía" value={`${fmtMM(result.garantiaUF)} UF`} />
+                  <Stat label="Meses año 1" value={`${result.mesesY1}`} />
+                  <Stat label="EBITDA Margin Año 5" value={fmtPct(result.ebitdaMargin5)} />
                 </div>
-              </section>
-
-              <section className="space-y-3">
-                <h4 className="text-sm font-semibold">Económico</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <NumField label="UF actual (CLP)" value={inputs.ufActual} onChange={set("ufActual")} disabled={!canEdit} />
-                  <NumField label="Crecim. UF anual" value={inputs.ufCrecimientoAnual} onChange={set("ufCrecimientoAnual")} disabled={!canEdit} />
-                  <NumField label="Tasa descuento" value={inputs.tasaDescuento} onChange={set("tasaDescuento")} disabled={!canEdit} />
-                  <NumField label="Impuesto" value={inputs.impuestoPct} onChange={set("impuestoPct")} disabled={!canEdit} />
-                </div>
-              </section>
-
-              <section className="space-y-3">
-                <h4 className="text-sm font-semibold">Inversiones (CLP)</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <NumField label="Habilitación" value={inputs.invHabilitacion} onChange={set("invHabilitacion")} disabled={!canEdit} />
-                  <NumField label="Mobiliario" value={inputs.invMobiliario} onChange={set("invMobiliario")} disabled={!canEdit} />
-                  <NumField label="Inventario" value={inputs.invInventario} onChange={set("invInventario")} disabled={!canEdit} />
-                  <NumField label="Tecnología" value={inputs.invTecnologia} onChange={set("invTecnologia")} disabled={!canEdit} />
-                  <NumField label="Marketing" value={inputs.invMarketing} onChange={set("invMarketing")} disabled={!canEdit} />
-                  <NumField label="Depreciación anual (MM$)" value={inputs.depreciacionAnualMM} onChange={set("depreciacionAnualMM")} disabled={!canEdit} />
-                </div>
-              </section>
-
-              <section className="space-y-3">
-                <h4 className="text-sm font-semibold">Operación</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <NumField label="Margen directo %" value={inputs.margenDirectoPct} onChange={set("margenDirectoPct")} disabled={!canEdit} />
-                  <NumField label="Otros costos dir. %" value={inputs.otrosCostosDirectosPct} onChange={set("otrosCostosDirectosPct")} disabled={!canEdit} />
-                  <NumField label="Costos variables %" value={inputs.costosVariablesPct} onChange={set("costosVariablesPct")} disabled={!canEdit} />
-                  <NumField label="Tecnología % ventas" value={inputs.tecnologiaPctVentas} onChange={set("tecnologiaPctVentas")} disabled={!canEdit} />
-                  <NumField label="Ocupación % ventas" value={inputs.ocupacionPctVentas} onChange={set("ocupacionPctVentas")} disabled={!canEdit} />
-                </div>
-                <div className="space-y-2">
-                  <ArrayEditor label="Venta/mes (MM$)" values={inputs.ventaMesMM} field="ventaMesMM" years={result.years.map((y) => y.year)} onChange={updateArrayInput} disabled={!canEdit} />
-                  <ArrayEditor label="Gasto personal (MM$)" values={inputs.gastoPersonalMM} field="gastoPersonalMM" years={result.years.map((y) => y.year)} onChange={updateArrayInput} disabled={!canEdit} />
-                  <ArrayEditor label="Publicidad (MM$)" values={inputs.publicidadMM} field="publicidadMM" years={result.years.map((y) => y.year)} onChange={updateArrayInput} disabled={!canEdit} />
-                  <ArrayEditor label="Gastos generales (MM$)" values={inputs.gastosGeneralesMM} field="gastosGeneralesMM" years={result.years.map((y) => y.year)} onChange={updateArrayInput} disabled={!canEdit} />
-                </div>
-              </section>
-
-              {canEdit && (
-                <Button variant="outline" size="sm" onClick={resetToDefaults}>
-                  <RotateCcw className="h-4 w-4 mr-1" /> Restablecer valores
-                </Button>
-              )}
+              </Card>
             </TabsContent>
 
-            {/* ---------- P&L ---------- */}
-            <TabsContent value="pl">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[180px]">Concepto (MM$)</TableHead>
-                      {result.years.map((y) => (
-                        <TableHead key={y.year} className="text-right">{y.year}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {[
-                      { l: "Ingresos", f: (y: typeof result.years[number]) => y.ingresos },
-                      { l: "Costo de ventas", f: (y: typeof result.years[number]) => y.costoVentas },
-                      { l: "Margen de contribución", f: (y: typeof result.years[number]) => y.margenContribucion, bold: true },
-                      { l: "Gasto personal", f: (y: typeof result.years[number]) => y.gastoPersonal },
-                      { l: "Publicidad", f: (y: typeof result.years[number]) => y.publicidad },
-                      { l: "Gastos generales", f: (y: typeof result.years[number]) => y.gastosGenerales },
-                      { l: "Tecnología", f: (y: typeof result.years[number]) => y.tecnologia },
-                      { l: "Ocupación", f: (y: typeof result.years[number]) => y.ocupacion },
-                      { l: "Canon", f: (y: typeof result.years[number]) => y.canon },
-                      { l: "Gasto común", f: (y: typeof result.years[number]) => y.gastoComun },
-                      { l: "EBITDA", f: (y: typeof result.years[number]) => y.ebitda, bold: true },
-                      { l: "Depreciación", f: (y: typeof result.years[number]) => y.depreciacion },
-                      { l: "EBIT", f: (y: typeof result.years[number]) => y.ebit, bold: true },
-                      { l: "Impuesto", f: (y: typeof result.years[number]) => y.impuesto },
-                      { l: "UDI", f: (y: typeof result.years[number]) => y.udi },
-                      { l: "Flujo operativo", f: (y: typeof result.years[number]) => y.flujoOperativo, bold: true },
-                      { l: "Flujo acumulado", f: (y: typeof result.years[number]) => y.flujoAcumulado, bold: true },
-                    ].map((row) => (
-                      <TableRow key={row.l} className={row.bold ? "bg-muted/50 font-semibold" : ""}>
-                        <TableCell>{row.l}</TableCell>
-                        {result.years.map((y) => (
-                          <TableCell key={y.year} className="text-right tabular-nums">
-                            {fmtMM(row.f(y))}
-                          </TableCell>
-                        ))}
-                      </TableRow>
+            {/* ───────── INVERSIÓN ───────── */}
+            <TabsContent value="inversion" className="space-y-4">
+              <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — las líneas dependen de la categoría (config global)">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-xs text-muted-foreground border-b">
+                    <th className="py-1">Línea</th><th>Método</th><th className="text-right">Monto (MM)</th><th className="text-right">%</th><th>Nota</th>
+                  </tr></thead>
+                  <tbody>
+                    {result.inv.rows.map((r) => (
+                      <tr key={r.id} className="border-b border-gray-100">
+                        <td className="py-1">{r.nombre}</td>
+                        <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
+                        <td className="text-right"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
+                        <td className="text-right text-muted-foreground">{r.pct.toFixed(1)}%</td>
+                        <td className="text-xs text-muted-foreground">{r.nota}</td>
+                      </tr>
                     ))}
-                  </TableBody>
-                </Table>
+                    <tr className="font-semibold"><td className="py-1.5">Total</td><td /><td className="text-right">{fmtMM(result.inv.total)}</td><td className="text-right">100%</td><td /></tr>
+                  </tbody>
+                </table>
+              </Card>
+              <Card title="Composición del CAPEX">
+                <div style={{ height: 260 }}>
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie data={result.inv.rows.filter((r) => r.monto > 0)} dataKey="monto" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={(e: { nombre: string }) => e.nombre}>
+                        {result.inv.rows.filter((r) => r.monto > 0).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      </Pie>
+                      <RTooltip formatter={(v: number) => `${fmtMM(v)} MM`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* ───────── PROYECCIONES ───────── */}
+            <TabsContent value="proyecciones" className="space-y-4">
+              <Card title="Estado de Resultados" sub="MM CLP — Año 0 = pre-apertura">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs whitespace-nowrap">
+                    <thead><tr className="text-right text-muted-foreground border-b">
+                      <th className="text-left py-1">Línea</th>{yearCols.map((i) => <th key={i} className="px-2">{i === 0 ? "Año 0" : `Año ${i}`}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      <PnlRow label="Ingresos" vals={result.ingresos} bold />
+                      <PnlRow label="Costo de Ventas" vals={result.costoVentas} />
+                      <PnlRow label="Otros costos dir." vals={result.otrosCostos} />
+                      <PnlRow label="Costos variables" vals={result.costosVar} />
+                      <PnlRow label="Margen Contribución" vals={result.margenCtrib} bold />
+                      <PnlRow label="Personal" vals={result.personal} />
+                      <PnlRow label="Publicidad" vals={result.publicidad} />
+                      <PnlRow label="Gastos Generales" vals={result.gastosGral} />
+                      <PnlRow label="Tecnología" vals={result.tecnologia} />
+                      <PnlRow label="Ocupación" vals={result.ocupacion} />
+                      <PnlRow label="Canon Arriendo" vals={result.canonArr} />
+                      <PnlRow label="Gasto Común" vals={result.gastoComun} />
+                      <PnlRow label="EBITDA" vals={result.ebitda} bold />
+                      <PnlRow label="Depreciación" vals={result.depreciacion} />
+                      <PnlRow label="EBIT" vals={result.ebit} bold />
+                      <PnlRow label="Impuesto" vals={result.impuesto} />
+                      <PnlRow label="UDI" vals={result.udi} bold />
+                      <PnlRow label="Flujo operativo" vals={result.flujoOp} bold />
+                      <PnlRow label="Flujo acumulado" vals={result.payback} />
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+              <Card title="Ingresos vs EBITDA" sub="MM CLP por año">
+                <div style={{ height: 260 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={yearCols.slice(1).map((i) => ({ name: `Año ${i}`, Ingresos: result.ingresos[i], EBITDA: result.ebitda[i] }))}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" fontSize={11} /><YAxis fontSize={11} />
+                      <RTooltip /><Legend />
+                      <Bar dataKey="Ingresos" fill="#3b82f6" /><Bar dataKey="EBITDA" fill="#10b981" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* ───────── RETORNO ───────── */}
+            <TabsContent value="retorno" className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Kpi label="TIR" value={result.tir != null ? fmtPct(result.tir) : "N/A"} good={result.tir != null && result.tir > inputs.waccRate / 100} />
+                <Kpi label="VAN" value={`$${fmtMM(result.van)} MM`} good={result.van > 0} />
+                <Kpi label="Payback" value={result.paybackAnio > 0 ? `${result.paybackAnio} años` : ">5"} />
+                <Kpi label="EBITDA Margin Año 5" value={fmtPct(result.ebitdaMargin5)} />
               </div>
+              <Card title="Escenario">
+                <div className="flex gap-2">
+                  {([["base", "Base"], ["opt", "Optimista (+10%)"], ["cons", "Conservador (-15%)"]] as const).map(([v, l]) => (
+                    <Button key={v} size="sm" variant={inputs.scenario === v ? "default" : "outline"} disabled={ro}
+                      onClick={() => update("scenario", v as BCInputs["scenario"])}>{l}</Button>
+                  ))}
+                </div>
+              </Card>
+              <Card title="Evolución EBITDA %" sub="Margen sobre ventas">
+                <div style={{ height: 240 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={yearCols.slice(1).map((i) => ({ name: `Año ${i}`, "EBITDA %": result.ingresos[i] ? +(result.ebitda[i] / result.ingresos[i] * 100).toFixed(1) : 0 }))}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" fontSize={11} /><YAxis fontSize={11} unit="%" />
+                      <RTooltip /><Line type="monotone" dataKey="EBITDA %" stroke="#10b981" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* ───────── SUPUESTOS ───────── */}
+            <TabsContent value="supuestos" className="space-y-4">
+              <Card title="Contrato">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
+                  <Field label="UF / m²"><NumCell value={inputs.ufM2} disabled={ro} w="w-full" onChange={(v) => update("ufM2", v)} /></Field>
+                  <Field label="Gasto común (UF/mes)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" onChange={(v) => update("gastoComunUf", v)} /></Field>
+                  <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
+                  <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
+                  <Field label="Inicio"><Input type="date" value={inputs.inicio} disabled={ro} onChange={(e) => update("inicio", e.target.value)} className="h-8 text-sm" /></Field>
+                </div>
+              </Card>
+
+              <Card title="UF y económico">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Field label="UF base (CLP)"><NumCell value={inputs.ufBase} disabled={ro} w="w-full" onChange={(v) => update("ufBase", v)} /></Field>
+                  <Field label="Tasa descuento %"><NumCell value={inputs.waccRate} disabled={ro} w="w-full" onChange={(v) => update("waccRate", v)} /></Field>
+                  <Field label="Impuesto %"><NumCell value={inputs.taxRate} disabled={ro} w="w-full" onChange={(v) => update("taxRate", v)} /></Field>
+                </div>
+                <div className="mt-3">
+                  <Label className="text-xs">Crecimiento UF anual (%) por año</Label>
+                  <div className="flex gap-2 mt-1">
+                    {inputs.ufRates.map((r, i) => (
+                      <div key={i} className="text-center"><div className="text-[10px] text-muted-foreground">Año {i + 1}</div>
+                        <NumCell value={r} disabled={ro} onChange={(v) => updateArr("ufRates", i, v)} /></div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+
+              <Card title="Ventas (MM CLP / mes) por año">
+                <div className="flex gap-2">
+                  {inputs.ventaMes.map((v, i) => (
+                    <div key={i} className="text-center"><div className="text-[10px] text-muted-foreground">Año {i + 1}</div>
+                      <NumCell value={v} disabled={ro} onChange={(val) => updateArr("ventaMes", i, val)} /></div>
+                  ))}
+                </div>
+              </Card>
+
+              <Card title="Márgenes y costos">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Field label="Margen directo %"><NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></Field>
+                  <Field label="Otros costos dir. %"><NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></Field>
+                  <Field label="Costos variables %"><NumCell value={inputs.costosVar} disabled={ro} w="w-full" onChange={(v) => update("costosVar", v)} /></Field>
+                  <Field label="Gastos generales %"><NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></Field>
+                  <Field label="Tecnología %"><NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></Field>
+                  <Field label="Ocupación %"><NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></Field>
+                  <Field label="Personal Año 1 (MM)"><NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></Field>
+                  <Field label="Crec. personal %"><NumCell value={inputs.personalCrec} disabled={ro} w="w-full" onChange={(v) => update("personalCrec", v)} /></Field>
+                  <Field label="CAPEX depreciable (MM)"><NumCell value={inputs.capexDepreciable} disabled={ro} w="w-full" onChange={(v) => update("capexDepreciable", v)} /></Field>
+                  <Field label="Años depreciación"><NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></Field>
+                </div>
+              </Card>
             </TabsContent>
           </Tabs>
         )}
@@ -385,39 +268,34 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
   );
 }
 
-function ArrayEditor({
-  label,
-  values,
-  field,
-  years,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  values: number[];
-  field: keyof BusinessCaseInputs;
-  years: number[];
-  onChange: (field: keyof BusinessCaseInputs, index: number, value: number) => void;
-  disabled?: boolean;
-}) {
+function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: string; good?: boolean }) {
   return (
-    <div>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <div className="grid grid-cols-5 gap-2 mt-1">
-        {years.map((yr, i) => (
-          <div key={yr} className="space-y-0.5">
-            <span className="text-[10px] text-muted-foreground">{yr}</span>
-            <Input
-              type="number"
-              step="any"
-              value={Number.isFinite(values[i]) ? values[i] : 0}
-              disabled={disabled}
-              onChange={(e) => onChange(field, i, parseFloat(e.target.value) || 0)}
-              className="h-8"
-            />
-          </div>
-        ))}
-      </div>
+    <div className={`rounded-lg border p-3 ${good ? "border-green-300 bg-green-50/50" : "border-gray-200"}`}>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={`text-lg font-bold ${good ? "text-green-700" : ""}`}>{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
     </div>
+  );
+}
+function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="mb-2"><h3 className="text-sm font-semibold">{title}</h3>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</div>
+      {children}
+    </div>
+  );
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><Label className="text-xs">{label}</Label><div className="mt-0.5">{children}</div></div>;
+}
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
+}
+function PnlRow({ label, vals, bold }: { label: string; vals: number[]; bold?: boolean }) {
+  return (
+    <tr className={`border-b border-gray-50 ${bold ? "font-semibold" : ""}`}>
+      <td className="text-left py-1">{label}</td>
+      {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>)}
+    </tr>
   );
 }

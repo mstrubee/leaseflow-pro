@@ -905,18 +905,24 @@ const ContractDetail = () => {
                 onOpenChange={setBusinessCaseFinOpen}
                 contractId={contract.id}
                 canEdit={isAdmin}
-                seed={{
-                  nombre: contract.name,
-                  direccion: address ? `${address.street} ${address.number}`.trim() : "",
-                  comuna: address?.commune ?? "",
-                  empresa: contract.contract_companies?.[0]?.companies?.name ?? "",
-                  superficieM2: contract.superficie_edificada_local,
-                  canonUf: displayVersion?.initial_rent || displayVersion?.regime_rent || null,
-                  gastoComunUf: displayVersion?.gastos_comunes_fixed_admin_uf ?? null,
-                  plazoAnios: displayVersion?.duration_months ? Math.round(displayVersion.duration_months / 12) : null,
-                  fechaEntrega: displayVersion?.effective_date ?? null,
-                  graciaMeses: displayVersion?.grace_months ?? null,
-                }}
+                seed={(() => {
+                  const empresa = contract.contract_companies?.[0]?.companies?.name ?? "";
+                  const tipo = /agro/i.test(empresa) ? "Agroplanet" : /auto/i.test(empresa) ? "Autoplanet" : undefined;
+                  const superficie = contract.superficie_edificada_local ?? null;
+                  const canonUf = displayVersion?.initial_rent || displayVersion?.regime_rent || null;
+                  const ufM2 = superficie && canonUf ? +(canonUf / superficie).toFixed(4) : null;
+                  return {
+                    nombre: contract.name,
+                    direccion: address ? `${address.street} ${address.number}`.trim() : "",
+                    comuna: address?.commune ?? "",
+                    tipo,
+                    superficie,
+                    ufM2,
+                    gastoComunUf: displayVersion?.gastos_comunes_fixed_admin_uf ?? null,
+                    durContratoAnios: displayVersion?.duration_months ? Math.round(displayVersion.duration_months / 12) : null,
+                    inicio: displayVersion?.effective_date ?? null,
+                  };
+                })()}
               />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               <Button
