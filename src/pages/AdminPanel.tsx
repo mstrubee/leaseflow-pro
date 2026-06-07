@@ -22,6 +22,7 @@ import { CompanyManager } from "@/components/admin/CompanyManager";
 import { StorageMonitor } from "@/components/admin/StorageMonitor";
 import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateManager";
 import { LogoManager } from "@/components/admin/LogoManager";
+import { BusinessCaseAdminConfig } from "@/components/admin/BusinessCaseAdminConfig";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
@@ -1254,6 +1255,15 @@ const AdminPanel = () => {
             <GanttTemplateManager defaultCollapsed />
             <OCRequestTemplateManager defaultCollapsed />
           </div>
+        </CollapsibleCard>
+
+        {/* ── Grupo: Business Case ── */}
+        <CollapsibleCard
+          title="Business Case"
+          description="Configuración global del Business Case Financiero (tipos, categorías, líneas de inversión, aprobadores)"
+          icon={<Columns3 className="h-5 w-5 text-blue-600" />}
+        >
+          <BusinessCaseAdminConfig />
         </CollapsibleCard>
 
         {/* ── Grupo: Estados y Categorías ── */}
