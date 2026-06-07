@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Save } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
 import type { AdminConfig, InvLine, InvMethod } from "@/lib/businessCase/model";
 
@@ -13,6 +15,7 @@ export function BusinessCaseAdminConfig() {
   const [draft, setDraft] = useState<AdminConfig | null>(null);
   const [cat, setCat] = useState<string>("");
   const [newEmpresa, setNewEmpresa] = useState("");
+  const [companies, setCompanies] = useState<string[]>([]);
 
   useEffect(() => {
     if (!loading) {
@@ -20,6 +23,13 @@ export function BusinessCaseAdminConfig() {
       setCat((c) => c || config.categorias[0]);
     }
   }, [loading, config]);
+
+  // Empresas existentes del Panel de Administración (tabla companies)
+  useEffect(() => {
+    supabase.from("companies").select("name").order("name", { ascending: true }).then(({ data }) => {
+      setCompanies((data ?? []).map((c) => c.name).filter(Boolean));
+    });
+  }, []);
 
   if (loading || !draft) {
     return <div className="flex items-center justify-center p-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -101,6 +111,9 @@ export function BusinessCaseAdminConfig() {
   };
 
   const lines = draft.invLineas[cat] || [];
+  const availableCompanies = companies.filter(
+    (name) => !draft.tiposProyecto.some((t) => t.toLowerCase() === name.toLowerCase()),
+  );
 
   return (
     <div className="space-y-6">
@@ -124,6 +137,7 @@ export function BusinessCaseAdminConfig() {
             const d = draft.defaultsPorTipo[tipo] ?? { margenDir: 0, personalY1: 0, anosDepr: 1 };
             return (
               <div key={tipo} className="flex items-center gap-3 flex-wrap rounded-lg border p-2">
+                <CompanyLogo companyName={tipo} size="sm" />
                 <span className="text-sm font-medium w-28">{tipo}</span>
                 <label className="text-xs flex items-center gap-1">Margen dir. %
                   <Input type="number" value={d.margenDir} onChange={(e) => setTipoDefault(tipo, "margenDir", Number(e.target.value))} className="h-7 w-20 text-sm" /></label>
@@ -138,13 +152,24 @@ export function BusinessCaseAdminConfig() {
           })}
         </div>
         <div className="flex items-center gap-2 pt-1">
-          <Input value={newEmpresa} onChange={(e) => setNewEmpresa(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addEmpresa(); } }}
-            placeholder="Nueva empresa…" className="h-8 text-sm w-56" />
-          <Button variant="outline" size="sm" className="h-8 gap-1" onClick={addEmpresa}>
+          <Select value={newEmpresa} onValueChange={setNewEmpresa}>
+            <SelectTrigger className="h-8 text-sm w-64"><SelectValue placeholder="Selecciona una empresa…" /></SelectTrigger>
+            <SelectContent>
+              {availableCompanies.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No hay más empresas por agregar</div>
+              )}
+              {availableCompanies.map((name) => (
+                <SelectItem key={name} value={name}>
+                  <span className="flex items-center gap-2"><CompanyLogo companyName={name} size="sm" /> {name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" className="h-8 gap-1" onClick={addEmpresa} disabled={!newEmpresa}>
             <Plus className="h-3.5 w-3.5" /> Agregar empresa
           </Button>
         </div>
+        <p className="text-[11px] text-muted-foreground">Las empresas provienen de la sección «Empresas» del Panel de Administración.</p>
       </section>
 
       {/* Líneas de inversión por categoría */}

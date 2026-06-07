@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Check, FileText, Sheet } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
+import { toast } from "sonner";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip as RTooltip, Legend, CartesianGrid,
@@ -51,7 +52,12 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                 <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => exportBusinessCasePDF(inputs, result)}>
                   <FileText className="h-3.5 w-3.5" /> PDF
                 </Button>
-                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => exportBusinessCaseExcel(inputs, result)}>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs"
+                  onClick={() => {
+                    toast.promise(exportBusinessCaseExcel(inputs, result), {
+                      loading: "Generando Excel…", success: "Excel generado", error: "No se pudo generar el Excel",
+                    });
+                  }}>
                   <Sheet className="h-3.5 w-3.5" /> Excel
                 </Button>
               </div>

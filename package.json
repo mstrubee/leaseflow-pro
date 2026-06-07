@@ -64,6 +64,7 @@
     "date-fns": "^3.6.0",
     "docx": "^9.6.1",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "framer-motion": "^12.23.25",
     "html-to-image": "^1.11.13",
     "idb-keyval": "^6.2.2",
