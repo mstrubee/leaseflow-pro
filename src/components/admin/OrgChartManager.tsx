@@ -133,7 +133,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
   const loadMembers = async () => {
     const [membersRes, contractsRes, companiesRes] = await Promise.all([
-      supabase.from("org_members").select("*").order("display_order"),
+      supabase.rpc("get_org_members_admin"),
       supabase.from("org_member_contracts").select("org_member_id, contract_id"),
       supabase.from("org_member_companies").select("org_member_id, company_id"),
     ]);
