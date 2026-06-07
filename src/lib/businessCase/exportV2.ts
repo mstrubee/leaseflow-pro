@@ -136,41 +136,91 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   datos.getCell("E29").value = 0;                          // Cobro por instalaciones
   datos.getCell("E30").value = (inputs.waccRate || 0) / 100; // Tasa de descuento
 
-  // Inversión (MM CLP) → celdas fijas de la planilla; preserva el total físico
+  // ── Inversión ──────────────────────────────────────────────────────────────
+  // Clasifica cada línea en las 5 filas de la plantilla, respetando cualquier
+  // categoría (Nuevo / Ampliación / Remodelación / Relocación / custom).
+  // Reglas: mob=mobiliario; tec=tecnología; mkt=marketing/publicidad;
+  //         inv=inventario (no depreciable); el resto va a "Habilitación".
   const rows = r.inv.rows;
-  const sumBy = (pred: (id: string, nombre: string) => boolean) =>
-    rows.filter((x) => pred(x.id, (x.nombre || ""))).reduce((a, x) => a + x.monto, 0);
-  const mob = sumBy((id, n) => /mob/i.test(id) || /mobil/i.test(n));
-  const tec = sumBy((id, n) => /tec/i.test(id) || /tecno/i.test(n));
-  const mkt = sumBy((id, n) => /mkt|market/i.test(id) || /market/i.test(n));
-  const inventario = sumBy((id, n) => id === "inv" || /inventar/i.test(n));
-  const habYResto = r.inv.fisica - mob - tec - mkt; // habilitación + resto físico
-  datos.getCell("B23").value = +habYResto.toFixed(2);
-  datos.getCell("B24").value = +mob.toFixed(2);
-  datos.getCell("B25").value = +inventario.toFixed(2);
-  datos.getCell("B26").value = +tec.toFixed(2);
-  datos.getCell("B27").value = +mkt.toFixed(2);
+  const sumBy = (pred: (id: string, n: string) => boolean) =>
+    rows.filter((x) => pred(x.id, x.nombre || "")).reduce((a, x) => a + x.monto, 0);
+  const invMob = sumBy((id, n) => /^mob/i.test(id) || /mobil/i.test(n));
+  const invTec = sumBy((id, n) => /^tec/i.test(id) || /tecno/i.test(n));
+  const invMkt = sumBy((id, n) => /^mkt/i.test(id) || /market|publicid/i.test(n));
+  const invInv = sumBy((id, n) => id === "inv" || /inventar/i.test(n));
+  // "Habilitación" = todo lo físico que no sea mob/tec/mkt
+  //  incluye: obras, habilitación, traslado/mudanza, adecuaciones, etc.
+  const invHab = rows
+    .filter((x) => {
+      const id = x.id; const n = x.nombre || "";
+      return id !== "gar" && !(/^mob/i.test(id) || /mobil/i.test(n)) &&
+             !(/^tec/i.test(id) || /tecno/i.test(n)) &&
+             !(/^mkt/i.test(id) || /market|publicid/i.test(n)) &&
+             !(id === "inv" || /inventar/i.test(n));
+    })
+    .reduce((a, x) => a + x.monto, 0);
 
-  // ---- Hoja Supuestos (UF base + crecimiento anual como fórmulas) ----
+  // Actualizamos las etiquetas de la planilla para reflejar la categoría real
+  datos.getCell("C23").value = `Obras / Habilitación (${inputs.categoria})`;
+  datos.getCell("C24").value = "Mobiliario AF";
+  datos.getCell("C25").value = "Inventario";
+  datos.getCell("C26").value = "Tecnología";
+  datos.getCell("C27").value = "Marketing / Publicidad";
+
+  // Montos en MM CLP (la planilla los convierte × 1 000 000 en col E)
+  datos.getCell("B23").value = +invHab.toFixed(2);
+  datos.getCell("B24").value = +invMob.toFixed(2);
+  datos.getCell("B25").value = +invInv.toFixed(2);
+  datos.getCell("B26").value = +invTec.toFixed(2);
+  datos.getCell("B27").value = +invMkt.toFixed(2);
+
+  // ── Depreciación ────────────────────────────────────────────────────────────
+  // La plantilla original usa SUM(E23:E27)/5 (incluye inventario, hardcodeado).
+  // Sobreescribimos N35 con una fórmula que:
+  //   - Excluye E25 (inventario, no depreciable)
+  //   - Usa el n° de años de depreciación del proyecto (deprAnos)
+  const deprAnos = inputs.deprAnos || 1;
+  const deprFormula = `=-(Datos!E23+Datos!E24+Datos!E26+Datos!E27)/(${deprAnos}*1000000)`;
+  // N35..R35 (los 5 años de depreciación)
+  ["N", "O", "P", "Q", "R"].forEach((col) => {
+    res.getCell(`${col}35`).value = { formula: deprFormula } as ExcelJS.CellFormulaValue;
+  });
+
+  // ── Supuestos: UF base + crecimiento anual por año del proyecto ────────────
   sup.getCell("B3").value = inputs.ufBase || 0;
   const ufCols = ["C", "D", "E", "F", "G"]; // años 2..6
   ufCols.forEach((col, i) => {
     const prev = i === 0 ? "B3" : `${ufCols[i - 1]}3`;
-    const factor = 1 + (inputs.ufRates[i] ?? 0) / 100;
+    const factor = +(1 + (inputs.ufRates[i] ?? 0) / 100).toFixed(6);
     sup.getCell(`${col}3`).value = { formula: `${prev}*${factor}` } as ExcelJS.CellFormulaValue;
   });
 
-  // ---- Hoja Resumen business case (supuestos del P&L) ----
+  // ── Resumen business case ───────────────────────────────────────────────────
   const cols = ["N", "O", "P", "Q", "R"]; // años 1..5
-  inputs.ventaMes.slice(0, 5).forEach((v, i) => { res.getCell(`${cols[i]}10`).value = v || 0; }); // Venta/mes
-  res.getCell("N14").value = (inputs.margenDir || 0) / 100;          // Margen directo
-  res.getCell("N15").value = -((inputs.otrosCostosDir || 0) / 100);  // Otros costos dir.
-  cols.forEach((c) => { res.getCell(`${c}16`).value = -((inputs.costosVar || 0) / 100); }); // Costos variables
-  cols.forEach((c) => { res.getCell(`${c}30`).value = -((inputs.tecPct || 0) / 100); });    // Tecnología
-  cols.forEach((c) => { res.getCell(`${c}31`).value = -((inputs.ocupPct || 0) / 100); });   // Ocupación
-  cols.forEach((c) => { res.getCell(`${c}38`).value = (inputs.taxRate || 0) / 100; });      // Impuesto
-  // Personal mensual (MM) = (n° personas × costo por persona año) / 12
-  res.getCell("B17").value = +(((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12).toFixed(3);
+
+  // Ventas (MM CLP / mes) por año
+  inputs.ventaMes.slice(0, 5).forEach((v, i) => { res.getCell(`${cols[i]}10`).value = v || 0; });
+
+  // Márgenes (sin propagar: la planilla ya copia N14 a O..R)
+  res.getCell("N14").value = (inputs.margenDir || 0) / 100;
+  cols.forEach((c) => { res.getCell(`${c}14`).value = (inputs.margenDir || 0) / 100; }); // replicar a todos
+  res.getCell("N15").value = -((inputs.otrosCostosDir || 0) / 100);
+  cols.forEach((c) => { res.getCell(`${c}15`).value = -((inputs.otrosCostosDir || 0) / 100); });
+  cols.forEach((c) => { res.getCell(`${c}16`).value = -((inputs.costosVar || 0) / 100); });
+  cols.forEach((c) => { res.getCell(`${c}30`).value = -((inputs.tecPct || 0) / 100); }); // Tecnología %
+  cols.forEach((c) => { res.getCell(`${c}31`).value = -((inputs.ocupPct || 0) / 100); }); // Ocupación %
+  cols.forEach((c) => { res.getCell(`${c}38`).value = (inputs.taxRate || 0) / 100; });    // Impuesto %
+
+  // ── Personal: inyectamos los valores calculados por la app ──────────────────
+  // La plantilla tiene fórmulas con ×1.032 hardcodeado. Las sobreescribimos
+  // con los valores exactos de result.personal (que usa personalCrec del proyecto).
+  // r.personal[0] = 0 (año 0, pre-apertura); [1]..[5] = años 1..5
+  // La planilla espera E17..I17 en MM CLP (negativo).
+  // E17 tiene la fórmula =-B17*(A17) donde A17 = meses año 1 → inyectamos valor directo.
+  const persYearCols = ["E", "F", "G", "H", "I"];
+  persYearCols.forEach((col, i) => {
+    res.getCell(`${col}17`).value = +(r.personal[i + 1] ?? 0).toFixed(4); // ya es negativo
+  });
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
   wb.calcProperties.fullCalcOnLoad = true;
