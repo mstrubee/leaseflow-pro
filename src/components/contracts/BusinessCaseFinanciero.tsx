@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Check } from "lucide-react";
+import { Loader2, Check, FileText, Sheet } from "lucide-react";
+import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip as RTooltip, Legend, CartesianGrid,
@@ -45,6 +46,16 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
             Business Case Financiero
             {saving && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> guardando…</span>}
             {!saving && !loading && <span className="text-xs text-green-600 inline-flex items-center gap-1"><Check className="h-3 w-3" /> guardado</span>}
+            {inputs && result && (
+              <div className="ml-auto flex gap-2">
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => exportBusinessCasePDF(inputs, result)}>
+                  <FileText className="h-3.5 w-3.5" /> PDF
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => exportBusinessCaseExcel(inputs, result)}>
+                  <Sheet className="h-3.5 w-3.5" /> Excel
+                </Button>
+              </div>
+            )}
           </DialogTitle>
         </DialogHeader>
 

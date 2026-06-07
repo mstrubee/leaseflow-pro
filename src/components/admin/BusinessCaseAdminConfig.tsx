@@ -58,15 +58,6 @@ export function BusinessCaseAdminConfig() {
     });
   };
 
-  const setAprobador = (idx: number, patch: Partial<AdminConfig["aprobadores"][number]>) => {
-    setDraft((d) => {
-      if (!d) return d;
-      const aps = [...d.aprobadores];
-      aps[idx] = { ...aps[idx], ...patch };
-      return { ...d, aprobadores: aps };
-    });
-  };
-
   const handleSave = async () => {
     if (!draft) return;
     try {
@@ -147,26 +138,6 @@ export function BusinessCaseAdminConfig() {
             </div>
           ))}
           {lines.length === 0 && <p className="text-xs text-muted-foreground">Sin líneas para esta categoría.</p>}
-        </div>
-      </section>
-
-      {/* Aprobadores */}
-      <section className="space-y-2">
-        <h4 className="text-sm font-semibold">Flujo de aprobación</h4>
-        <div className="space-y-1.5">
-          {[...draft.aprobadores].sort((a, b) => a.orden - b.orden).map((ap) => {
-            const idx = draft.aprobadores.findIndex((x) => x.id === ap.id);
-            return (
-              <div key={ap.id} className="flex items-center gap-3 rounded border p-2">
-                <span className="text-xs text-muted-foreground w-6">{ap.orden}</span>
-                <Input value={ap.rol} onChange={(e) => setAprobador(idx, { rol: e.target.value })} className="h-7 text-sm w-48" />
-                <label className="text-xs flex items-center gap-1">
-                  <input type="checkbox" checked={ap.requerido} onChange={(e) => setAprobador(idx, { requerido: e.target.checked })} />
-                  Requerido
-                </label>
-              </div>
-            );
-          })}
         </div>
       </section>
 
