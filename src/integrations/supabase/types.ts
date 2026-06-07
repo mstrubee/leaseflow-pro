@@ -6356,6 +6356,26 @@ export type Database = {
           folder_id: string
         }[]
       }
+      get_org_members_admin: {
+        Args: never
+        Returns: {
+          company_id: string | null
+          created_at: string | null
+          display_order: number | null
+          email: string | null
+          id: string
+          name: string
+          parent_id: string | null
+          phone: string | null
+          position: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "org_members"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_termination_alerts: { Args: never; Returns: Json }
       has_permission: {
         Args: {
