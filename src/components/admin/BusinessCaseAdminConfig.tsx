@@ -12,6 +12,7 @@ export function BusinessCaseAdminConfig() {
   const { config, loading, saving, save } = useBusinessCaseAdminConfig();
   const [draft, setDraft] = useState<AdminConfig | null>(null);
   const [cat, setCat] = useState<string>("");
+  const [newEmpresa, setNewEmpresa] = useState("");
 
   useEffect(() => {
     if (!loading) {
@@ -31,6 +32,37 @@ export function BusinessCaseAdminConfig() {
       if (!d) return d;
       const defs = { ...d.defaultsPorTipo, [tipo]: { ...d.defaultsPorTipo[tipo], [key]: value } };
       return { ...d, defaultsPorTipo: defs };
+    });
+  };
+
+  const addEmpresa = () => {
+    const nombre = newEmpresa.trim();
+    if (!nombre) return;
+    setDraft((d) => {
+      if (!d) return d;
+      if (d.tiposProyecto.some((t) => t.toLowerCase() === nombre.toLowerCase())) {
+        toast.error("Esa empresa ya existe");
+        return d;
+      }
+      return {
+        ...d,
+        tiposProyecto: [...d.tiposProyecto, nombre],
+        defaultsPorTipo: { ...d.defaultsPorTipo, [nombre]: { margenDir: 50, personalY1: 10, anosDepr: 3 } },
+      };
+    });
+    setNewEmpresa("");
+  };
+
+  const removeEmpresa = (tipo: string) => {
+    setDraft((d) => {
+      if (!d) return d;
+      if (d.tiposProyecto.length <= 1) {
+        toast.error("Debe existir al menos una empresa");
+        return d;
+      }
+      const defs = { ...d.defaultsPorTipo };
+      delete defs[tipo];
+      return { ...d, tiposProyecto: d.tiposProyecto.filter((t) => t !== tipo), defaultsPorTipo: defs };
     });
   };
 
@@ -83,9 +115,10 @@ export function BusinessCaseAdminConfig() {
         </div>
       </section>
 
-      {/* Defaults por tipo de proyecto */}
+      {/* Empresas y valores por defecto */}
       <section className="space-y-2">
-        <h4 className="text-sm font-semibold">Valores por defecto por tipo de proyecto</h4>
+        <h4 className="text-sm font-semibold">Empresas</h4>
+        <p className="text-xs text-muted-foreground">Cada empresa define los valores por defecto que se aplican a sus proyectos.</p>
         <div className="space-y-2">
           {draft.tiposProyecto.map((tipo) => {
             const d = draft.defaultsPorTipo[tipo] ?? { margenDir: 0, personalY1: 0, anosDepr: 1 };
@@ -94,13 +127,23 @@ export function BusinessCaseAdminConfig() {
                 <span className="text-sm font-medium w-28">{tipo}</span>
                 <label className="text-xs flex items-center gap-1">Margen dir. %
                   <Input type="number" value={d.margenDir} onChange={(e) => setTipoDefault(tipo, "margenDir", Number(e.target.value))} className="h-7 w-20 text-sm" /></label>
-                <label className="text-xs flex items-center gap-1">Personal Y1 (MM)
+                <label className="text-xs flex items-center gap-1">N° personas Y1
                   <Input type="number" value={d.personalY1} onChange={(e) => setTipoDefault(tipo, "personalY1", Number(e.target.value))} className="h-7 w-20 text-sm" /></label>
                 <label className="text-xs flex items-center gap-1">Años depr.
                   <Input type="number" value={d.anosDepr} onChange={(e) => setTipoDefault(tipo, "anosDepr", Number(e.target.value))} className="h-7 w-16 text-sm" /></label>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 ml-auto" title="Eliminar empresa"
+                  onClick={() => removeEmpresa(tipo)}><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
             );
           })}
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <Input value={newEmpresa} onChange={(e) => setNewEmpresa(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addEmpresa(); } }}
+            placeholder="Nueva empresa…" className="h-8 text-sm w-56" />
+          <Button variant="outline" size="sm" className="h-8 gap-1" onClick={addEmpresa}>
+            <Plus className="h-3.5 w-3.5" /> Agregar empresa
+          </Button>
         </div>
       </section>
 

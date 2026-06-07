@@ -31,7 +31,7 @@ export interface Aprobador {
 
 export interface TipoDefaults {
   margenDir: number; // %
-  personalY1: number; // MM CLP
+  personalY1: number; // N° de personas del equipo en el año 1
   anosDepr: number;
 }
 
@@ -50,8 +50,8 @@ export const defaultAdminConfig: AdminConfig = {
   tiposProyecto: ["Autoplanet", "Agroplanet"],
   categorias: ["Nuevo", "Ampliación", "Remodelación", "Relocación"],
   defaultsPorTipo: {
-    Autoplanet: { margenDir: 53, personalY1: 26, anosDepr: 3 },
-    Agroplanet: { margenDir: 45, personalY1: 20, anosDepr: 5 },
+    Autoplanet: { margenDir: 53, personalY1: 12, anosDepr: 3 },
+    Agroplanet: { margenDir: 45, personalY1: 8, anosDepr: 5 },
   },
   aprobadores: [
     { id: "sol", rol: "Solicitante", requerido: true, orden: 1 },
@@ -134,14 +134,15 @@ export interface BCInputs {
   margenDir: number;
   otrosCostosDir: number;
   costosVar: number;
-  personalY1: number; // MM CLP
+  personalY1: number; // N° de personas del equipo en el año 1
+  costoPersonaMM: number; // costo total por persona (MM CLP / año)
   personalCrec: number; // %
   gralPct: number;
   tecPct: number;
   ocupPct: number;
 
-  // Depreciación
-  capexDepreciable: number; // MM CLP base depreciable
+  // Depreciación (la base depreciable se lee desde la Inversión física)
+  capexDepreciable: number; // DEPRECADO: ya no se usa (se calcula desde inv.fisica)
   deprAnos: number;
 
   // Inversión: overrides por línea (MM CLP) { lineaId: monto }
@@ -296,8 +297,9 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
 
   // Costos
   const perCr = (inputs.personalCrec || 0) / 100;
+  const personalCostoY1 = (inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0); // personas × MM/persona
   const personal = [0];
-  for (let i = 1; i < 6; i++) personal.push(i === 1 ? -(inputs.personalY1 || 0) : round(personal[i - 1] * (1 + perCr), 2));
+  for (let i = 1; i < 6; i++) personal.push(i === 1 ? -round(personalCostoY1, 2) : round(personal[i - 1] * (1 + perCr), 2));
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
   const ocupPct = (inputs.ocupPct || 0) / 100;
@@ -306,7 +308,8 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const tecnologia = ingresos.map((x) => round(-Math.abs(x) * tecPct, 2));
   const ocupacion = ingresos.map((x) => round(-Math.abs(x) * ocupPct, 2));
 
-  const depr = round((inputs.capexDepreciable || 0) / (inputs.deprAnos || 1), 2);
+  // CAPEX depreciable = inversión física (excluye inventario y garantía), se lee desde Inversión
+  const depr = round(fisica / (inputs.deprAnos || 1), 2);
   const depreciacion = [0, -depr, -depr, -depr, -depr, -depr];
 
   const gavs = [0, 1, 2, 3, 4, 5].map((i) =>
@@ -372,6 +375,7 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     otrosCostosDir: 0.3,
     costosVar: 5,
     personalY1: d.personalY1,
+    costoPersonaMM: 9.6, // ~$800k CLP/mes por persona (costo empresa)
     personalCrec: 3.4,
     gralPct: 1.03,
     tecPct: 1.8,

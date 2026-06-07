@@ -112,22 +112,30 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
 
             {/* ───────── INVERSIÓN ───────── */}
             <TabsContent value="inversion" className="space-y-4">
-              <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — las líneas dependen de la categoría (config global)">
+              <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — las líneas dependen de la categoría (config global). Los montos son editables por proyecto.">
                 <table className="w-full text-sm">
-                  <thead><tr className="text-left text-xs text-muted-foreground border-b">
-                    <th className="py-1">Línea</th><th>Método</th><th className="text-right">Monto (MM)</th><th className="text-right">%</th><th>Nota</th>
+                  <thead><tr className="text-xs text-muted-foreground border-b">
+                    <th className="py-1 text-left">Línea</th><th className="text-left">Método</th><th className="text-center">Monto (MM)</th><th className="text-right">% · UF/m²</th>
                   </tr></thead>
                   <tbody>
-                    {result.inv.rows.map((r) => (
-                      <tr key={r.id} className="border-b border-gray-100">
-                        <td className="py-1">{r.nombre}</td>
-                        <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
-                        <td className="text-right"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
-                        <td className="text-right text-muted-foreground">{r.pct.toFixed(1)}%</td>
-                        <td className="text-xs text-muted-foreground">{r.nota}</td>
-                      </tr>
-                    ))}
-                    <tr className="font-semibold"><td className="py-1.5">Total</td><td /><td className="text-right">{fmtMM(result.inv.total)}</td><td className="text-right">100%</td><td /></tr>
+                    {result.inv.rows.map((r) => {
+                      const ufM2eq = inputs.superficie && inputs.ufBase ? (r.monto * 1e6) / inputs.ufBase / inputs.superficie : 0;
+                      return (
+                        <tr key={r.id} className="border-b border-gray-100">
+                          <td className="py-1">{r.nombre}</td>
+                          <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
+                          <td className="text-center"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
+                          <td className="text-right text-muted-foreground whitespace-nowrap">
+                            {r.pct.toFixed(1)}% · {ufM2eq.toFixed(1).replace(".", ",")} UF/m²
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="font-semibold">
+                      <td className="py-1.5">Total</td><td />
+                      <td className="text-center">{fmtMM(result.inv.total)}</td>
+                      <td className="text-right">100% · {(inputs.superficie && inputs.ufBase ? (result.inv.total * 1e6) / inputs.ufBase / inputs.superficie : 0).toFixed(1).replace(".", ",")} UF/m²</td>
+                    </tr>
                   </tbody>
                 </table>
               </Card>
@@ -237,38 +245,64 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                   <Field label="Tasa descuento %"><NumCell value={inputs.waccRate} disabled={ro} w="w-full" onChange={(v) => update("waccRate", v)} /></Field>
                   <Field label="Impuesto %"><NumCell value={inputs.taxRate} disabled={ro} w="w-full" onChange={(v) => update("taxRate", v)} /></Field>
                 </div>
-                <div className="mt-3">
-                  <Label className="text-xs">Crecimiento UF anual (%) por año</Label>
-                  <div className="flex gap-2 mt-1">
-                    {inputs.ufRates.map((r, i) => (
-                      <div key={i} className="text-center"><div className="text-[10px] text-muted-foreground">Año {i + 1}</div>
-                        <NumCell value={r} disabled={ro} onChange={(v) => updateArr("ufRates", i, v)} /></div>
-                    ))}
-                  </div>
+              </Card>
+
+              {/* Ventas + Crecimiento UF en una sola sección, alineadas por año y en tiempo real */}
+              <Card title="Ventas y Crecimiento UF anual" sub="Editar cualquiera recalcula el modelo en tiempo real">
+                <div className="overflow-x-auto">
+                  <table className="text-xs">
+                    <thead><tr className="text-muted-foreground">
+                      <th className="text-left pr-3 font-normal"></th>
+                      {[1, 2, 3, 4, 5].map((y) => <th key={y} className="px-2 font-normal text-center">Año {y}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Venta (MM/mes)</td>
+                        {inputs.ventaMes.map((v, i) => (
+                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} onChange={(val) => updateArr("ventaMes", i, val)} /></td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Crec. UF anual %</td>
+                        {inputs.ufRates.map((r, i) => (
+                          <td key={i} className="px-1 text-center"><NumCell value={r} disabled={ro} onChange={(v) => updateArr("ufRates", i, v)} /></td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-[10px] text-muted-foreground">Ingresos (MM/año)</td>
+                        {[1, 2, 3, 4, 5].map((y) => (
+                          <td key={y} className="px-1 text-center text-[10px] text-muted-foreground">{fmtMM(result.ingresos[y])}</td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </Card>
 
-              <Card title="Ventas (MM CLP / mes) por año">
-                <div className="flex gap-2">
-                  {inputs.ventaMes.map((v, i) => (
-                    <div key={i} className="text-center"><div className="text-[10px] text-muted-foreground">Año {i + 1}</div>
-                      <NumCell value={v} disabled={ro} onChange={(val) => updateArr("ventaMes", i, val)} /></div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card title="Márgenes y costos">
+              <Card title="Márgenes y costos" sub="Conversión a MM CLP (Año 1) bajo cada campo">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <Field label="Margen directo %"><NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></Field>
-                  <Field label="Otros costos dir. %"><NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></Field>
-                  <Field label="Costos variables %"><NumCell value={inputs.costosVar} disabled={ro} w="w-full" onChange={(v) => update("costosVar", v)} /></Field>
-                  <Field label="Gastos generales %"><NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></Field>
-                  <Field label="Tecnología %"><NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></Field>
-                  <Field label="Ocupación %"><NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></Field>
-                  <Field label="Personal Año 1 (MM)"><NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></Field>
-                  <Field label="Crec. personal %"><NumCell value={inputs.personalCrec} disabled={ro} w="w-full" onChange={(v) => update("personalCrec", v)} /></Field>
-                  <Field label="CAPEX depreciable (MM)"><NumCell value={inputs.capexDepreciable} disabled={ro} w="w-full" onChange={(v) => update("capexDepreciable", v)} /></Field>
-                  <Field label="Años depreciación"><NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></Field>
+                  <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(result.costoVentas[1]))} MM`}>
+                    <NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></FieldConv>
+                  <FieldConv label="Otros costos dir. %" conv={`A1: $${fmtMM(Math.abs(result.otrosCostos[1]))} MM`}>
+                    <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
+                  <FieldConv label="Costos variables %" conv={`A1: $${fmtMM(Math.abs(result.costosVar[1]))} MM`}>
+                    <NumCell value={inputs.costosVar} disabled={ro} w="w-full" onChange={(v) => update("costosVar", v)} /></FieldConv>
+                  <FieldConv label="Gastos generales %" conv={`A1: $${fmtMM(Math.abs(result.gastosGral[1]))} MM`}>
+                    <NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></FieldConv>
+                  <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(result.tecnologia[1]))} MM`}>
+                    <NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></FieldConv>
+                  <FieldConv label="Ocupación %" conv={`A1: $${fmtMM(Math.abs(result.ocupacion[1]))} MM`}>
+                    <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+                  <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM/año`}>
+                    <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
+                  <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
+                    <NumCell value={inputs.costoPersonaMM} disabled={ro} w="w-full" onChange={(v) => update("costoPersonaMM", v)} /></FieldConv>
+                  <FieldConv label="Crec. personal %" conv={`A5: $${fmtMM(Math.abs(result.personal[5]))} MM`}>
+                    <NumCell value={inputs.personalCrec} disabled={ro} w="w-full" onChange={(v) => update("personalCrec", v)} /></FieldConv>
+                  <FieldConv label="CAPEX depreciable (MM)" conv="Se lee desde Inversión (física)">
+                    <Input value={fmtMM(result.inv.fisica)} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
+                  <FieldConv label="Años depreciación" conv={`Depr. anual: $${fmtMM(Math.abs(result.depreciacion[1]))} MM`}>
+                    <NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></FieldConv>
                 </div>
               </Card>
             </TabsContent>
@@ -298,6 +332,15 @@ function Card({ title, sub, children }: { title: string; sub?: string; children:
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><Label className="text-xs">{label}</Label><div className="mt-0.5">{children}</div></div>;
+}
+function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <Label className="text-xs">{label}</Label>
+      <div className="mt-0.5">{children}</div>
+      <div className="text-[10px] text-muted-foreground mt-0.5">{conv}</div>
+    </div>
+  );
 }
 function Stat({ label, value }: { label: string; value: string }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
