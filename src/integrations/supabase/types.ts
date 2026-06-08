@@ -5832,6 +5832,41 @@ export type Database = {
         }
         Relationships: []
       }
+      supplier_bank_details: {
+        Row: {
+          bank_account_number: string | null
+          bank_account_type: string | null
+          bank_name: string | null
+          created_at: string
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          bank_account_number?: string | null
+          bank_account_type?: string | null
+          bank_name?: string | null
+          created_at?: string
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          bank_account_number?: string | null
+          bank_account_type?: string | null
+          bank_name?: string | null
+          created_at?: string
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_bank_details_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: true
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_categories: {
         Row: {
           created_at: string
@@ -6048,9 +6083,6 @@ export type Database = {
       suppliers: {
         Row: {
           address: string | null
-          bank_account_number: string | null
-          bank_account_type: string | null
-          bank_name: string | null
           category_id: string | null
           commune: string | null
           contact_name: string | null
@@ -6068,9 +6100,6 @@ export type Database = {
         }
         Insert: {
           address?: string | null
-          bank_account_number?: string | null
-          bank_account_type?: string | null
-          bank_name?: string | null
           category_id?: string | null
           commune?: string | null
           contact_name?: string | null
@@ -6088,9 +6117,6 @@ export type Database = {
         }
         Update: {
           address?: string | null
-          bank_account_number?: string | null
-          bank_account_type?: string | null
-          bank_name?: string | null
           category_id?: string | null
           commune?: string | null
           contact_name?: string | null
