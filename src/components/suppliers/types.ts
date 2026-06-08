@@ -28,9 +28,10 @@ export interface Supplier {
   street: string | null;
   street_number: string | null;
   commune: string | null;
-  bank_name: string | null;
-  bank_account_type: string | null;
-  bank_account_number: string | null;
+  /** Bank fields live in the admin-only supplier_bank_details table; populated only for admins */
+  bank_name?: string | null;
+  bank_account_type?: string | null;
+  bank_account_number?: string | null;
   contact_name: string | null;
   is_generic: boolean;
   is_internal_transfer: boolean;
