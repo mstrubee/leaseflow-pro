@@ -132,9 +132,6 @@ export const SupplierBulkUpload = ({ onComplete, onCancel }: SupplierBulkUploadP
             street: supplier.street || null,
             street_number: supplier.street_number || null,
             commune: supplier.commune || null,
-            bank_name: supplier.bank_name || null,
-            bank_account_type: supplier.bank_account_type || null,
-            bank_account_number: supplier.bank_account_number || null,
             contact_name: supplier.contact_name || null,
             phone: supplier.phone || null,
             category_id: categoryId,
@@ -144,6 +141,16 @@ export const SupplierBulkUpload = ({ onComplete, onCancel }: SupplierBulkUploadP
           .single();
 
         if (error) throw error;
+
+        // Bank details live in an admin-only table; only admins can write them
+        if (newSupplier && (supplier.bank_name || supplier.bank_account_type || supplier.bank_account_number)) {
+          await supabase.from("supplier_bank_details").insert({
+            supplier_id: newSupplier.id,
+            bank_name: supplier.bank_name || null,
+            bank_account_type: supplier.bank_account_type || null,
+            bank_account_number: supplier.bank_account_number || null,
+          });
+        }
 
         // Insert emails
         if (newSupplier && supplier.emails.length > 0) {

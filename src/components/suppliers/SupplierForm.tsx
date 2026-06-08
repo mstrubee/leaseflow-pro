@@ -12,6 +12,7 @@ import { Supplier, SupplierFormData } from "./types";
 import { CategoryMultiSelect } from "./CategoryMultiSelect";
 import { OpexCategoryMultiSelect } from "./OpexCategoryMultiSelect";
 import { InfluenceZoneSelect } from "./InfluenceZoneSelect";
+import { useAuth } from "@/hooks/useAuth";
 
 interface SupplierFormProps {
   supplier?: Supplier | null;
@@ -21,6 +22,7 @@ interface SupplierFormProps {
 }
 
 export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: SupplierFormProps) => {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<SupplierFormData>({
     name: "",
@@ -76,15 +78,22 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       .select("region, commune")
       .eq("supplier_id", supplier.id);
 
+    // Load bank details (admin-only table; non-admins get no rows)
+    const { data: bankDetails } = await supabase
+      .from("supplier_bank_details")
+      .select("bank_name, bank_account_type, bank_account_number")
+      .eq("supplier_id", supplier.id)
+      .maybeSingle();
+
     setFormData({
       name: supplier.name || "",
       rut: supplier.rut || "",
       street: supplier.street || "",
       street_number: supplier.street_number || "",
       commune: supplier.commune || "",
-      bank_name: supplier.bank_name || "",
-      bank_account_type: supplier.bank_account_type || "",
-      bank_account_number: supplier.bank_account_number || "",
+      bank_name: bankDetails?.bank_name || "",
+      bank_account_type: bankDetails?.bank_account_type || "",
+      bank_account_number: bankDetails?.bank_account_number || "",
       contact_name: supplier.contact_name || "",
       phone: supplier.phone || "",
       emails: emails?.map(e => e.email) || [""],
@@ -168,9 +177,6 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         street: formData.street.trim() || null,
         street_number: formData.street_number.trim() || null,
         commune: formData.commune.trim() || null,
-        bank_name: formData.bank_name.trim() || null,
-        bank_account_type: formData.bank_account_type || null,
-        bank_account_number: formData.bank_account_number.trim() || null,
         contact_name: formData.contact_name.trim() || null,
         phone: formData.phone.trim() || null,
         category_id: formData.category_ids[0] || formData.category_id || null,
@@ -198,6 +204,19 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         if (error) throw error;
         supplierId = data.id;
       }
+
+      // Bank details live in an admin-only table; only admins can write them
+      if (isAdmin) {
+        await supabase
+          .from("supplier_bank_details")
+          .upsert({
+            supplier_id: supplierId,
+            bank_name: formData.bank_name.trim() || null,
+            bank_account_type: formData.bank_account_type || null,
+            bank_account_number: formData.bank_account_number.trim() || null,
+          }, { onConflict: "supplier_id" });
+      }
+
 
       // Update emails
       await supabase.from("supplier_emails").delete().eq("supplier_id", supplierId);
@@ -334,7 +353,8 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
 
       {!formData.is_internal_transfer && (
         <>
-          {/* Bank Data */}
+          {/* Bank Data — admin only */}
+          {isAdmin && (
           <div className="space-y-4">
             <h4 className="font-medium text-sm border-b pb-2">Datos Bancarios</h4>
             <div className="grid grid-cols-3 gap-4">
@@ -374,6 +394,9 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
               </div>
             </div>
           </div>
+          )}
+
+
 
           {/* Contact Data */}
           <div className="space-y-4">
