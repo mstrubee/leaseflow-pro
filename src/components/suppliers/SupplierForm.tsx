@@ -177,9 +177,6 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         street: formData.street.trim() || null,
         street_number: formData.street_number.trim() || null,
         commune: formData.commune.trim() || null,
-        bank_name: formData.bank_name.trim() || null,
-        bank_account_type: formData.bank_account_type || null,
-        bank_account_number: formData.bank_account_number.trim() || null,
         contact_name: formData.contact_name.trim() || null,
         phone: formData.phone.trim() || null,
         category_id: formData.category_ids[0] || formData.category_id || null,
@@ -207,6 +204,19 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         if (error) throw error;
         supplierId = data.id;
       }
+
+      // Bank details live in an admin-only table; only admins can write them
+      if (isAdmin) {
+        await supabase
+          .from("supplier_bank_details")
+          .upsert({
+            supplier_id: supplierId,
+            bank_name: formData.bank_name.trim() || null,
+            bank_account_type: formData.bank_account_type || null,
+            bank_account_number: formData.bank_account_number.trim() || null,
+          }, { onConflict: "supplier_id" });
+      }
+
 
       // Update emails
       await supabase.from("supplier_emails").delete().eq("supplier_id", supplierId);
