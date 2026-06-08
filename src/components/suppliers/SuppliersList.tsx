@@ -316,29 +316,39 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
     }
   };
 
-  const exportToExcel = (suppliersToExport: SupplierWithEmails[]) => {
+  const exportToExcel = async (suppliersToExport: SupplierWithEmails[]) => {
     if (suppliersToExport.length === 0) {
       toast.error("No hay proveedores para exportar");
       return;
     }
 
-    const data = suppliersToExport.map(s => ({
-      "Nombre": s.name,
-      "RUT": s.rut || "",
-      "Rubro": s.category?.name || "",
-      "Tipo": s.is_generic ? "Genérico" : "Específico",
-      "Contacto": s.contact_name || "",
-      "Teléfono": s.phone || "",
-      "Email Principal": (s as any).emails?.find((e: any) => e.is_primary)?.email || 
-                         (s as any).emails?.[0]?.email || "",
-      "Otros Emails": (s as any).emails?.filter((e: any) => !e.is_primary).map((e: any) => e.email).join(", ") || "",
-      "Calle": s.street || "",
-      "Número": s.street_number || "",
-      "Comuna": s.commune || "",
-      "Banco": s.bank_name || "",
-      "Tipo Cuenta": s.bank_account_type || "",
-      "N° Cuenta": s.bank_account_number || "",
-    }));
+    // Bank details live in an admin-only table; fetch them separately (empty for non-admins)
+    const { data: bankRows } = await supabase
+      .from("supplier_bank_details")
+      .select("supplier_id, bank_name, bank_account_type, bank_account_number")
+      .in("supplier_id", suppliersToExport.map(s => s.id));
+    const bankMap = new Map((bankRows || []).map((b: any) => [b.supplier_id, b]));
+
+    const data = suppliersToExport.map(s => {
+      const bank = bankMap.get(s.id);
+      return {
+        "Nombre": s.name,
+        "RUT": s.rut || "",
+        "Rubro": s.category?.name || "",
+        "Tipo": s.is_generic ? "Genérico" : "Específico",
+        "Contacto": s.contact_name || "",
+        "Teléfono": s.phone || "",
+        "Email Principal": (s as any).emails?.find((e: any) => e.is_primary)?.email || 
+                           (s as any).emails?.[0]?.email || "",
+        "Otros Emails": (s as any).emails?.filter((e: any) => !e.is_primary).map((e: any) => e.email).join(", ") || "",
+        "Calle": s.street || "",
+        "Número": s.street_number || "",
+        "Comuna": s.commune || "",
+        "Banco": bank?.bank_name || "",
+        "Tipo Cuenta": bank?.bank_account_type || "",
+        "N° Cuenta": bank?.bank_account_number || "",
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
