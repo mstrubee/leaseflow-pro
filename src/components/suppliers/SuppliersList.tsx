@@ -209,13 +209,36 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
     }
   };
 
-  // ── Derive unique zones from all loaded suppliers ──────────────────────────
+  // ── Matching helpers (shared by list + interdependent filter options) ───────
+  const matchesRubro = (s: SupplierWithEmails, rubros: Set<string>) => {
+    if (rubros.size === 0) return true;
+    const assignedIds = (s.category_assignments || []).map(a => a.category?.id).filter(Boolean);
+    if (assignedIds.length === 0 && s.category_id) assignedIds.push(s.category_id);
+    return assignedIds.some(id => rubros.has(id!));
+  };
+  const matchesZona = (s: SupplierWithEmails, zonas: Set<string>) => {
+    if (zonas.size === 0) return true;
+    const supplierZones = (s.influence_zones || []).map(z => (z.commune || z.region || "").trim());
+    return supplierZones.some(z => zonas.has(z));
+  };
+  const matchesSearch = (s: SupplierWithEmails) => {
+    const q = search.toLowerCase();
+    if (!q) return true;
+    return (
+      s.name.toLowerCase().includes(q) ||
+      (s.rut?.toLowerCase().includes(q)) ||
+      (s.category?.name?.toLowerCase().includes(q))
+    );
+  };
+
+  // ── Zona options: only zones present in suppliers matching the active Rubro
+  //    filter (and search). Already-selected zonas are always kept visible. ───
   const zonaOptions: FilterOption[] = useMemo(() => {
     const seen = new Set<string>();
     const opts: FilterOption[] = [];
     for (const s of suppliers) {
+      if (!matchesSearch(s) || !matchesRubro(s, selectedRubros)) continue;
       for (const z of s.influence_zones || []) {
-        // Use commune if available, otherwise region
         const label = (z.commune || z.region || "").trim();
         if (label && !seen.has(label)) {
           seen.add(label);
@@ -223,13 +246,30 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
         }
       }
     }
+    // Keep selected values visible so they can be unchecked
+    for (const value of selectedZonas) {
+      if (!seen.has(value)) {
+        seen.add(value);
+        opts.push({ value, label: value });
+      }
+    }
     return opts.sort((a, b) => a.label.localeCompare(b.label, "es"));
-  }, [suppliers]);
+  }, [suppliers, search, selectedRubros, selectedZonas]);
 
-  const rubroOptions: FilterOption[] = useMemo(
-    () => categories.map(c => ({ value: c.id, label: c.name })),
-    [categories]
-  );
+  // ── Rubro options: only rubros present in suppliers matching the active Zona
+  //    filter (and search). Already-selected rubros are always kept visible. ──
+  const rubroOptions: FilterOption[] = useMemo(() => {
+    const availableIds = new Set<string>();
+    for (const s of suppliers) {
+      if (!matchesSearch(s) || !matchesZona(s, selectedZonas)) continue;
+      const assignedIds = (s.category_assignments || []).map(a => a.category?.id).filter(Boolean);
+      if (assignedIds.length === 0 && s.category_id) assignedIds.push(s.category_id);
+      for (const id of assignedIds) if (id) availableIds.add(id);
+    }
+    return categories
+      .filter(c => availableIds.has(c.id) || selectedRubros.has(c.id))
+      .map(c => ({ value: c.id, label: c.name }));
+  }, [categories, suppliers, search, selectedZonas, selectedRubros]);
 
   // ── Apply all active filters ────────────────────────────────────────────────
   const filteredSuppliers: SupplierWithEmails[] = useMemo(() => {
