@@ -78,15 +78,22 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       .select("region, commune")
       .eq("supplier_id", supplier.id);
 
+    // Load bank details (admin-only table; non-admins get no rows)
+    const { data: bankDetails } = await supabase
+      .from("supplier_bank_details")
+      .select("bank_name, bank_account_type, bank_account_number")
+      .eq("supplier_id", supplier.id)
+      .maybeSingle();
+
     setFormData({
       name: supplier.name || "",
       rut: supplier.rut || "",
       street: supplier.street || "",
       street_number: supplier.street_number || "",
       commune: supplier.commune || "",
-      bank_name: supplier.bank_name || "",
-      bank_account_type: supplier.bank_account_type || "",
-      bank_account_number: supplier.bank_account_number || "",
+      bank_name: bankDetails?.bank_name || "",
+      bank_account_type: bankDetails?.bank_account_type || "",
+      bank_account_number: bankDetails?.bank_account_number || "",
       contact_name: supplier.contact_name || "",
       phone: supplier.phone || "",
       emails: emails?.map(e => e.email) || [""],
