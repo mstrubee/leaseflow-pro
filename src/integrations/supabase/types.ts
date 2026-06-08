@@ -5873,6 +5873,42 @@ export type Database = {
           },
         ]
       }
+      supplier_category_assignments: {
+        Row: {
+          category_id: string
+          created_at: string
+          id: string
+          supplier_id: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          id?: string
+          supplier_id: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          id?: string
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_category_assignments_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_category_assignments_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_emails: {
         Row: {
           created_at: string
