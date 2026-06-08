@@ -12,6 +12,7 @@ import { Supplier, SupplierFormData } from "./types";
 import { CategoryMultiSelect } from "./CategoryMultiSelect";
 import { OpexCategoryMultiSelect } from "./OpexCategoryMultiSelect";
 import { InfluenceZoneSelect } from "./InfluenceZoneSelect";
+import { useAuth } from "@/hooks/useAuth";
 
 interface SupplierFormProps {
   supplier?: Supplier | null;
