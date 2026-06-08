@@ -1083,25 +1083,35 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     try {
       const { data: suppliers, error } = await supabase
         .from("suppliers")
-        .select("name, rut, contact_name, email, phone, street, street_number, commune, bank_name, bank_account_type, bank_account_number, category:supplier_categories(name)")
+        .select("id, name, rut, contact_name, email, phone, street, street_number, commune, category:supplier_categories(name)")
         .in("id", Array.from(supplierIds))
         .order("name");
       if (error) throw error;
 
+      // Bank details live in an admin-only table; fetch separately (empty for non-admins)
+      const { data: bankRows } = await supabase
+        .from("supplier_bank_details")
+        .select("supplier_id, bank_name, bank_account_type, bank_account_number")
+        .in("supplier_id", Array.from(supplierIds));
+      const bankMap = new Map((bankRows || []).map((b: any) => [b.supplier_id, b]));
+
       const headers = ["Nombre", "RUT", "Rubro", "Contacto", "Email", "Teléfono", "Dirección", "Comuna", "Banco", "Tipo de Cuenta", "N° Cuenta"];
-      const rows = (suppliers || []).map((s: any) => [
-        s.name || "",
-        s.rut || "",
-        s.category?.name || "",
-        s.contact_name || "",
-        s.email || "",
-        s.phone || "",
-        [s.street, s.street_number].filter(Boolean).join(" "),
-        s.commune || "",
-        s.bank_name || "",
-        s.bank_account_type || "",
-        s.bank_account_number || "",
-      ]);
+      const rows = (suppliers || []).map((s: any) => {
+        const bank = bankMap.get(s.id);
+        return [
+          s.name || "",
+          s.rut || "",
+          s.category?.name || "",
+          s.contact_name || "",
+          s.email || "",
+          s.phone || "",
+          [s.street, s.street_number].filter(Boolean).join(" "),
+          s.commune || "",
+          bank?.bank_name || "",
+          bank?.bank_account_type || "",
+          bank?.bank_account_number || "",
+        ];
+      });
 
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       ws["!cols"] = [{ wch: 30 }, { wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 28 }, { wch: 16 }, { wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 22 }];
