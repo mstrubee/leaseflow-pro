@@ -22,6 +22,7 @@ interface SupplierFormProps {
 }
 
 export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: SupplierFormProps) => {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<SupplierFormData>({
     name: "",
