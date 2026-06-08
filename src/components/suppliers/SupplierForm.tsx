@@ -394,6 +394,9 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
               </div>
             </div>
           </div>
+          )}
+
+
 
           {/* Contact Data */}
           <div className="space-y-4">
