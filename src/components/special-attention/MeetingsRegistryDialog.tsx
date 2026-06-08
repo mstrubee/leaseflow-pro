@@ -17,8 +17,27 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { generateMeetingPDF, type MeetingContractSnapshot } from "./exportMeetingPDF";
+import { generateMeetingPDF, type MeetingContractSnapshot, type MeetingChecklistItem } from "./exportMeetingPDF";
 import { downloadBlob } from "@/lib/downloadBlob";
+
+/** Fetches checklist items for a list of contract IDs and injects them into the snapshots. */
+async function enrichWithChecklist(snapshots: MeetingContractSnapshot[]): Promise<MeetingContractSnapshot[]> {
+  if (snapshots.length === 0) return snapshots;
+  const ids = snapshots.map(c => c.id);
+  const { data } = await supabase
+    .from("special_attention_checklist")
+    .select("id, text, is_completed, completed_at, created_at, parent_id, contract_id")
+    .in("contract_id", ids)
+    .order("created_at", { ascending: true });
+  if (!data) return snapshots;
+  const byContract: Record<string, MeetingChecklistItem[]> = {};
+  for (const item of data) {
+    const cid = (item as any).contract_id as string;
+    if (!byContract[cid]) byContract[cid] = [];
+    byContract[cid].push(item as MeetingChecklistItem);
+  }
+  return snapshots.map(c => ({ ...c, checklistItems: byContract[c.id] || [] }));
+}
 
 interface Props {
   open: boolean;
@@ -317,14 +336,15 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
         }
       }
 
-      // Generate + upload PDF — "Acta de Reunión" que incluye participantes y notas
-      // (esto lo diferencia del informe descargable desde la pantalla frontal).
+      // Generate + upload PDF — "Acta de Reunión" que incluye participantes, notas
+      // y el detalle completo (notas + checklist) de cada contrato.
       try {
+        const snapshotWithChecklist = await enrichWithChecklist(snapshot);
         const { blob, filename } = await generateMeetingPDF({
           meetingDate,
           notes: notes.trim() || null,
           participants: newParticipants.map(p => ({ name: p.name, role: p.role })),
-          contracts: snapshot,
+          contracts: snapshotWithChecklist,
         });
         const yyyy = meetingDate.getFullYear();
         const mm = String(meetingDate.getMonth() + 1).padStart(2, "0");
@@ -392,9 +412,10 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const handleDownloadMeetingPDF = async (meeting: MeetingRow) => {
     setPdfBusyId(meeting.id);
     try {
-      const snapshot = (meeting.snapshot && meeting.snapshot.length > 0)
+      const baseSnapshot = (meeting.snapshot && meeting.snapshot.length > 0)
         ? meeting.snapshot
         : (contracts as MeetingContractSnapshot[]);
+      const snapshot = await enrichWithChecklist(baseSnapshot);
       const { blob, filename } = await generateMeetingPDF({
         meetingDate: new Date(meeting.meeting_date),
         notes: meeting.notes,
