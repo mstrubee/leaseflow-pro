@@ -353,7 +353,8 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
 
       {!formData.is_internal_transfer && (
         <>
-          {/* Bank Data */}
+          {/* Bank Data — admin only */}
+          {isAdmin && (
           <div className="space-y-4">
             <h4 className="font-medium text-sm border-b pb-2">Datos Bancarios</h4>
             <div className="grid grid-cols-3 gap-4">
