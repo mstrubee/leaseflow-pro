@@ -111,6 +111,7 @@ interface InfluenceZone { region: string; commune: string | null }
 interface SupplierWithEmails extends Omit<Supplier, 'emails'> {
   emails?: { email: string; is_primary: boolean }[];
   influence_zones?: InfluenceZone[];
+  category_assignments?: { category: { id: string; name: string } }[];
 }
 
 export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
@@ -171,13 +172,16 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
         .select(`
           *,
           category:supplier_categories(id, name),
+          category_assignments:supplier_category_assignments(
+            category:supplier_categories(id, name)
+          ),
           emails:supplier_emails(email, is_primary),
           influence_zones:supplier_influence_zones(region, commune)
         `)
         .order("name");
 
       if (error) throw error;
-      setSuppliers((data || []) as SupplierWithEmails[]);
+      setSuppliers((data || []) as unknown as SupplierWithEmails[]);
       setSelectedIds(new Set());
     } catch (error) {
       console.error("Error loading suppliers:", error);
@@ -237,8 +241,13 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
         (s.rut?.toLowerCase().includes(q)) ||
         (s.category?.name?.toLowerCase().includes(q))
       )) return false;
-      // Rubro filter (match by category id)
-      if (selectedRubros.size > 0 && !selectedRubros.has(s.category_id || "")) return false;
+      // Rubro filter — checks all assigned categories (multi-rubro)
+      if (selectedRubros.size > 0) {
+        const assignedIds = (s.category_assignments || []).map(a => a.category?.id).filter(Boolean);
+        // Fallback to single category_id for suppliers without junction data yet
+        if (assignedIds.length === 0 && s.category_id) assignedIds.push(s.category_id);
+        if (!assignedIds.some(id => selectedRubros.has(id!))) return false;
+      }
       // Zona de influencia filter (at least one zone matches)
       if (selectedZonas.size > 0) {
         const supplierZones = (s.influence_zones || []).map(
@@ -447,9 +456,18 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                   <TableCell className="font-medium">{supplier.name}</TableCell>
                   <TableCell className="text-muted-foreground">{supplier.rut || "-"}</TableCell>
                   <TableCell>
-                    {supplier.category?.name && (
-                      <Badge variant="outline">{supplier.category.name}</Badge>
-                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {(supplier.category_assignments && supplier.category_assignments.length > 0
+                        ? supplier.category_assignments
+                        : supplier.category ? [{ category: supplier.category }] : []
+                      ).map((a, i) => (
+                        a.category?.name && (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {a.category.name}
+                          </Badge>
+                        )
+                      ))}
+                    </div>
                   </TableCell>
                   <TableCell>{supplier.contact_name || "-"}</TableCell>
                   <TableCell className="text-center">

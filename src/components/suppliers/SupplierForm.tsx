@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { X, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Supplier, SupplierFormData } from "./types";
-import { CategorySelect } from "./CategorySelect";
+import { CategoryMultiSelect } from "./CategoryMultiSelect";
 import { OpexCategoryMultiSelect } from "./OpexCategoryMultiSelect";
 import { InfluenceZoneSelect } from "./InfluenceZoneSelect";
 
@@ -35,6 +35,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
     phone: "",
     emails: [""],
     category_id: defaultCategoryId || "",
+    category_ids: defaultCategoryId ? [defaultCategoryId] : [],
     opex_category_ids: [],
     influence_zones: [],
     is_generic: false,
@@ -55,6 +56,12 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
     const { data: emails } = await supabase
       .from("supplier_emails")
       .select("email")
+      .eq("supplier_id", supplier.id);
+
+    // Load assigned rubros (multi)
+    const { data: catAssignments } = await supabase
+      .from("supplier_category_assignments" as any)
+      .select("category_id")
       .eq("supplier_id", supplier.id);
 
     // Load OPEX categories
@@ -82,6 +89,9 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       phone: supplier.phone || "",
       emails: emails?.map(e => e.email) || [""],
       category_id: supplier.category_id || "",
+      category_ids: catAssignments && catAssignments.length > 0
+        ? (catAssignments as any[]).map((c: any) => c.category_id)
+        : supplier.category_id ? [supplier.category_id] : [],
       opex_category_ids: opexCategories?.map(c => c.opex_category_id) || [],
       influence_zones: zones?.map(z => ({ region: z.region, commune: z.commune })) || [],
       is_generic: supplier.is_generic || false,
@@ -112,8 +122,8 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
     if (formData.is_internal_transfer) {
       return true;
     }
-    if (!formData.category_id) {
-      toast.error("Debe seleccionar un rubro");
+    if (formData.category_ids.length === 0) {
+      toast.error("Debe seleccionar al menos un rubro");
       return false;
     }
     const validEmails = formData.emails.filter(e => e.trim());
@@ -163,7 +173,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         bank_account_number: formData.bank_account_number.trim() || null,
         contact_name: formData.contact_name.trim() || null,
         phone: formData.phone.trim() || null,
-        category_id: formData.category_id || null,
+        category_id: formData.category_ids[0] || formData.category_id || null,
         is_generic: formData.is_generic,
         is_internal_transfer: formData.is_internal_transfer,
       };
@@ -199,6 +209,14 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
             email: email.trim(),
             is_primary: idx === 0,
           }))
+        );
+      }
+
+      // Update category assignments (multi-rubro)
+      await supabase.from("supplier_category_assignments" as any).delete().eq("supplier_id", supplierId);
+      if (formData.category_ids.length > 0) {
+        await supabase.from("supplier_category_assignments" as any).insert(
+          formData.category_ids.map((category_id) => ({ supplier_id: supplierId, category_id }))
         );
       }
 
@@ -407,17 +425,21 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
             </div>
           </div>
 
-          {/* Category */}
+          {/* Category multi-select */}
           <div className="space-y-4">
-            <h4 className="font-medium text-sm border-b pb-2">Rubro *</h4>
-            <CategorySelect
-              value={formData.category_id || null}
-              onChange={(categoryId) => setFormData(prev => ({ ...prev, category_id: categoryId || "" }))}
-              placeholder="Seleccionar rubro"
-              allowAllLevels={true}
+            <h4 className="font-medium text-sm border-b pb-2">Rubro(s) *</h4>
+            <CategoryMultiSelect
+              value={formData.category_ids}
+              onChange={(ids) => setFormData(prev => ({
+                ...prev,
+                category_ids: ids,
+                category_id: ids[0] || "",
+              }))}
+              placeholder="Seleccionar rubro(s)"
+              disabled={formData.is_internal_transfer}
             />
             <p className="text-xs text-muted-foreground">
-              Puedes seleccionar cualquier nivel de la jerarquía de rubros
+              Puedes asignar más de un rubro. El primero seleccionado es el principal.
             </p>
           </div>
 
@@ -427,7 +449,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
             <OpexCategoryMultiSelect
               value={formData.opex_category_ids}
               onChange={(opex_category_ids) => setFormData(prev => ({ ...prev, opex_category_ids }))}
-              supplierCategoryId={formData.category_id || null}
+              supplierCategoryId={formData.category_ids[0] || formData.category_id || null}
             />
             <p className="text-xs text-muted-foreground">
               Asigna categorías OPEX para que el proveedor aparezca como opción al crear órdenes de compra.

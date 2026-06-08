@@ -38,6 +38,8 @@ export interface Supplier {
   created_at: string;
   updated_at: string;
   category?: { id: string; name: string } | null;
+  /** All assigned rubros via supplier_category_assignments */
+  category_assignments?: { category: { id: string; name: string } }[];
   emails?: SupplierEmail[];
 }
 
@@ -68,7 +70,10 @@ export interface SupplierFormData {
   contact_name: string;
   phone: string;
   emails: string[];
+  /** Primary category (kept for backward compat — equals category_ids[0]) */
   category_id: string;
+  /** All assigned rubros (multi-select) */
+  category_ids: string[];
   opex_category_ids: string[];
   influence_zones: { region: string; commune: string | null }[];
   is_generic: boolean;
