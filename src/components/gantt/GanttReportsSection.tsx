@@ -371,69 +371,79 @@ export function GanttReportsSection() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1) Load all timelines with contract names + superficie for UF/m²
-      const { data: timelines, error: tlErr } = await supabase
-        .from("gantt_timelines")
-        .select(
-          "id, name, contract_id, contracts(name, deleted_at, superficie_edificada_local)",
-        )
-        .order("created_at", { ascending: false });
-
-      if (tlErr) throw tlErr;
-
-      const validTimelines = (timelines || []).filter(
-        (t: any) => t.contracts && !t.contracts.deleted_at,
-      );
-
-      if (validTimelines.length === 0) {
-        setData([]);
-        return;
-      }
-
-      const timelineIds = validTimelines.map((t: any) => t.id);
-      const contractIds = validTimelines.map((t: any) => t.contract_id);
-
-      // 2) Load all tasks for these timelines (paginated to avoid 1000-row limit)
-      let allTasks: any[] = [];
-      const PAGE = 1000;
-      let from = 0;
-      let more = true;
-      while (more) {
-        const { data: page, error } = await supabase
-          .from("gantt_tasks")
-          .select("*")
-          .in("timeline_id", timelineIds)
-          .order("display_order")
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        allTasks = allTasks.concat(page || []);
-        more = (page?.length || 0) === PAGE;
-        from += PAGE;
-      }
-
-      // 3) Load CAPEX budget for the current year per contract, then compute
-      //    each total using the SAME pipeline as the Control de Presupuesto
-      //    tree (buildBudgetTree + calculateGrandTotal). This guarantees the
-      //    number shown here matches the one in the budget detail.
       const currentYear = new Date().getFullYear();
+
+      // 1) Punto de partida: TODOS los contratos con capex en el año actual,
+      //    independientemente de si tienen Gantt, tareas o estado de autorización.
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
         .select("id, contract_id, year, amount_uf")
         .eq("budget_type", "capex")
-        .eq("year", currentYear)
-        .in("contract_id", contractIds);
+        .eq("year", currentYear);
       if (bErr) throw bErr;
 
-      const budgetByContract = new Map<
-        string,
-        { id: string; amount_uf: number | null }
-      >();
-      (budgets || []).forEach((b) => {
-        if (!budgetByContract.has(b.contract_id)) {
-          budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
-        }
-      });
+      if (!budgets || budgets.length === 0) {
+        setData([]);
+        return;
+      }
 
+      // Un presupuesto por contrato (primero encontrado)
+      const budgetByContract = new Map<string, { id: string; amount_uf: number | null }>();
+      (budgets || []).forEach((b) => {
+        if (!budgetByContract.has(b.contract_id))
+          budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
+      });
+      const contractIds = Array.from(budgetByContract.keys());
+
+      // 2) Datos del contrato (nombre, superficie, verificar no eliminado)
+      const { data: contractRows, error: cErr } = await supabase
+        .from("contracts")
+        .select("id, name, deleted_at, superficie_edificada_local")
+        .in("id", contractIds);
+      if (cErr) throw cErr;
+
+      const contractMap = new Map<string, any>();
+      (contractRows || [])
+        .filter((c: any) => !c.deleted_at)
+        .forEach((c: any) => contractMap.set(c.id, c));
+
+      // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
+      const { data: timelines, error: tlErr } = await supabase
+        .from("gantt_timelines")
+        .select("id, name, contract_id")
+        .in("contract_id", contractIds)
+        .order("created_at", { ascending: false });
+      if (tlErr) throw tlErr;
+
+      // La timeline más reciente por contrato
+      const timelineByContract = new Map<string, { id: string; name: string }>();
+      (timelines || []).forEach((t: any) => {
+        if (!timelineByContract.has(t.contract_id))
+          timelineByContract.set(t.contract_id, { id: t.id, name: t.name });
+      });
+      const timelineIds = Array.from(timelineByContract.values()).map((t) => t.id);
+
+      // 4) Tareas de Gantt (paginado; puede quedar vacío si no hay timelines)
+      let allTasks: any[] = [];
+      if (timelineIds.length > 0) {
+        const PAGE = 1000;
+        let from = 0;
+        let more = true;
+        while (more) {
+          const { data: page, error } = await supabase
+            .from("gantt_tasks")
+            .select("*")
+            .in("timeline_id", timelineIds)
+            .order("display_order")
+            .range(from, from + PAGE - 1);
+          if (error) throw error;
+          allTasks = allTasks.concat(page || []);
+          more = (page?.length || 0) === PAGE;
+          from += PAGE;
+        }
+      }
+
+      // 5) Totales de capex (misma lógica que Control de Presupuesto)
       const budgetIds = Array.from(budgetByContract.values()).map((b) => b.id);
       const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
 
@@ -442,38 +452,44 @@ export function GanttReportsSection() {
       budgetByContract.forEach((budget, contractId) => {
         const total = totals.get(budget.id);
         const fromTree = total ? total.grand : 0;
-        // Mirror BudgetDashboard fallback: if there are no lines, use the
-        // manual amount_uf on the budget envelope.
         capexByContract.set(contractId, fromTree > 0 ? fromTree : budget.amount_uf || 0);
       });
 
-      // 4) Assemble per-timeline data
-      const result: GanttContractData[] = validTimelines.flatMap((tl: any) => {
-        const tasks = allTasks.filter((t) => t.timeline_id === tl.id) as GanttTask[];
-        // Excluir líneas de tiempo sin tareas (no tienen Gantt cargada)
-        if (tasks.length === 0) return [];
-        const taskTree = buildTree(tasks);
+      // 6) Ensamblar resultado — incluye TODOS los contratos con capex,
+      //    con o sin Gantt, con o sin tareas.
+      const result: GanttContractData[] = [];
+      for (const contractId of contractIds) {
+        const contract = contractMap.get(contractId);
+        if (!contract) continue; // contrato eliminado o no encontrado
+
+        const capexUF = capexByContract.get(contractId) || 0;
+        if (capexUF <= 0) continue; // sin monto de capex real, omitir
+
+        const timeline = timelineByContract.get(contractId);
+        const tasks = timeline
+          ? (allTasks.filter((t: any) => t.timeline_id === timeline.id) as GanttTask[])
+          : [];
+        const taskTree = tasks.length > 0 ? buildTree(tasks) : [];
+
         const endDates = tasks.map((t) => t.end_date).filter(Boolean) as string[];
         const endDate =
           endDates.length > 0
             ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
             : null;
-        const capexUF = capexByContract.get(tl.contract_id) || 0;
-        return [{
-          contractId: tl.contract_id,
-          contractName: tl.contracts.name,
-          timelineName: tl.name,
+
+        result.push({
+          contractId,
+          contractName: contract.name,
+          timelineName: timeline?.name ?? "",
           tasks,
           taskTree,
           endDate,
           capexUF,
           capexCLP: capexUF * currentUF,
-          surfaceM2: Number(tl.contracts.superficie_edificada_local) || 0,
-        }];
-      });
+          surfaceM2: Number(contract.superficie_edificada_local) || 0,
+        });
+      }
 
-
-      // Sort by contract name
       result.sort((a, b) => a.contractName.localeCompare(b.contractName));
       setData(result);
     } catch (e: any) {
@@ -558,9 +574,9 @@ export function GanttReportsSection() {
         head: [["Contrato", "Línea de Tiempo", "Fecha Término", "Tareas", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
         body: data.map((d) => [
           d.contractName,
-          d.timelineName,
+          d.timelineName || "Sin carta Gantt",
           d.endDate ? format(parseISO(d.endDate), "dd/MM/yyyy") : "—",
-          String(d.tasks.length),
+          d.tasks.length > 0 ? String(d.tasks.length) : "—",
           d.capexUF > 0 ? formatUF(d.capexUF) : "—",
           d.capexCLP > 0 ? `$${formatCLP(d.capexCLP)}` : "—",
           d.capexUF > 0 && d.surfaceM2 > 0 ? formatUFm2(d.capexUF / d.surfaceM2) : "—",
@@ -589,7 +605,7 @@ export function GanttReportsSection() {
         doc.setFont("helvetica", "bold");
         doc.setTextColor(60);
         const infoY = 26;
-        doc.text(`Línea de Tiempo: ${item.timelineName}`, 10, infoY);
+        doc.text(`Línea de Tiempo: ${item.timelineName || "Sin carta Gantt"}`, 10, infoY);
         doc.text(
           `Fecha Término: ${item.endDate ? format(parseISO(item.endDate), "dd/MM/yyyy") : "—"}`,
           pageWidth / 2,
@@ -858,7 +874,7 @@ export function GanttReportsSection() {
               </div>
             ) : data.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No hay cartas Gantt registradas en ningún contrato.
+                No hay contratos con CAPEX registrado para el año en curso.
               </div>
             ) : (
               <div className="space-y-3">
@@ -882,12 +898,20 @@ export function GanttReportsSection() {
                                 {item.contractName}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {item.timelineName} · {item.tasks.length} tareas · Fecha término:{" "}
-                                <span className="font-medium text-foreground">
-                                  {item.endDate
-                                    ? format(parseISO(item.endDate), "dd/MM/yyyy")
-                                    : "—"}
-                                </span>
+                                {item.tasks.length === 0 ? (
+                                  <span className="italic text-amber-600">Sin carta Gantt cargada</span>
+                                ) : (
+                                  <>
+                                    {item.timelineName && <>{item.timelineName} · </>}
+                                    {item.tasks.length} tarea{item.tasks.length !== 1 ? "s" : ""} · Fecha
+                                    término:{" "}
+                                    <span className="font-medium text-foreground">
+                                      {item.endDate
+                                        ? format(parseISO(item.endDate), "dd/MM/yyyy")
+                                        : "—"}
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -947,13 +971,20 @@ export function GanttReportsSection() {
                       </CardHeader>
                       {isOpen && (
                         <CardContent className="pt-0 pb-3 px-3">
-                          <MiniGantt
-                            taskTree={item.taskTree}
-                            holidays={[]}
-                            selectionMode={selectionModeCards.has(item.contractId)}
-                            hiddenIds={hiddenByCard[item.contractId]}
-                            onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
-                          />
+                          {item.tasks.length === 0 ? (
+                            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground italic">
+                              Este contrato no tiene carta Gantt registrada. El CAPEX está asignado pero
+                              aún no se ha cargado la planificación de obras.
+                            </div>
+                          ) : (
+                            <MiniGantt
+                              taskTree={item.taskTree}
+                              holidays={[]}
+                              selectionMode={selectionModeCards.has(item.contractId)}
+                              hiddenIds={hiddenByCard[item.contractId]}
+                              onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
+                            />
+                          )}
                         </CardContent>
                       )}
                     </Card>
