@@ -24,7 +24,8 @@ interface GanttModuleProps {
 
 export function GanttModule({ contractId }: GanttModuleProps) {
   const { isAdmin, hasPermission } = useAuth();
-  const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
+  // Cualquier usuario con acceso al Cronograma (vista o edición) puede editarlo completamente
+  const canEdit = isAdmin || hasPermission("contract_gantt", "view");
   const {
     timeline,
     tasks,
