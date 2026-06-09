@@ -6396,6 +6396,7 @@ export type Database = {
         }
         Returns: string
       }
+      can_access_gantt: { Args: { _user_id: string }; Returns: boolean }
       get_cloud_storage_token: {
         Args: { p_connection_id: string }
         Returns: {
