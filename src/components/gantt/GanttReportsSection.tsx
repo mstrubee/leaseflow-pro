@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import {
   ChevronDown,
   ChevronRight,
@@ -15,6 +17,10 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  ListFilter,
+  ArrowUpDown,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
@@ -30,6 +36,9 @@ import { getLogoUrls } from "@/hooks/useAppLogos";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+
+type FilterGantt = "all" | "con" | "sin";
+type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
 
 interface GanttContractData {
   contractId: string;
@@ -340,6 +349,61 @@ export function GanttReportsSection() {
   const [selectionModeCards, setSelectionModeCards] = useState<Set<string>>(new Set());
   const [hiddenByCard, setHiddenByCard] = useState<Record<string, Set<string>>>({});
 
+  // Filtro, orden y selección para exportar
+  const [filterGantt, setFilterGantt] = useState<FilterGantt>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("name");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  /** Datos visibles tras aplicar filtro y orden */
+  const displayData = useMemo(() => {
+    let filtered = data;
+    if (filterGantt === "con") filtered = data.filter((d) => d.tasks.length > 0);
+    if (filterGantt === "sin") filtered = data.filter((d) => d.tasks.length === 0);
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "capex_desc") return b.capexUF - a.capexUF;
+      if (sortBy === "gantt_first") {
+        const aHas = a.tasks.length > 0;
+        const bHas = b.tasks.length > 0;
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return a.contractName.localeCompare(b.contractName);
+      }
+      if (sortBy === "no_gantt_first") {
+        const aNo = a.tasks.length === 0;
+        const bNo = b.tasks.length === 0;
+        if (aNo !== bNo) return aNo ? -1 : 1;
+        return a.contractName.localeCompare(b.contractName);
+      }
+      return a.contractName.localeCompare(b.contractName);
+    });
+  }, [data, filterGantt, sortBy]);
+
+  // Helpers de selección para exportar
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const selectGroup = (group: FilterGantt) => {
+    const pool = group === "all" ? displayData : group === "con"
+      ? displayData.filter((d) => d.tasks.length > 0)
+      : displayData.filter((d) => d.tasks.length === 0);
+    setSelectedIds(new Set(pool.map((d) => d.contractId)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  /** Contratos que irán al PDF: los seleccionados (si hay), si no, todos los visibles */
+  const exportTarget = useMemo(
+    () =>
+      selectedIds.size > 0
+        ? displayData.filter((d) => selectedIds.has(d.contractId))
+        : displayData,
+    [displayData, selectedIds]
+  );
+
   const toggleSelectionMode = (id: string) => {
     setSelectionModeCards((prev) => {
       const next = new Set(prev);
@@ -509,7 +573,7 @@ export function GanttReportsSection() {
     });
   };
 
-  const expandAll = () => setOpenCards(new Set(data.map((d) => d.contractId)));
+  const expandAll = () => setOpenCards(new Set(displayData.map((d) => d.contractId)));
   const collapseAll = () => setOpenCards(new Set());
 
   const formatUF = (n: number) =>
@@ -524,8 +588,8 @@ export function GanttReportsSection() {
     new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
   const exportPDF = async () => {
-    if (data.length === 0) {
-      toast.info("No hay cartas Gantt para exportar");
+    if (exportTarget.length === 0) {
+      toast.info("No hay contratos para exportar");
       return;
     }
     setExporting(true);
@@ -568,11 +632,11 @@ export function GanttReportsSection() {
       };
 
       // ==== Page 1: Summary table ====
-      drawHeader(`${data.length} contrato(s)`);
+      drawHeader(`${exportTarget.length} contrato(s)`);
       autoTable(doc, {
         startY: 28,
         head: [["Contrato", "Línea de Tiempo", "Fecha Término", "Tareas", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
-        body: data.map((d) => [
+        body: exportTarget.map((d) => [
           d.contractName,
           d.timelineName || "Sin carta Gantt",
           d.endDate ? format(parseISO(d.endDate), "dd/MM/yyyy") : "—",
@@ -596,7 +660,7 @@ export function GanttReportsSection() {
       });
 
       // ==== One page per contract with mini Gantt drawn natively in PDF ====
-      for (const item of data) {
+      for (const item of exportTarget) {
         doc.addPage();
         drawHeader(item.contractName);
 
@@ -809,6 +873,12 @@ export function GanttReportsSection() {
     }
   };
 
+  // ── Derived counts para badges ─────────────────────────────────────────────
+  const countCon = data.filter((d) => d.tasks.length > 0).length;
+  const countSin = data.filter((d) => d.tasks.length === 0).length;
+  const allVisibleOpen =
+    displayData.length > 0 && displayData.every((d) => openCards.has(d.contractId));
+
   return (
     <Collapsible open={isSectionOpen} onOpenChange={setSectionOpen}>
       <Card className="mt-6">
@@ -832,40 +902,37 @@ export function GanttReportsSection() {
             </CollapsibleTrigger>
             {isSectionOpen && !loading && data.length > 0 && (
               <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                {(() => {
-                  const allOpen = openCards.size === data.length && data.length > 0;
-                  return (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={allOpen ? collapseAll : expandAll}
-                    >
-                      {allOpen ? (
-                        <>
-                          <Minimize2 className="h-3 w-3 mr-1" />
-                          Colapsar todos
-                        </>
-                      ) : (
-                        <>
-                          <Maximize2 className="h-3 w-3 mr-1" />
-                          Expandir todos
-                        </>
-                      )}
-                    </Button>
-                  );
-                })()}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={allVisibleOpen ? collapseAll : expandAll}
+                >
+                  {allVisibleOpen ? (
+                    <><Minimize2 className="h-3 w-3 mr-1" />Colapsar</>
+                  ) : (
+                    <><Maximize2 className="h-3 w-3 mr-1" />Expandir</>
+                  )}
+                </Button>
                 <Button variant="default" size="sm" onClick={exportPDF} disabled={exporting}>
                   {exporting ? (
                     <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                   ) : (
                     <Download className="h-3 w-3 mr-1" />
                   )}
-                  PDF General
+                  PDF
+                  {selectedIds.size > 0 ? (
+                    <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">
+                      {selectedIds.size}
+                    </Badge>
+                  ) : (
+                    <span className="ml-1 text-xs opacity-70">({exportTarget.length})</span>
+                  )}
                 </Button>
               </div>
             )}
           </div>
         </CardHeader>
+
         <CollapsibleContent>
           <CardContent>
             {loading ? (
@@ -878,118 +945,238 @@ export function GanttReportsSection() {
               </div>
             ) : (
               <div className="space-y-3">
-                {data.map((item) => {
-                  const isOpen = openCards.has(item.contractId);
-                  return (
-                    <Card key={item.contractId} className="overflow-hidden">
-                      <CardHeader
-                        className="py-3 px-4 cursor-pointer hover:bg-muted/40 transition-colors"
-                        onClick={() => toggleCard(item.contractId)}
+
+                {/* ── Barra de filtro / orden / selección ──────────────────── */}
+                <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
+
+                  {/* Filtro */}
+                  <div className="flex items-center gap-1.5">
+                    <ListFilter className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground font-medium">Filtrar:</span>
+                    {(
+                      [
+                        { key: "all", label: `Todos (${data.length})` },
+                        { key: "con", label: `Con Gantt (${countCon})` },
+                        { key: "sin", label: `Sin Gantt (${countSin})` },
+                      ] as { key: FilterGantt; label: string }[]
+                    ).map(({ key, label }) => (
+                      <Button
+                        key={key}
+                        variant={filterGantt === key ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => setFilterGantt(key)}
                       >
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {isOpen ? (
-                              <ChevronUp className="h-4 w-4 flex-shrink-0" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 flex-shrink-0 rotate-[-90deg]" />
-                            )}
-                            <div className="min-w-0">
-                              <div className="font-semibold text-sm truncate">
-                                {item.contractName}
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <div className="w-px h-5 bg-border mx-1" />
+
+                  {/* Orden */}
+                  <div className="flex items-center gap-1.5">
+                    <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground font-medium">Ordenar:</span>
+                    <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+                      <SelectTrigger className="h-7 w-44 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="name">Nombre (A→Z)</SelectItem>
+                        <SelectItem value="capex_desc">CAPEX (mayor a menor)</SelectItem>
+                        <SelectItem value="gantt_first">Con Gantt primero</SelectItem>
+                        <SelectItem value="no_gantt_first">Sin Gantt primero</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="w-px h-5 bg-border mx-1" />
+
+                  {/* Selección para exportar */}
+                  <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+                    <span className="text-xs text-muted-foreground font-medium">Seleccionar para PDF:</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => selectGroup("all")}
+                    >
+                      <CheckSquare className="h-3 w-3" />
+                      Todos
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => selectGroup("con")}
+                    >
+                      Con Gantt
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => selectGroup("sin")}
+                    >
+                      Sin Gantt
+                    </Button>
+                    {selectedIds.size > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs gap-1 text-muted-foreground"
+                        onClick={clearSelection}
+                      >
+                        <Square className="h-3 w-3" />
+                        Ninguno
+                      </Button>
+                    )}
+                    {selectedIds.size > 0 && (
+                      <span className="text-xs font-medium text-primary">
+                        {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Lista de contratos ────────────────────────────────────── */}
+                {displayData.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    Sin resultados para el filtro aplicado.
+                  </div>
+                ) : (
+                  displayData.map((item) => {
+                    const isOpen = openCards.has(item.contractId);
+                    const isSelected = selectedIds.has(item.contractId);
+                    return (
+                      <Card
+                        key={item.contractId}
+                        className={`overflow-hidden transition-colors ${isSelected ? "ring-1 ring-primary/40 bg-primary/[0.02]" : ""}`}
+                      >
+                        <CardHeader
+                          className="py-3 px-4 cursor-pointer hover:bg-muted/40 transition-colors"
+                          onClick={() => toggleCard(item.contractId)}
+                        >
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {/* Checkbox de selección para PDF */}
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSelected(item.contractId);
+                                }}
+                                className="flex-shrink-0"
+                              >
+                                <Checkbox
+                                  checked={isSelected}
+                                  aria-label={`Seleccionar ${item.contractName}`}
+                                  className="pointer-events-none"
+                                />
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                {item.tasks.length === 0 ? (
-                                  <span className="italic text-amber-600">Sin carta Gantt cargada</span>
-                                ) : (
-                                  <>
-                                    {item.timelineName && <>{item.timelineName} · </>}
-                                    {item.tasks.length} tarea{item.tasks.length !== 1 ? "s" : ""} · Fecha
-                                    término:{" "}
-                                    <span className="font-medium text-foreground">
-                                      {item.endDate
-                                        ? format(parseISO(item.endDate), "dd/MM/yyyy")
-                                        : "—"}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right text-xs">
-                              <div className="text-muted-foreground">CAPEX Total</div>
-                              <div className="font-semibold text-sm">
-                                {item.capexUF > 0 ? (
-                                  <>
-                                    UF {formatUF(item.capexUF)}
-                                    <span className="text-muted-foreground font-normal ml-1">
-                                      / ${formatCLP(item.capexCLP)}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <span className="text-muted-foreground">Sin CAPEX</span>
-                                )}
-                              </div>
-                              {item.capexUF > 0 && item.surfaceM2 > 0 && (
-                                <div className="text-[11px] text-muted-foreground font-normal">
-                                  {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
-                                </div>
-                              )}
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleSelectionMode(item.contractId);
-                              }}
-                              title="Lines OFF — seleccionar líneas a ocultar"
-                            >
-                              {selectionModeCards.has(item.contractId) ? (
-                                <EyeOff className="h-3.5 w-3.5" />
+                              {isOpen ? (
+                                <ChevronUp className="h-4 w-4 flex-shrink-0" />
                               ) : (
-                                <Eye className="h-3.5 w-3.5" />
+                                <ChevronDown className="h-4 w-4 flex-shrink-0 rotate-[-90deg]" />
                               )}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                              {...prefetchOn("ContractDetail")}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigateToContractFromReports(item.contractId, "gantt");
-                              }}
-                              title="Ir al proyecto"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              Ir al proyecto
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      {isOpen && (
-                        <CardContent className="pt-0 pb-3 px-3">
-                          {item.tasks.length === 0 ? (
-                            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground italic">
-                              Este contrato no tiene carta Gantt registrada. El CAPEX está asignado pero
-                              aún no se ha cargado la planificación de obras.
+                              <div className="min-w-0">
+                                <div className="font-semibold text-sm truncate">
+                                  {item.contractName}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {item.tasks.length === 0 ? (
+                                    <span className="italic text-amber-600">Sin carta Gantt cargada</span>
+                                  ) : (
+                                    <>
+                                      {item.timelineName && <>{item.timelineName} · </>}
+                                      {item.tasks.length} tarea{item.tasks.length !== 1 ? "s" : ""} · Fecha
+                                      término:{" "}
+                                      <span className="font-medium text-foreground">
+                                        {item.endDate
+                                          ? format(parseISO(item.endDate), "dd/MM/yyyy")
+                                          : "—"}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          ) : (
-                            <MiniGantt
-                              taskTree={item.taskTree}
-                              holidays={[]}
-                              selectionMode={selectionModeCards.has(item.contractId)}
-                              hiddenIds={hiddenByCard[item.contractId]}
-                              onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
-                            />
-                          )}
-                        </CardContent>
-                      )}
-                    </Card>
-                  );
-                })}
+                            <div className="flex items-center gap-3">
+                              <div className="text-right text-xs">
+                                <div className="text-muted-foreground">CAPEX Total</div>
+                                <div className="font-semibold text-sm">
+                                  {item.capexUF > 0 ? (
+                                    <>
+                                      UF {formatUF(item.capexUF)}
+                                      <span className="text-muted-foreground font-normal ml-1">
+                                        / ${formatCLP(item.capexCLP)}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground">Sin CAPEX</span>
+                                  )}
+                                </div>
+                                {item.capexUF > 0 && item.surfaceM2 > 0 && (
+                                  <div className="text-[11px] text-muted-foreground font-normal">
+                                    {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSelectionMode(item.contractId);
+                                }}
+                                title="Seleccionar líneas a ocultar en la vista"
+                              >
+                                {selectionModeCards.has(item.contractId) ? (
+                                  <EyeOff className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Eye className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1"
+                                {...prefetchOn("ContractDetail")}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigateToContractFromReports(item.contractId, "gantt");
+                                }}
+                                title="Ir al proyecto"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                Ir al proyecto
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        {isOpen && (
+                          <CardContent className="pt-0 pb-3 px-3">
+                            {item.tasks.length === 0 ? (
+                              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground italic">
+                                Este contrato no tiene carta Gantt registrada. El CAPEX está
+                                asignado pero aún no se ha cargado la planificación de obras.
+                              </div>
+                            ) : (
+                              <MiniGantt
+                                taskTree={item.taskTree}
+                                holidays={[]}
+                                selectionMode={selectionModeCards.has(item.contractId)}
+                                hiddenIds={hiddenByCard[item.contractId]}
+                                onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
+                              />
+                            )}
+                          </CardContent>
+                        )}
+                      </Card>
+                    );
+                  })
+                )}
               </div>
             )}
           </CardContent>
