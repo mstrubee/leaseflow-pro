@@ -372,9 +372,14 @@ export const MultipleLinesSelector = ({
         {lines.length > 0 ? (
           lines.map(line => renderLine(line))
         ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No hay líneas autorizadas disponibles
-          </p>
+          <div className="text-center py-6 space-y-1">
+            <p className="text-sm text-muted-foreground">
+              No hay líneas autorizadas disponibles
+            </p>
+            <p className="text-xs text-muted-foreground">
+              El administrador debe autorizar las líneas en el presupuesto CAPEX antes de poder seleccionarlas.
+            </p>
+          </div>
         )}
       </ScrollArea>
 

@@ -375,6 +375,8 @@ export const OCRequestsList = ({
 
     try {
       // Round 1 — all independent queries fire in parallel
+      // Note: is_closed filter intentionally omitted so lines from closed budgets
+      // remain accessible for OC request creation (budget closing ≠ line removal).
       const [
         contractResult,
         capexBudgetsResult,
@@ -388,18 +390,15 @@ export const OCRequestsList = ({
           .select("id")
           .eq("contract_id", contractId)
           .eq("year", year)
-          .eq("budget_type", "capex")
-          .eq("is_closed", false),
+          .eq("budget_type", "capex"),
         supabase.from("opex_master_budget")
           .select("*", { count: "exact", head: true })
-          .eq("year", year)
-          .eq("is_closed", false),
+          .eq("year", year),
         supabase.from("contract_budgets")
           .select("id")
           .eq("contract_id", contractId)
           .eq("year", year)
           .eq("budget_type", "opex")
-          .eq("is_closed", false)
           .maybeSingle()
       ]);
 
@@ -1031,7 +1030,14 @@ export const OCRequestsList = ({
       />
 
       {/* New Request Dialog */}
-      <Dialog open={showNewRequestDialog} onOpenChange={setShowNewRequestDialog}>
+      <Dialog
+        open={showNewRequestDialog}
+        onOpenChange={(open) => {
+          // Any close trigger (backdrop click, Escape, X button) shows inline
+          // confirmation instead of immediately closing the dialog.
+          if (!open) setCancelConfirm(true);
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nueva Solicitud de OC{contractName ? `, ${contractName}` : ""}</DialogTitle>
