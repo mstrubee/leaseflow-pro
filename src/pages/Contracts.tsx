@@ -334,16 +334,9 @@ const Contracts = () => {
   // Static data — load once on mount
   useEffect(() => {
     if (user) {
-      Promise.all([loadCompanies(), loadComiteGPStatuses(), loadCustomFields()]);
+      Promise.all([loadCompanies(), loadComiteGPStatuses(), loadCustomFields(), loadContracts()]);
     }
   }, [user]);
-
-  // Contracts — reload when status view changes
-  useEffect(() => {
-    if (user) {
-      loadContracts();
-    }
-  }, [user, statusFilter]);
 
   const loadComiteGPStatuses = async () => {
     const { data } = await supabase
@@ -398,7 +391,7 @@ const Contracts = () => {
 
 
   const loadContracts = async () => {
-    let query = supabase
+    const { data } = await supabase
       .from("contracts")
       .select(`
         *,
@@ -446,16 +439,6 @@ const Contracts = () => {
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
-    // Server-side status filter — dramatically reduces payload
-    // "firmado" view also shows vencido+operating, so fetch both statuses and let client filter is_expired_but_operating
-    if (statusFilter === "firmado") {
-      query = query.in("status", ["firmado", "vencido"]);
-    } else if (statusFilter !== "todos") {
-      query = query.eq("status", statusFilter);
-    }
-    // "todos" — no status filter, load everything
-
-    const { data } = await query;
     setContracts(data || []);
   };
 
