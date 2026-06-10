@@ -120,7 +120,7 @@ export const OCRequestsList = ({
     supplier_name: null as string | null
   });
   const [creatingRequest, setCreatingRequest] = useState(false);
-  const [showCancelConfirmDialog, setShowCancelConfirmDialog] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -369,6 +369,7 @@ export const OCRequestsList = ({
     setBudgetType("capex");
     setSelectedLines([]);
     setPaymentPlan([]);
+    setCancelConfirm(false);
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
     setLoadingBudgets(true);
 
@@ -1029,29 +1030,6 @@ export const OCRequestsList = ({
         }}
       />
 
-      {/* Cancel new request confirmation */}
-      <AlertDialog open={showCancelConfirmDialog} onOpenChange={setShowCancelConfirmDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Cancelar solicitud?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se perderán todos los datos ingresados. ¿Desea continuar?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setShowCancelConfirmDialog(false);
-                setShowNewRequestDialog(false);
-              }}
-            >
-              Sí, cancelar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* New Request Dialog */}
       <Dialog open={showNewRequestDialog} onOpenChange={setShowNewRequestDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1345,24 +1323,47 @@ export const OCRequestsList = ({
           )}
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setShowCancelConfirmDialog(true)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleCreateNewRequest}
-              disabled={
-                creatingRequest ||
-                selectedLines.length === 0 ||
-                availableBudgets.length === 0 ||
-                !newRequestForm.amount ||
-                parseFloat(newRequestForm.amount) <= 0 ||
-                !newRequestForm.supplier_id ||
-                (paymentPlan.length > 0 && totalPlanned > totalSelected)
-              }
-            >
-              {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Crear Solicitud
-            </Button>
+            {cancelConfirm ? (
+              <div className="flex items-center gap-3 w-full">
+                <span className="text-sm text-muted-foreground flex-1">
+                  ¿Cancelar y perder los datos ingresados?
+                </span>
+                <Button variant="outline" size="sm" onClick={() => setCancelConfirm(false)}>
+                  No, volver
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setCancelConfirm(false);
+                    setShowNewRequestDialog(false);
+                  }}
+                >
+                  Sí, cancelar
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setCancelConfirm(true)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleCreateNewRequest}
+                  disabled={
+                    creatingRequest ||
+                    selectedLines.length === 0 ||
+                    availableBudgets.length === 0 ||
+                    !newRequestForm.amount ||
+                    parseFloat(newRequestForm.amount) <= 0 ||
+                    !newRequestForm.supplier_id ||
+                    (paymentPlan.length > 0 && totalPlanned > totalSelected)
+                  }
+                >
+                  {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Crear Solicitud
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

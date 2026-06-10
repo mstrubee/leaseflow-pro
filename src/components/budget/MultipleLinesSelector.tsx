@@ -70,30 +70,16 @@ export const MultipleLinesSelector = ({
 
     setLoading(true);
     try {
-      // All 3 queries in parallel — no inter-dependency when filtering by year
-      const [opexResult, ocsResult, requestsResult] = await Promise.all([
-        supabase
-          .from("opex_master_budget")
-          .select("id, amount_uf, amount_clp, category:opex_categories(id, name)")
-          .eq("year", year)
-          .eq("is_closed", false),
-        supabase
-          .from("purchase_orders")
-          .select("amount_clp, opex_master_id")
-          .not("opex_master_id", "is", null)
-          .eq("year", year)
-          .is("deleted_at", null),
-        supabase
-          .from("oc_requests")
-          .select("amount_clp, opex_master_id")
-          .not("opex_master_id", "is", null)
-          .eq("year", year)
-          .eq("status", "pending")
-      ]);
+      // Phase 1: fetch OPEX categories → show tree immediately
+      const { data: opexData, error } = await supabase
+        .from("opex_master_budget")
+        .select("id, amount_uf, amount_clp, category:opex_categories(id, name)")
+        .eq("year", year)
+        .eq("is_closed", false);
 
-      if (opexResult.error) throw opexResult.error;
+      if (error) throw error;
 
-      const opexLines: BudgetLine[] = (opexResult.data || []).map(item => ({
+      const opexLines: BudgetLine[] = (opexData || []).map(item => ({
         id: item.id,
         name: (item.category as any)?.name || "Sin categoría",
         parent_id: null,
@@ -103,22 +89,37 @@ export const MultipleLinesSelector = ({
         children: []
       }));
 
-      const allOCs = ocsResult.data || [];
-      const allRequests = requestsResult.data || [];
+      setLines(opexLines);
+      setLoading(false); // show lines immediately, before amounts load
+
+      if (opexLines.length === 0) return;
+
+      // Phase 2: available amounts in parallel (background)
+      const opexIds = opexLines.map(l => l.id);
+      const [ocsResult, requestsResult] = await Promise.all([
+        supabase
+          .from("purchase_orders")
+          .select("amount_clp, opex_master_id")
+          .in("opex_master_id", opexIds)
+          .is("deleted_at", null),
+        supabase
+          .from("oc_requests")
+          .select("amount_clp, opex_master_id")
+          .in("opex_master_id", opexIds)
+          .eq("status", "pending")
+      ]);
 
       const available: Record<string, number> = {};
       for (const line of opexLines) {
-        const usedByOC = allOCs
+        const usedByOC = (ocsResult.data || [])
           .filter(oc => oc.opex_master_id === line.id)
           .reduce((sum, oc) => sum + (oc.amount_clp || 0), 0);
-        const usedByRequests = allRequests
+        const usedByRequests = (requestsResult.data || [])
           .filter(r => r.opex_master_id === line.id)
           .reduce((sum, r) => sum + (r.amount_clp || 0), 0);
         const budgetAmount = Math.abs(line.amount_clp || 0);
         available[line.id] = Math.max(0, Math.round(budgetAmount - usedByOC - usedByRequests));
       }
-
-      setLines(opexLines);
       setAvailableAmounts(available);
     } catch (error) {
       console.error("Error loading OPEX categories:", error);
@@ -132,48 +133,50 @@ export const MultipleLinesSelector = ({
 
     setLoading(true);
     try {
-      // All 3 queries in parallel — OC/request queries use budget_id so they don't
-      // need to wait for leaf line IDs first (eliminates the second serial round trip)
-      const [linesResult, ocsResult, requestsResult] = await Promise.all([
-        supabase
-          .from("budget_lines")
-          .select("id, name, parent_id, amount_uf, status")
-          .eq("budget_id", budgetId)
-          .eq("status", "autorizado")
-          .order("display_order"),
+      // Phase 1: fetch budget lines → show tree immediately
+      const { data, error } = await supabase
+        .from("budget_lines")
+        .select("id, name, parent_id, amount_uf, status")
+        .eq("budget_id", budgetId)
+        .eq("status", "autorizado")
+        .order("display_order");
+
+      if (error) throw error;
+
+      const flatLines = (data || []) as BudgetLine[];
+      setLines(buildTree(flatLines));
+      setLoading(false); // show lines immediately, before amounts load
+
+      // Phase 2: available amounts in parallel (background)
+      // Filter by exact leaf line IDs — proven approach, no dependency on budget_id column
+      const parentIdSet = new Set(flatLines.map(l => l.parent_id).filter(Boolean));
+      const leafLines = flatLines.filter(l => !parentIdSet.has(l.id));
+      if (leafLines.length === 0) return;
+
+      const leafIds = leafLines.map(l => l.id);
+      const [ocsResult, requestsResult] = await Promise.all([
         supabase
           .from("purchase_orders")
           .select("amount_uf, budget_line_id")
-          .eq("budget_id", budgetId)
+          .in("budget_line_id", leafIds)
           .is("deleted_at", null),
         supabase
           .from("oc_requests")
           .select("amount_uf, budget_line_id")
-          .eq("budget_id", budgetId)
+          .in("budget_line_id", leafIds)
           .eq("status", "pending")
       ]);
 
-      if (linesResult.error) throw linesResult.error;
-
-      const flatLines = (linesResult.data || []) as BudgetLine[];
-      const allOCs = ocsResult.data || [];
-      const allRequests = requestsResult.data || [];
-
-      // Identify leaf lines (no children) and compute available amounts inline
-      const parentIds = new Set(flatLines.map(l => l.parent_id).filter(Boolean));
       const available: Record<string, number> = {};
-      for (const line of flatLines) {
-        if (parentIds.has(line.id)) continue; // skip parent/section lines
-        const usedByOC = allOCs
+      for (const line of leafLines) {
+        const usedByOC = (ocsResult.data || [])
           .filter(oc => oc.budget_line_id === line.id)
           .reduce((sum, oc) => sum + oc.amount_uf, 0);
-        const usedByRequests = allRequests
+        const usedByRequests = (requestsResult.data || [])
           .filter(r => r.budget_line_id === line.id)
           .reduce((sum, r) => sum + r.amount_uf, 0);
         available[line.id] = Math.max(0, Math.round((line.amount_uf - usedByOC - usedByRequests) * 10000) / 10000);
       }
-
-      setLines(buildTree(flatLines));
       setAvailableAmounts(available);
     } catch (error) {
       console.error("Error loading lines:", error);
