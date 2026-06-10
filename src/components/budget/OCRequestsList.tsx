@@ -371,90 +371,72 @@ export const OCRequestsList = ({
     setPaymentPlan([]);
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
     setLoadingBudgets(true);
-    
+
     try {
-      // Get contract name if not provided
-      if (!projectName) {
-        const { data: contract } = await supabase
-          .from("contracts")
-          .select("name")
-          .eq("id", contractId)
-          .single();
-        if (contract) setProjectName(contract.name);
-      }
-      
-      // Load CAPEX budgets for this contract and year
-      const { data: capexBudgets } = await supabase
-        .from("contract_budgets")
-        .select("id, budget_type")
-        .eq("contract_id", contractId)
-        .eq("year", year)
-        .eq("budget_type", "capex")
-        .eq("is_closed", false);
-      
-      // Check for centralized OPEX master budget (not per contract)
-      const { count: opexMasterCount } = await supabase
-        .from("opex_master_budget")
-        .select("*", { count: "exact", head: true })
-        .eq("year", year)
-        .eq("is_closed", false);
-      
-      const hasOpexMaster = (opexMasterCount || 0) > 0;
-      
-      const budgetsWithLines: { id: string; type: string; hasLines: boolean }[] = [];
-      
-      // Check CAPEX budgets have lines
-      if (capexBudgets && capexBudgets.length > 0) {
-        for (const budget of capexBudgets) {
-          const { count } = await supabase
+      // Round 1 — all independent queries fire in parallel
+      const [
+        contractResult,
+        capexBudgetsResult,
+        opexMasterResult,
+        opexContractResult
+      ] = await Promise.all([
+        !projectName
+          ? supabase.from("contracts").select("name").eq("id", contractId).single()
+          : Promise.resolve(null),
+        supabase.from("contract_budgets")
+          .select("id")
+          .eq("contract_id", contractId)
+          .eq("year", year)
+          .eq("budget_type", "capex")
+          .eq("is_closed", false),
+        supabase.from("opex_master_budget")
+          .select("*", { count: "exact", head: true })
+          .eq("year", year)
+          .eq("is_closed", false),
+        supabase.from("contract_budgets")
+          .select("id")
+          .eq("contract_id", contractId)
+          .eq("year", year)
+          .eq("budget_type", "opex")
+          .eq("is_closed", false)
+          .maybeSingle()
+      ]);
+
+      if (contractResult?.data) setProjectName((contractResult.data as any).name);
+
+      const capexBudgets = capexBudgetsResult.data || [];
+      const hasOpexMaster = (opexMasterResult.count || 0) > 0;
+      const opexContractBudget = (opexContractResult as any)?.data ?? null;
+
+      // Build the list of budget IDs to check for lines
+      const countTargets: Array<{ id: string; type: "capex" | "opex" }> = [
+        ...capexBudgets.map(b => ({ id: b.id, type: "capex" as const })),
+        ...(opexContractBudget ? [{ id: opexContractBudget.id, type: "opex" as const }] : [])
+      ];
+
+      // Round 2 — line-count queries for all budgets in parallel (replaces the N+1 serial loop)
+      const lineCounts = await Promise.all(
+        countTargets.map(t =>
+          supabase
             .from("budget_lines")
             .select("*", { count: "exact", head: true })
-            .eq("budget_id", budget.id)
-            .eq("status", "autorizado");
-          
-          budgetsWithLines.push({
-            id: budget.id,
-            type: "capex",
-            hasLines: (count || 0) > 0
-          });
-        }
+            .eq("budget_id", t.id)
+            .eq("status", "autorizado")
+        )
+      );
+
+      const budgetsWithLines: { id: string; type: string; hasLines: boolean }[] = [];
+      countTargets.forEach((t, i) => {
+        budgetsWithLines.push({ id: t.id, type: t.type, hasLines: (lineCounts[i].count || 0) > 0 });
+      });
+
+      // Fall back to centralised OPEX master when no contract-specific OPEX budget
+      if (!opexContractBudget && hasOpexMaster) {
+        budgetsWithLines.push({ id: "opex_master", type: "opex", hasLines: true });
       }
-      
-      // For OPEX, check if there's an OPEX budget for this contract OR use centralized
-      // First check for contract-specific OPEX budget
-      const { data: opexContractBudget } = await supabase
-        .from("contract_budgets")
-        .select("id")
-        .eq("contract_id", contractId)
-        .eq("year", year)
-        .eq("budget_type", "opex")
-        .eq("is_closed", false)
-        .maybeSingle();
-      
-      if (opexContractBudget) {
-        // Has contract-specific OPEX budget with lines
-        const { count } = await supabase
-          .from("budget_lines")
-          .select("*", { count: "exact", head: true })
-          .eq("budget_id", opexContractBudget.id)
-          .eq("status", "autorizado");
-        
-        budgetsWithLines.push({
-          id: opexContractBudget.id,
-          type: "opex",
-          hasLines: (count || 0) > 0
-        });
-      } else if (hasOpexMaster) {
-        // Use centralized OPEX master budget (virtual entry)
-        budgetsWithLines.push({
-          id: "opex_master",
-          type: "opex",
-          hasLines: true // OPEX master categories are available
-        });
-      }
-      
+
       setAvailableBudgets(budgetsWithLines);
-      
+
       // Auto-select first available budget
       const firstWithLines = budgetsWithLines.find(b => b.hasLines);
       if (firstWithLines) {
