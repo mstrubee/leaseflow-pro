@@ -1150,17 +1150,26 @@ const AdminPanel = () => {
                       })()}
                     </TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded text-xs ${
-                        getUserRole(profile.id) === "admin" 
-                          ? "bg-primary/20 text-primary" 
-                          : "bg-muted text-muted-foreground"
-                      }`}>
-                        {getUserRole(profile.id) === "admin" ? "Administrador" : "Usuario"}
-                      </span>
+                      {(() => {
+                        const role = getUserRole(profile.id);
+                        const roleStyles: Record<string, { bg: string; label: string }> = {
+                          admin: { bg: "bg-primary/20 text-primary", label: "Administrador" },
+                          operador_terreno: { bg: "bg-orange-100 text-orange-700", label: "Operador de Terreno" },
+                          user: { bg: "bg-muted text-muted-foreground", label: "Usuario" },
+                        };
+                        const { bg, label } = roleStyles[role] ?? roleStyles.user;
+                        return (
+                          <span className={`px-2 py-1 rounded text-xs ${bg}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       {getUserRole(profile.id) === "admin" ? (
                         <span className="text-sm text-muted-foreground">Acceso completo</span>
+                      ) : getUserRole(profile.id) === "operador_terreno" ? (
+                        <span className="text-sm text-muted-foreground">Acceso a rutas de mantención</span>
                       ) : (
                         <div className="flex flex-wrap gap-1">
                           {getUserPermissions(profile.id).map(p => (
@@ -1169,7 +1178,7 @@ const AdminPanel = () => {
                             </span>
                           ))}
                           {getUserPermissions(profile.id).length === 0 && (
-                            <span className="text-sm text-muted-foreground">Sin permisos</span>
+                            <span className="text-sm text-muted-foreground">Sin permisos asignados</span>
                           )}
                         </div>
                       )}
