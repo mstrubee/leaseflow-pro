@@ -135,6 +135,83 @@ interface Company {
 
 type SortDirection = "asc" | "desc";
 
+// Pure helpers — hoisted outside component so useMemo can reference them without stale deps
+
+const calculateEndDate = (contract: Contract): Date | null => {
+  const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+  if (!currentVersion) return null;
+  const startDate = currentVersion.effective_date
+    ? parseISO(currentVersion.effective_date)
+    : contract.signed_date
+    ? parseISO(contract.signed_date)
+    : null;
+  if (!startDate) return null;
+  return addMonths(startDate, currentVersion.duration_months);
+};
+
+const calculateNoticeDeadline = (contract: Contract): Date | null => {
+  const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+  if (!currentVersion) return null;
+  const startDate = currentVersion.effective_date
+    ? parseISO(currentVersion.effective_date)
+    : contract.signed_date
+    ? parseISO(contract.signed_date)
+    : null;
+  if (currentVersion.notice_type === "fecha" && currentVersion.notice_value) {
+    return parseISO(currentVersion.notice_value);
+  }
+  if (currentVersion.notice_type === "rangos" && startDate) {
+    const noticeRanges = currentVersion.notice_ranges || [];
+    if (noticeRanges.length > 0) {
+      const today = new Date();
+      const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
+      for (const range of sortedRanges) {
+        const rangeStartDate = addMonths(startDate, range.start_month - 1);
+        if (rangeStartDate > today) return rangeStartDate;
+      }
+      const lastRange = sortedRanges[sortedRanges.length - 1];
+      return addMonths(startDate, lastRange.start_month - 1);
+    }
+  }
+  const endDate = calculateEndDate(contract);
+  if (!endDate) return null;
+  const noticeMonths = parseInt(currentVersion.notice_value) || 0;
+  return subMonths(endDate, noticeMonths);
+};
+
+const calcCostoArriendoUF = (contract: Contract): number => {
+  const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+  if (!currentVersion) return 0;
+  const superficie = contract.superficie_edificada_local || 0;
+  const metrosFrente = contract.metros_lineales_frente || 0;
+  const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
+  const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
+  let gastosComunes = 0;
+  if (methodology === "percentage") {
+    const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
+    const percentage = currentVersion.gastos_comunes_percentage || 0;
+    const topeValue = currentVersion.gastos_comunes_tope;
+    const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
+    const calculatedAmount = (totalCentro * percentage) / 100;
+    if (topeValue && topeValue > 0) {
+      const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
+      gastosComunes = Math.min(calculatedAmount, effectiveTope);
+    } else {
+      gastosComunes = calculatedAmount;
+    }
+  } else {
+    const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+    const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
+    const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+    const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
+    const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
+    gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
+  }
+  const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
+  const otrosEgresos = currentVersion.otros_egresos_amount || 0;
+  return currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
+};
+
 const Contracts = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -150,7 +227,6 @@ const Contracts = () => {
   }, [location.pathname, location.search]);
 
   const [contracts, setContracts] = useState<Contract[]>([]);
-  const [filteredContracts, setFilteredContracts] = useState<Contract[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false);
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
@@ -255,14 +331,19 @@ const Contracts = () => {
     }
   }, [authLoading, user, navigate]);
 
+  // Static data — load once on mount
+  useEffect(() => {
+    if (user) {
+      Promise.all([loadCompanies(), loadComiteGPStatuses(), loadCustomFields()]);
+    }
+  }, [user]);
+
+  // Contracts — reload when status view changes
   useEffect(() => {
     if (user) {
       loadContracts();
-      loadCompanies();
-      loadComiteGPStatuses();
-      loadCustomFields();
     }
-  }, [user]);
+  }, [user, statusFilter]);
 
   const loadComiteGPStatuses = async () => {
     const { data } = await supabase
@@ -315,12 +396,9 @@ const Contracts = () => {
     setCustomFieldsByContract(result);
   };
 
-  useEffect(() => {
-    filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, comiteGPFilter, rechazadosFilter, sortField, sortDirection, customFieldsByContract]);
 
   const loadContracts = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from("contracts")
       .select(`
         *,
@@ -368,66 +446,22 @@ const Contracts = () => {
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
+    // Server-side status filter — dramatically reduces payload
+    // "firmado" view also shows vencido+operating, so fetch both statuses and let client filter is_expired_but_operating
+    if (statusFilter === "firmado") {
+      query = query.in("status", ["firmado", "vencido"]);
+    } else if (statusFilter !== "todos") {
+      query = query.eq("status", statusFilter);
+    }
+    // "todos" — no status filter, load everything
+
+    const { data } = await query;
     setContracts(data || []);
   };
 
-  const calculateEndDate = (contract: Contract): Date | null => {
-    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
-    if (!currentVersion) return null;
-
-    const startDate = currentVersion.effective_date 
-      ? parseISO(currentVersion.effective_date)
-      : contract.signed_date 
-        ? parseISO(contract.signed_date)
-        : null;
-
-    if (!startDate) return null;
-    return addMonths(startDate, currentVersion.duration_months);
-  };
-
-  const calculateNoticeDeadline = (contract: Contract): Date | null => {
-    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
-    if (!currentVersion) return null;
-
-    const startDate = currentVersion.effective_date
-      ? parseISO(currentVersion.effective_date)
-      : contract.signed_date
-        ? parseISO(contract.signed_date)
-        : null;
-
-    if (currentVersion.notice_type === "fecha" && currentVersion.notice_value) {
-      return parseISO(currentVersion.notice_value);
-    }
-
-    if (currentVersion.notice_type === "rangos" && startDate) {
-      const noticeRanges = currentVersion.notice_ranges || [];
-      if (noticeRanges.length > 0) {
-        const today = new Date();
-        const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
-        
-        for (const range of sortedRanges) {
-          const rangeStartDate = addMonths(startDate, range.start_month - 1);
-          if (rangeStartDate > today) {
-            return rangeStartDate;
-          }
-        }
-        
-        // If all ranges are expired, use the last one
-        if (sortedRanges.length > 0) {
-          const lastRange = sortedRanges[sortedRanges.length - 1];
-          return addMonths(startDate, lastRange.start_month - 1);
-        }
-      }
-    }
-
-    const endDate = calculateEndDate(contract);
-    if (!endDate) return null;
-
-    const noticeMonths = parseInt(currentVersion.notice_value) || 0;
-    return subMonths(endDate, noticeMonths);
-  };
-
-  const filterAndSortContracts = () => {
+  // Derived filtered+sorted list — computed synchronously (no extra useEffect re-render)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filteredContracts = useMemo(() => {
     let filtered = contracts;
 
     // Text search - includes name, CEBE, Codigo, address, commune
@@ -493,50 +527,10 @@ const Contracts = () => {
       });
     }
 
-    // Costo Arriendo filter
+    // Costo Arriendo filter — uses hoisted pure calcCostoArriendoUF
     if (costoArriendoFilter !== "todos") {
       filtered = filtered.filter((contract) => {
-        const currentVersion = contract.contract_versions?.find((v) => v.is_current);
-        if (!currentVersion) return false;
-        const superficie = contract.superficie_edificada_local || 0;
-        const metrosFrente = contract.metros_lineales_frente || 0;
-        const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-        const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-
-        let gastosComunes = 0;
-
-        if (methodology === "percentage") {
-          const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-          const percentage = currentVersion.gastos_comunes_percentage || 0;
-          const topeValue = currentVersion.gastos_comunes_tope;
-          const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-
-          const calculatedAmount = (totalCentro * percentage) / 100;
-
-          if (topeValue && topeValue > 0) {
-            const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-            gastosComunes = Math.min(calculatedAmount, effectiveTope);
-          } else {
-            gastosComunes = calculatedAmount;
-          }
-        } else {
-          const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-          const gastosMlFrente = hasExtended
-            ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente
-            : 0;
-          const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-          const adicionalAdmin = hasExtended
-            ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100)
-            : 0;
-          const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
-
-          gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
-        }
-
-        const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
-        const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-        const total = currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
-        
+        const total = calcCostoArriendoUF(contract);
         switch (costoArriendoFilter) {
           case "0-500": return total <= 500;
           case "500-1000": return total > 500 && total <= 1000;
@@ -585,8 +579,12 @@ const Contracts = () => {
       }
     }
 
-    // Sorting
+    // Sorting — pre-compute costo arriendo O(n) to avoid O(n log n) recomputation
     if (sortField) {
+      const costoCache = sortField === "costo_arriendo"
+        ? new Map(filtered.map(c => [c.id, calcCostoArriendoUF(c)]))
+        : null;
+
       filtered = [...filtered].sort((a, b) => {
         let comparison = 0;
 
@@ -604,44 +602,7 @@ const Contracts = () => {
         };
 
         // Helper to get costo arriendo
-        const getCostoArriendo = (contract: Contract) => {
-          const currentVersion = contract.contract_versions?.find((v) => v.is_current);
-          if (!currentVersion) return 0;
-          const superficie = contract.superficie_edificada_local || 0;
-          const metrosFrente = contract.metros_lineales_frente || 0;
-          const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-          const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-
-          let gastosComunes = 0;
-          if (methodology === "percentage") {
-            const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-            const percentage = currentVersion.gastos_comunes_percentage || 0;
-            const topeValue = currentVersion.gastos_comunes_tope;
-            const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-            const calculatedAmount = (totalCentro * percentage) / 100;
-            if (topeValue && topeValue > 0) {
-              const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-              gastosComunes = Math.min(calculatedAmount, effectiveTope);
-            } else {
-              gastosComunes = calculatedAmount;
-            }
-          } else {
-            const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-            const gastosMlFrente = hasExtended
-              ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente
-              : 0;
-            const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-            const adicionalAdmin = hasExtended
-              ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100)
-              : 0;
-            const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
-            gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
-          }
-
-          const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
-          const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-          return currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
-        };
+        // getCostoArriendo is now pre-computed via costoCache (Map built before sort)
 
         // Helper to get duration
         const getDuracion = (contract: Contract) => {
@@ -686,9 +647,7 @@ const Contracts = () => {
             break;
           }
           case "costo_arriendo": {
-            const costoA = getCostoArriendo(a);
-            const costoB = getCostoArriendo(b);
-            comparison = costoA - costoB;
+            comparison = (costoCache?.get(a.id) ?? 0) - (costoCache?.get(b.id) ?? 0);
             break;
           }
           case "duracion": {
@@ -761,8 +720,12 @@ const Contracts = () => {
       });
     }
 
-    setFilteredContracts(filtered);
-  };
+    return filtered;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contracts, searchTerm, statusFilter, operationFilter, obraFilter, patenteFilter,
+      proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter,
+      atencionEspecialFilter, negotiationSubcategoryFilter, comiteGPFilter,
+      rechazadosFilter, sortField, sortDirection, customFieldsByContract]);
 
   const handleSort = (field: ContractSortField) => {
     const newParams = new URLSearchParams(window.location.search);
