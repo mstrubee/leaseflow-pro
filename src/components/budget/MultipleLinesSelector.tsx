@@ -133,12 +133,14 @@ export const MultipleLinesSelector = ({
 
     setLoading(true);
     try {
-      // Phase 1: fetch budget lines → show tree immediately
+      // Phase 1: fetch ALL budget lines (not just authorized) so buildTree can
+      // construct the full hierarchy. A child line may be authorized while its
+      // parent category is not — filtering here would orphan those children and
+      // silently drop them from the tree. Authorization is enforced in renderLine.
       const { data, error } = await supabase
         .from("budget_lines")
         .select("id, name, parent_id, amount_uf, status")
         .eq("budget_id", budgetId)
-        .eq("status", "autorizado")
         .order("display_order");
 
       if (error) throw error;
@@ -147,10 +149,9 @@ export const MultipleLinesSelector = ({
       setLines(buildTree(flatLines));
       setLoading(false); // show lines immediately, before amounts load
 
-      // Phase 2: available amounts in parallel (background)
-      // Filter by exact leaf line IDs — proven approach, no dependency on budget_id column
+      // Phase 2: available amounts — only needed for authorized leaf lines
       const parentIdSet = new Set(flatLines.map(l => l.parent_id).filter(Boolean));
-      const leafLines = flatLines.filter(l => !parentIdSet.has(l.id));
+      const leafLines = flatLines.filter(l => !parentIdSet.has(l.id) && l.status === "autorizado");
       if (leafLines.length === 0) return;
 
       const leafIds = leafLines.map(l => l.id);
@@ -208,7 +209,20 @@ export const MultipleLinesSelector = ({
     return roots;
   };
 
-  // Search: compute which line IDs match and which are ancestors of matches
+  // Returns true if the node itself is an authorized leaf OR has at least one
+  // authorized leaf descendant. Used to prune the rendered tree.
+  const hasAuthorizedLeaf = (node: BudgetLine): boolean => {
+    const isLeafNode = !node.children || node.children.length === 0;
+    if (isLeafNode) return node.status === "autorizado";
+    return node.children!.some(hasAuthorizedLeaf);
+  };
+
+  // Whether there's at least one selectable authorized line (drives empty-state message)
+  const hasAuthorizedLines = useMemo(() => lines.some(hasAuthorizedLeaf), [lines]);
+
+  // Search: compute which line IDs match and which are ancestors of matches.
+  // Only authorized leaves count as "matches" — non-authorized leaves are hidden
+  // so they shouldn't appear even if the name matches.
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return null;
     const q = searchQuery.toLowerCase().trim();
@@ -217,9 +231,13 @@ export const MultipleLinesSelector = ({
 
     const traverse = (nodes: BudgetLine[], ancestors: string[]) => {
       for (const node of nodes) {
+        const isLeafNode = !node.children || node.children.length === 0;
         if (node.name.toLowerCase().includes(q)) {
-          matchingIds.add(node.id);
-          ancestors.forEach(id => parentIds.add(id));
+          // Leaf nodes must be authorized to count as a match
+          if (!isLeafNode || node.status === "autorizado") {
+            matchingIds.add(node.id);
+            ancestors.forEach(id => parentIds.add(id));
+          }
         }
         if (node.children && node.children.length > 0) {
           traverse(node.children, [...ancestors, node.id]);
@@ -286,6 +304,10 @@ export const MultipleLinesSelector = ({
   const isLineSelected = (lineId: string) => selectedLines.some(sl => sl.lineId === lineId);
 
   const renderLine = (line: BudgetLine, level: number = 0): React.ReactNode => {
+    // Hide branches that have no authorized leaves (non-authorized leaves + their
+    // parent containers that only have non-authorized descendants).
+    if (!hasAuthorizedLeaf(line)) return null;
+
     // Filter by search query — skip lines that don't match and have no matching descendants
     if (searchQuery.trim() && searchResults) {
       const visible = searchResults.matchingIds.has(line.id) || searchResults.parentIds.has(line.id);
@@ -295,6 +317,7 @@ export const MultipleLinesSelector = ({
     const hasChildren = line.children && line.children.length > 0;
     const isExpanded = expandedIds.has(line.id);
     const isLeaf = !hasChildren;
+    const isAuthorized = line.status === "autorizado";
     const available = availableAmounts[line.id] || 0;
     const isSelected = isLineSelected(line.id);
 
@@ -322,7 +345,8 @@ export const MultipleLinesSelector = ({
             <div className="w-4" />
           )}
 
-          {isLeaf && available > 0 && (
+          {/* Checkbox only for authorized leaf lines with available budget */}
+          {isLeaf && isAuthorized && available > 0 && (
             <Checkbox
               checked={isSelected}
               onCheckedChange={(checked) => handleLineToggle(line, !!checked)}
@@ -333,7 +357,8 @@ export const MultipleLinesSelector = ({
             {highlightText(line.name, searchQuery)}
           </span>
 
-          {isLeaf && (
+          {/* Available amount badge only for authorized leaves */}
+          {isLeaf && isAuthorized && (
             <Badge variant="outline" className="text-xs">
               Disp: {availableDisplay}
             </Badge>
@@ -369,7 +394,7 @@ export const MultipleLinesSelector = ({
       </div>
 
       <ScrollArea className="h-[300px] border rounded-lg p-2">
-        {lines.length > 0 ? (
+        {hasAuthorizedLines ? (
           lines.map(line => renderLine(line))
         ) : (
           <div className="text-center py-6 space-y-1">
