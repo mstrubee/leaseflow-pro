@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, ChevronRight, ChevronDown } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, ChevronRight, ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BudgetLine {
@@ -33,6 +34,7 @@ interface MultipleLinesSelectorProps {
   maxTotal?: number;
   year?: number; // Required for OPEX master budget
   contractId?: string; // Used for OPEX local additional
+  ufValue?: number; // Used for CLP conversion display in CAPEX lines
 }
 
 export const MultipleLinesSelector = ({
@@ -43,13 +45,15 @@ export const MultipleLinesSelector = ({
   formatCLP,
   maxTotal,
   year,
-  contractId
+  contractId,
+  ufValue
 }: MultipleLinesSelectorProps) => {
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [availableAmounts, setAvailableAmounts] = useState<Record<string, number>>({});
   const [isOpexMaster, setIsOpexMaster] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (budgetId === "opex_master") {
@@ -240,6 +244,57 @@ export const MultipleLinesSelector = ({
     setAvailableAmounts(available);
   };
 
+  // Search: compute which line IDs match and which are ancestors of matches
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const q = searchQuery.toLowerCase().trim();
+    const matchingIds = new Set<string>();
+    const parentIds = new Set<string>();
+
+    const traverse = (nodes: BudgetLine[], ancestors: string[]) => {
+      for (const node of nodes) {
+        if (node.name.toLowerCase().includes(q)) {
+          matchingIds.add(node.id);
+          ancestors.forEach(id => parentIds.add(id));
+        }
+        if (node.children && node.children.length > 0) {
+          traverse(node.children, [...ancestors, node.id]);
+        }
+      }
+    };
+
+    traverse(lines, []);
+    return { matchingIds, parentIds };
+  }, [searchQuery, lines]);
+
+  // Auto-expand parent nodes when search reveals matches
+  useEffect(() => {
+    if (searchResults && searchResults.parentIds.size > 0) {
+      setExpandedIds(prev => {
+        const next = new Set(prev);
+        searchResults.parentIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  }, [searchResults]);
+
+  // Highlight the matching portion of text
+  const highlightText = (text: string, query: string): React.ReactNode => {
+    if (!query.trim()) return text;
+    const q = query.trim();
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-yellow-200 text-foreground rounded-sm px-0.5">
+          {text.slice(idx, idx + q.length)}
+        </mark>
+        {text.slice(idx + q.length)}
+      </>
+    );
+  };
+
   const toggleExpand = (id: string) => {
     const newExpanded = new Set(expandedIds);
     if (newExpanded.has(id)) {
@@ -267,15 +322,28 @@ export const MultipleLinesSelector = ({
   const isLineSelected = (lineId: string) => selectedLines.some(sl => sl.lineId === lineId);
 
   const renderLine = (line: BudgetLine, level: number = 0): React.ReactNode => {
+    // Filter by search query — skip lines that don't match and have no matching descendants
+    if (searchQuery.trim() && searchResults) {
+      const visible = searchResults.matchingIds.has(line.id) || searchResults.parentIds.has(line.id);
+      if (!visible) return null;
+    }
+
     const hasChildren = line.children && line.children.length > 0;
     const isExpanded = expandedIds.has(line.id);
     const isLeaf = !hasChildren;
     const available = availableAmounts[line.id] || 0;
     const isSelected = isLineSelected(line.id);
 
+    // Build available amount display: "$CLP (nn UF)" for CAPEX, "$CLP" for OPEX
+    const availableDisplay = isOpexMaster && formatCLP
+      ? formatCLP(available)
+      : (formatCLP && ufValue && ufValue > 0)
+        ? `${formatCLP(Math.round(available * ufValue))} (${formatUF(available)})`
+        : formatUF(available);
+
     return (
       <div key={line.id}>
-        <div 
+        <div
           className={cn(
             "flex items-center gap-2 py-1.5 px-2 rounded hover:bg-accent/50",
             isSelected && "bg-primary/10"
@@ -298,14 +366,12 @@ export const MultipleLinesSelector = ({
           )}
 
           <span className={cn("text-sm flex-1", hasChildren && "font-medium")}>
-            {line.name}
+            {highlightText(line.name, searchQuery)}
           </span>
 
           {isLeaf && (
             <Badge variant="outline" className="text-xs">
-              Disp: {isOpexMaster && formatCLP 
-                ? formatCLP(available) 
-                : formatUF(available)}
+              Disp: {availableDisplay}
             </Badge>
           )}
         </div>
@@ -326,7 +392,18 @@ export const MultipleLinesSelector = ({
   return (
     <div className="space-y-3">
       <Label>Seleccionar Línea(s) de Imputación</Label>
-      
+
+      {/* Search input */}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Buscar línea de imputación..."
+          className="pl-8 h-8 text-sm"
+        />
+      </div>
+
       <ScrollArea className="h-[300px] border rounded-lg p-2">
         {lines.length > 0 ? (
           lines.map(line => renderLine(line))

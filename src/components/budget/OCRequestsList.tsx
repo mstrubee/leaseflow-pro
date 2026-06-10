@@ -120,6 +120,7 @@ export const OCRequestsList = ({
     supplier_name: null as string | null
   });
   const [creatingRequest, setCreatingRequest] = useState(false);
+  const [showCancelConfirmDialog, setShowCancelConfirmDialog] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -514,6 +515,19 @@ export const OCRequestsList = ({
     const enteredAmount = parseFloat(newRequestForm.amount) || 0;
     if (enteredAmount <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
+      return;
+    }
+
+    // Supplier is required
+    if (!newRequestForm.supplier_id) {
+      toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
+      return;
+    }
+
+    // Payment plan must not exceed total requested
+    const totalPlanAmt = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    if (paymentPlan.length > 0 && totalPlanAmt > enteredAmount) {
+      toast({ variant: "destructive", title: "Error", description: "El total planificado de pagos supera el monto de la solicitud. Use 'Cuadrar' para ajustar." });
       return;
     }
 
@@ -1033,11 +1047,34 @@ export const OCRequestsList = ({
         }}
       />
 
+      {/* Cancel new request confirmation */}
+      <AlertDialog open={showCancelConfirmDialog} onOpenChange={setShowCancelConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cancelar solicitud?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se perderán todos los datos ingresados. ¿Desea continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowCancelConfirmDialog(false);
+                setShowNewRequestDialog(false);
+              }}
+            >
+              Sí, cancelar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* New Request Dialog */}
       <Dialog open={showNewRequestDialog} onOpenChange={setShowNewRequestDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nueva Solicitud de OC</DialogTitle>
+            <DialogTitle>Nueva Solicitud de OC{contractName ? `, ${contractName}` : ""}</DialogTitle>
             <DialogDescription>
               Crear solicitud para el año {year}
             </DialogDescription>
@@ -1156,7 +1193,7 @@ export const OCRequestsList = ({
 
                 {/* Supplier */}
                 <div className="space-y-2">
-                  <Label>Proveedor (opcional)</Label>
+                  <Label>Proveedor *</Label>
                   <SupplierSelect
                     value={newRequestForm.supplier_id}
                     onChange={(id, name) => setNewRequestForm(prev => ({ 
@@ -1187,6 +1224,7 @@ export const OCRequestsList = ({
                     formatCLP={formatCLP}
                     year={year}
                     contractId={contractId}
+                    ufValue={ufValue}
                   />
                 )}
 
@@ -1218,46 +1256,67 @@ export const OCRequestsList = ({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {paymentPlan.map((item, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                        <div className="col-span-4 space-y-1">
-                          <Label className="text-xs">Descripción</Label>
-                          <Input
-                            value={item.description}
-                            onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
-                            placeholder={`Pago ${idx + 1}`}
-                          />
+                    {paymentPlan.map((item, idx) => {
+                      const isLastRow = idx === paymentPlan.length - 1;
+                      const showCuadrar = isLastRow && totalPlanned > totalSelected;
+                      return (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-end">
+                          <div className={`space-y-1 ${showCuadrar ? "col-span-3" : "col-span-4"}`}>
+                            <Label className="text-xs">Descripción</Label>
+                            <Input
+                              value={item.description}
+                              onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
+                              placeholder={`Pago ${idx + 1}`}
+                            />
+                          </div>
+                          <div className="col-span-3 space-y-1">
+                            <Label className="text-xs">Monto ({newRequestForm.currency})</Label>
+                            <Input
+                              type="number"
+                              value={item.amount}
+                              onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
+                              placeholder="0.00"
+                              step="0.01"
+                            />
+                          </div>
+                          <div className={`space-y-1 ${showCuadrar ? "col-span-3" : "col-span-4"}`}>
+                            <Label className="text-xs">Vencimiento (opcional)</Label>
+                            <Input
+                              type="date"
+                              value={item.due_date}
+                              onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
+                            />
+                          </div>
+                          {showCuadrar && (
+                            <div className="col-span-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-9 w-full text-xs"
+                                title="Ajustar este pago para que el total no supere el monto de la solicitud"
+                                onClick={() => {
+                                  const otherSum = paymentPlan.slice(0, -1).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+                                  const adjusted = Math.max(0, totalSelected - otherSum);
+                                  updatePaymentItem(idx, "amount", adjusted.toFixed(2));
+                                }}
+                              >
+                                Cuadrar
+                              </Button>
+                            </div>
+                          )}
+                          <div className="col-span-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removePaymentItem(idx)}
+                              className="h-9 w-9 text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="col-span-3 space-y-1">
-                          <Label className="text-xs">Monto ({newRequestForm.currency})</Label>
-                          <Input
-                            type="number"
-                            value={item.amount}
-                            onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
-                            placeholder="0.00"
-                            step="0.01"
-                          />
-                        </div>
-                        <div className="col-span-4 space-y-1">
-                          <Label className="text-xs">Vencimiento (opcional)</Label>
-                          <Input
-                            type="date"
-                            value={item.due_date}
-                            onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
-                          />
-                        </div>
-                        <div className="col-span-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => removePaymentItem(idx)}
-                            className="h-9 w-9 text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     <div className="p-3 bg-muted/50 rounded-lg text-sm space-y-1">
                       <div className="flex justify-between">
@@ -1304,12 +1363,20 @@ export const OCRequestsList = ({
           )}
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setShowNewRequestDialog(false)}>
+            <Button variant="outline" onClick={() => setShowCancelConfirmDialog(true)}>
               Cancelar
             </Button>
-            <Button 
-              onClick={handleCreateNewRequest} 
-              disabled={creatingRequest || selectedLines.length === 0 || availableBudgets.length === 0 || !newRequestForm.amount || parseFloat(newRequestForm.amount) <= 0}
+            <Button
+              onClick={handleCreateNewRequest}
+              disabled={
+                creatingRequest ||
+                selectedLines.length === 0 ||
+                availableBudgets.length === 0 ||
+                !newRequestForm.amount ||
+                parseFloat(newRequestForm.amount) <= 0 ||
+                !newRequestForm.supplier_id ||
+                (paymentPlan.length > 0 && totalPlanned > totalSelected)
+              }
             >
               {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear Solicitud
