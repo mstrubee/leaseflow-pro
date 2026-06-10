@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,9 +131,10 @@ interface ContractsTableProps {
   onSort?: (field: ContractSortField) => void;
   columnWidths?: Record<string, number>;
   customFieldsByContract?: Record<string, { cebe?: string; codigo?: string }>;
+  comiteGPStatuses?: Array<{ id: string; name: string; color: string | null }>;
 }
 
-export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract }: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract, comiteGPStatuses: comiteGPStatusesProp }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
@@ -164,6 +165,11 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
 
   // Load Comité GP statuses
   useEffect(() => {
+    // Only fetch if parent didn't pass statuses as a prop
+    if (comiteGPStatusesProp) {
+      setComiteGPStatuses(comiteGPStatusesProp);
+      return;
+    }
     const loadComiteStatuses = async () => {
       const { data } = await supabase
         .from("comite_gp_statuses")
@@ -173,7 +179,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       if (data) setComiteGPStatuses(data);
     };
     loadComiteStatuses();
-  }, []);
+  }, [comiteGPStatusesProp]);
 
   // Load CAPEX totals for current year (mirrors BudgetDashboard logic)
   useEffect(() => {
@@ -350,6 +356,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     }
   };
 
+  // Stable key derived from contract IDs — prevents re-firing alerts query on every filter change
+  // that produces the same set of contracts (only fires when the actual IDs change)
+  const contractIdsKey = useMemo(
+    () => contracts.map(c => c.id).sort().join(','),
+    [contracts]
+  );
+
   // Load alerts for all contracts
   useEffect(() => {
     const loadAlerts = async () => {
@@ -379,7 +392,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     };
     
     loadAlerts();
-  }, [contracts]);
+  }, [contractIdsKey]);
 
 
   const calculateEndDate = (contract: Contract): Date | null => {

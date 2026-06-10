@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -81,6 +81,8 @@ export function WelcomeAlertsBar() {
   const [newAlertMessage, setNewAlertMessage] = useState("");
   const [creatingAlert, setCreatingAlert] = useState(false);
 
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
   const alertSelectQuery = `
     id, title, due_date, alert_type, contract_id, assigned_to, category_id,
     contracts (name),
@@ -129,9 +131,12 @@ export function WelcomeAlertsBar() {
     if (!user) return;
     const channel = supabase
       .channel("welcome-alerts-bar")
-      .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, () => loadAlerts())
+      .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, () => {
+        clearTimeout(realtimeDebounceRef.current);
+        realtimeDebounceRef.current = setTimeout(() => loadAlerts(), 800);
+      })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { clearTimeout(realtimeDebounceRef.current); supabase.removeChannel(channel); };
   }, [user, loadAlerts]);
 
   const handleCompleteAlert = async (alertId: string) => {

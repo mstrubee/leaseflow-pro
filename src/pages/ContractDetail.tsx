@@ -267,37 +267,40 @@ const ContractDetail = () => {
 
   const loadCustomFields = async () => {
     try {
-      const { data: fields, error: fieldsError } = await withRetry(() =>
-        supabase
-          .from("contract_custom_fields")
-          .select("id, field_name, display_order")
-          .eq("is_active", true)
-          .order("display_order", { ascending: true })
-          .then((r) => r)
-      );
+      const [fieldsResult, valuesResult] = await Promise.all([
+        withRetry(() =>
+          supabase
+            .from("contract_custom_fields")
+            .select("id, field_name, display_order")
+            .eq("is_active", true)
+            .order("display_order", { ascending: true })
+            .then((r) => r)
+        ),
+        id
+          ? withRetry(() =>
+              supabase
+                .from("contract_custom_field_values")
+                .select("field_id, field_value")
+                .eq("contract_id", id)
+                .then((r) => r)
+            )
+          : Promise.resolve({ data: null, error: null }),
+      ]);
 
+      const { data: fields, error: fieldsError } = fieldsResult;
       if (fieldsError) throw fieldsError;
       setCustomFields(fields || []);
 
-      if (id) {
-        const { data: values, error: valuesError } = await withRetry(() =>
-          supabase
-            .from("contract_custom_field_values")
-            .select("field_id, field_value")
-            .eq("contract_id", id)
-            .then((r) => r)
-        );
+      const { data: values, error: valuesError } = valuesResult;
+      if (valuesError) throw valuesError;
 
-        if (valuesError) throw valuesError;
-
-        const valuesMap: Record<string, string> = {};
-        (values || []).forEach((v) => {
-          if (v.field_value) {
-            valuesMap[v.field_id] = v.field_value;
-          }
-        });
-        setCustomFieldValues(valuesMap);
-      }
+      const valuesMap: Record<string, string> = {};
+      (values || []).forEach((v) => {
+        if (v.field_value) {
+          valuesMap[v.field_id] = v.field_value;
+        }
+      });
+      setCustomFieldValues(valuesMap);
     } catch (error) {
       console.error("Error loading custom fields:", error);
     }
@@ -494,17 +497,19 @@ const ContractDetail = () => {
 
       // Move all draft documents to the repository folder
       if (borradorFolder && draftDocs.length > 0) {
-        for (const draftDoc of draftDocs) {
-          const typeLabel = draftDoc.document_type.includes("_r") ? "Borrador_Renego" : "Borrador";
-          await supabase.from("repository_files").insert({
-            folder_id: borradorFolder.id,
-            name: `${typeLabel}_${new Date(draftDoc.uploaded_at).toISOString().split('T')[0]}`,
-            url: draftDoc.url,
-            file_type: "pdf"
-          });
-        }
+        // Bulk insert — one round-trip instead of N
+        await supabase.from("repository_files").insert(
+          draftDocs.map(draftDoc => {
+            const typeLabel = draftDoc.document_type.includes("_r") ? "Borrador_Renego" : "Borrador";
+            return {
+              folder_id: borradorFolder.id,
+              name: `${typeLabel}_${new Date(draftDoc.uploaded_at).toISOString().split('T')[0]}`,
+              url: draftDoc.url,
+              file_type: "pdf"
+            };
+          })
+        );
 
-        // Delete the draft documents from contract_documents
         const draftIds = draftDocs.map(d => d.id);
         await supabase.from("contract_documents").delete().in("id", draftIds);
       }

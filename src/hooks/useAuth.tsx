@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -29,6 +29,7 @@ function useProvideAuth(): AuthContextValue {
   const [isOperador, setIsOperador] = useState(false);
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [roleLoaded, setRoleLoaded] = useState(false);
+  const loadingUserDataRef = useRef(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -64,6 +65,8 @@ function useProvideAuth(): AuthContextValue {
   }, []);
 
   const loadUserData = async (userId: string) => {
+    if (loadingUserDataRef.current) return;
+    loadingUserDataRef.current = true;
     try {
       const [roleRes, permRes] = await Promise.all([
         supabase.from("user_roles").select("role").eq("user_id", userId).single(),
@@ -76,6 +79,7 @@ function useProvideAuth(): AuthContextValue {
     } catch (error) {
       console.error("Error loading user data:", error);
     } finally {
+      loadingUserDataRef.current = false;
       setRoleLoaded(true);
       setLoading(false);
     }

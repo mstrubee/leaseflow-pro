@@ -295,19 +295,13 @@ const Contracts = () => {
     const fieldNameMap = new Map<string, string>();
     fields.forEach(f => fieldNameMap.set(f.id, f.field_name.toLowerCase()));
 
-    // Fetch all values in batches
-    let allValues: Array<{ contract_id: string; field_id: string; field_value: string | null }> = [];
-    for (let i = 0; i < fieldIds.length; i += 5) {
-      const batch = fieldIds.slice(i, i + 5);
-      const { data: values } = await supabase
-        .from("contract_custom_field_values")
-        .select("contract_id, field_id, field_value")
-        .in("field_id", batch);
-      if (values) allValues = allValues.concat(values);
-    }
+    const { data: allValues } = await supabase
+      .from("contract_custom_field_values")
+      .select("contract_id, field_id, field_value")
+      .in("field_id", fieldIds);
 
     const result: Record<string, { cebe?: string; codigo?: string }> = {};
-    allValues.forEach(v => {
+    (allValues || []).forEach(v => {
       if (!v.field_value) return;
       const fieldName = fieldNameMap.get(v.field_id);
       if (!result[v.contract_id]) result[v.contract_id] = {};
@@ -866,7 +860,10 @@ const Contracts = () => {
   };
 
   // Get unique communes for ubicacion filter
-  const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
+  const uniqueCommunes = useMemo(
+    () => [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort(),
+    [contracts]
+  );
 
   const handleDeleteClick = (e: React.MouseEvent, contract: Contract) => {
     e.stopPropagation();
@@ -1402,6 +1399,7 @@ const Contracts = () => {
               onSort={handleSort}
               columnWidths={columnWidths}
               customFieldsByContract={customFieldsByContract}
+              comiteGPStatuses={comiteGPStatuses}
             />
           ) : (
             <Card className="p-12">
