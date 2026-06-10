@@ -369,6 +369,8 @@ const PurchaseOrdersDashboard = () => {
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
+  /** Distingue qué flujo disparó el diálogo: "orders" o "requests" */
+  const [deleteMode, setDeleteMode] = useState<"orders" | "requests">("orders");
   const [deleting, setDeleting] = useState(false);
 
   // Available years
@@ -1921,7 +1923,7 @@ const PurchaseOrdersDashboard = () => {
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => setShowDeleteDialog(true)}
+                  onClick={() => { setDeleteMode("orders"); setShowDeleteDialog(true); }}
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
                   Eliminar ({selectedOrders.size})
@@ -3392,7 +3394,7 @@ const PurchaseOrdersDashboard = () => {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => setShowDeleteDialog(true)}
+                      onClick={() => { setDeleteMode("requests"); setShowDeleteDialog(true); }}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
                       Eliminar ({selectedRequests.size})
@@ -3598,13 +3600,29 @@ const PurchaseOrdersDashboard = () => {
       </main>
 
       {/* First Delete Confirmation Dialog */}
+      {/* First confirmation — diferencia órdenes vs solicitudes */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar órdenes de compra?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deleteMode === "requests"
+                ? "¿Eliminar solicitudes de OC?"
+                : "¿Eliminar órdenes de compra?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Estás a punto de eliminar {selectedOrders.size} orden(es) de compra.
-              Esta acción marcará las OC como eliminadas y no serán visibles en los listados.
+              {deleteMode === "requests" ? (
+                <>
+                  Estás a punto de eliminar{" "}
+                  <strong>{selectedRequests.size} solicitud(es) de OC</strong>.
+                  Esta acción no se puede deshacer.
+                </>
+              ) : (
+                <>
+                  Estás a punto de eliminar{" "}
+                  <strong>{selectedOrders.size} orden(es) de compra</strong>.
+                  Esta acción marcará las OC como eliminadas y no serán visibles en los listados.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -3630,7 +3648,11 @@ const PurchaseOrdersDashboard = () => {
             <AlertDialogDescription>
               <span className="font-semibold">Esta es una confirmación final.</span>
               <br /><br />
-              Se eliminarán permanentemente {selectedOrders.size} orden(es) de compra.
+              {deleteMode === "requests" ? (
+                <>Se eliminarán permanentemente <strong>{selectedRequests.size} solicitud(es) de OC</strong>.</>
+              ) : (
+                <>Se eliminarán permanentemente <strong>{selectedOrders.size} orden(es) de compra</strong>.</>
+              )}
               <br /><br />
               ¿Estás completamente seguro de que deseas continuar?
             </AlertDialogDescription>
@@ -3638,7 +3660,7 @@ const PurchaseOrdersDashboard = () => {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteSelected}
+              onClick={deleteMode === "requests" ? handleDeleteSelectedRequests : handleDeleteSelected}
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
