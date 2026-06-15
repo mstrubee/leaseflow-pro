@@ -18,6 +18,26 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from "@/components/ui/sheet";
 import { useNavigate } from "react-router-dom";
+import { useSignedUrl } from "@/hooks/useSignedUrl";
+
+// ---------------------------------------------------------------------------
+// Evidence thumbnail — resolves a private-bucket signed URL for display
+// ---------------------------------------------------------------------------
+function EvidenceThumb({ stored, index }: { stored: string; index: number }) {
+  const url = useSignedUrl(stored);
+  return (
+    <a
+      href={url ?? undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block w-full h-full rounded-lg overflow-hidden border border-purple-200 bg-purple-50"
+      title={`Foto ${index + 1}`}
+    >
+      {url && <img src={url} alt={`Foto ${index + 1}`} className="w-full h-full object-cover" loading="lazy" />}
+    </a>
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Postpone sheet
