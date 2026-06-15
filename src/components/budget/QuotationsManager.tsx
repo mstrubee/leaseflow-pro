@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveFileUrl } from "@/lib/storageUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -216,9 +217,10 @@ export const QuotationsManager = ({
     }
   };
 
-  const getDownloadUrl = (filePath: string) => {
-    const { data } = supabase.storage.from("repository-files").getPublicUrl(filePath);
-    return data?.publicUrl;
+  const openFile = async (filePath: string) => {
+    const url = await resolveFileUrl(filePath);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    else toast({ variant: "destructive", title: "Error", description: "No se pudo abrir el archivo" });
   };
 
   const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
@@ -265,11 +267,9 @@ export const QuotationsManager = ({
                 <TableCell className="text-right">{formatUF(q.amount_uf)}</TableCell>
                 <TableCell>
                   {q.file_path ? (
-                    <Button variant="ghost" size="sm" asChild className="h-6 px-2">
-                      <a href={getDownloadUrl(q.file_path)} target="_blank" rel="noopener noreferrer">
-                        <Download className="h-3 w-3 mr-1" />
-                        {q.file_name?.substring(0, 15)}...
-                      </a>
+                    <Button variant="ghost" size="sm" onClick={() => openFile(q.file_path!)} className="h-6 px-2">
+                      <Download className="h-3 w-3 mr-1" />
+                      {q.file_name?.substring(0, 15)}...
                     </Button>
                   ) : "-"}
                 </TableCell>
