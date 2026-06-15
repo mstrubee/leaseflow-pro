@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveFileUrl } from "@/lib/storageUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,10 +87,8 @@ export const OCRequestDialog = ({
         .single();
       
       if (data) {
-        const { data: urlData } = supabase.storage
-          .from("repository-files")
-          .getPublicUrl(data.file_path);
-        setTemplateUrl(urlData?.publicUrl || null);
+        const signed = await resolveFileUrl(data.file_path);
+        setTemplateUrl(signed);
         setTemplateName(data.file_name);
       }
     };
