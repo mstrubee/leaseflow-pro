@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveFileUrl } from "@/lib/storageUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Button } from "@/components/ui/button";
@@ -144,9 +145,10 @@ export const OCRequestTemplateManager = ({ defaultCollapsed = false }: OCRequest
     }
   };
 
-  const getDownloadUrl = (filePath: string) => {
-    const { data } = supabase.storage.from("repository-files").getPublicUrl(filePath);
-    return data?.publicUrl;
+  const openFile = async (filePath: string) => {
+    const url = await resolveFileUrl(filePath);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    else toast({ variant: "destructive", title: "Error", description: "No se pudo abrir el archivo" });
   };
 
   if (loading) {
@@ -216,11 +218,9 @@ export const OCRequestTemplateManager = ({ defaultCollapsed = false }: OCRequest
                     <Button
                       variant="outline"
                       size="sm"
-                      asChild
+                      onClick={() => openFile(template.file_path)}
                     >
-                      <a href={getDownloadUrl(template.file_path)} download={template.file_name} target="_blank" rel="noopener noreferrer">
-                        <Download className="h-4 w-4" />
-                      </a>
+                      <Download className="h-4 w-4" />
                     </Button>
                     {!template.is_active && (
                       <Button
