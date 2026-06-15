@@ -551,12 +551,10 @@ export function GanttChart({
     return ids;
   }, [taskTree]);
 
-  // Default view: fully expanded — only initialize once when tasks first arrive,
-  // so subsequent updates (date edits, completion toggles, etc.) preserve the
-  // user's current expanded/collapsed state.
+  // Default view: collapsed — mark as initialized once tasks arrive so subsequent
+  // updates (date edits, completion toggles, etc.) preserve the user's state.
   useEffect(() => {
     if (!didInitExpandRef.current && allParentTaskIds.length > 0) {
-      setExpandedTasks(new Set(allParentTaskIds));
       didInitExpandRef.current = true;
     }
   }, [allParentTaskIds]);
