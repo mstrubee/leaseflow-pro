@@ -694,7 +694,7 @@ export function useGantt(contractId: string) {
       const lag_days = options?.lag_days ?? 0;
       const lag_type = options?.lag_type ?? "calendar";
 
-      const { error } = await supabase
+      const { data: inserted, error } = await supabase
         .from("gantt_task_dependencies")
         .insert({
           task_id: taskId,
@@ -702,34 +702,55 @@ export function useGantt(contractId: string) {
           dep_type,
           lag_days,
           lag_type,
-        } as any);
+        } as any)
+        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type")
+        .single();
 
       if (error) throw error;
 
-      // Update dependent task dates based on chosen anchor
-      const anchorStr = dep_type === "start" ? parentTask.start_date : parentTask.end_date;
-      if (anchorStr) {
+      // Compute new start date considering ALL dependencies (including the new one).
+      const allDepsWithNew: GanttTaskDependency[] = [
+        ...(dependentTask.dependencies || []),
+        inserted as GanttTaskDependency,
+      ];
+      let latestStart: Date | null = null;
+      for (const d of allDepsWithNew) {
+        const pt = tasks.find(t => t.id === d.depends_on_task_id);
+        const anchorStr = d.dep_type === "start" ? pt?.start_date : pt?.end_date;
+        if (!anchorStr) continue;
         const anchorDate = parseISO(anchorStr);
-        const baseOffset = dep_type === "start" ? 0 : 1;
-        const newStartDate = addDays(anchorDate, baseOffset + lag_days);
-        const duration = dependentTask.duration_days || 1;
-        const newEndDate = addDays(newStartDate, duration - 1);
+        const baseOffset = d.dep_type === "start" ? 0 : 1;
+        const candidateStart = addDays(anchorDate, baseOffset + (d.lag_days ?? 0));
+        if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
+      }
 
+      let newStartStr = dependentTask.start_date;
+      let newEndStr = dependentTask.end_date;
+      if (latestStart) {
+        const duration = dependentTask.duration_days || 1;
+        newStartStr = format(latestStart, "yyyy-MM-dd");
+        newEndStr = format(addDays(latestStart, duration - 1), "yyyy-MM-dd");
         await supabase
           .from("gantt_tasks")
-          .update({
-            start_date: format(newStartDate, "yyyy-MM-dd"),
-            end_date: format(newEndDate, "yyyy-MM-dd"),
-          })
+          .update({ start_date: newStartStr, end_date: newEndStr })
           .eq("id", taskId);
       }
+
+      // Optimistic local update — no loadTimeline needed.
+      setTasks(prev => prev.map(t => {
+        if (t.id !== taskId) return t;
+        return {
+          ...t,
+          start_date: newStartStr,
+          end_date: newEndStr,
+          dependencies: [...(t.dependencies || []), inserted as GanttTaskDependency],
+        };
+      }));
 
       toast({
         title: "Dependencia creada",
         description: `"${dependentTask.name}" ahora depende de "${parentTask.name}"`,
       });
-
-      await loadTimeline();
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -751,7 +772,11 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      await loadTimeline();
+      // Optimistic local update — remove dep from state without reloading.
+      setTasks(prev => prev.map(t => ({
+        ...t,
+        dependencies: t.dependencies?.filter(d => d.id !== dependencyId),
+      })));
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -798,17 +823,36 @@ export function useGantt(contractId: string) {
         if (latestStart) {
           const duration = dependentTask.duration_days || 1;
           const newEndDate = addDays(latestStart, duration - 1);
+          const newStartStr = format(latestStart, "yyyy-MM-dd");
+          const newEndStr = format(newEndDate, "yyyy-MM-dd");
           await supabase
             .from("gantt_tasks")
-            .update({
-              start_date: format(latestStart, "yyyy-MM-dd"),
-              end_date: format(newEndDate, "yyyy-MM-dd"),
-            })
+            .update({ start_date: newStartStr, end_date: newEndStr })
             .eq("id", dependentTask.id);
+
+          // Optimistic local update — reflect dep changes + new dates without reloading.
+          setTasks(prev => prev.map(t => {
+            if (t.id !== dependentTask.id) return t;
+            return {
+              ...t,
+              start_date: newStartStr,
+              end_date: newEndStr,
+              dependencies: t.dependencies?.map(d =>
+                d.id === dependencyId ? { ...d, ...updates } : d
+              ),
+            };
+          }));
+        } else {
+          // No date change needed, just update the dep metadata in state.
+          setTasks(prev => prev.map(t => ({
+            ...t,
+            dependencies: t.dependencies?.map(d =>
+              d.id === dependencyId ? { ...d, ...updates } : d
+            ),
+          })));
         }
       }
 
-      await loadTimeline();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la dependencia" });
     } finally {
