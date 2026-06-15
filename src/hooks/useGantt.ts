@@ -440,30 +440,60 @@ export function useGantt(contractId: string) {
       }
     }
 
-    const processed = new Set<string>();
-    const queue: { id: string; start: string; end: string }[] = [
-      { id: taskId, start: newStartDate, end: newEndDate },
-    ];
+    // Track the effective end date for each task (used as anchor by its successors).
+    const effectiveEnd = new Map<string, string>();
+    const effectiveStart = new Map<string, string>();
+    effectiveEnd.set(taskId, newEndDate);
+    effectiveStart.set(taskId, newStartDate);
+
+    // Topological BFS: only enqueue a successor once ALL its predecessors have
+    // been resolved so we can take the latest anchor date across all of them.
+    const inDegree = new Map<string, number>(); // remaining unresolved predecessors
+    for (const t of allTasks) {
+      const deps = t.dependencies || [];
+      if (deps.length > 0) inDegree.set(t.id, deps.length);
+    }
+
+    const queue: string[] = [taskId];
+    const processed = new Set<string>([taskId]);
+
     while (queue.length > 0) {
-      const { id, start, end } = queue.shift()!;
-      if (processed.has(id)) continue;
-      processed.add(id);
+      const id = queue.shift()!;
+      const resolvedEnd = effectiveEnd.get(id)!;
+      const resolvedStart = effectiveStart.get(id)!;
 
       for (const s of successorsOf.get(id) || []) {
         const dependent = taskById.get(s.task_id);
         if (!dependent) continue;
-        const anchor = s.dep_type === "start" ? start : end;
+
+        // Compute the candidate start date this predecessor implies.
+        const anchor = s.dep_type === "start" ? resolvedStart : resolvedEnd;
         const anchorDate = parseISO(anchor);
-        // base offset: end-anchor → next day; start-anchor → same day
         const baseOffset = s.dep_type === "start" ? 0 : 1;
-        const newDependentStart = addDays(anchorDate, baseOffset + (s.lag_days ?? 0));
-        const duration = dependent.duration_days || 1;
-        const newDependentEnd = addDays(newDependentStart, duration - 1);
-        const newStartStr = format(newDependentStart, "yyyy-MM-dd");
-        const newEndStr = format(newDependentEnd, "yyyy-MM-dd");
-        result.set(s.task_id, { start_date: newStartStr, end_date: newEndStr });
-        queue.push({ id: s.task_id, start: newStartStr, end: newEndStr });
+        const candidateStart = addDays(anchorDate, baseOffset + (s.lag_days ?? 0));
+
+        // Keep the latest candidate across all predecessors.
+        const prev = effectiveStart.get(s.task_id);
+        if (!prev || candidateStart > parseISO(prev)) {
+          effectiveStart.set(s.task_id, format(candidateStart, "yyyy-MM-dd"));
+          const duration = dependent.duration_days || 1;
+          effectiveEnd.set(s.task_id, format(addDays(candidateStart, duration - 1), "yyyy-MM-dd"));
+        }
+
+        // Decrement in-degree; enqueue only when all predecessors resolved.
+        const remaining = (inDegree.get(s.task_id) ?? 1) - 1;
+        inDegree.set(s.task_id, remaining);
+        if (remaining <= 0 && !processed.has(s.task_id)) {
+          processed.add(s.task_id);
+          queue.push(s.task_id);
+        }
       }
+    }
+
+    // Build result map (skip the origin task itself).
+    for (const [tid, start] of effectiveStart) {
+      if (tid === taskId) continue;
+      result.set(tid, { start_date: start, end_date: effectiveEnd.get(tid) });
     }
 
     return result;
@@ -751,20 +781,27 @@ export function useGantt(contractId: string) {
       if (error) throw error;
 
       if (dep && dependentTask) {
-        const parentTask = tasks.find(t => t.id === dep.depends_on_task_id);
-        const dep_type = updates.dep_type ?? dep.dep_type ?? "end";
-        const lag_days = updates.lag_days ?? dep.lag_days ?? 0;
-        const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
-        if (anchorStr) {
+        // Recompute start date using ALL dependencies (take the latest anchor).
+        const allDeps = dependentTask.dependencies || [];
+        let latestStart: Date | null = null;
+        for (const d of allDeps) {
+          const parentTask = tasks.find(t => t.id === d.depends_on_task_id);
+          const dep_type = d.id === dep.id ? (updates.dep_type ?? d.dep_type ?? "end") : (d.dep_type ?? "end");
+          const lag_days = d.id === dep.id ? (updates.lag_days ?? d.lag_days ?? 0) : (d.lag_days ?? 0);
+          const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
+          if (!anchorStr) continue;
           const anchorDate = parseISO(anchorStr);
           const baseOffset = dep_type === "start" ? 0 : 1;
-          const newStartDate = addDays(anchorDate, baseOffset + lag_days);
+          const candidateStart = addDays(anchorDate, baseOffset + lag_days);
+          if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
+        }
+        if (latestStart) {
           const duration = dependentTask.duration_days || 1;
-          const newEndDate = addDays(newStartDate, duration - 1);
+          const newEndDate = addDays(latestStart, duration - 1);
           await supabase
             .from("gantt_tasks")
             .update({
-              start_date: format(newStartDate, "yyyy-MM-dd"),
+              start_date: format(latestStart, "yyyy-MM-dd"),
               end_date: format(newEndDate, "yyyy-MM-dd"),
             })
             .eq("id", dependentTask.id);
