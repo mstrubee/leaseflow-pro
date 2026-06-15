@@ -142,7 +142,6 @@ export function GanttTaskTree({
   useEffect(() => {
     if (!didInitRef.current && allParentTaskIds.length > 0) {
       didInitRef.current = true;
-      setExpandedTasks(new Set(allParentTaskIds));
     }
   }, [allParentTaskIds]);
 
