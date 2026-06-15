@@ -4,6 +4,7 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import logosHeader from "@/assets/logos-header.png";
 import type { ExecutionStop, ExecutionForm } from "@/hooks/useRouteExecution";
+import { resolveFileUrl } from "@/lib/storageUtils";
 
 function typeLabel(f: ExecutionForm): string {
   if (f.electrical_description) return "Eléctrico";
@@ -95,12 +96,13 @@ export async function buildLocationReportPDF(
     doc.text("Evidencia fotográfica", margin, ey); ey += 5;
     doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(37, 99, 235);
     for (const f of withEvidence) {
-      f.visit_evidence_urls.forEach((url, i) => {
+      for (let i = 0; i < f.visit_evidence_urls.length; i++) {
         if (ey > 280) { doc.addPage(); ey = margin; }
         const label = `${f.form_number} · Foto ${i + 1}`;
-        doc.textWithLink(label, margin, ey, { url });
+        const signed = (await resolveFileUrl(f.visit_evidence_urls[i])) ?? f.visit_evidence_urls[i];
+        doc.textWithLink(label, margin, ey, { url: signed });
         ey += 5;
-      });
+      }
     }
     doc.setTextColor(0);
   }

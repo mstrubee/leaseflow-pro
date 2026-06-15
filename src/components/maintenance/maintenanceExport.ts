@@ -4,6 +4,7 @@ import autoTable from "jspdf-autotable";
 import { PDFDocument } from "pdf-lib";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
 import logosHeader from "@/assets/logos-header.png";
+import { resolveFileUrl } from "@/lib/storageUtils";
 
 export function exportMaintenanceExcel(
   forms: MaintenanceForm[],
@@ -156,8 +157,10 @@ export async function exportMergedFormAndOT(form: MaintenanceForm, companyName?:
   }
 
   try {
-    // Fetch the uploaded OT file
-    const otResponse = await fetch(form.ot_file_url);
+    // Fetch the uploaded OT file (signed URL — bucket is private)
+    const otUrl = await resolveFileUrl(form.ot_file_url);
+    if (!otUrl) throw new Error("No se pudo resolver la OT");
+    const otResponse = await fetch(otUrl);
     if (!otResponse.ok) throw new Error("No se pudo descargar la OT");
     const otBytes = await otResponse.arrayBuffer();
 
