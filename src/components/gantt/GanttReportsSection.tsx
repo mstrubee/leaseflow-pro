@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
-import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend } from "date-fns";
+import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday } from "@/hooks/useGantt";
 import { getGanttDateRange } from "@/lib/ganttDateUtils";
@@ -40,6 +40,15 @@ import { loadBudgetTotals } from "@/lib/budgetTotals";
 type FilterGantt = "all" | "con" | "sin";
 type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
 
+interface Disbursement {
+  startDate: string;   // start_date of "Obras Civiles"
+  midDate: string;     // midpoint between startDate and endDate
+  endDate: string;     // end_date of "Habilitación"
+  anticipo: number;    // 30% of capexCLP
+  pago1: number;       // 50% of capexCLP
+  pago2: number;       // 20% of capexCLP
+}
+
 interface GanttContractData {
   contractId: string;
   contractName: string;
@@ -50,6 +59,7 @@ interface GanttContractData {
   capexUF: number;
   capexCLP: number;
   surfaceM2: number; // superficie_edificada_local for UF/m² metric
+  disbursement: Disbursement | null;
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
@@ -541,6 +551,30 @@ export function GanttReportsSection() {
             ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
             : null;
 
+        const capexCLP = capexUF * currentUF;
+
+        // Disbursement: based on "Obras Civiles" start and "Habilitación" end
+        let disbursement: Disbursement | null = null;
+        const obrasCiviles = tasks.find(
+          (t) => t.name.trim().toLowerCase() === "obras civiles"
+        );
+        const habilitacion = tasks.find(
+          (t) => t.name.trim().toLowerCase() === "habilitación"
+        );
+        if (obrasCiviles?.start_date && habilitacion?.end_date && capexCLP > 0) {
+          const start = parseISO(obrasCiviles.start_date);
+          const end = parseISO(habilitacion.end_date);
+          const midDay = addDays(start, Math.round(differenceInDays(end, start) / 2));
+          disbursement = {
+            startDate: obrasCiviles.start_date,
+            midDate: format(midDay, "yyyy-MM-dd"),
+            endDate: habilitacion.end_date,
+            anticipo: Math.round(capexCLP * 0.30),
+            pago1: Math.round(capexCLP * 0.50),
+            pago2: Math.round(capexCLP * 0.20),
+          };
+        }
+
         result.push({
           contractId,
           contractName: contract.name,
@@ -549,8 +583,9 @@ export function GanttReportsSection() {
           taskTree,
           endDate,
           capexUF,
-          capexCLP: capexUF * currentUF,
+          capexCLP,
           surfaceM2: Number(contract.superficie_edificada_local) || 0,
+          disbursement,
         });
       }
 
@@ -1101,6 +1136,25 @@ export function GanttReportsSection() {
                                 </div>
                               </div>
                             </div>
+                            {item.disbursement && (
+                              <div className="hidden lg:flex items-center gap-4 text-xs border-l pl-4 mr-2">
+                                <div className="text-center">
+                                  <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
+                                  <div className="font-medium">${formatCLP(item.disbursement.anticipo)} + IVA</div>
+                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.startDate), "dd/MM/yyyy")}</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
+                                  <div className="font-medium">${formatCLP(item.disbursement.pago1)}</div>
+                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.midDate), "dd/MM/yyyy")}</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
+                                  <div className="font-medium">${formatCLP(item.disbursement.pago2)} + IVA</div>
+                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.endDate), "dd/MM/yyyy")}</div>
+                                </div>
+                              </div>
+                            )}
                             <div className="flex items-center gap-3">
                               <div className="text-right text-xs">
                                 <div className="text-muted-foreground">CAPEX Total</div>
