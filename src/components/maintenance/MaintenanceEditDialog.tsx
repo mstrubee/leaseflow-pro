@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveFileUrl } from "@/lib/storageUtils";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm } from "./types";
 import { ResolutionDialog } from "./ResolutionDialog";
@@ -352,10 +353,18 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
               <Label>Evidencias</Label>
               <div className="flex flex-col gap-1 p-3 rounded-md border bg-muted">
                 {form.evidence_links.map((link, idx) => (
-                  <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1.5">
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={async () => {
+                      const url = await resolveFileUrl(link);
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                    className="text-sm text-primary hover:underline flex items-center gap-1.5 text-left"
+                  >
                     <Link className="h-3.5 w-3.5 shrink-0" />
                     Evidencia {idx + 1}
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>
