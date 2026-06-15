@@ -703,7 +703,7 @@ export function GanttChart({
     const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
 
     visibleTasks.forEach(({ task }, rowIdx) => {
-      if (!task.dependencies || task.dependencies.length === 0) return;
+      if (!task || !task.dependencies || task.dependencies.length === 0) return;
 
       const taskPosition = getTaskPosition(task);
       if (!taskPosition.visible) return;
@@ -970,7 +970,7 @@ export function GanttChart({
     }
 
     // REORDER: drop above/below
-    const flatTaskIds = visibleTasks.map(vt => vt.task.id);
+    const flatTaskIds = visibleTasks.filter(vt => vt.task).map(vt => vt.task!.id);
     const sourceIdx = flatTaskIds.indexOf(rowDragSource);
     const targetIdx = flatTaskIds.indexOf(rowDragOverId);
     
