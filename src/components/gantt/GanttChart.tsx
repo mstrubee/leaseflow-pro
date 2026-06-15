@@ -6,7 +6,7 @@ import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDa
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -276,7 +276,9 @@ interface GanttChartProps {
   rentStartDate?: string | null;
 }
 
-const DAY_WIDTH = 30;
+const BASE_DAY_WIDTH = 30;
+const ZOOM_LEVELS = [25, 50, 75, 100] as const;
+type ZoomLevel = (typeof ZOOM_LEVELS)[number];
 const ROW_HEIGHT = 40;
 const TASK_NAME_WIDTH = 450;
 const INDEX_COL_WIDTH = 40;
@@ -389,6 +391,8 @@ export function GanttChart({
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const didInitExpandRef = useRef(false);
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>(100);
+  const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
   const [hideWeekends, setHideWeekends] = useState(false);
@@ -1463,6 +1467,46 @@ export function GanttChart({
                     />
                     <span>Ocultar fines de semana</span>
                   </label>
+                  {/* Zoom controls */}
+                  <div className="flex items-center gap-0.5 border rounded h-6 px-1 bg-background">
+                    <button
+                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted disabled:opacity-40"
+                      onClick={() => setZoomLevel(prev => {
+                        const idx = ZOOM_LEVELS.indexOf(prev);
+                        return idx > 0 ? ZOOM_LEVELS[idx - 1] : prev;
+                      })}
+                      disabled={zoomLevel === ZOOM_LEVELS[0]}
+                      title="Reducir zoom"
+                    >
+                      <ZoomOut className="h-3 w-3" />
+                    </button>
+                    <span className="text-xs w-8 text-center tabular-nums">{zoomLevel}%</span>
+                    <button
+                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted disabled:opacity-40"
+                      onClick={() => setZoomLevel(prev => {
+                        const idx = ZOOM_LEVELS.indexOf(prev);
+                        return idx < ZOOM_LEVELS.length - 1 ? ZOOM_LEVELS[idx + 1] : prev;
+                      })}
+                      disabled={zoomLevel === ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
+                      title="Aumentar zoom"
+                    >
+                      <ZoomIn className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {allParentTaskIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={toggleExpandAll}
+                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
+                    >
+                      {allExpanded ? (
+                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
+                      ) : (
+                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
+                      )}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
