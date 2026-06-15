@@ -3,6 +3,66 @@ import { supabase } from "@/integrations/supabase/client";
 const BUCKET_NAME = "repository-files";
 const SIGNED_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
+// Private buckets whose stored values (storage:// paths or legacy public URLs)
+// must be converted to short-lived signed URLs before they can be fetched/displayed.
+const PRIVATE_BUCKETS = ["repository-files", "ot-files"] as const;
+
+/**
+ * Resolve any stored file reference to a usable URL.
+ *
+ * Handles:
+ *  - storage://<bucket>/<path>      → signed URL
+ *  - legacy public URLs containing /<bucket>/<path> → signed URL
+ *  - tagged entries like "[Evidencia Visita] <url>" → strips the tag, signs the URL
+ *  - external URLs (Google Drive, etc.) → returned unchanged
+ *
+ * Because the buckets are private, this MUST be used anywhere a file is fetched,
+ * downloaded, displayed as an image, or embedded into a PDF/email.
+ */
+export async function resolveFileUrl(
+  storedValue: string | null | undefined,
+  expirySeconds: number = SIGNED_URL_EXPIRY_SECONDS
+): Promise<string | null> {
+  if (!storedValue) return null;
+
+  // Strip a leading "[tag] " prefix (used by maintenance evidence entries)
+  const tagMatch = storedValue.match(/^\[[^\]]+\]\s*(.*)$/);
+  const value = tagMatch ? tagMatch[1] : storedValue;
+
+  // External / non-storage URLs: return as-is
+  if (
+    value.startsWith("https://drive.google.com") ||
+    value.startsWith("https://docs.google.com")
+  ) {
+    return value;
+  }
+
+  for (const bucket of PRIVATE_BUCKETS) {
+    let filePath: string | null = null;
+
+    if (value.startsWith(`storage://${bucket}/`)) {
+      filePath = value.replace(`storage://${bucket}/`, "");
+    } else if (value.includes(`/${bucket}/`)) {
+      const parts = value.split(`/${bucket}/`);
+      if (parts.length > 1) filePath = decodeURIComponent(parts[1]);
+    }
+
+    if (filePath) {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(filePath, expirySeconds);
+      if (error) {
+        console.error(`Error creating signed URL for ${bucket}:`, error);
+        return null;
+      }
+      return data.signedUrl;
+    }
+  }
+
+  // Unknown format — return as-is so external links keep working
+  return value;
+}
+
 /**
  * Upload a file to the repository-files bucket and return the storage path.
  * The storage path should be stored in the database instead of public URLs.
