@@ -1423,7 +1423,23 @@ export function GanttChart({
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
             <div className="flex-shrink-0 border-r" style={{ width: 24 + INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
-                <span>Cronograma</span>
+                <div className="flex items-center gap-2">
+                  <span>Cronograma</span>
+                  {allParentTaskIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={toggleExpandAll}
+                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
+                    >
+                      {allExpanded ? (
+                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
+                      ) : (
+                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
+                      )}
+                    </Button>
+                  )}
+                </div>
                 <div className="flex items-center gap-1">
                   <label
                     className={cn(
