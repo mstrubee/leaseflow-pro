@@ -601,28 +601,45 @@ export function GanttChart({
     }
   };
 
+  type VisibleEntry =
+    | { task: GanttTask; level: number; isNewRow?: false }
+    | { task: null; level: number; isNewRow: true };
+
   const visibleTasks = useMemo(() => {
-    const result: Array<{ task: GanttTask; level: number }> = [];
-    
-    const addTasks = (tasks: GanttTask[], level: number) => {
+    const result: VisibleEntry[] = [];
+
+    const addTasks = (tasks: GanttTask[], level: number, parentId: string | null) => {
       tasks.forEach((task) => {
         if (hideCompleted && task.status === "completed") return;
         result.push({ task, level });
-        if (task.children && task.children.length > 0 && expandedTasks.has(task.id)) {
-          addTasks(task.children, level + 1);
+        const hasVisibleChildren =
+          task.children && task.children.length > 0 && expandedTasks.has(task.id);
+        if (hasVisibleChildren) {
+          addTasks(task.children!, level + 1, task.id);
+        } else if (newTaskRow && newTaskRow.parent_id === task.id) {
+          // Parent expanded but has no children yet — insert directly after parent.
+          result.push({ task: null, level: level + 1, isNewRow: true });
         }
       });
+      // After the last sibling in this group, inject the new row if it belongs here.
+      if (newTaskRow && newTaskRow.parent_id === parentId && parentId !== null) {
+        result.push({ task: null, level, isNewRow: true });
+      }
     };
-    
-    addTasks(taskTree, 0);
+
+    addTasks(taskTree, 0, null);
+    // Root-level new row goes at the very end (existing behaviour).
+    if (newTaskRow && newTaskRow.parent_id === null) {
+      result.push({ task: null, level: 0, isNewRow: true });
+    }
     return result;
-  }, [taskTree, expandedTasks, hideCompleted]);
+  }, [taskTree, expandedTasks, hideCompleted, newTaskRow]);
 
   // Map task IDs to their row index for arrow drawing
   const taskRowIndexMap = useMemo(() => {
     const map = new Map<string, number>();
-    visibleTasks.forEach(({ task }, idx) => {
-      map.set(task.id, idx);
+    visibleTasks.forEach((entry, idx) => {
+      if (!entry.isNewRow) map.set(entry.task.id, idx);
     });
     return map;
   }, [visibleTasks]);
@@ -1566,7 +1583,7 @@ export function GanttChart({
                   style={{
                     left: HEADER_OFFSET + todayIdx * DAY_WIDTH,
                     width: DAY_WIDTH,
-                    height: visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT,
+                    height: visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT,
                   }}
                 />
               );
@@ -1577,7 +1594,7 @@ export function GanttChart({
               const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
               if (idx < 0) return null;
               const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
-              const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
+              const totalHeight = visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT;
               const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
               return (
                 <div
@@ -1599,7 +1616,7 @@ export function GanttChart({
             {/* Week separators (Fri→Mon) when weekends are hidden */}
             {hideWeekends && (() => {
               const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
-              const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
+              const totalHeight = visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT;
               const seps: number[] = [];
               for (let i = 0; i < days.length - 1; i++) {
                 if (days[i].getDay() === 5 && days[i + 1].getDay() === 1) seps.push(i + 1);
@@ -1733,13 +1750,88 @@ export function GanttChart({
             )}
 
             {/* Task rows */}
-            {visibleTasks.map(({ task, level }, rowIdx) => {
+            {visibleTasks.map((entry, rowIdx) => {
+              if (entry.isNewRow) {
+                const indent = 4 + entry.level * 12;
+                return (
+                  <div
+                    key="new-task-row"
+                    className="flex border-b bg-primary/5"
+                    style={{ height: ROW_HEIGHT }}
+                    onKeyDown={handleKeyDown}
+                  >
+                    <div className="flex-shrink-0 w-6" />
+                    <div className="flex-shrink-0 border-r" style={{ width: INDEX_COL_WIDTH }} />
+                    <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH - 6, paddingLeft: indent }}>
+                      <span className="w-4 flex-shrink-0" />
+                      <Input
+                        ref={nameInputRef}
+                        value={newTaskRow!.name}
+                        onChange={(e) => handleNewTaskChange("name", e.target.value)}
+                        placeholder="Nombre de la tarea..."
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                    <div className="flex-shrink-0 border-r" style={{ width: RESPONSIBLE_COL_WIDTH }} />
+                    <div className="flex-shrink-0 border-r" style={{ width: ORIGIN_COL_WIDTH }} />
+                    <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                      <DatePickerCell
+                        value={newTaskRow!.start_date || null}
+                        onChange={(date) => handleNewTaskChange("start_date", date)}
+                        placeholder="Inicio"
+                        showTaskDates={true}
+                        taskDates={taskDates}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 border-r flex items-center px-1 gap-1" style={{ width: DURATION_COL_WIDTH }}>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={newTaskRow!.duration_days}
+                        onChange={(e) => handleNewTaskChange("duration_days", parseInt(e.target.value) || 1)}
+                        className="h-7 text-xs w-10 text-center"
+                      />
+                      <Select
+                        value={newTaskRow!.duration_type}
+                        onValueChange={(v: "calendar" | "business") => handleNewTaskChange("duration_type", v)}
+                      >
+                        <SelectTrigger className="h-7 w-12 text-[10px] px-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover">
+                          <SelectItem value="calendar">días</SelectItem>
+                          <SelectItem value="business">háb</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                      <DatePickerCell
+                        value={newTaskRow!.end_date || null}
+                        onChange={(date) => handleNewTaskChange("end_date", date)}
+                        placeholder="Término"
+                        showTaskDates={true}
+                        taskDates={taskDates}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 border-r" style={{ width: PROGRESS_COL_WIDTH }} />
+                    <div className="flex items-center px-2 gap-2">
+                      <Button size="sm" className="h-7 text-xs" onClick={handleSaveNewTask} disabled={!newTaskRow!.name.trim() || isSaving}>
+                        {isSaving ? "..." : "Agregar"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setNewTaskRow(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+              const { task, level } = entry;
               const hasChildren = task.children && task.children.length > 0;
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
               const rowNumber = rowIdx + 1;
-              
+
               return (
                 <ContextMenu key={task.id}>
                   <ContextMenuTrigger asChild>
@@ -2289,97 +2381,6 @@ export function GanttChart({
                 </ContextMenu>
               );
             })}
-
-            {/* New task row */}
-            {newTaskRow && (
-              <div
-                className="flex border-b bg-primary/5"
-                style={{ height: ROW_HEIGHT }}
-                onKeyDown={handleKeyDown}
-              >
-                <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
-                <div className="flex-shrink-0 border-r" style={{ width: INDEX_COL_WIDTH }} />
-                <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH - 6 }}>
-                  <span className="w-4 flex-shrink-0" />
-                  <Input
-                    ref={nameInputRef}
-                    value={newTaskRow.name}
-                    onChange={(e) => handleNewTaskChange("name", e.target.value)}
-                    placeholder="Nombre de la tarea..."
-                    className="h-7 text-xs"
-                  />
-                </div>
-
-                {/* Responsable placeholder */}
-                <div className="flex-shrink-0 border-r" style={{ width: RESPONSIBLE_COL_WIDTH }} />
-
-                {/* Origen placeholder */}
-                <div className="flex-shrink-0 border-r" style={{ width: ORIGIN_COL_WIDTH }} />
-
-                <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
-                  <DatePickerCell
-                    value={newTaskRow.start_date || null}
-                    onChange={(date) => handleNewTaskChange("start_date", date)}
-                    placeholder="Inicio"
-                    showTaskDates={true}
-                    taskDates={taskDates}
-                  />
-                </div>
-
-                <div className="flex-shrink-0 border-r flex items-center px-1 gap-1" style={{ width: DURATION_COL_WIDTH }}>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={newTaskRow.duration_days}
-                    onChange={(e) => handleNewTaskChange("duration_days", parseInt(e.target.value) || 1)}
-                    className="h-7 text-xs w-10 text-center"
-                  />
-                  <Select
-                    value={newTaskRow.duration_type}
-                    onValueChange={(v: "calendar" | "business") => handleNewTaskChange("duration_type", v)}
-                  >
-                    <SelectTrigger className="h-7 w-12 text-[10px] px-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover">
-                      <SelectItem value="calendar">días</SelectItem>
-                      <SelectItem value="business">háb</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
-                  <DatePickerCell
-                    value={newTaskRow.end_date || null}
-                    onChange={(date) => handleNewTaskChange("end_date", date)}
-                    placeholder="Término"
-                    showTaskDates={true}
-                    taskDates={taskDates}
-                  />
-                </div>
-
-                <div className="flex-shrink-0 border-r" style={{ width: PROGRESS_COL_WIDTH }} />
-
-                <div className="flex items-center px-2 gap-2">
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={handleSaveNewTask}
-                    disabled={!newTaskRow.name.trim() || isSaving}
-                  >
-                    {isSaving ? "..." : "Agregar"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs"
-                    onClick={() => setNewTaskRow(null)}
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            )}
 
             {/* Add task button row */}
             {!newTaskRow && (
