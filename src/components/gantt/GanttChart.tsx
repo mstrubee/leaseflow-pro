@@ -966,7 +966,7 @@ export function GanttChart({
     }
 
     // REORDER: drop above/below
-    const flatTaskIds = visibleTasks.map(vt => vt.task.id);
+    const flatTaskIds = visibleTasks.filter(vt => vt.task).map(vt => vt.task!.id);
     const sourceIdx = flatTaskIds.indexOf(rowDragSource);
     const targetIdx = flatTaskIds.indexOf(rowDragOverId);
     
