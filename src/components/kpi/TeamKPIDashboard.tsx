@@ -12,6 +12,7 @@ import { es } from "date-fns/locale";
 const H1_END = "2026-06-30";
 const SLA_CRITICO_DAYS = 5;
 const SLA_ALTO_DAYS = 15;
+const SLA_MEDIO_BAJO_DAYS = 30;
 
 function scoreBadge(score: number) {
   if (score >= 115) return <Badge className="bg-emerald-600 text-white">130% — Sobrecumplimiento</Badge>;
@@ -32,10 +33,14 @@ interface FrancoData {
   criticosH1Resueltos: number;
   altosH1Total: number;
   altosH1Resueltos: number;
+  mediosBajosH1Total: number;
+  mediosBajosH1Resueltos: number;
   criticosH2Total: number;
   criticosH2EnSLA: number;
   altosH2Total: number;
   altosH2EnSLA: number;
+  mediosBajosH2Total: number;
+  mediosBajosH2EnSLA: number;
   detalle: Array<{
     form_number: string;
     criticidad: string;
@@ -124,24 +129,30 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boolean }) {
   if (loading) return <CardSkeleton title="Franco Leiva" subtitle="Resolución de Forms" />;
 
-  const pCritH1 = data ? pct(data.criticosH1Resueltos, data.criticosH1Total) : 0;
-  const pAltH1  = data ? pct(data.altosH1Resueltos,   data.altosH1Total)    : 0;
-  const pCritH2 = data ? pct(data.criticosH2EnSLA,    data.criticosH2Total) : 0;
-  const pAltH2  = data ? pct(data.altosH2EnSLA,       data.altosH2Total)    : 0;
+  const pCritH1  = data ? pct(data.criticosH1Resueltos,    data.criticosH1Total)    : 0;
+  const pAltH1   = data ? pct(data.altosH1Resueltos,       data.altosH1Total)       : 0;
+  const pMedH1   = data ? pct(data.mediosBajosH1Resueltos, data.mediosBajosH1Total) : 0;
+  const pCritH2  = data ? pct(data.criticosH2EnSLA,        data.criticosH2Total)    : 0;
+  const pAltH2   = data ? pct(data.altosH2EnSLA,           data.altosH2Total)       : 0;
+  const pMedH2   = data ? pct(data.mediosBajosH2EnSLA,     data.mediosBajosH2Total) : 0;
 
-  // weighted score: 30/30/30/10
+  // weighted score: 25/25/20/15/10/5  (all targets normalized to 80% except CritH1=100%)
   const score = Math.round(
-    (pCritH1 * 0.30) +
-    ((pAltH1 / 80) * 100 * 0.30) +  // 100% normalized to 80% target
-    (pCritH2 * 0.30) +
-    ((pAltH2 / 90) * 100 * 0.10)    // 100% normalized to 90% target
+    (pCritH1          * 0.25) +
+    ((pAltH1  / 80) * 100 * 0.25) +
+    ((pMedH1  / 80) * 100 * 0.20) +
+    ((pCritH2 / 80) * 100 * 0.15) +
+    ((pAltH2  / 80) * 100 * 0.10) +
+    ((pMedH2  / 80) * 100 * 0.05)
   );
 
   const rows = [
-    { label: "Críticos H1 (meta: 100%)", pct: pCritH1, peso: "30%", meta: 100 },
-    { label: "Altos H1 (meta: 80%)",     pct: pAltH1,  peso: "30%", meta: 80 },
-    { label: "Críticos H2 SLA ≤5d (meta: 100%)", pct: pCritH2, peso: "30%", meta: 100 },
-    { label: "Altos H2 SLA ≤15d (meta: 90%)",    pct: pAltH2,  peso: "10%", meta: 90 },
+    { label: "Críticos H1 (meta: 100%)",         pct: pCritH1, peso: "25%", meta: 100 },
+    { label: "Altos H1 (meta: 80%)",              pct: pAltH1,  peso: "25%", meta: 80  },
+    { label: "Medios+Bajos H1 (meta: 80%)",       pct: pMedH1,  peso: "20%", meta: 80  },
+    { label: "Críticos H2 SLA ≤5d (meta: 80%)",  pct: pCritH2, peso: "15%", meta: 80  },
+    { label: "Altos H2 SLA ≤15d (meta: 80%)",    pct: pAltH2,  peso: "10%", meta: 80  },
+    { label: "Medios+Bajos H2 SLA ≤30d (meta: 80%)", pct: pMedH2, peso: "5%", meta: 80 },
   ];
 
   return (
@@ -352,14 +363,15 @@ export function TeamKPIDashboard() {
         const critMap = new Map<string, string>();
         (cats || []).forEach((c: any) => critMap.set(c.id, c.code));
 
-        const criticoIds = (cats || []).filter((c: any) => c.code === "critico").map((c: any) => c.id);
-        const altoIds    = (cats || []).filter((c: any) => c.code === "alto").map((c: any) => c.id);
+        const criticoIds   = (cats || []).filter((c: any) => c.code === "critico").map((c: any) => c.id);
+        const altoIds      = (cats || []).filter((c: any) => c.code === "alto").map((c: any) => c.id);
+        const medioBajoIds = (cats || []).filter((c: any) => ["medio", "bajo"].includes(c.code)).map((c: any) => c.id);
 
-        // Fetch all forms with criticidad crítico or alto, this year
+        // Fetch all forms (all criticalities) this year
         const { data: forms } = await supabase
           .from("maintenance_forms" as any)
           .select("id, form_number, sub_status, created_date, sub_status_resuelto_at, criticality_category_id")
-          .in("criticality_category_id", [...criticoIds, ...altoIds])
+          .not("criticality_category_id", "is", null)
           .eq("year", 2026)
           .is("deleted_at", null);
 
@@ -368,13 +380,16 @@ export function TeamKPIDashboard() {
         const isH1 = (f: any) => f.created_date && f.created_date <= H1_END;
         const isH2 = (f: any) => f.created_date && f.created_date > H1_END;
         const isResuelto = (f: any) => f.sub_status === "resuelto";
-        const isCritico = (f: any) => criticoIds.includes(f.criticality_category_id);
-        const isAlto    = (f: any) => altoIds.includes(f.criticality_category_id);
+        const isCritico   = (f: any) => criticoIds.includes(f.criticality_category_id);
+        const isAlto      = (f: any) => altoIds.includes(f.criticality_category_id);
+        const isMedioBajo = (f: any) => medioBajoIds.includes(f.criticality_category_id);
 
-        const criticosH1 = allForms.filter(f => isCritico(f) && isH1(f));
-        const altosH1    = allForms.filter(f => isAlto(f)    && isH1(f));
-        const criticosH2 = allForms.filter(f => isCritico(f) && isH2(f));
-        const altosH2    = allForms.filter(f => isAlto(f)    && isH2(f));
+        const criticosH1   = allForms.filter(f => isCritico(f)   && isH1(f));
+        const altosH1      = allForms.filter(f => isAlto(f)      && isH1(f));
+        const mediosBajosH1 = allForms.filter(f => isMedioBajo(f) && isH1(f));
+        const criticosH2   = allForms.filter(f => isCritico(f)   && isH2(f));
+        const altosH2      = allForms.filter(f => isAlto(f)      && isH2(f));
+        const mediosBajosH2 = allForms.filter(f => isMedioBajo(f) && isH2(f));
 
         // SLA: only forms with sub_status_resuelto_at (tracked from today)
         const enSLA = (f: any, maxDays: number) => {
@@ -390,7 +405,7 @@ export function TeamKPIDashboard() {
             const dias = f.sub_status_resuelto_at && f.created_date
               ? differenceInBusinessDays(parseISO(f.sub_status_resuelto_at), parseISO(f.created_date))
               : null;
-            const sla = isCritico(f) ? SLA_CRITICO_DAYS : SLA_ALTO_DAYS;
+            const sla = isCritico(f) ? SLA_CRITICO_DAYS : isAlto(f) ? SLA_ALTO_DAYS : SLA_MEDIO_BAJO_DAYS;
             return {
               form_number: f.form_number,
               criticidad: critMap.get(f.criticality_category_id) || "—",
@@ -408,10 +423,14 @@ export function TeamKPIDashboard() {
           criticosH1Resueltos: criticosH1.filter(isResuelto).length,
           altosH1Total: altosH1.length,
           altosH1Resueltos: altosH1.filter(isResuelto).length,
+          mediosBajosH1Total: mediosBajosH1.length,
+          mediosBajosH1Resueltos: mediosBajosH1.filter(isResuelto).length,
           criticosH2Total: criticosH2.length,
           criticosH2EnSLA: criticosH2.filter(f => enSLA(f, SLA_CRITICO_DAYS)).length,
           altosH2Total: altosH2.length,
           altosH2EnSLA: altosH2.filter(f => enSLA(f, SLA_ALTO_DAYS)).length,
+          mediosBajosH2Total: mediosBajosH2.length,
+          mediosBajosH2EnSLA: mediosBajosH2.filter(f => enSLA(f, SLA_MEDIO_BAJO_DAYS)).length,
           detalle,
         });
       } finally {
