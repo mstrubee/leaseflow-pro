@@ -3,7 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Users, Wrench, FileText, TrendingUp } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown } from "lucide-react";
 import { format, parseISO, differenceInBusinessDays } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -60,19 +62,59 @@ interface EvelynData {
 }
 
 interface BeatrizData {
-  totalCombinaciones: number;
-  cubiertas3: number;
-  cubiertas5: number;
-  gaps: Array<{ categoria: string; zona: string; count: number }>;
+  categories: Array<{ id: string; name: string }>;
+  zones: string[];
+  matrix: Record<string, number>; // key: `${catId}||${zone}` → supplier count
 }
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
 
+const BEATRIZ_EXCLUDED_KEY = "beatriz_kpi_excluded_cats";
+
+function cellColor(count: number) {
+  if (count >= 5) return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (count >= 3) return "bg-blue-50 text-blue-800 border-blue-200";
+  if (count >= 1) return "bg-amber-50 text-amber-800 border-amber-200";
+  return "bg-red-50 text-red-700 border-red-200";
+}
+
 function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boolean }) {
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(BEATRIZ_EXCLUDED_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const toggleExclude = (id: string) => {
+    setExcludedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      localStorage.setItem(BEATRIZ_EXCLUDED_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  };
+
   if (loading) return <CardSkeleton title="Beatriz Valenzuela" subtitle="Cobertura de Proveedores" />;
 
-  const score100 = data ? pct(data.cubiertas3, data.totalCombinaciones) : 0;
-  const score130 = data ? pct(data.cubiertas5, data.totalCombinaciones) : 0;
+  // Compute metrics excluding chosen categories
+  const activeCats = data ? data.categories.filter(c => !excludedIds.has(c.id)) : [];
+  const zones = data?.zones ?? [];
+  const matrix = data?.matrix ?? {};
+
+  let totalComb = activeCats.length * zones.length;
+  let cubiertas3 = 0, cubiertas5 = 0;
+  activeCats.forEach(c => {
+    zones.forEach(z => {
+      const count = matrix[`${c.id}||${z}`] ?? 0;
+      if (count >= 3) cubiertas3++;
+      if (count >= 5) cubiertas5++;
+    });
+  });
+
+  const score100 = pct(cubiertas3, totalComb);
+  const score130 = pct(cubiertas5, totalComb);
   const score = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
 
   return (
@@ -90,12 +132,14 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Progress bars */}
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span>Cobertura ≥3 proveedores (meta 100%)</span>
             <span className="font-semibold">{score100}%</span>
           </div>
           <Progress value={Math.min(score100, 100)} className="h-2" />
+          <p className="text-xs text-muted-foreground mt-1">{cubiertas3} de {totalComb} combinaciones cubiertas</p>
         </div>
         <div>
           <div className="flex justify-between text-sm mb-1">
@@ -104,20 +148,74 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
           </div>
           <Progress value={Math.min(score130, 100)} className="h-2" />
         </div>
-        {data && data.gaps.length > 0 && (
-          <details className="text-xs">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-              {data.gaps.length} combinación{data.gaps.length !== 1 ? "es" : ""} sin cobertura suficiente
-            </summary>
-            <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-              {data.gaps.map((g, i) => (
-                <div key={i} className="flex justify-between border-b pb-1">
-                  <span>{g.categoria} / {g.zona}</span>
-                  <span className="text-muted-foreground">{g.count} proveedor{g.count !== 1 ? "es" : ""}</span>
-                </div>
-              ))}
+
+        {/* Coverage matrix */}
+        {data && activeCats.length > 0 && zones.length > 0 && (
+          <div className="overflow-x-auto">
+            <p className="text-xs font-medium text-muted-foreground mb-1">Matriz cobertura (categoría × zona)</p>
+            <table className="text-xs border-collapse w-full">
+              <thead>
+                <tr>
+                  <th className="text-left py-1 pr-2 font-medium text-muted-foreground min-w-[120px]">Categoría</th>
+                  {zones.map(z => (
+                    <th key={z} className="text-center py-1 px-1 font-medium text-muted-foreground whitespace-nowrap min-w-[60px]" title={z}>
+                      {z.length > 8 ? z.slice(0, 8) + "…" : z}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activeCats.map(c => (
+                  <tr key={c.id} className="border-t">
+                    <td className="py-1 pr-2 truncate max-w-[140px]" title={c.name}>{c.name}</td>
+                    {zones.map(z => {
+                      const count = matrix[`${c.id}||${z}`] ?? 0;
+                      return (
+                        <td key={z} className="text-center py-1 px-1">
+                          <span className={`inline-block rounded border px-1.5 py-0.5 font-semibold ${cellColor(count)}`}>
+                            {count}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="flex gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ≥5 óptimo</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> 3–4 meta</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 1–2 bajo</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
             </div>
-          </details>
+          </div>
+        )}
+
+        {/* Excluded categories config */}
+        {data && (
+          <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-full">
+              <Settings className="h-3.5 w-3.5" />
+              Excluir categorías de la meta
+              <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 space-y-1.5 border rounded-md p-3 bg-muted/30">
+                {data.categories.map(c => (
+                  <label key={c.id} className="flex items-center gap-2 text-xs cursor-pointer hover:text-foreground text-muted-foreground">
+                    <Checkbox
+                      checked={excludedIds.has(c.id)}
+                      onCheckedChange={() => toggleExclude(c.id)}
+                    />
+                    <span className={excludedIds.has(c.id) ? "line-through" : ""}>{c.name}</span>
+                  </label>
+                ))}
+                {excludedIds.size > 0 && (
+                  <p className="text-xs text-amber-600 mt-1">{excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""} de la meta.</p>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         )}
       </CardContent>
     </Card>
@@ -542,22 +640,14 @@ export function TeamKPIDashboard() {
           });
         });
 
-        const catNames = new Map(catList.map((c: any) => [c.id, c.name]));
-        const total = catList.length * allZones.size;
+        const matrix: Record<string, number> = {};
+        combMap.forEach((count, key) => { matrix[key] = count; });
 
-        let cubiertas3 = 0, cubiertas5 = 0;
-        const gaps: BeatrizData["gaps"] = [];
-
-        catList.forEach((c: any) => {
-          allZones.forEach((z) => {
-            const count = combMap.get(`${c.id}||${z}`) || 0;
-            if (count >= 3) cubiertas3++;
-            if (count >= 5) cubiertas5++;
-            if (count < 3) gaps.push({ categoria: c.name, zona: z, count });
-          });
+        setBeatrizData({
+          categories: catList.map((c: any) => ({ id: c.id, name: c.name })),
+          zones: [...allZones].sort(),
+          matrix,
         });
-
-        setBeatrizData({ totalCombinaciones: total, cubiertas3, cubiertas5, gaps });
       } finally {
         setLoadingBeatriz(false);
       }
