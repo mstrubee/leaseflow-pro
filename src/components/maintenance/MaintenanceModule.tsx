@@ -964,6 +964,7 @@ export function MaintenanceModule() {
       status: "solucionado",
       resolution_observations: observations,
       updated_at: new Date().toISOString(),
+      sub_status_resuelto_at: new Date().toISOString(),
     };
     const { error } = await (supabase as any)
       .from("maintenance_forms")
