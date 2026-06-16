@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, Settings, History, Activity } from "lucide-react";
+import { BarChart3, Settings, History, Activity, Users } from "lucide-react";
 import { useKPI, KPI } from "@/hooks/useKPI";
 import { supabase } from "@/integrations/supabase/client";
 import { KPIDashboard } from "./KPIDashboard";
@@ -11,6 +11,7 @@ import { KPIGoalTypeManager } from "./KPIGoalTypeManager";
 import { KPIMeasurementsDialog } from "./KPIMeasurementsDialog";
 import { KPIEmpresaEntriesDialog } from "./KPIEmpresaEntriesDialog";
 import { KPIAuditLog } from "./KPIAuditLog";
+import { TeamKPIDashboard } from "./TeamKPIDashboard";
 
 interface Profile {
   id: string;
@@ -121,6 +122,10 @@ export function KPIModule() {
             <Activity className="h-4 w-4" />
             Dashboard
           </TabsTrigger>
+          <TabsTrigger value="equipo" className="gap-2">
+            <Users className="h-4 w-4" />
+            Equipo
+          </TabsTrigger>
           <TabsTrigger value="kpis" className="gap-2">
             <BarChart3 className="h-4 w-4" />
             KPIs
@@ -134,6 +139,10 @@ export function KPIModule() {
             Auditoría
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="equipo">
+          <TeamKPIDashboard />
+        </TabsContent>
 
         <TabsContent value="dashboard">
           <KPIDashboard

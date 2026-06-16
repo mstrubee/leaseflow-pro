@@ -178,6 +178,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         additional_comments: formData.additional_comments || null,
         resolution_observations: resolutionObservations !== undefined ? resolutionObservations : (formData.resolution_observations || null),
         updated_at: new Date().toISOString(),
+        ...(finalSubStatus === "resuelto" ? { sub_status_resuelto_at: new Date().toISOString() } : {}),
       };
 
       const { error } = await (supabase.from("maintenance_forms" as any) as any)
