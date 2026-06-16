@@ -65,6 +65,7 @@ interface BeatrizData {
   categories: Array<{ id: string; name: string }>;
   zones: string[];
   matrix: Record<string, number>; // key: `${catId}||${zone}` → supplier count
+  suppliersMap: Record<string, Array<{ id: string; name: string }>>; // key → supplier list
 }
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
@@ -86,6 +87,9 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
     } catch { return new Set(); }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedCell, setExpandedCell] = useState<string | null>(null); // key catId||zone
+
+  const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
 
   const toggleExclude = (id: string) => {
     setExcludedIds(prev => {
@@ -166,19 +170,49 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               </thead>
               <tbody>
                 {activeCats.map(c => (
+                  <>
                   <tr key={c.id} className="border-t">
                     <td className="py-1 pr-2 truncate max-w-[140px]" title={c.name}>{c.name}</td>
                     {zones.map(z => {
-                      const count = matrix[`${c.id}||${z}`] ?? 0;
+                      const key = `${c.id}||${z}`;
+                      const count = matrix[key] ?? 0;
+                      const isOpen = expandedCell === key;
                       return (
                         <td key={z} className="text-center py-1 px-1">
-                          <span className={`inline-block rounded border px-1.5 py-0.5 font-semibold ${cellColor(count)}`}>
+                          <button
+                            onClick={() => count > 0 ? toggleCell(key) : undefined}
+                            className={`inline-block rounded border px-1.5 py-0.5 font-semibold transition-opacity ${cellColor(count)} ${count > 0 ? "cursor-pointer hover:opacity-80 underline decoration-dotted" : "cursor-default"} ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                          >
                             {count}
-                          </span>
+                          </button>
                         </td>
                       );
                     })}
                   </tr>
+                  {/* Expanded supplier list row */}
+                  {zones.some(z => expandedCell === `${c.id}||${z}`) && (() => {
+                    const activeZone = zones.find(z => expandedCell === `${c.id}||${z}`)!;
+                    const key = `${c.id}||${activeZone}`;
+                    const suppList = data?.suppliersMap[key] ?? [];
+                    return (
+                      <tr key={`${c.id}-detail`} className="bg-muted/40">
+                        <td colSpan={zones.length + 1} className="py-2 px-2 text-xs">
+                          <div className="flex items-center gap-2 mb-1 font-medium">
+                            <span>{c.name}</span>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">{activeZone}</span>
+                            <span className="ml-auto text-muted-foreground">{suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}</span>
+                          </div>
+                          <ul className="space-y-0.5">
+                            {suppList.map(s => (
+                              <li key={s.id} className="text-muted-foreground">• {s.name}</li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    );
+                  })()}
+                  </>
                 ))}
               </tbody>
             </table>
@@ -604,7 +638,7 @@ export function TeamKPIDashboard() {
         const { data: cats } = await supabase
           .from("supplier_categories" as any)
           .select("id, name")
-          .is("parent_id", null);
+          .order("name");
 
         const { data: zones } = await supabase
           .from("supplier_influence_zones" as any)
@@ -612,7 +646,8 @@ export function TeamKPIDashboard() {
 
         const { data: suppliers } = await supabase
           .from("suppliers" as any)
-          .select("id, category_id");
+          .select("id, name, category_id")
+          .is("deleted_at", null);
 
         const catList   = (cats || []) as any[];
         const zoneList  = (zones || []) as any[];
@@ -630,23 +665,28 @@ export function TeamKPIDashboard() {
         const allZones = new Set<string>();
         zoneList.forEach((z: any) => allZones.add(z.region));
 
-        // Count suppliers per categoria×zona
-        const combMap = new Map<string, number>();
+        // Build matrix counts + suppliersMap per categoria×zona
+        const matrix: Record<string, number> = {};
+        const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
+
         suppList.forEach((s: any) => {
-          const zones = suppZones.get(s.id) || new Set();
-          zones.forEach((z) => {
+          const sZones = suppZones.get(s.id) || new Set();
+          sZones.forEach((z) => {
             const key = `${s.category_id}||${z}`;
-            combMap.set(key, (combMap.get(key) || 0) + 1);
+            matrix[key] = (matrix[key] || 0) + 1;
+            if (!suppliersMap[key]) suppliersMap[key] = [];
+            suppliersMap[key].push({ id: s.id, name: s.name });
           });
         });
 
-        const matrix: Record<string, number> = {};
-        combMap.forEach((count, key) => { matrix[key] = count; });
+        // Sort supplier lists by name
+        Object.values(suppliersMap).forEach(list => list.sort((a, b) => a.name.localeCompare(b.name)));
 
         setBeatrizData({
           categories: catList.map((c: any) => ({ id: c.id, name: c.name })),
           zones: [...allZones].sort(),
           matrix,
+          suppliersMap,
         });
       } finally {
         setLoadingBeatriz(false);
