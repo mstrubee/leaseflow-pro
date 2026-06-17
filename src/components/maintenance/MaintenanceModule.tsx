@@ -399,8 +399,14 @@ function invalidateCache() {
 export function MaintenanceModule() {
   const navigate = useNavigate();
   const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, loading: subStatusLoading } = useMaintenanceSubStatuses();
-  const [forms, setForms] = useState<MaintenanceForm[]>(() => readCache<MaintenanceForm[]>(CACHE_KEY_FORMS) || []);
-  const [loading, setLoading] = useState(() => !readCache<MaintenanceForm[]>(CACHE_KEY_FORMS));
+  const [forms, setForms] = useState<MaintenanceForm[]>(() => {
+    const cached = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
+    return (cached && cached.length > 0) ? cached : [];
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
+    return !cached || cached.length === 0;
+  });
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editForm, setEditForm] = useState<MaintenanceForm | null>(null);
@@ -458,7 +464,9 @@ export function MaintenanceModule() {
     }
 
     setForms(allData);
-    writeCache(CACHE_KEY_FORMS, allData);
+    // Only cache non-empty results — an empty array might mean a transient error
+    // or RLS blocking access; caching it would prevent future re-fetches.
+    if (allData.length > 0) writeCache(CACHE_KEY_FORMS, allData);
     setLoading(false);
   }, []);
 
@@ -466,10 +474,12 @@ export function MaintenanceModule() {
     if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
       const cachedForms = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
-      if (!cachedForms) {
+      // Re-fetch if no cache OR if cache is empty (empty arrays are falsy-treated
+      // in JS: ![] === false, so we must check .length explicitly)
+      if (!cachedForms || cachedForms.length === 0) {
         fetchForms(true);
       }
-      // If cache exists, data is already in state via useState initializer
+      // If cache exists with data, it's already in state via useState initializer
     }
   }, [fetchForms]);
 
