@@ -636,20 +636,26 @@ export function TeamKPIDashboard() {
       setLoadingBeatriz(true);
       try {
         // Load ALL categories (no parent_id filter), ordered by name
-        const { data: cats } = await supabase
+        const { data: cats, error: catsErr } = await supabase
           .from("supplier_categories" as any)
           .select("id, name")
           .order("name");
 
-        const { data: zones } = await supabase
+        const { data: zones, error: zonesErr } = await supabase
           .from("supplier_influence_zones" as any)
-          .select("supplier_id, region");
+          .select("supplier_id, region")
+          .limit(5000);
 
         // Fetch all suppliers with name (suppliers table has no deleted_at)
-        const { data: suppliers } = await supabase
+        const { data: suppliers, error: suppsErr } = await supabase
           .from("suppliers" as any)
           .select("id, name, category_id")
-          .not("category_id", "is", null);
+          .not("category_id", "is", null)
+          .limit(5000);
+
+        console.log("[Beatriz] cats:", cats?.length, catsErr);
+        console.log("[Beatriz] zones:", zones?.length, zonesErr);
+        console.log("[Beatriz] suppliers:", suppliers?.length, suppsErr);
 
         const catList  = (cats || []) as any[];
         const zoneList = (zones || []) as any[];
