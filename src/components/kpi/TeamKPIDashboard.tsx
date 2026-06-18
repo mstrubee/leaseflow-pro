@@ -65,6 +65,7 @@ interface BeatrizData {
   categories: Array<{ id: string; name: string }>;
   zones: string[];
   matrix: Record<string, number>; // key: `${catId}||${zone}` → supplier count
+  suppliersMap: Record<string, Array<{ id: string; name: string }>>; // key → supplier list
 }
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
@@ -86,6 +87,8 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
     } catch { return new Set(); }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedCell, setExpandedCell] = useState<string | null>(null);
+  const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
 
   const toggleExclude = (id: string) => {
     setExcludedIds(prev => {
@@ -165,21 +168,52 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                 </tr>
               </thead>
               <tbody>
-                {activeCats.map(c => (
-                  <tr key={c.id} className="border-t">
-                    <td className="py-1 pr-2 truncate max-w-[140px]" title={c.name}>{c.name}</td>
-                    {zones.map(z => {
-                      const count = matrix[`${c.id}||${z}`] ?? 0;
-                      return (
-                        <td key={z} className="text-center py-1 px-1">
-                          <span className={`inline-block rounded border px-1.5 py-0.5 font-semibold ${cellColor(count)}`}>
-                            {count}
-                          </span>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {activeCats.map(c => {
+                  const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
+                  return (
+                    <>
+                      <tr key={c.id} className="border-t">
+                        <td className="py-1 pr-2 truncate max-w-[140px]" title={c.name}>{c.name}</td>
+                        {zones.map(z => {
+                          const key = `${c.id}||${z}`;
+                          const count = matrix[key] ?? 0;
+                          const isOpen = expandedCell === key;
+                          return (
+                            <td key={z} className="text-center py-1 px-1">
+                              <button
+                                onClick={() => count > 0 ? toggleCell(key) : undefined}
+                                className={`inline-block rounded border px-1.5 py-0.5 font-semibold transition-opacity ${cellColor(count)} ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"} ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                              >
+                                {count}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      {openZone && (() => {
+                        const key = `${c.id}||${openZone}`;
+                        const suppList = data?.suppliersMap?.[key] ?? [];
+                        return (
+                          <tr key={`${c.id}-detail`} className="bg-muted/40">
+                            <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
+                              <div className="flex items-center gap-2 mb-1.5 font-medium">
+                                <span>{c.name}</span>
+                                <span className="text-muted-foreground">·</span>
+                                <span className="text-muted-foreground">{openZone}</span>
+                                <span className="ml-auto text-muted-foreground">{suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}</span>
+                              </div>
+                              <ul className="space-y-0.5 columns-2">
+                                {suppList.map(s => (
+                                  <li key={s.id} className="text-muted-foreground">• {s.name}</li>
+                                ))}
+                              </ul>
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
             <div className="flex gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
@@ -601,24 +635,27 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingBeatriz(true);
       try {
+        // Load ALL categories (no parent_id filter), ordered by name
         const { data: cats } = await supabase
           .from("supplier_categories" as any)
           .select("id, name")
-          .is("parent_id", null);
+          .order("name");
 
         const { data: zones } = await supabase
           .from("supplier_influence_zones" as any)
           .select("supplier_id, region");
 
+        // Fetch all suppliers with name (suppliers table has no deleted_at)
         const { data: suppliers } = await supabase
           .from("suppliers" as any)
-          .select("id, category_id");
+          .select("id, name, category_id")
+          .not("category_id", "is", null);
 
-        const catList   = (cats || []) as any[];
-        const zoneList  = (zones || []) as any[];
-        const suppList  = (suppliers || []) as any[];
+        const catList  = (cats || []) as any[];
+        const zoneList = (zones || []) as any[];
+        const suppList = (suppliers || []) as any[];
 
-        // Map supplier → zones
+        // Map supplier → set of zones
         const suppZones = new Map<string, Set<string>>();
         zoneList.forEach((z: any) => {
           const s = suppZones.get(z.supplier_id) || new Set();
@@ -626,27 +663,34 @@ export function TeamKPIDashboard() {
           suppZones.set(z.supplier_id, s);
         });
 
-        // Get unique zones across all suppliers
+        // Unique zones sorted
         const allZones = new Set<string>();
         zoneList.forEach((z: any) => allZones.add(z.region));
 
-        // Count suppliers per categoria×zona
-        const combMap = new Map<string, number>();
+        // Build count matrix + supplier name lists per category×zone
+        const matrix: Record<string, number> = {};
+        const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
+
         suppList.forEach((s: any) => {
-          const zones = suppZones.get(s.id) || new Set();
-          zones.forEach((z) => {
+          const sZones = suppZones.get(s.id) || new Set<string>();
+          sZones.forEach((z: string) => {
             const key = `${s.category_id}||${z}`;
-            combMap.set(key, (combMap.get(key) || 0) + 1);
+            matrix[key] = (matrix[key] || 0) + 1;
+            if (!suppliersMap[key]) suppliersMap[key] = [];
+            suppliersMap[key].push({ id: s.id, name: s.name });
           });
         });
 
-        const matrix: Record<string, number> = {};
-        combMap.forEach((count, key) => { matrix[key] = count; });
+        // Sort each cell's supplier list alphabetically
+        Object.values(suppliersMap).forEach(list =>
+          list.sort((a, b) => a.name.localeCompare(b.name, "es"))
+        );
 
         setBeatrizData({
           categories: catList.map((c: any) => ({ id: c.id, name: c.name })),
           zones: [...allZones].sort(),
           matrix,
+          suppliersMap,
         });
       } finally {
         setLoadingBeatriz(false);
