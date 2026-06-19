@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveFileUrl } from "@/lib/storageUtils";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
 import { ResolutionDialog } from "./ResolutionDialog";
@@ -973,6 +974,7 @@ export function MaintenanceModule() {
       status: "solucionado",
       resolution_observations: observations,
       updated_at: new Date().toISOString(),
+      sub_status_resuelto_at: new Date().toISOString(),
     };
     const { error } = await (supabase as any)
       .from("maintenance_forms")
@@ -1123,14 +1125,14 @@ export function MaintenanceModule() {
             return (
               <div className="flex flex-col gap-0.5">
                 {normal.map((link, idx) => (
-                  <a key={`n${idx}`} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                  <button key={`n${idx}`} type="button" onClick={async () => { const u = await resolveFileUrl(link); if (u) window.open(u, "_blank", "noopener,noreferrer"); }} className="text-primary hover:underline flex items-center gap-1 text-left">
                     <Link className="h-3 w-3" />Evidencia {idx + 1}
-                  </a>
+                  </button>
                 ))}
                 {provider.map((url, idx) => (
-                  <a key={`p${idx}`} href={url} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline flex items-center gap-1" title="Evidencia del proveedor">
+                  <button key={`p${idx}`} type="button" onClick={async () => { const u = await resolveFileUrl(url); if (u) window.open(u, "_blank", "noopener,noreferrer"); }} className="text-purple-600 hover:underline flex items-center gap-1 text-left" title="Evidencia del proveedor">
                     <Link className="h-3 w-3" />Evid. Prov {idx + 1}
-                  </a>
+                  </button>
                 ))}
               </div>
             );

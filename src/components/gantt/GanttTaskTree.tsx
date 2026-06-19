@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { GanttTask, GanttTaskDependency } from "@/hooks/useGantt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { 
-  Plus, ChevronDown, ChevronRight, Trash2, Edit, Link, Unlink, 
-  Calendar, FileText, Loader2, ShoppingCart, CheckCircle2, Eye, EyeOff, FileDown
+  Plus, ChevronDown, ChevronRight, Trash2, Edit, Link, Unlink,
+  Calendar, FileText, Loader2, ShoppingCart, CheckCircle2, Eye, EyeOff, FileDown,
+  ChevronsDownUp, ChevronsUpDown
 } from "lucide-react";
 import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { cn } from "@/lib/utils";
@@ -121,6 +122,39 @@ export function GanttTaskTree({
   onExportPDF,
 }: GanttTaskTreeProps) {
   const [hideCompleted, setHideCompleted] = useState(false);
+
+  const allParentTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    const collect = (list: GanttTask[]) => {
+      list.forEach((t) => {
+        if (t.children && t.children.length > 0) {
+          ids.push(t.id);
+          collect(t.children);
+        }
+      });
+    };
+    collect(tasks);
+    return ids;
+  }, [tasks]);
+
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set());
+  const didInitRef = useRef(false);
+  useEffect(() => {
+    if (!didInitRef.current && allParentTaskIds.length > 0) {
+      didInitRef.current = true;
+    }
+  }, [allParentTaskIds]);
+
+  const toggleExpand = (taskId: string) => {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const allExpanded = allParentTaskIds.length > 0 && allParentTaskIds.every((id) => expandedTasks.has(id));
 
   const toggleCompleted = async (task: GanttTask) => {
     const newStatus = task.status === "completed" ? "pending" : "completed";
@@ -263,9 +297,10 @@ export function GanttTaskTree({
     const hasChildren = task.children && task.children.length > 0;
     const isCompleted = task.status === "completed";
 
+    const isExpanded = expandedTasks.has(task.id);
     return (
       <div key={task.id}>
-        <Collapsible defaultOpen={level < 2}>
+        <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(task.id)}>
           <div
             className={cn(
               "flex items-center gap-2 py-2 px-2 hover:bg-muted/50 rounded transition-colors border-b",
@@ -277,7 +312,9 @@ export function GanttTaskTree({
             {hasChildren ? (
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-6 w-6">
-                  <ChevronDown className="h-4 w-4 transition-transform [[data-state=closed]_&]:-rotate-90" />
+                  {isExpanded
+                    ? <ChevronDown className="h-4 w-4" />
+                    : <ChevronRight className="h-4 w-4" />}
                 </Button>
               </CollapsibleTrigger>
             ) : (
@@ -386,6 +423,28 @@ export function GanttTaskTree({
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Tareas</h3>
         <div className="flex items-center gap-2">
+          {allParentTaskIds.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExpandedTasks(new Set())}
+                title="Colapsar todo"
+              >
+                <ChevronsDownUp className="h-4 w-4 mr-2" />
+                Colapsar todo
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExpandedTasks(new Set(allParentTaskIds))}
+                title="Expandir todo"
+              >
+                <ChevronsUpDown className="h-4 w-4 mr-2" />
+                Expandir todo
+              </Button>
+            </>
+          )}
           <Button
             variant="outline"
             size="sm"

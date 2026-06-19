@@ -440,30 +440,60 @@ export function useGantt(contractId: string) {
       }
     }
 
-    const processed = new Set<string>();
-    const queue: { id: string; start: string; end: string }[] = [
-      { id: taskId, start: newStartDate, end: newEndDate },
-    ];
+    // Track the effective end date for each task (used as anchor by its successors).
+    const effectiveEnd = new Map<string, string>();
+    const effectiveStart = new Map<string, string>();
+    effectiveEnd.set(taskId, newEndDate);
+    effectiveStart.set(taskId, newStartDate);
+
+    // Topological BFS: only enqueue a successor once ALL its predecessors have
+    // been resolved so we can take the latest anchor date across all of them.
+    const inDegree = new Map<string, number>(); // remaining unresolved predecessors
+    for (const t of allTasks) {
+      const deps = t.dependencies || [];
+      if (deps.length > 0) inDegree.set(t.id, deps.length);
+    }
+
+    const queue: string[] = [taskId];
+    const processed = new Set<string>([taskId]);
+
     while (queue.length > 0) {
-      const { id, start, end } = queue.shift()!;
-      if (processed.has(id)) continue;
-      processed.add(id);
+      const id = queue.shift()!;
+      const resolvedEnd = effectiveEnd.get(id)!;
+      const resolvedStart = effectiveStart.get(id)!;
 
       for (const s of successorsOf.get(id) || []) {
         const dependent = taskById.get(s.task_id);
         if (!dependent) continue;
-        const anchor = s.dep_type === "start" ? start : end;
+
+        // Compute the candidate start date this predecessor implies.
+        const anchor = s.dep_type === "start" ? resolvedStart : resolvedEnd;
         const anchorDate = parseISO(anchor);
-        // base offset: end-anchor → next day; start-anchor → same day
         const baseOffset = s.dep_type === "start" ? 0 : 1;
-        const newDependentStart = addDays(anchorDate, baseOffset + (s.lag_days ?? 0));
-        const duration = dependent.duration_days || 1;
-        const newDependentEnd = addDays(newDependentStart, duration - 1);
-        const newStartStr = format(newDependentStart, "yyyy-MM-dd");
-        const newEndStr = format(newDependentEnd, "yyyy-MM-dd");
-        result.set(s.task_id, { start_date: newStartStr, end_date: newEndStr });
-        queue.push({ id: s.task_id, start: newStartStr, end: newEndStr });
+        const candidateStart = addDays(anchorDate, baseOffset + (s.lag_days ?? 0));
+
+        // Keep the latest candidate across all predecessors.
+        const prev = effectiveStart.get(s.task_id);
+        if (!prev || candidateStart > parseISO(prev)) {
+          effectiveStart.set(s.task_id, format(candidateStart, "yyyy-MM-dd"));
+          const duration = dependent.duration_days || 1;
+          effectiveEnd.set(s.task_id, format(addDays(candidateStart, duration - 1), "yyyy-MM-dd"));
+        }
+
+        // Decrement in-degree; enqueue only when all predecessors resolved.
+        const remaining = (inDegree.get(s.task_id) ?? 1) - 1;
+        inDegree.set(s.task_id, remaining);
+        if (remaining <= 0 && !processed.has(s.task_id)) {
+          processed.add(s.task_id);
+          queue.push(s.task_id);
+        }
       }
+    }
+
+    // Build result map (skip the origin task itself).
+    for (const [tid, start] of effectiveStart) {
+      if (tid === taskId) continue;
+      result.set(tid, { start_date: start, end_date: effectiveEnd.get(tid) });
     }
 
     return result;
@@ -664,7 +694,7 @@ export function useGantt(contractId: string) {
       const lag_days = options?.lag_days ?? 0;
       const lag_type = options?.lag_type ?? "calendar";
 
-      const { error } = await supabase
+      const { data: inserted, error } = await supabase
         .from("gantt_task_dependencies")
         .insert({
           task_id: taskId,
@@ -672,34 +702,55 @@ export function useGantt(contractId: string) {
           dep_type,
           lag_days,
           lag_type,
-        } as any);
+        } as any)
+        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type")
+        .single();
 
       if (error) throw error;
 
-      // Update dependent task dates based on chosen anchor
-      const anchorStr = dep_type === "start" ? parentTask.start_date : parentTask.end_date;
-      if (anchorStr) {
+      // Compute new start date considering ALL dependencies (including the new one).
+      const allDepsWithNew: GanttTaskDependency[] = [
+        ...(dependentTask.dependencies || []),
+        inserted as GanttTaskDependency,
+      ];
+      let latestStart: Date | null = null;
+      for (const d of allDepsWithNew) {
+        const pt = tasks.find(t => t.id === d.depends_on_task_id);
+        const anchorStr = d.dep_type === "start" ? pt?.start_date : pt?.end_date;
+        if (!anchorStr) continue;
         const anchorDate = parseISO(anchorStr);
-        const baseOffset = dep_type === "start" ? 0 : 1;
-        const newStartDate = addDays(anchorDate, baseOffset + lag_days);
-        const duration = dependentTask.duration_days || 1;
-        const newEndDate = addDays(newStartDate, duration - 1);
+        const baseOffset = d.dep_type === "start" ? 0 : 1;
+        const candidateStart = addDays(anchorDate, baseOffset + (d.lag_days ?? 0));
+        if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
+      }
 
+      let newStartStr = dependentTask.start_date;
+      let newEndStr = dependentTask.end_date;
+      if (latestStart) {
+        const duration = dependentTask.duration_days || 1;
+        newStartStr = format(latestStart, "yyyy-MM-dd");
+        newEndStr = format(addDays(latestStart, duration - 1), "yyyy-MM-dd");
         await supabase
           .from("gantt_tasks")
-          .update({
-            start_date: format(newStartDate, "yyyy-MM-dd"),
-            end_date: format(newEndDate, "yyyy-MM-dd"),
-          })
+          .update({ start_date: newStartStr, end_date: newEndStr })
           .eq("id", taskId);
       }
+
+      // Optimistic local update — no loadTimeline needed.
+      setTasks(prev => prev.map(t => {
+        if (t.id !== taskId) return t;
+        return {
+          ...t,
+          start_date: newStartStr,
+          end_date: newEndStr,
+          dependencies: [...(t.dependencies || []), inserted as GanttTaskDependency],
+        };
+      }));
 
       toast({
         title: "Dependencia creada",
         description: `"${dependentTask.name}" ahora depende de "${parentTask.name}"`,
       });
-
-      await loadTimeline();
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -721,7 +772,11 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      await loadTimeline();
+      // Optimistic local update — remove dep from state without reloading.
+      setTasks(prev => prev.map(t => ({
+        ...t,
+        dependencies: t.dependencies?.filter(d => d.id !== dependencyId),
+      })));
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -751,27 +806,53 @@ export function useGantt(contractId: string) {
       if (error) throw error;
 
       if (dep && dependentTask) {
-        const parentTask = tasks.find(t => t.id === dep.depends_on_task_id);
-        const dep_type = updates.dep_type ?? dep.dep_type ?? "end";
-        const lag_days = updates.lag_days ?? dep.lag_days ?? 0;
-        const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
-        if (anchorStr) {
+        // Recompute start date using ALL dependencies (take the latest anchor).
+        const allDeps = dependentTask.dependencies || [];
+        let latestStart: Date | null = null;
+        for (const d of allDeps) {
+          const parentTask = tasks.find(t => t.id === d.depends_on_task_id);
+          const dep_type = d.id === dep.id ? (updates.dep_type ?? d.dep_type ?? "end") : (d.dep_type ?? "end");
+          const lag_days = d.id === dep.id ? (updates.lag_days ?? d.lag_days ?? 0) : (d.lag_days ?? 0);
+          const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
+          if (!anchorStr) continue;
           const anchorDate = parseISO(anchorStr);
           const baseOffset = dep_type === "start" ? 0 : 1;
-          const newStartDate = addDays(anchorDate, baseOffset + lag_days);
+          const candidateStart = addDays(anchorDate, baseOffset + lag_days);
+          if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
+        }
+        if (latestStart) {
           const duration = dependentTask.duration_days || 1;
-          const newEndDate = addDays(newStartDate, duration - 1);
+          const newEndDate = addDays(latestStart, duration - 1);
+          const newStartStr = format(latestStart, "yyyy-MM-dd");
+          const newEndStr = format(newEndDate, "yyyy-MM-dd");
           await supabase
             .from("gantt_tasks")
-            .update({
-              start_date: format(newStartDate, "yyyy-MM-dd"),
-              end_date: format(newEndDate, "yyyy-MM-dd"),
-            })
+            .update({ start_date: newStartStr, end_date: newEndStr })
             .eq("id", dependentTask.id);
+
+          // Optimistic local update — reflect dep changes + new dates without reloading.
+          setTasks(prev => prev.map(t => {
+            if (t.id !== dependentTask.id) return t;
+            return {
+              ...t,
+              start_date: newStartStr,
+              end_date: newEndStr,
+              dependencies: t.dependencies?.map(d =>
+                d.id === dependencyId ? { ...d, ...updates } : d
+              ),
+            };
+          }));
+        } else {
+          // No date change needed, just update the dep metadata in state.
+          setTasks(prev => prev.map(t => ({
+            ...t,
+            dependencies: t.dependencies?.map(d =>
+              d.id === dependencyId ? { ...d, ...updates } : d
+            ),
+          })));
         }
       }
 
-      await loadTimeline();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la dependencia" });
     } finally {
