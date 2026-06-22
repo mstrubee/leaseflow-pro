@@ -310,10 +310,12 @@ function ChartAddDependencyForm({
   task,
   allTasks,
   onAdd,
+  onCancel,
 }: {
   task: GanttTask;
   allTasks: GanttTask[];
   onAdd: (parentId: string, dep_type: "start" | "end", lag_days: number) => void | Promise<void>;
+  onCancel?: () => void;
 }) {
   const [parentId, setParentId] = useState("");
   const [depType, setDepType] = useState<"start" | "end">("end");
@@ -358,7 +360,7 @@ function ChartAddDependencyForm({
           size="sm"
           variant="ghost"
           className="h-7 text-xs"
-          onClick={reset}
+          onClick={() => { reset(); onCancel?.(); }}
         >
           Cancelar
         </Button>
@@ -404,6 +406,7 @@ export function GanttChart({
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
+  const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
   const [hideWeekends, setHideWeekends] = useState(false);
@@ -695,7 +698,7 @@ export function GanttChart({
       width,
       visible: true,
     };
-  }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates]);
+  }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates, DAY_WIDTH]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
@@ -2001,7 +2004,10 @@ export function GanttChart({
 
                     {/* Chain link button (only for non-parent tasks) */}
                     {!hasChildren && (
-                      <Popover>
+                      <Popover
+                        open={depPopoverTaskId === task.id}
+                        onOpenChange={(o) => setDepPopoverTaskId(o ? task.id : null)}
+                      >
                         <PopoverTrigger asChild>
                           <button
                             type="button"
@@ -2101,6 +2107,7 @@ export function GanttChart({
                               onAdd={(parentId, dep_type, lag_days) =>
                                 onAddDependency(task.id, parentId, { dep_type, lag_days })
                               }
+                              onCancel={() => setDepPopoverTaskId(null)}
                             />
                           </div>
                         </PopoverContent>
