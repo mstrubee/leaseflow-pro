@@ -6,7 +6,7 @@ import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDa
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -393,6 +393,9 @@ export function GanttChart({
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>(100);
   const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
+  const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
+  const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
+  const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
   const [hideWeekends, setHideWeekends] = useState(false);
@@ -698,7 +701,7 @@ export function GanttChart({
       childTaskId: string;
     }> = [];
 
-    const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
+    const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task || !task.dependencies || task.dependencies.length === 0) return;
@@ -737,7 +740,7 @@ export function GanttChart({
     });
 
     return arrows;
-  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition]);
+  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, taskNameColWidth]);
 
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
@@ -1314,6 +1317,21 @@ export function GanttChart({
     return m;
   }, [tasks]);
 
+  const hierarchicalLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    const walk = (tasks: GanttTask[], prefix: string) => {
+      tasks.forEach((task, idx) => {
+        const label = prefix ? `${prefix}.${idx + 1}` : `${idx + 1}`;
+        map.set(task.id, label);
+        if (task.children && task.children.length > 0) {
+          walk(task.children, label);
+        }
+      });
+    };
+    walk(taskTree, "");
+    return map;
+  }, [taskTree]);
+
   // Resolve effective color: own color, else inherit from nearest ancestor (lightened 50% per generation gap)
   const getEffectiveColor = useCallback((task: GanttTask): { color: string | null; inherited: boolean } => {
     if (task.color) return { color: task.color, inherited: false };
@@ -1419,7 +1437,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 24 + INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 24 + INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span>Cronograma</span>
@@ -1548,8 +1566,26 @@ export function GanttChart({
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: INDEX_COL_WIDTH }}>
               #
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH - 6 }}>
+            <div className="relative flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: taskNameColWidth - 6 }}>
               Tarea
+              <div
+                className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startWidth = taskNameColWidth;
+                  const onMove = (ev: MouseEvent) => {
+                    const delta = ev.clientX - startX;
+                    setTaskNameColWidth(Math.max(150, startWidth + delta));
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }}
+              />
             </div>
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: RESPONSIBLE_COL_WIDTH }}>
               Responsable
@@ -1620,7 +1656,7 @@ export function GanttChart({
               const todayStr = format(new Date(), "yyyy-MM-dd");
               const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
               if (todayIdx < 0) return null;
-              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               return (
                 <div
                   className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
@@ -1637,7 +1673,7 @@ export function GanttChart({
               if (!rentStartDate) return null;
               const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
               if (idx < 0) return null;
-              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT;
               const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
               return (
@@ -1659,7 +1695,7 @@ export function GanttChart({
             })()}
             {/* Week separators (Fri→Mon) when weekends are hidden */}
             {hideWeekends && (() => {
-              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT;
               const seps: number[] = [];
               for (let i = 0; i < days.length - 1; i++) {
@@ -1806,7 +1842,7 @@ export function GanttChart({
                   >
                     <div className="flex-shrink-0 w-6" />
                     <div className="flex-shrink-0 border-r" style={{ width: INDEX_COL_WIDTH }} />
-                    <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH - 6, paddingLeft: indent }}>
+                    <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: taskNameColWidth - 6, paddingLeft: indent }}>
                       <span className="w-4 flex-shrink-0" />
                       <Input
                         ref={nameInputRef}
@@ -1914,14 +1950,14 @@ export function GanttChart({
                           : { color: "#9ca3af" }
                       }
                     >
-                      {rowNumber}
+                      {hierarchicalLabels.get(task.id) ?? ""}
                     </span>
                   </div>
 
                   {/* Task name */}
                   <div
                     className="flex-shrink-0 border-r px-1 flex items-center gap-1 overflow-hidden"
-                    style={{ width: TASK_NAME_WIDTH - 6, paddingLeft: 4 + level * 12 }}
+                    style={{ width: taskNameColWidth - 6, paddingLeft: 4 + level * 12 }}
                   >
                     {hasChildren ? (
                       <button
@@ -1943,110 +1979,137 @@ export function GanttChart({
                       completed={task.status === "completed"}
                       onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
                     />
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className={cn(
-                            "flex-shrink-0 rounded hover:bg-muted p-0.5",
-                            !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
-                          )}
-                          title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Link className="h-3 w-3 text-muted-foreground" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-96 p-2 z-50 bg-popover" align="start">
-                        <p className="text-xs font-medium mb-1.5">Depende de:</p>
-                        {task.dependencies && task.dependencies.length > 0 ? (
-                          <ul className="space-y-2 mb-2">
-                            {task.dependencies.map((dep) => {
-                              const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
-                              const options = tasks
-                                .filter(
-                                  (t) =>
-                                    t.id !== task.id &&
-                                    (t.id === dep.depends_on_task_id || !currentDeps.includes(t.id))
-                                )
-                                .map((t) => ({ value: t.id, label: t.name }));
-                              return (
-                                <li key={dep.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
-                                  <div className="flex items-center gap-1">
-                                    <div className="flex-1 min-w-0">
-                                      <SearchableSelect
-                                        value={dep.depends_on_task_id}
-                                        onValueChange={async (newParentId) => {
-                                          if (newParentId && newParentId !== dep.depends_on_task_id) {
-                                            await onRemoveDependency(dep.id);
-                                            await onAddDependency(task.id, newParentId, {
-                                              dep_type: (dep as any).dep_type ?? "end",
-                                              lag_days: (dep as any).lag_days ?? 0,
-                                            });
+                    {/* Red: predecessor indicator */}
+                    {!hasChildren && task.dependencies && task.dependencies.length > 0 && (
+                      <button
+                        type="button"
+                        className="flex-shrink-0 rounded hover:bg-red-100 p-0.5"
+                        title="Ver predecesoras"
+                        onClick={(e) => { e.stopPropagation(); setDepViewTaskId(task.id); setDepViewMode("predecessors"); }}
+                      >
+                        <ArrowLeft className="h-3 w-3 text-red-500" />
+                      </button>
+                    )}
+
+                    {/* Chain link button (only for non-parent tasks) */}
+                    {!hasChildren && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex-shrink-0 rounded hover:bg-muted p-0.5",
+                              !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
+                            )}
+                            title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-96 p-2 z-50 bg-popover" align="start">
+                          <p className="text-xs font-medium mb-1.5">Depende de:</p>
+                          {task.dependencies && task.dependencies.length > 0 ? (
+                            <ul className="space-y-2 mb-2">
+                              {task.dependencies.map((dep) => {
+                                const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
+                                const options = tasks
+                                  .filter(
+                                    (t) =>
+                                      t.id !== task.id &&
+                                      (t.id === dep.depends_on_task_id || !currentDeps.includes(t.id))
+                                  )
+                                  .map((t) => ({ value: t.id, label: t.name }));
+                                return (
+                                  <li key={dep.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
+                                    <div className="flex items-center gap-1">
+                                      <div className="flex-1 min-w-0">
+                                        <SearchableSelect
+                                          value={dep.depends_on_task_id}
+                                          onValueChange={async (newParentId) => {
+                                            if (newParentId && newParentId !== dep.depends_on_task_id) {
+                                              await onRemoveDependency(dep.id);
+                                              await onAddDependency(task.id, newParentId, {
+                                                dep_type: (dep as any).dep_type ?? "end",
+                                                lag_days: (dep as any).lag_days ?? 0,
+                                              });
+                                            }
+                                          }}
+                                          options={options}
+                                          placeholder="Seleccionar tarea..."
+                                          searchPlaceholder="Buscar tarea..."
+                                          triggerClassName="h-7 text-xs"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
+                                        onClick={() => onRemoveDependency(dep.id)}
+                                      >
+                                        Quitar
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Select
+                                        value={(dep as any).dep_type ?? "end"}
+                                        onValueChange={(v) =>
+                                          onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })
+                                        }
+                                      >
+                                        <SelectTrigger className="h-7 text-xs w-32">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="end">al término</SelectItem>
+                                          <SelectItem value="start">al inicio</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Input
+                                        type="number"
+                                        className="h-7 text-xs w-20"
+                                        defaultValue={(dep as any).lag_days ?? 0}
+                                        onBlur={(e) => {
+                                          const val = parseInt(e.target.value) || 0;
+                                          if (val !== ((dep as any).lag_days ?? 0)) {
+                                            onUpdateDependency?.(dep.id, { lag_days: val });
                                           }
                                         }}
-                                        options={options}
-                                        placeholder="Seleccionar tarea..."
-                                        searchPlaceholder="Buscar tarea..."
-                                        triggerClassName="h-7 text-xs"
+                                        title="Días de desfase (+ retrasa, − adelanta)"
                                       />
+                                      <span className="text-[10px] text-muted-foreground">días</span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
-                                      onClick={() => onRemoveDependency(dep.id)}
-                                    >
-                                      Quitar
-                                    </button>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <Select
-                                      value={(dep as any).dep_type ?? "end"}
-                                      onValueChange={(v) =>
-                                        onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })
-                                      }
-                                    >
-                                      <SelectTrigger className="h-7 text-xs w-32">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="end">al término</SelectItem>
-                                        <SelectItem value="start">al inicio</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <Input
-                                      type="number"
-                                      className="h-7 text-xs w-20"
-                                      defaultValue={(dep as any).lag_days ?? 0}
-                                      onBlur={(e) => {
-                                        const val = parseInt(e.target.value) || 0;
-                                        if (val !== ((dep as any).lag_days ?? 0)) {
-                                          onUpdateDependency?.(dep.id, { lag_days: val });
-                                        }
-                                      }}
-                                      title="Días de desfase (+ retrasa, − adelanta)"
-                                    />
-                                    <span className="text-[10px] text-muted-foreground">días</span>
-                                  </div>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : (
-                          <p className="text-[11px] text-muted-foreground mb-2">Sin dependencias</p>
-                        )}
-                        <div className="border-t pt-2">
-                          <p className="text-[11px] font-medium mb-1">Agregar dependencia:</p>
-                          <ChartAddDependencyForm
-                            task={task}
-                            allTasks={tasks}
-                            onAdd={(parentId, dep_type, lag_days) =>
-                              onAddDependency(task.id, parentId, { dep_type, lag_days })
-                            }
-                          />
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground mb-2">Sin dependencias</p>
+                          )}
+                          <div className="border-t pt-2">
+                            <p className="text-[11px] font-medium mb-1">Agregar dependencia:</p>
+                            <ChartAddDependencyForm
+                              task={task}
+                              allTasks={tasks}
+                              onAdd={(parentId, dep_type, lag_days) =>
+                                onAddDependency(task.id, parentId, { dep_type, lag_days })
+                              }
+                            />
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+
+                    {/* Green: successor indicator */}
+                    {!hasChildren && tasks.some(t => t.dependencies?.some(d => d.depends_on_task_id === task.id)) && (
+                      <button
+                        type="button"
+                        className="flex-shrink-0 rounded hover:bg-green-100 p-0.5"
+                        title="Ver sucesoras"
+                        onClick={(e) => { e.stopPropagation(); setDepViewTaskId(task.id); setDepViewMode("successors"); }}
+                      >
+                        <ArrowRight className="h-3 w-3 text-green-500" />
+                      </button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -2362,7 +2425,7 @@ export function GanttChart({
 
                               {/* Task name */}
                               <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
-                                {position.width > 60 ? task.name : rowNumber}
+                                {position.width > 60 ? task.name : (hierarchicalLabels.get(task.id) ?? "")}
                               </span>
                             </div>
                           </TooltipTrigger>
@@ -2544,6 +2607,53 @@ export function GanttChart({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dependency view dialog */}
+      {depViewTaskId && (
+        <Dialog open={!!depViewTaskId} onOpenChange={(open) => !open && setDepViewTaskId(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {depViewMode === "predecessors" ? "Predecesoras" : "Sucesoras"} de "{tasks.find(t=>t.id===depViewTaskId)?.name}"
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 p-2">
+              {depViewMode === "predecessors" && (() => {
+                const task = tasks.find(t => t.id === depViewTaskId);
+                if (!task?.dependencies?.length) return <p className="text-sm text-muted-foreground">Sin predecesoras</p>;
+                return task.dependencies.map(dep => {
+                  const predTask = tasks.find(t => t.id === dep.depends_on_task_id);
+                  if (!predTask) return null;
+                  return (
+                    <div key={dep.id} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
+                      <div className="flex-1 p-2 bg-red-50 border border-red-200 rounded text-sm font-medium">{predTask.name}</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm font-medium">{task.name}</div>
+                      <span className="text-xs text-muted-foreground">{(dep as any).dep_type === "start" ? "al inicio" : "al término"}{(dep as any).lag_days ? ` +${(dep as any).lag_days}d` : ""}</span>
+                    </div>
+                  );
+                });
+              })()}
+              {depViewMode === "successors" && (() => {
+                const task = tasks.find(t => t.id === depViewTaskId);
+                const successors = tasks.filter(t => t.dependencies?.some(d => d.depends_on_task_id === depViewTaskId));
+                if (!successors.length) return <p className="text-sm text-muted-foreground">Sin sucesoras</p>;
+                return successors.map(sucTask => {
+                  const dep = sucTask.dependencies?.find(d => d.depends_on_task_id === depViewTaskId);
+                  return (
+                    <div key={sucTask.id} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
+                      <div className="flex-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm font-medium">{task?.name}</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 p-2 bg-green-50 border border-green-200 rounded text-sm font-medium">{sucTask.name}</div>
+                      <span className="text-xs text-muted-foreground">{(dep as any)?.dep_type === "start" ? "al inicio" : "al término"}{(dep as any)?.lag_days ? ` +${(dep as any).lag_days}d` : ""}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
