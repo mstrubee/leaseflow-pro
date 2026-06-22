@@ -319,6 +319,8 @@ function ChartAddDependencyForm({
   const [depType, setDepType] = useState<"start" | "end">("end");
   const [lag, setLag] = useState(0);
 
+  const reset = () => { setParentId(""); setLag(0); setDepType("end"); };
+
   const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
   const options = allTasks
     .filter((t) => t.id !== task.id && !currentDeps.includes(t.id))
@@ -354,14 +356,20 @@ function ChartAddDependencyForm({
         <span className="text-[10px] text-muted-foreground">días</span>
         <Button
           size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={reset}
+        >
+          Cancelar
+        </Button>
+        <Button
+          size="sm"
           className="h-7 text-xs ml-auto"
           disabled={!parentId}
           onClick={async () => {
             if (!parentId) return;
             await onAdd(parentId, depType, lag);
-            setParentId("");
-            setLag(0);
-            setDepType("end");
+            reset();
           }}
         >
           Agregar
