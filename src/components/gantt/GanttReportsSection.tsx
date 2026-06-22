@@ -81,6 +81,48 @@ const buildTree = (flat: GanttTask[]): GanttTask[] => {
   return roots;
 };
 
+/**
+ * Calcula las fechas EFECTIVAS de cada tarea: una hoja usa sus propias fechas;
+ * una tarea madre refleja el mínimo inicio y máximo término de sus descendientes
+ * (recursivo). Igual que el Gantt editable (getEffectiveDates), garantiza que la
+ * madre siempre refleje a sus hijas aunque el valor guardado esté desactualizado.
+ */
+const computeEffectiveDatesMap = (
+  tasks: GanttTask[]
+): Map<string, { start: string | null; end: string | null }> => {
+  const childrenByParent = new Map<string, GanttTask[]>();
+  tasks.forEach((t) => {
+    if (t.parent_id) {
+      const arr = childrenByParent.get(t.parent_id) || [];
+      arr.push(t);
+      childrenByParent.set(t.parent_id, arr);
+    }
+  });
+  const memo = new Map<string, { start: string | null; end: string | null }>();
+  const compute = (task: GanttTask): { start: string | null; end: string | null } => {
+    const cached = memo.get(task.id);
+    if (cached) return cached;
+    const kids = childrenByParent.get(task.id) || [];
+    if (kids.length === 0) {
+      const r = { start: task.start_date, end: task.end_date };
+      memo.set(task.id, r);
+      return r;
+    }
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of kids) {
+      const { start, end } = compute(c);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    const r = { start: minStart, end: maxEnd };
+    memo.set(task.id, r);
+    return r;
+  };
+  tasks.forEach((t) => compute(t));
+  return memo;
+};
+
 const flattenTree = (
   tree: GanttTask[],
   level = 0,
@@ -123,7 +165,17 @@ function MiniGantt({
   onToggleHidden?: (id: string) => void;
 }) {
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
-  const tasksWithDates = flat.filter((f) => f.task.start_date && f.task.end_date);
+  // Fechas efectivas (madres reflejan a sus hijas), consistentes con el Gantt editable.
+  const effDates = useMemo(
+    () => computeEffectiveDatesMap(flat.map((f) => f.task)),
+    [flat]
+  );
+  const datesOf = (t: GanttTask) =>
+    effDates.get(t.id) ?? { start: t.start_date, end: t.end_date };
+  const tasksWithDates = flat.filter((f) => {
+    const d = datesOf(f.task);
+    return d.start && d.end;
+  });
 
   // Visible rows: in selection mode, show ALL rows (so user can re-toggle them).
   // Out of selection mode, prune subtrees whose root is hidden.
@@ -150,7 +202,12 @@ function MiniGantt({
     );
   }
 
-  const { minDate, maxDate } = getGanttDateRange(flat.map((f) => f.task));
+  const { minDate, maxDate } = getGanttDateRange(
+    flat.map((f) => {
+      const d = datesOf(f.task);
+      return { start_date: d.start, end_date: d.end };
+    })
+  );
   const days = eachDayOfInterval({ start: minDate, end: maxDate });
   const totalDays = days.length;
 
@@ -230,14 +287,17 @@ function MiniGantt({
 
         {/* Rows */}
         {visibleFlat.map(({ task, level }, rowIdx) => {
-          const hasDates = task.start_date && task.end_date;
+          const eff = datesOf(task);
+          const startStr = eff.start;
+          const endStr = eff.end;
+          const hasDates = !!(startStr && endStr);
           let barLeft = 0;
           let barWidth = 0;
           let durDays = 0;
           if (hasDates) {
-            const startOffset = differenceInDays(parseISO(task.start_date!), minDate);
+            const startOffset = differenceInDays(parseISO(startStr!), minDate);
             durDays =
-              differenceInDays(parseISO(task.end_date!), parseISO(task.start_date!)) + 1;
+              differenceInDays(parseISO(endStr!), parseISO(startStr!)) + 1;
             barLeft = startOffset * DAY_WIDTH;
             barWidth = Math.max(1, durDays * DAY_WIDTH);
           }
@@ -287,7 +347,7 @@ function MiniGantt({
                 className="flex items-center justify-center text-[10px] border-r text-muted-foreground"
                 style={{ width: DATE_COL_WIDTH, flexShrink: 0 }}
               >
-                {hasDates ? format(parseISO(task.start_date!), "dd/MM/yy") : "-"}
+                {hasDates ? format(parseISO(startStr!), "dd/MM/yy") : "-"}
               </div>
               <div
                 className="flex items-center justify-center text-[10px] border-r text-muted-foreground"
@@ -299,7 +359,7 @@ function MiniGantt({
                 className="flex items-center justify-center text-[10px] border-r text-muted-foreground"
                 style={{ width: DATE_COL_WIDTH, flexShrink: 0 }}
               >
-                {hasDates ? format(parseISO(task.end_date!), "dd/MM/yy") : "-"}
+                {hasDates ? format(parseISO(endStr!), "dd/MM/yy") : "-"}
               </div>
               <div className="relative flex-1" style={{ height: ROW_HEIGHT }}>
                 {/* Weekend shading */}
@@ -335,9 +395,9 @@ function MiniGantt({
                       background: barColor,
                     }}
                     title={`${task.name}: ${format(
-                      parseISO(task.start_date!),
+                      parseISO(startStr!),
                       "dd/MM/yyyy"
-                    )} - ${format(parseISO(task.end_date!), "dd/MM/yyyy")}`}
+                    )} - ${format(parseISO(endStr!), "dd/MM/yyyy")}`}
                   />
                 )}
               </div>
@@ -545,7 +605,14 @@ export function GanttReportsSection() {
           : [];
         const taskTree = tasks.length > 0 ? buildTree(tasks) : [];
 
-        const endDates = tasks.map((t) => t.end_date).filter(Boolean) as string[];
+        // Fechas efectivas (madres reflejan a sus hijas) para todo el contrato.
+        const effMap = computeEffectiveDatesMap(tasks);
+        const effOf = (t: GanttTask) =>
+          effMap.get(t.id) ?? { start: t.start_date, end: t.end_date };
+
+        const endDates = tasks
+          .map((t) => effOf(t).end)
+          .filter(Boolean) as string[];
         const endDate =
           endDates.length > 0
             ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
@@ -561,14 +628,16 @@ export function GanttReportsSection() {
         const habilitacion = tasks.find(
           (t) => t.name.trim().toLowerCase() === "habilitación"
         );
-        if (obrasCiviles?.start_date && habilitacion?.end_date && capexCLP > 0) {
-          const start = parseISO(obrasCiviles.start_date);
-          const end = parseISO(habilitacion.end_date);
+        const obrasStart = obrasCiviles ? effOf(obrasCiviles).start : null;
+        const habilEnd = habilitacion ? effOf(habilitacion).end : null;
+        if (obrasStart && habilEnd && capexCLP > 0) {
+          const start = parseISO(obrasStart);
+          const end = parseISO(habilEnd);
           const midDay = addDays(start, Math.round(differenceInDays(end, start) / 2));
           disbursement = {
-            startDate: obrasCiviles.start_date,
+            startDate: obrasStart,
             midDate: format(midDay, "yyyy-MM-dd"),
-            endDate: habilitacion.end_date,
+            endDate: habilEnd,
             anticipo: Math.round(capexCLP * 0.30),
             pago1: Math.round(capexCLP * 0.50),
             pago2: Math.round(capexCLP * 0.20),
@@ -732,7 +801,17 @@ export function GanttReportsSection() {
           });
         };
         walkPrune(item.taskTree, 0);
-        if (flat.length === 0 || !flat.some((f) => f.task.start_date && f.task.end_date)) {
+        // Fechas efectivas (madres reflejan a sus hijas) para el PDF.
+        const pdfEff = computeEffectiveDatesMap(flat.map((f) => f.task));
+        const pdfDatesOf = (t: GanttTask) =>
+          pdfEff.get(t.id) ?? { start: t.start_date, end: t.end_date };
+        if (
+          flat.length === 0 ||
+          !flat.some((f) => {
+            const d = pdfDatesOf(f.task);
+            return d.start && d.end;
+          })
+        ) {
           doc.setFontSize(10);
           doc.setFont("helvetica", "normal");
           doc.setTextColor(120);
@@ -740,7 +819,12 @@ export function GanttReportsSection() {
           continue;
         }
 
-        const { minDate, maxDate } = getGanttDateRange(flat.map((f) => f.task));
+        const { minDate, maxDate } = getGanttDateRange(
+          flat.map((f) => {
+            const d = pdfDatesOf(f.task);
+            return { start_date: d.start, end_date: d.end };
+          })
+        );
         const days = eachDayOfInterval({ start: minDate, end: maxDate });
         const totalDays = days.length;
 
@@ -826,14 +910,17 @@ export function GanttReportsSection() {
               : task.name;
           doc.text(displayName, chartLeft + 2 + indent, y + rowHeight - 1.5);
 
-          // Date / duration columns
-          const hasDates = !!(task.start_date && task.end_date);
+          // Date / duration columns (fechas efectivas)
+          const eff = pdfDatesOf(task);
+          const startStr = eff.start;
+          const endStr = eff.end;
+          const hasDates = !!(startStr && endStr);
           const dur = hasDates
-            ? differenceInDays(parseISO(task.end_date!), parseISO(task.start_date!)) + 1
+            ? differenceInDays(parseISO(endStr!), parseISO(startStr!)) + 1
             : 0;
           doc.setTextColor(90);
           doc.text(
-            hasDates ? format(parseISO(task.start_date!), "dd/MM/yy") : "-",
+            hasDates ? format(parseISO(startStr!), "dd/MM/yy") : "-",
             chartLeft + nameColWidth + dateColWidth / 2,
             y + rowHeight - 1.5,
             { align: "center" }
@@ -845,7 +932,7 @@ export function GanttReportsSection() {
             { align: "center" }
           );
           doc.text(
-            hasDates ? format(parseISO(task.end_date!), "dd/MM/yy") : "-",
+            hasDates ? format(parseISO(endStr!), "dd/MM/yy") : "-",
             chartLeft + nameColWidth + dateColWidth + durColWidth + dateColWidth / 2,
             y + rowHeight - 1.5,
             { align: "center" }
@@ -854,7 +941,7 @@ export function GanttReportsSection() {
 
           // Bar — colors aligned with on-screen MiniGantt
           if (hasDates) {
-            const startOffset = differenceInDays(parseISO(task.start_date!), minDate);
+            const startOffset = differenceInDays(parseISO(startStr!), minDate);
             const x = chartLeft + metaWidth + startOffset * dayWidth;
             const w = Math.max(0.4, dur * dayWidth);
             const progress = task.progress ?? 0;
