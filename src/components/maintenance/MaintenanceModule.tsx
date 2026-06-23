@@ -531,15 +531,20 @@ export function MaintenanceModule() {
     const cached = readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP);
     if (cached) return;
     const fetchZonalMap = async () => {
-      const { data } = await supabase
-        .from("org_member_contracts")
-        .select("contract_id, org_members!inner(name, position)")
-        .returns<Array<{ contract_id: string; org_members: { name: string; position: string } }>>();
-      if (data) {
+      const [{ data: links }, { data: members }] = await Promise.all([
+        supabase.from("org_member_contracts").select("contract_id, org_member_id"),
+        supabase.rpc("get_org_members_basic"),
+      ]);
+      if (links && members) {
+        const memberById: Record<string, { name: string; position: string }> = {};
+        (members as Array<{ id: string; name: string; position: string }>).forEach((m) => {
+          memberById[m.id] = { name: m.name, position: m.position };
+        });
         const map: Record<string, string> = {};
-        data.forEach(row => {
-          if (row.org_members?.position?.toLowerCase().includes("zonal")) {
-            map[row.contract_id] = row.org_members.name;
+        links.forEach((row) => {
+          const m = memberById[row.org_member_id];
+          if (m?.position?.toLowerCase().includes("zonal")) {
+            map[row.contract_id] = m.name;
           }
         });
         setZonalMap(map);
