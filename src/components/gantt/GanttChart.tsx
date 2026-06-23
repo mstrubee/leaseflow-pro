@@ -1947,6 +1947,19 @@ export function GanttChart({
                       className="fill-destructive"
                     />
                   </marker>
+                  <marker
+                    id="arrowhead-selected"
+                    markerWidth="9"
+                    markerHeight="7"
+                    refX="7"
+                    refY="3.5"
+                    orient="auto"
+                  >
+                    <polygon
+                      points="0 0, 9 3.5, 0 7"
+                      className="fill-amber-500"
+                    />
+                  </marker>
                 </defs>
                 {dependencyArrows.map((arrow) => {
                   // The arrow must ALWAYS arrive at the left edge of the dependent task
