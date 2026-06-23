@@ -765,6 +765,17 @@ export function GanttChart({
     return arrows;
   }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
 
+  // Resolve the currently selected dependency line into its predecessor/dependent.
+  const selectedDependency = useMemo(() => {
+    if (!selectedDependencyId) return null;
+    const arrow = dependencyArrows.find((a) => a.id === selectedDependencyId);
+    if (!arrow) return null;
+    const predecessor = tasks.find((t) => t.id === arrow.parentTaskId) || null;
+    const dependent = tasks.find((t) => t.id === arrow.childTaskId) || null;
+    return { predecessorId: arrow.parentTaskId, dependentId: arrow.childTaskId, predecessor, dependent };
+  }, [selectedDependencyId, dependencyArrows, tasks]);
+
+
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
     return holidays.some((h) => h.date === dateStr);
