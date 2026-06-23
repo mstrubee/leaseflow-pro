@@ -2025,7 +2025,7 @@ export function GanttChart({
                         fill="none"
                         stroke="transparent"
                         strokeWidth="12"
-                        className="cursor-pointer pointer-events-stroke"
+                        className="cursor-pointer [pointer-events:stroke]"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         onClick={() =>
