@@ -23,6 +23,7 @@ const Contracts = lazy(() => import("./pages/Contracts"));
 const DeletedContracts = lazy(() => import("./pages/DeletedContracts"));
 const AlertsDashboard = lazy(() => import("./pages/AlertsDashboard"));
 const BulkContractUpload = lazy(() => import("./pages/BulkContractUpload"));
+const BulkOCImport = lazy(() => import("./pages/BulkOCImport"));
 const PurchaseOrdersDashboard = lazy(() => import("./pages/PurchaseOrdersDashboard"));
 const OpexDashboard = lazy(() => import("./pages/OpexDashboard"));
 const CapexDashboard = lazy(() => import("./pages/CapexDashboard"));
@@ -83,6 +84,7 @@ const App = () => (
                   <Route path="/alerts" element={<ProtectedRoute resource="alerts"><AlertsDashboard /></ProtectedRoute>} />
                   <Route path="/patents" element={<ProtectedRoute><PatentsDashboard /></ProtectedRoute>} />
                   <Route path="/purchase-orders" element={<ProtectedRoute resource="purchase_orders"><PurchaseOrdersDashboard /></ProtectedRoute>} />
+                  <Route path="/purchase-orders/bulk-import" element={<ProtectedRoute resource="purchase_orders"><BulkOCImport /></ProtectedRoute>} />
                   <Route path="/opex" element={<ProtectedRoute resource="opex"><OpexDashboard /></ProtectedRoute>} />
                   <Route path="/capex" element={<ProtectedRoute resource="capex"><CapexDashboard /></ProtectedRoute>} />
                   <Route path="/reports" element={<ProtectedRoute resource="reports"><ReportsDashboard /></ProtectedRoute>} />

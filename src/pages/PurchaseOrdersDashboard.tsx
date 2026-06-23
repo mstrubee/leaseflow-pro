@@ -80,6 +80,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -1905,7 +1906,7 @@ const PurchaseOrdersDashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-[2000px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
@@ -1936,6 +1937,10 @@ const PurchaseOrdersDashboard = () => {
               <Button size="sm" onClick={() => setShowOrderCreator(true)}>
                 <Plus className="h-4 w-4 mr-1" />
                 Nueva OC
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => navigate("/purchase-orders/bulk-import")}>
+                <FileSpreadsheet className="h-4 w-4 mr-1" />
+                Carga Masiva de OOCC
               </Button>
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
@@ -1968,7 +1973,7 @@ const PurchaseOrdersDashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-[1690px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="max-w-[2200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Year Filter */}
         <div className="flex items-center gap-4">
           <span className="text-sm font-medium">Año:</span>
