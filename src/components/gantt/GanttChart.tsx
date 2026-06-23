@@ -185,6 +185,7 @@ const DatePickerCell = ({
   showTaskDates = false,
   taskDates = [],
   editable = true,
+  suffix,
 }: {
   value: string | null;
   onChange: (date: string) => void;
