@@ -182,22 +182,26 @@ const DatePickerCell = ({
   showTaskDates = false,
   taskDates = [],
   editable = true,
-}: { 
-  value: string | null; 
+}: {
+  value: string | null;
   onChange: (date: string) => void;
   placeholder?: string;
   showTaskDates?: boolean;
   taskDates?: Array<{ date: string; taskName: string; type: "start" | "end" }>;
   editable?: boolean;
+  suffix?: React.ReactNode;
 }) => {
   const [open, setOpen] = useState(false);
 
   // Non-editable: show plain text
   if (!editable) {
     return (
-      <span className="text-xs text-muted-foreground px-2 truncate">
-        {value ? format(parseISO(value), "dd/MM/yy") : "—"}
-      </span>
+      <div className="flex flex-col items-center justify-center px-2">
+        <span className="text-xs text-muted-foreground truncate">
+          {value ? format(parseISO(value), "dd/MM/yy") : "—"}
+        </span>
+        {suffix}
+      </div>
     );
   }
 
@@ -205,7 +209,7 @@ const DatePickerCell = ({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div
-          className="w-full h-full flex items-center justify-center cursor-pointer select-none hover:bg-muted/40 rounded"
+          className="w-full h-full flex flex-col items-center justify-center cursor-pointer select-none hover:bg-muted/40 rounded"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
           title="Doble clic para editar"
@@ -213,6 +217,7 @@ const DatePickerCell = ({
           <span className={cn("text-xs px-2 truncate", !value && "text-muted-foreground")}>
             {value ? format(parseISO(value), "dd/MM/yy") : placeholder}
           </span>
+          {suffix}
         </div>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0 z-50 bg-popover" align="start">
@@ -409,6 +414,7 @@ export function GanttChart({
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
+  const [reprogDeltas, setReprogDeltas] = useState<Map<string, number>>(new Map());
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
@@ -2569,6 +2575,7 @@ export function GanttChart({
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
+                      suffix={(() => { const d = reprogDeltas.get(task.id) ?? 0; return d !== 0 ? <span className="text-[10px] font-bold text-red-500 leading-none">({d > 0 ? "+" : ""}{d})</span> : null; })()}
                     />
                   </div>
 
@@ -2588,6 +2595,7 @@ export function GanttChart({
                             if (!isNaN(delta) && delta !== 0 && task.end_date) {
                               const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
                               setReprogValues(prev => new Map(prev).set(task.id, "0"));
+                              setReprogDeltas(prev => { const n = new Map(prev); n.set(task.id, (n.get(task.id) ?? 0) + delta); return n; });
                               await handleUpdateTaskField(task.id, "end_date", newEnd);
                             } else {
                               setReprogValues(prev => new Map(prev).set(task.id, "0"));
@@ -2599,6 +2607,7 @@ export function GanttChart({
                           if (!isNaN(delta) && delta !== 0 && task.end_date) {
                             const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
                             setReprogValues(prev => new Map(prev).set(task.id, "0"));
+                            setReprogDeltas(prev => { const n = new Map(prev); n.set(task.id, (n.get(task.id) ?? 0) + delta); return n; });
                             await handleUpdateTaskField(task.id, "end_date", newEnd);
                           } else {
                             setReprogValues(prev => new Map(prev).set(task.id, "0"));
