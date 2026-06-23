@@ -285,6 +285,7 @@ const RESPONSIBLE_COL_WIDTH = 180;
 const ORIGIN_COL_WIDTH = 120;
 const DATE_COL_WIDTH = 140;
 const DURATION_COL_WIDTH = 110;
+const REPROG_COL_WIDTH = 72;
 const PROGRESS_COL_WIDTH = 80;
 
 interface NewTaskRow {
@@ -407,6 +408,7 @@ export function GanttChart({
   const [colPending, setColPending] = useState<Set<string>>(new Set());
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
+  const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
@@ -708,7 +710,7 @@ export function GanttChart({
     return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
       get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
       get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
-      get("end", DATE_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
+      get("end", DATE_COL_WIDTH) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
   }, [hiddenCols, taskNameColWidth]);
 
   // Calculate dependency arrows data
@@ -1773,6 +1775,24 @@ export function GanttChart({
             </div>
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("reprog", REPROG_COL_WIDTH) }}
+            >
+              {cw("reprog", REPROG_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("reprog") ? n.delete("reprog") : n.add("reprog"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("reprog")} className="h-3 w-3 pointer-events-none" />
+                    <span>Reprog</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">Reprog</div>
+                )
+              )}
+            </div>
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
               style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}
             >
               {cw("progress", PROGRESS_COL_WIDTH) > 0 && (
@@ -2076,6 +2096,7 @@ export function GanttChart({
                         taskDates={taskDates}
                       />
                     </div>
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("reprog", REPROG_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
                     </div>
                     <div className="flex items-center px-2 gap-2">
@@ -2473,6 +2494,44 @@ export function GanttChart({
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
                     />
+                  </div>
+
+                  {/* Reprog */}
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("reprog", REPROG_COL_WIDTH) }}>
+                    {!hasChildren && isAdmin && (
+                      <input
+                        type="number"
+                        value={reprogValues.get(task.id) ?? "0"}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setReprogValues(prev => new Map(prev).set(task.id, v));
+                        }}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter") {
+                            const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
+                            if (!isNaN(delta) && delta !== 0 && task.end_date) {
+                              const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
+                              setReprogValues(prev => new Map(prev).set(task.id, "0"));
+                              await handleUpdateTaskField(task.id, "end_date", newEnd);
+                            } else {
+                              setReprogValues(prev => new Map(prev).set(task.id, "0"));
+                            }
+                          }
+                        }}
+                        onBlur={async () => {
+                          const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
+                          if (!isNaN(delta) && delta !== 0 && task.end_date) {
+                            const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
+                            setReprogValues(prev => new Map(prev).set(task.id, "0"));
+                            await handleUpdateTaskField(task.id, "end_date", newEnd);
+                          } else {
+                            setReprogValues(prev => new Map(prev).set(task.id, "0"));
+                          }
+                        }}
+                        className="h-7 text-xs w-14 text-center border border-gray-200 rounded px-1 focus:outline-none focus:border-amber-400"
+                        title="Días de reprogramación (positivo = atrasa, negativo = adelanta). Arrastra dependientes en cascada."
+                      />
+                    )}
                   </div>
 
                   {/* Progress % */}
