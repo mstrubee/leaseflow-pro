@@ -4,11 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown } from "lucide-react";
+import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown, Search, X } from "lucide-react";
 import { format, parseISO, differenceInBusinessDays } from "date-fns";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -21,7 +20,7 @@ const SLA_MEDIO_BAJO_DAYS = 30;
 function scoreBadge(score: number) {
   if (score >= 115) return <Badge className="bg-emerald-600 text-white">130% — Sobrecumplimiento</Badge>;
   if (score >= 100) return <Badge className="bg-blue-600 text-white">100% — Esperado</Badge>;
-  if (score >= 70) return <Badge className="bg-amber-500 text-white">70% — Underperformance</Badge>;
+  if (score >= 70)  return <Badge className="bg-amber-500 text-white">70% — Underperformance</Badge>;
   return <Badge variant="destructive">Bajo mínimo</Badge>;
 }
 
@@ -30,26 +29,23 @@ function pct(num: number, den: number) {
   return Math.round((num / den) * 100);
 }
 
-function AdminSection({ label, open, onOpenChange, children }: {
-  label?: string; open: boolean; onOpenChange: (v: boolean) => void; children: React.ReactNode;
-}) {
+// Native <details> avoids Collapsible issues inside Dialog
+function AdminSection({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
-      <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-full mt-2">
-        <Settings className="h-3.5 w-3.5" />
-        {label ?? "Configuración admin"}
-        <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-2 border rounded-md p-3 bg-muted/30 space-y-3 text-xs">
-          <p className="text-muted-foreground italic">
-            Las ponderaciones definen el peso relativo entre métricas. Pueden sumar menos de 100% si
-            parte de la evaluación proviene de métricas externas a esta plataforma.
-          </p>
-          {children}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+    <details className="mt-2 group">
+      <summary className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer list-none select-none py-1">
+        <Settings className="h-3.5 w-3.5 shrink-0" />
+        <span>{label ?? "Configuración admin"}</span>
+        <ChevronDown className="h-3.5 w-3.5 ml-auto transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="mt-2 border rounded-md p-3 bg-muted/30 space-y-3 text-xs">
+        <p className="text-muted-foreground italic">
+          Las ponderaciones definen el peso relativo entre métricas. Pueden sumar menos de 100% si
+          parte de la evaluación proviene de métricas externas a esta plataforma.
+        </p>
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -58,7 +54,7 @@ function WeightRow({ label, value, onChange }: { label: string; value: number; o
     <div className="flex items-center gap-2">
       <span className="flex-1 text-muted-foreground">{label}</span>
       <Input
-        type="number" min={0} max={100} step={1}
+        type="number" min={0} max={200} step={1}
         value={value}
         onChange={e => onChange(Number(e.target.value))}
         className="w-16 h-6 text-xs text-right px-1"
@@ -78,32 +74,21 @@ function saveLS(key: string, value: unknown) {
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface FrancoData {
-  criticosH1Total: number;
-  criticosH1Resueltos: number;
-  altosH1Total: number;
-  altosH1Resueltos: number;
-  mediosBajosH1Total: number;
-  mediosBajosH1Resueltos: number;
-  criticosH2Total: number;
-  criticosH2EnSLA: number;
-  altosH2Total: number;
-  altosH2EnSLA: number;
-  mediosBajosH2Total: number;
-  mediosBajosH2EnSLA: number;
+  criticosH1Total: number; criticosH1Resueltos: number;
+  altosH1Total: number;    altosH1Resueltos: number;
+  mediosBajosH1Total: number; mediosBajosH1Resueltos: number;
+  criticosH2Total: number; criticosH2EnSLA: number;
+  altosH2Total: number;    altosH2EnSLA: number;
+  mediosBajosH2Total: number; mediosBajosH2EnSLA: number;
   detalle: Array<{
-    form_number: string;
-    criticidad: string;
-    semestre: "H1" | "H2";
-    created_date: string;
-    resuelto_at: string | null;
-    dias_habiles: number | null;
-    en_sla: boolean | null;
+    form_number: string; criticidad: string; semestre: "H1" | "H2";
+    created_date: string; resuelto_at: string | null;
+    dias_habiles: number | null; en_sla: boolean | null;
   }>;
 }
 
 interface EvelynData {
-  ocConNumero: number;
-  ocConFactura: number;
+  ocConNumero: number; ocConFactura: number;
   ocSinFactura: Array<{ order_number: string; order_date: string | null }>;
   velocidadPromedio: number | null;
 }
@@ -118,7 +103,7 @@ interface BeatrizData {
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
 
 const BEATRIZ_EXCLUDED_KEY = "beatriz_kpi_excluded_cats";
-const BEATRIZ_CFG_KEY = "beatriz_kpi_cfg";
+const BEATRIZ_CFG_KEY      = "beatriz_kpi_cfg";
 
 interface BeatrizCfg { metaMin: number; metaSobre: number; }
 const BEATRIZ_DEFAULTS: BeatrizCfg = { metaMin: 3, metaSobre: 5 };
@@ -134,12 +119,13 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
   const [excludedIds, setExcludedIds] = useState<Set<string>>(() =>
     new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
   );
-  const [cfg, setCfg] = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cfg, setCfg]           = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen]     = useState(false);
+  const [searchQuery, setSearchQuery]   = useState("");
 
   const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
+
   const toggleExclude = (id: string) => {
     setExcludedIds(prev => {
       const next = new Set(prev);
@@ -148,16 +134,18 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
       return next;
     });
   };
+
   const updateCfg = (patch: Partial<BeatrizCfg>) => {
     setCfg(prev => { const next = { ...prev, ...patch }; saveLS(BEATRIZ_CFG_KEY, next); return next; });
   };
 
   if (loading) return <CardSkeleton title="Beatriz Valenzuela" subtitle="Cobertura de Proveedores" />;
 
-  const activeCats = data ? data.categories.filter(c => !excludedIds.has(c.id)) : [];
-  const zones = data?.zones ?? [];
-  const matrix = data?.matrix ?? {};
-  const totalComb = activeCats.length * zones.length;
+  const activeCats  = data ? data.categories.filter(c => !excludedIds.has(c.id)) : [];
+  const zones       = data?.zones ?? [];
+  const matrix      = data?.matrix ?? {};
+  const totalComb   = activeCats.length * zones.length;
+
   let cubiertas3 = 0, cubiertas5 = 0;
   activeCats.forEach(c => zones.forEach(z => {
     const count = matrix[`${c.id}||${z}`] ?? 0;
@@ -167,7 +155,12 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
   const score100 = pct(cubiertas3, totalComb);
   const score130 = pct(cubiertas5, totalComb);
-  const score = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
+  const score    = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
+
+  // Search filters rows in the matrix (doesn't affect score)
+  const filteredCats = activeCats.filter(c =>
+    !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <>
@@ -211,12 +204,13 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
       {/* ── Detail dialog ── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="w-[95vw] max-w-[95vw]">
           <DialogHeader>
             <DialogTitle>Beatriz Valenzuela — Cobertura de Proveedores</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[75vh] overflow-y-auto space-y-4 pr-1">
-            {/* Score summary */}
+          <div className="max-h-[78vh] overflow-y-auto space-y-4 pr-1">
+
+            {/* Score resumen */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="flex justify-between text-sm mb-1">
@@ -236,38 +230,68 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               </div>
             </div>
 
+            {/* Buscador */}
+            {data && activeCats.length > 0 && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar categoría..."
+                  className="pl-8 pr-8 h-8 text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1.5 p-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Matrix */}
-            {data && activeCats.length > 0 && zones.length > 0 && (
+            {data && filteredCats.length > 0 && zones.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-2">Matriz de cobertura (categoría × zona)</p>
+                {searchQuery && (
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Mostrando {filteredCats.length} de {activeCats.length} categorías
+                  </p>
+                )}
                 <div className="overflow-x-auto">
                   <table className="text-xs border-collapse w-full">
                     <thead>
                       <tr>
-                        <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[140px]">Categoría</th>
+                        <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[160px] sticky left-0 bg-background">
+                          Categoría
+                        </th>
                         {zones.map(z => (
-                          <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[70px]">
+                          <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[80px]">
                             {z}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {activeCats.map(c => {
+                      {filteredCats.map(c => {
                         const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
                         return (
                           <>
                             <tr key={c.id} className="border-t">
-                              <td className="py-1.5 pr-3 font-medium">{c.name}</td>
+                              <td className="py-1.5 pr-3 font-medium sticky left-0 bg-background">{c.name}</td>
                               {zones.map(z => {
-                                const key = `${c.id}||${z}`;
+                                const key   = `${c.id}||${z}`;
                                 const count = matrix[key] ?? 0;
                                 const isOpen = expandedCell === key;
                                 return (
                                   <td key={z} className="text-center py-1.5 px-2">
                                     <button
                                       onClick={() => count > 0 ? toggleCell(key) : undefined}
-                                      className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity ${cellColor(count, cfg.metaMin, cfg.metaSobre)} ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"} ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                                      className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
+                                        ${cellColor(count, cfg.metaMin, cfg.metaSobre)}
+                                        ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
+                                        ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
                                     >
                                       {count}
                                     </button>
@@ -276,7 +300,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                               })}
                             </tr>
                             {openZone && (() => {
-                              const key = `${c.id}||${openZone}`;
+                              const key      = `${c.id}||${openZone}`;
                               const suppList = data?.suppliersMap?.[key] ?? [];
                               return (
                                 <tr key={`${c.id}-detail`} className="bg-muted/40">
@@ -311,13 +335,19 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               </div>
             )}
 
+            {data && filteredCats.length === 0 && searchQuery && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Sin resultados para "{searchQuery}"
+              </p>
+            )}
+
             {/* Admin */}
             {data && (
-              <AdminSection label="Configuración admin" open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <AdminSection label="Configuración admin">
                 <div>
                   <p className="font-medium mb-2">Umbrales de cobertura</p>
                   <div className="space-y-2">
-                    <WeightRow label="Meta (≥N proveedores)" value={cfg.metaMin} onChange={v => updateCfg({ metaMin: v })} />
+                    <WeightRow label="Meta (≥N proveedores)"              value={cfg.metaMin}   onChange={v => updateCfg({ metaMin: v })}   />
                     <WeightRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaSobre} onChange={v => updateCfg({ metaSobre: v })} />
                   </div>
                 </div>
@@ -332,7 +362,9 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                     ))}
                   </div>
                   {excludedIds.size > 0 && (
-                    <p className="text-amber-600 mt-1">{excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""}.</p>
+                    <p className="text-amber-600 mt-1">
+                      {excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""}.
+                    </p>
                   )}
                 </div>
               </AdminSection>
@@ -347,22 +379,24 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 // ─── Franco card ──────────────────────────────────────────────────────────────
 
 const FRANCO_CFG_KEY = "franco_kpi_cfg";
+
 interface FrancoCfg {
   wCritH1: number; wAltH1: number; wMedH1: number;
   wCritH2: number; wAltH2: number; wMedH2: number;
   tCritH1: number; tAltH1: number; tMedH1: number;
   tCritH2: number; tAltH2: number; tMedH2: number;
   slaCritico: number; slaAlto: number; slaMedioBajo: number;
+  targetTotal: number; // target sum of weights (e.g. 50 if these KPIs = 50% of evaluation)
 }
 const FRANCO_DEFAULTS: FrancoCfg = {
   wCritH1: 25, wAltH1: 25, wMedH1: 20, wCritH2: 15, wAltH2: 10, wMedH2: 5,
   tCritH1: 100, tAltH1: 80, tMedH1: 80, tCritH2: 80, tAltH2: 80, tMedH2: 80,
   slaCritico: 5, slaAlto: 15, slaMedioBajo: 30,
+  targetTotal: 100,
 };
 
 function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boolean }) {
-  const [cfg, setCfg] = useState<FrancoCfg>(() => loadLS(FRANCO_CFG_KEY, FRANCO_DEFAULTS));
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cfg, setCfg]             = useState<FrancoCfg>(() => loadLS(FRANCO_CFG_KEY, FRANCO_DEFAULTS));
   const [detailOpen, setDetailOpen] = useState(false);
 
   const updateCfg = (patch: Partial<FrancoCfg>) => {
@@ -379,25 +413,27 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
   const pMedH2  = data ? pct(data.mediosBajosH2EnSLA,     data.mediosBajosH2Total) : 0;
 
   const totalW = cfg.wCritH1 + cfg.wAltH1 + cfg.wMedH1 + cfg.wCritH2 + cfg.wAltH2 + cfg.wMedH2;
-  const norm = (p: number, t: number, w: number) => t > 0 && totalW > 0 ? (p / t) * 100 * (w / totalW) : 0;
-  const score = Math.round(
+  // Normalize by targetTotal so the score reflects performance against the configured weight sum
+  const normBy = cfg.targetTotal > 0 ? cfg.targetTotal : totalW;
+  const norm   = (p: number, t: number, w: number) => t > 0 && normBy > 0 ? (p / t) * 100 * (w / normBy) : 0;
+  const score  = Math.round(
     norm(pCritH1, cfg.tCritH1, cfg.wCritH1) + norm(pAltH1, cfg.tAltH1, cfg.wAltH1) +
     norm(pMedH1,  cfg.tMedH1,  cfg.wMedH1)  + norm(pCritH2, cfg.tCritH2, cfg.wCritH2) +
     norm(pAltH2,  cfg.tAltH2,  cfg.wAltH2)  + norm(pMedH2,  cfg.tMedH2,  cfg.wMedH2)
   );
 
   const rows = [
-    { label: "Críticos H1",        val: pCritH1, meta: cfg.tCritH1, peso: cfg.wCritH1 },
-    { label: "Altos H1",           val: pAltH1,  meta: cfg.tAltH1,  peso: cfg.wAltH1  },
-    { label: "Medios+Bajos H1",    val: pMedH1,  meta: cfg.tMedH1,  peso: cfg.wMedH1  },
-    { label: `Críticos H2 SLA ≤${cfg.slaCritico}d`,       val: pCritH2, meta: cfg.tCritH2, peso: cfg.wCritH2 },
-    { label: `Altos H2 SLA ≤${cfg.slaAlto}d`,             val: pAltH2,  meta: cfg.tAltH2,  peso: cfg.wAltH2  },
-    { label: `Medios+Bajos H2 SLA ≤${cfg.slaMedioBajo}d`, val: pMedH2,  meta: cfg.tMedH2,  peso: cfg.wMedH2  },
+    { label: "Críticos H1",                              val: pCritH1, meta: cfg.tCritH1, peso: cfg.wCritH1 },
+    { label: "Altos H1",                                 val: pAltH1,  meta: cfg.tAltH1,  peso: cfg.wAltH1  },
+    { label: "Medios+Bajos H1",                          val: pMedH1,  meta: cfg.tMedH1,  peso: cfg.wMedH1  },
+    { label: `Críticos H2 SLA ≤${cfg.slaCritico}d`,      val: pCritH2, meta: cfg.tCritH2, peso: cfg.wCritH2 },
+    { label: `Altos H2 SLA ≤${cfg.slaAlto}d`,            val: pAltH2,  meta: cfg.tAltH2,  peso: cfg.wAltH2  },
+    { label: `Medios+Bajos H2 SLA ≤${cfg.slaMedioBajo}d`,val: pMedH2,  meta: cfg.tMedH2,  peso: cfg.wMedH2  },
   ];
 
   return (
     <>
-      {/* ── Summary card ── */}
+      {/* ── Summary card — shows all 6 bars ── */}
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
@@ -408,63 +444,44 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
                 <p className="text-xs text-muted-foreground">Encargado de Mantenciones</p>
               </div>
             </div>
-            {data && scoreBadge(score)}
+            <div className="flex flex-col items-end gap-1">
+              {data && scoreBadge(score)}
+              {cfg.targetTotal !== 100 && (
+                <span className="text-[10px] text-muted-foreground">
+                  Suma objetivo: {cfg.targetTotal}% · actual: {totalW}%
+                </span>
+              )}
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Score ponderado</span>
-              <span className="font-semibold">{score}%</span>
+        <CardContent className="space-y-2.5">
+          {rows.map(r => (
+            <div key={r.label}>
+              <div className="flex justify-between text-xs mb-1">
+                <span>
+                  {r.label}
+                  <span className="text-muted-foreground ml-1">(meta: {r.meta}% · peso: {r.peso}%)</span>
+                </span>
+                <span className={`font-semibold ${r.val >= r.meta ? "text-emerald-600" : r.val >= r.meta * 0.7 ? "text-amber-500" : "text-destructive"}`}>
+                  {r.val}%
+                </span>
+              </div>
+              <Progress value={Math.min((r.val / r.meta) * 100, 100)} className="h-1.5" />
             </div>
-            <Progress value={Math.min(score, 100)} className="h-2" />
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="bg-muted/50 rounded-md p-2 space-y-0.5">
-              <p className="text-muted-foreground">H1 Críticos</p>
-              <p className="font-semibold text-sm">
-                {data ? `${pCritH1}%` : "—"}
-                {data && <span className="text-muted-foreground font-normal text-xs"> ({data.criticosH1Resueltos}/{data.criticosH1Total})</span>}
-              </p>
-            </div>
-            <div className="bg-muted/50 rounded-md p-2 space-y-0.5">
-              <p className="text-muted-foreground">H2 Críticos SLA</p>
-              <p className="font-semibold text-sm">
-                {data ? `${pCritH2}%` : "—"}
-                {data && <span className="text-muted-foreground font-normal text-xs"> ({data.criticosH2EnSLA}/{data.criticosH2Total})</span>}
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
+          ))}
+          <Button variant="outline" size="sm" className="w-full mt-1" onClick={() => setDetailOpen(true)}>
             Ver detalle
           </Button>
         </CardContent>
       </Card>
 
-      {/* ── Detail dialog ── */}
+      {/* ── Detail dialog — forms table + admin ── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Franco Leiva — Resolución de Forms</DialogTitle>
+            <DialogTitle>Franco Leiva — Detalle y Configuración</DialogTitle>
           </DialogHeader>
           <div className="max-h-[75vh] overflow-y-auto space-y-4 pr-1">
-            {/* All metric rows */}
-            <div className="space-y-3">
-              {rows.map(r => (
-                <div key={r.label}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>
-                      {r.label}
-                      <span className="text-muted-foreground text-xs ml-1">(meta: {r.meta}% · peso: {r.peso}%)</span>
-                    </span>
-                    <span className={`font-semibold ${r.val >= r.meta ? "text-emerald-600" : r.val >= r.meta * 0.7 ? "text-amber-500" : "text-destructive"}`}>
-                      {r.val}%
-                    </span>
-                  </div>
-                  <Progress value={Math.min((r.val / r.meta) * 100, 100)} className="h-1.5" />
-                </div>
-              ))}
-            </div>
 
             {/* Forms detail table */}
             {data && data.detalle.length > 0 && (
@@ -506,18 +523,37 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
             )}
 
             {/* Admin */}
-            <AdminSection open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <AdminSection>
+              {/* Suma total de ponderaciones */}
+              <div>
+                <p className="font-medium mb-1">Suma total de ponderaciones</p>
+                <p className="text-muted-foreground mb-2">
+                  Define a cuánto debe sumar el conjunto de pesos (ej. 50% si estos KPIs representan
+                  la mitad de la evaluación total). El score se calcula normalizando contra este valor.
+                </p>
+                <WeightRow
+                  label="Suma objetivo (%)"
+                  value={cfg.targetTotal}
+                  onChange={v => updateCfg({ targetTotal: v })}
+                />
+                <p className="mt-1 text-muted-foreground">
+                  Suma actual de pesos: <span className={totalW === cfg.targetTotal ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"}>{totalW}%</span>
+                  {totalW !== cfg.targetTotal && ` (objetivo: ${cfg.targetTotal}%)`}
+                </p>
+              </div>
+
               <div>
                 <p className="font-medium mb-2">Ponderaciones (%)</p>
                 <div className="space-y-1.5">
-                  <WeightRow label="Críticos H1"        value={cfg.wCritH1} onChange={v => updateCfg({ wCritH1: v })} />
-                  <WeightRow label="Altos H1"            value={cfg.wAltH1}  onChange={v => updateCfg({ wAltH1: v })}  />
-                  <WeightRow label="Medios+Bajos H1"     value={cfg.wMedH1}  onChange={v => updateCfg({ wMedH1: v })}  />
-                  <WeightRow label="Críticos H2"         value={cfg.wCritH2} onChange={v => updateCfg({ wCritH2: v })} />
-                  <WeightRow label="Altos H2"            value={cfg.wAltH2}  onChange={v => updateCfg({ wAltH2: v })}  />
-                  <WeightRow label="Medios+Bajos H2"     value={cfg.wMedH2}  onChange={v => updateCfg({ wMedH2: v })}  />
+                  <WeightRow label="Críticos H1"         value={cfg.wCritH1} onChange={v => updateCfg({ wCritH1: v })} />
+                  <WeightRow label="Altos H1"             value={cfg.wAltH1}  onChange={v => updateCfg({ wAltH1: v })}  />
+                  <WeightRow label="Medios+Bajos H1"      value={cfg.wMedH1}  onChange={v => updateCfg({ wMedH1: v })}  />
+                  <WeightRow label="Críticos H2"          value={cfg.wCritH2} onChange={v => updateCfg({ wCritH2: v })} />
+                  <WeightRow label="Altos H2"             value={cfg.wAltH2}  onChange={v => updateCfg({ wAltH2: v })}  />
+                  <WeightRow label="Medios+Bajos H2"      value={cfg.wMedH2}  onChange={v => updateCfg({ wMedH2: v })}  />
                 </div>
               </div>
+
               <div>
                 <p className="font-medium mb-2">Metas (%)</p>
                 <div className="space-y-1.5">
@@ -529,6 +565,7 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
                   <WeightRow label="Meta Medios+Bajos H2"     value={cfg.tMedH2}  onChange={v => updateCfg({ tMedH2: v })}  />
                 </div>
               </div>
+
               <div>
                 <p className="font-medium mb-2">SLA H2 (días hábiles)</p>
                 <div className="space-y-1.5">
@@ -558,8 +595,7 @@ const EVELYN_DEFAULTS: EvelynCfg = {
 };
 
 function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; loading: boolean; francoData: FrancoData | null }) {
-  const [cfg, setCfg] = useState<EvelynCfg>(() => loadLS(EVELYN_CFG_KEY, EVELYN_DEFAULTS));
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cfg, setCfg]               = useState<EvelynCfg>(() => loadLS(EVELYN_CFG_KEY, EVELYN_DEFAULTS));
   const [detailOpen, setDetailOpen] = useState(false);
 
   const updateCfg = (patch: Partial<EvelynCfg>) => {
@@ -578,7 +614,7 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
     : 0;
 
   const totalW = cfg.wCobertura + cfg.wVelocidad;
-  const score = totalW > 0 ? Math.round((cobertura * cfg.wCobertura + velScore * cfg.wVelocidad) / totalW) : 0;
+  const score  = totalW > 0 ? Math.round((cobertura * cfg.wCobertura + velScore * cfg.wVelocidad) / totalW) : 0;
   const superPerformance = cobertura >= 100 && velocidad !== null && velocidad <= cfg.velOptimo;
 
   return (
@@ -607,9 +643,9 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
             {data && <p className="text-xs text-muted-foreground mt-1">{data.ocConFactura} de {data.ocConNumero} OC</p>}
           </div>
           {velocidad !== null && (
-            <div className="bg-muted/50 rounded-md px-3 py-2 flex justify-between items-center text-sm">
+            <div className="bg-muted/50 rounded-md px-3 py-2 flex justify-between items-center">
               <span className="text-muted-foreground text-xs">Velocidad promedio</span>
-              <span className={`font-semibold ${velocidad <= cfg.velOptimo ? "text-emerald-600" : velocidad <= cfg.velMeta ? "text-blue-600" : velocidad <= cfg.velMinimo ? "text-amber-500" : "text-destructive"}`}>
+              <span className={`font-semibold text-sm ${velocidad <= cfg.velOptimo ? "text-emerald-600" : velocidad <= cfg.velMeta ? "text-blue-600" : velocidad <= cfg.velMinimo ? "text-amber-500" : "text-destructive"}`}>
                 {velocidad.toFixed(1)} días háb.
               </span>
             </div>
@@ -633,7 +669,6 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
             <DialogTitle>Evelyn Padilla — OC y Facturas al Día</DialogTitle>
           </DialogHeader>
           <div className="max-h-[75vh] overflow-y-auto space-y-4 pr-1">
-            {/* Cobertura */}
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span>OC con factura registrada (meta: 100%)</span>
@@ -643,7 +678,6 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               {data && <p className="text-xs text-muted-foreground mt-1">{data.ocConFactura} de {data.ocConNumero} OC con factura</p>}
             </div>
 
-            {/* Velocidad */}
             {velocidad !== null && (
               <div>
                 <div className="flex justify-between text-sm mb-1">
@@ -663,7 +697,6 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               </div>
             )}
 
-            {/* OC sin factura */}
             {data && data.ocSinFactura.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <div className="px-3 py-2 bg-muted/50 border-b">
@@ -680,8 +713,7 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               </div>
             )}
 
-            {/* Admin */}
-            <AdminSection open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <AdminSection>
               <div>
                 <p className="font-medium mb-2">Ponderaciones (%)</p>
                 <div className="space-y-1.5">
@@ -733,11 +765,11 @@ function CardSkeleton({ title, subtitle }: { title: string; subtitle: string }) 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function TeamKPIDashboard() {
-  const [francoData, setFrancoData] = useState<FrancoData | null>(null);
-  const [evelynData, setEvelynData] = useState<EvelynData | null>(null);
-  const [beatrizData, setBeatrizData] = useState<BeatrizData | null>(null);
-  const [loadingFranco, setLoadingFranco] = useState(true);
-  const [loadingEvelyn, setLoadingEvelyn] = useState(true);
+  const [francoData,   setFrancoData]   = useState<FrancoData | null>(null);
+  const [evelynData,   setEvelynData]   = useState<EvelynData | null>(null);
+  const [beatrizData,  setBeatrizData]  = useState<BeatrizData | null>(null);
+  const [loadingFranco,  setLoadingFranco]  = useState(true);
+  const [loadingEvelyn,  setLoadingEvelyn]  = useState(true);
   const [loadingBeatriz, setLoadingBeatriz] = useState(true);
 
   // ── Franco ────────────────────────────────────────────────────────────────
@@ -771,11 +803,11 @@ export function TeamKPIDashboard() {
         const isAlto      = (f: any) => altoIds.includes(f.criticality_category_id);
         const isMedioBajo = (f: any) => medioBajoIds.includes(f.criticality_category_id);
 
-        const criticosH1   = allForms.filter(f => isCritico(f)   && isH1(f));
-        const altosH1      = allForms.filter(f => isAlto(f)      && isH1(f));
+        const criticosH1    = allForms.filter(f => isCritico(f)   && isH1(f));
+        const altosH1       = allForms.filter(f => isAlto(f)      && isH1(f));
         const mediosBajosH1 = allForms.filter(f => isMedioBajo(f) && isH1(f));
-        const criticosH2   = allForms.filter(f => isCritico(f)   && isH2(f));
-        const altosH2      = allForms.filter(f => isAlto(f)      && isH2(f));
+        const criticosH2    = allForms.filter(f => isCritico(f)   && isH2(f));
+        const altosH2       = allForms.filter(f => isAlto(f)      && isH2(f));
         const mediosBajosH2 = allForms.filter(f => isMedioBajo(f) && isH2(f));
 
         const enSLA = (f: any, maxDays: number) => {
@@ -793,10 +825,10 @@ export function TeamKPIDashboard() {
             const sla = isCritico(f) ? SLA_CRITICO_DAYS : isAlto(f) ? SLA_ALTO_DAYS : SLA_MEDIO_BAJO_DAYS;
             return {
               form_number: f.form_number,
-              criticidad: critMap.get(f.criticality_category_id) || "—",
-              semestre: isH1(f) ? "H1" as const : "H2" as const,
+              criticidad:  critMap.get(f.criticality_category_id) || "—",
+              semestre:    isH1(f) ? "H1" as const : "H2" as const,
               created_date: f.created_date,
-              resuelto_at: f.sub_status_resuelto_at,
+              resuelto_at:  f.sub_status_resuelto_at,
               dias_habiles: dias,
               en_sla: dias !== null ? dias <= sla : null,
             };
@@ -804,18 +836,18 @@ export function TeamKPIDashboard() {
           .sort((a, b) => (b.resuelto_at || "").localeCompare(a.resuelto_at || ""));
 
         setFrancoData({
-          criticosH1Total: criticosH1.length,
-          criticosH1Resueltos: criticosH1.filter(isResuelto).length,
-          altosH1Total: altosH1.length,
-          altosH1Resueltos: altosH1.filter(isResuelto).length,
-          mediosBajosH1Total: mediosBajosH1.length,
+          criticosH1Total:        criticosH1.length,
+          criticosH1Resueltos:    criticosH1.filter(isResuelto).length,
+          altosH1Total:           altosH1.length,
+          altosH1Resueltos:       altosH1.filter(isResuelto).length,
+          mediosBajosH1Total:     mediosBajosH1.length,
           mediosBajosH1Resueltos: mediosBajosH1.filter(isResuelto).length,
-          criticosH2Total: criticosH2.length,
-          criticosH2EnSLA: criticosH2.filter(f => enSLA(f, SLA_CRITICO_DAYS)).length,
-          altosH2Total: altosH2.length,
-          altosH2EnSLA: altosH2.filter(f => enSLA(f, SLA_ALTO_DAYS)).length,
-          mediosBajosH2Total: mediosBajosH2.length,
-          mediosBajosH2EnSLA: mediosBajosH2.filter(f => enSLA(f, SLA_MEDIO_BAJO_DAYS)).length,
+          criticosH2Total:        criticosH2.length,
+          criticosH2EnSLA:        criticosH2.filter(f => enSLA(f, SLA_CRITICO_DAYS)).length,
+          altosH2Total:           altosH2.length,
+          altosH2EnSLA:           altosH2.filter(f => enSLA(f, SLA_ALTO_DAYS)).length,
+          mediosBajosH2Total:     mediosBajosH2.length,
+          mediosBajosH2EnSLA:     mediosBajosH2.filter(f => enSLA(f, SLA_MEDIO_BAJO_DAYS)).length,
           detalle,
         });
       } finally {
@@ -836,7 +868,7 @@ export function TeamKPIDashboard() {
           .not("order_number", "is", null);
 
         const ocList = (ocs || []) as any[];
-        const ocIds = ocList.map((o: any) => o.id);
+        const ocIds  = ocList.map((o: any) => o.id);
 
         const { data: invoices } = ocIds.length > 0
           ? await supabase
@@ -868,8 +900,8 @@ export function TeamKPIDashboard() {
         });
 
         setEvelynData({
-          ocConNumero: ocList.length,
-          ocConFactura: ocConFactura.length,
+          ocConNumero:       ocList.length,
+          ocConFactura:      ocConFactura.length,
           ocSinFactura,
           velocidadPromedio: velocidades.length > 0
             ? velocidades.reduce((a, b) => a + b, 0) / velocidades.length
@@ -907,9 +939,9 @@ export function TeamKPIDashboard() {
         console.log("[Beatriz] zones:", zones?.length, zonesErr);
         console.log("[Beatriz] suppliers:", suppliers?.length, suppsErr);
 
-        const catList  = (cats || []) as any[];
-        const zoneList = (zones || []) as any[];
-        const suppList = (suppliers || []) as any[];
+        const catList  = (cats     || []) as any[];
+        const zoneList = (zones    || []) as any[];
+        const suppList = (suppliers|| []) as any[];
 
         const suppZones = new Map<string, Set<string>>();
         zoneList.forEach((z: any) => {
@@ -940,7 +972,7 @@ export function TeamKPIDashboard() {
 
         setBeatrizData({
           categories: catList.map((c: any) => ({ id: c.id, name: c.name })),
-          zones: [...allZones].sort(),
+          zones:      [...allZones].sort(),
           matrix,
           suppliersMap,
         });
@@ -962,8 +994,8 @@ export function TeamKPIDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <BeatrizCard data={beatrizData} loading={loadingBeatriz} />
-        <FrancoCard  data={francoData}  loading={loadingFranco} />
-        <EvelynCard  data={evelynData}  loading={loadingEvelyn} francoData={francoData} />
+        <FrancoCard  data={francoData}  loading={loadingFranco}  />
+        <EvelynCard  data={evelynData}  loading={loadingEvelyn}  francoData={francoData} />
       </div>
 
       <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
