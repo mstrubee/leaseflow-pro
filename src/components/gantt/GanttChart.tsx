@@ -2609,7 +2609,9 @@ export function GanttChart({
                                 "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
                                 !effective.color && getTaskStatusColor(task.status, task.end_date),
                                 dragSource === task.id && "opacity-50 ring-2 ring-primary",
-                                barDragTaskId === task.id && "ring-2 ring-primary"
+                                barDragTaskId === task.id && "ring-2 ring-primary",
+                                selectedDependency?.predecessorId === task.id && "ring-2 ring-amber-500 ring-offset-1",
+                                selectedDependency?.dependentId === task.id && "ring-2 ring-violet-500 ring-offset-1"
                               )}
                               style={{
                                 left: position.left,
