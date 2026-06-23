@@ -703,6 +703,14 @@ export function GanttChart({
     };
   }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates, DAY_WIDTH]);
 
+  const headerOffset = useMemo(() => {
+    const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
+    return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
+      get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
+      get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
+      get("end", DATE_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
+  }, [hiddenCols, taskNameColWidth]);
+
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
     const arrows: Array<{
@@ -1328,14 +1336,6 @@ export function GanttChart({
     tasks.forEach((t) => m.set(t.id, t));
     return m;
   }, [tasks]);
-
-  const headerOffset = useMemo(() => {
-    const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
-    return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
-      get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
-      get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
-      get("end", DATE_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
-  }, [hiddenCols, taskNameColWidth]);
 
   const hierarchicalLabels = useMemo(() => {
     const map = new Map<string, string>();
