@@ -706,6 +706,7 @@ export function GanttChart({
     };
   }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates, DAY_WIDTH]);
 
+  // Ancho total del bloque de columnas fijas (excluye columnas ocultas).
   const headerOffset = useMemo(() => {
     const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
     return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
