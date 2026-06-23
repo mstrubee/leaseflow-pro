@@ -116,8 +116,13 @@ interface EvelynData {
   ocConNumero: number; ocConFactura: number;
   ocSinFactura: Array<{ order_number: string; order_date: string | null }>;
   velocidadPromedio: number | null;
-  formsEjecutados: number;  // en sub_status "ejecutado" → pendientes de OT
-  formsResueltos: number;   // pasaron de "ejecutado" a "resuelto" por Evelyn
+  // OTs año completo
+  formsAnioEjecutados: number;
+  formsAnioResueltos: number;
+  // OTs semestre en curso
+  formsSemEjecutados: number;
+  formsSemResueltos: number;
+  semestreLabel: string;
 }
 
 interface BeatrizData {
@@ -668,8 +673,11 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
 
   const cobertura  = data ? pct(data.ocConFactura, data.ocConNumero) : 0;
   const velocidad  = data?.velocidadPromedio ?? null;
-  const totalOTs   = data ? data.formsEjecutados + data.formsResueltos : 0;
-  const otsResueltas = data ? pct(data.formsResueltos, totalOTs) : 0;
+  const totalOTsAnio = data ? data.formsAnioEjecutados + data.formsAnioResueltos : 0;
+  const totalOTsSem  = data ? data.formsSemEjecutados  + data.formsSemResueltos  : 0;
+  const otsAnio    = data ? pct(data.formsAnioResueltos, totalOTsAnio) : 0;
+  const otsSem     = data ? pct(data.formsSemResueltos,  totalOTsSem)  : 0;
+  const otsResueltas = otsAnio; // score usa el año completo
 
   const velScore = velocidad === null ? 0
     : velocidad <= cfg.velOptimo ? 130
@@ -719,15 +727,27 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
             </div>
           )}
           {data && (
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-muted-foreground">OTs subidas: Ejecutado → Resuelto</span>
-                <span className="font-semibold">{otsResueltas}%</span>
+            <div className="space-y-2">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">OTs Ejecutado→Resuelto (año)</span>
+                  <span className="font-semibold">{otsAnio}%</span>
+                </div>
+                <Progress value={otsAnio} className="h-2" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {data.formsAnioResueltos} resueltos · {data.formsAnioEjecutados} pendientes
+                </p>
               </div>
-              <Progress value={otsResueltas} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-1">
-                {data.formsResueltos} resueltos · {data.formsEjecutados} pendientes de OT
-              </p>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">OTs Ejecutado→Resuelto ({data.semestreLabel})</span>
+                  <span className="font-semibold">{otsSem}%</span>
+                </div>
+                <Progress value={otsSem} className="h-2" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {data.formsSemResueltos} resueltos · {data.formsSemEjecutados} pendientes
+                </p>
+              </div>
             </div>
           )}
           {superPerformance && (
@@ -771,22 +791,42 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
             )}
 
             {data && (
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>
-                    OTs subidas: Ejecutado → Resuelto
-                    <span className="text-muted-foreground text-xs ml-1">({cfg.wOTs}% peso)</span>
-                  </span>
-                  <span className={`font-semibold ${otsResueltas >= 100 ? "text-emerald-600" : otsResueltas >= 70 ? "text-amber-500" : "text-destructive"}`}>
-                    {otsResueltas}%
-                  </span>
+              <div className="space-y-3">
+                <p className="text-sm font-medium">
+                  OTs subidas: Ejecutado → Resuelto
+                  <span className="text-muted-foreground text-xs ml-1">({cfg.wOTs}% peso)</span>
+                </p>
+                {/* Año */}
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-muted-foreground">Año 2026</span>
+                    <span className={`font-semibold ${otsAnio >= 100 ? "text-emerald-600" : otsAnio >= 70 ? "text-amber-500" : "text-destructive"}`}>
+                      {otsAnio}%
+                    </span>
+                  </div>
+                  <Progress value={otsAnio} className="h-2" />
+                  <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                    <span>{data.formsAnioResueltos} resueltos (OT subida)</span>
+                    <span className={data.formsAnioEjecutados > 0 ? "text-amber-600 font-medium" : ""}>
+                      {data.formsAnioEjecutados} pendientes de OT
+                    </span>
+                  </div>
                 </div>
-                <Progress value={otsResueltas} className="h-2" />
-                <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
-                  <span>{data.formsResueltos} resueltos (OT subida)</span>
-                  <span className={data.formsEjecutados > 0 ? "text-amber-600 font-medium" : ""}>
-                    {data.formsEjecutados} pendientes de OT
-                  </span>
+                {/* Semestre */}
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-muted-foreground">{data.semestreLabel}</span>
+                    <span className={`font-semibold ${otsSem >= 100 ? "text-emerald-600" : otsSem >= 70 ? "text-amber-500" : "text-destructive"}`}>
+                      {otsSem}%
+                    </span>
+                  </div>
+                  <Progress value={otsSem} className="h-2" />
+                  <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                    <span>{data.formsSemResueltos} resueltos (OT subida)</span>
+                    <span className={data.formsSemEjecutados > 0 ? "text-amber-600 font-medium" : ""}>
+                      {data.formsSemEjecutados} pendientes de OT
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -1001,15 +1041,25 @@ export function TeamKPIDashboard() {
           if (dias >= 0) velocidades.push(dias);
         });
 
-        // OTs KPI: forms en sub_status "ejecutado" (pendientes) y "resuelto" (completados por Evelyn)
+        // OTs KPI: forms en sub_status "Ejecutado" (pendientes) y "Resuelto" (completados por Evelyn)
         const { data: execForms } = await supabase
           .from("maintenance_forms" as any)
-          .select("id, sub_status")
+          .select("id, sub_status, created_date")
           .in("sub_status", ["Ejecutado", "Resuelto"])
           .eq("year", 2026)
           .is("deleted_at", null);
 
         const execList = (execForms || []) as any[];
+
+        // Semestre en curso
+        const now = new Date();
+        const isH1 = now.getMonth() < 6;
+        const semestreLabel = isH1 ? "H1 (Ene–Jun 2026)" : "H2 (Jul–Dic 2026)";
+        const semStart = isH1 ? "2026-01-01" : "2026-07-01";
+        const semEnd   = isH1 ? "2026-06-30" : "2026-12-31";
+        const semList  = execList.filter((f: any) =>
+          f.created_date && f.created_date >= semStart && f.created_date <= semEnd
+        );
 
         setEvelynData({
           ocConNumero:       ocList.length,
@@ -1018,8 +1068,11 @@ export function TeamKPIDashboard() {
           velocidadPromedio: velocidades.length > 0
             ? velocidades.reduce((a, b) => a + b, 0) / velocidades.length
             : null,
-          formsEjecutados: execList.filter((f: any) => f.sub_status === "Ejecutado").length,
-          formsResueltos:  execList.filter((f: any) => f.sub_status === "Resuelto").length,
+          formsAnioEjecutados: execList.filter((f: any) => f.sub_status === "Ejecutado").length,
+          formsAnioResueltos:  execList.filter((f: any) => f.sub_status === "Resuelto").length,
+          formsSemEjecutados:  semList.filter((f: any) => f.sub_status === "Ejecutado").length,
+          formsSemResueltos:   semList.filter((f: any) => f.sub_status === "Resuelto").length,
+          semestreLabel,
         });
       } finally {
         setLoadingEvelyn(false);
