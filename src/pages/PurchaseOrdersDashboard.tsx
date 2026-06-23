@@ -141,6 +141,7 @@ interface PurchaseOrder {
   year?: number;
   is_multi_contract?: boolean;
   allocations?: ContractAllocation[];
+  import_batch_id?: string | null;
 }
 
 interface OCRequest {
@@ -201,6 +202,7 @@ interface GroupedOrder {
   status: string;
   year: number;
   is_multi_contract: boolean;
+  is_imported: boolean;
   orders: PurchaseOrder[]; // Individual orders that make up this group
   contracts: { contract_id: string; contract_name: string; amount_uf: number; order_id: string }[];
 }
@@ -470,6 +472,7 @@ const PurchaseOrdersDashboard = () => {
           opex_category_id,
           supplier_name,
           is_multi_contract,
+          import_batch_id,
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
@@ -935,6 +938,7 @@ const PurchaseOrdersDashboard = () => {
         status,
         year: firstOrder.year || yearNum,
         is_multi_contract: isMulti,
+        is_imported: !!firstOrder.import_batch_id,
         orders: ordersList,
         contracts,
       });
@@ -2517,6 +2521,7 @@ const PurchaseOrdersDashboard = () => {
                             </button>
                           </TableHead>
                         ))}
+                        <TableHead className="w-[50px] text-center">Origen</TableHead>
                         <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2688,6 +2693,13 @@ const PurchaseOrdersDashboard = () => {
                               </TableCell>
                               <TableCell className="text-muted-foreground text-sm">
                                 {groupedOrder.order_date ? format(parseISO(groupedOrder.order_date), "dd/MM/yy", { locale: es }) : "-"}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {groupedOrder.is_imported ? (
+                                  <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px] px-1.5 font-mono" title="Importada desde Excel">I</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 font-mono text-muted-foreground" title="Digitada manualmente">D</Badge>
+                                )}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1">

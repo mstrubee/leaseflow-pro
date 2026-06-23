@@ -526,6 +526,26 @@ export default function BulkOCImport() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  async function reloadBatch(b: ImportBatch) {
+    if (!b.storage_path) {
+      toast.error("Este lote no tiene archivo almacenado.");
+      return;
+    }
+    toast.info("Descargando archivo almacenado…");
+    const { data: blob, error } = await supabase.storage
+      .from("oc-imports")
+      .download(b.storage_path);
+    if (error || !blob) {
+      toast.error("No se pudo descargar el archivo.");
+      return;
+    }
+    const f = new File([blob], b.filename, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    reset();
+    handleFile(f);
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const duplicates    = grouped.filter(g => g.isDuplicate);
@@ -812,14 +832,18 @@ export default function BulkOCImport() {
                               <span className="truncate max-w-[180px] block">{g.supplierName}</span>
                             ) : (
                               editingSupplierKey === g.orderNumber ? (
-                                <SearchableSelect
-                                  value=""
-                                  onValueChange={val => handleSupplierPick(g.orderNumber, val)}
-                                  options={suppliers.map(s => ({ value: s.id, label: s.name }))}
-                                  placeholder="Buscar proveedor…"
-                                  className="w-[220px]"
-                                  autoFocus
-                                />
+                                <div className="flex flex-col gap-1">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    SAP: <span className="font-medium text-foreground">{g.rawProveedor}</span>
+                                  </p>
+                                  <SearchableSelect
+                                    value=""
+                                    onValueChange={val => handleSupplierPick(g.orderNumber, val)}
+                                    options={suppliers.map(s => ({ value: s.id, label: s.name }))}
+                                    placeholder="Buscar proveedor…"
+                                    className="w-[220px]"
+                                  />
+                                </div>
                               ) : (
                                 <button
                                   className="flex items-center gap-1 text-amber-600 hover:text-amber-800 hover:underline text-xs text-left"
@@ -939,6 +963,7 @@ export default function BulkOCImport() {
                           <TableHead className="text-center">Sin local</TableHead>
                           <TableHead className="text-center">Duplicadas</TableHead>
                           <TableHead>Drive</TableHead>
+                          <TableHead></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -965,6 +990,20 @@ export default function BulkOCImport() {
                                 >
                                   <CloudUpload className="h-3.5 w-3.5 mr-1" />
                                   Respaldar en Drive
+                                </Button>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {b.storage_path && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs"
+                                  onClick={() => reloadBatch(b)}
+                                  title="Recargar este Excel para continuar con los pendientes"
+                                >
+                                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                                  Recargar
                                 </Button>
                               )}
                             </TableCell>
