@@ -2038,20 +2038,23 @@ export function GanttChart({
                   }
                   
                   const isSelected = selectedDependencyId === arrow.id;
+                  const midX = (arrow.fromX + arrow.toX) / 2;
+                  const midY = (arrow.fromY + arrow.toY) / 2;
                   return (
                     <g key={arrow.id} className="group/arrow">
-                      {/* Wide invisible hit area — click to select the dependency */}
+                      {/* Wide invisible hit area — click anywhere on the line to select */}
                       <path
                         d={pathD}
                         fill="none"
                         stroke="transparent"
-                        strokeWidth="12"
+                        strokeWidth="20"
                         className="cursor-pointer [pointer-events:stroke]"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        onClick={() =>
-                          setSelectedDependencyId((prev) => (prev === arrow.id ? null : arrow.id))
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedDependencyId((prev) => (prev === arrow.id ? null : arrow.id));
+                        }}
                       />
                       {/* Visible arrow path */}
                       <path
@@ -2061,39 +2064,43 @@ export function GanttChart({
                           "transition-colors pointer-events-none",
                           isSelected
                             ? "stroke-amber-500"
-                            : "stroke-primary group-hover/arrow:stroke-destructive",
+                            : "stroke-primary group-hover/arrow:stroke-amber-500",
                         )}
                         strokeWidth={isSelected ? "3.5" : "2"}
                         markerEnd={isSelected ? "url(#arrowhead-selected)" : "url(#arrowhead)"}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
-                      {/* Tooltip on hover - delete icon at midpoint */}
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <circle
-                              cx={(arrow.fromX + arrow.toX) / 2}
-                              cy={(arrow.fromY + arrow.toY) / 2}
-                              r="8"
-                              className="fill-background stroke-muted-foreground opacity-0 group-hover/arrow:opacity-100 cursor-pointer pointer-events-auto transition-opacity"
-                              strokeWidth="1"
-                              onClick={() => onRemoveDependency(arrow.id)}
-                            />
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p className="text-xs">Clic para eliminar dependencia</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      {/* X icon inside circle */}
-                      <g 
-                        className="opacity-0 group-hover/arrow:opacity-100 pointer-events-none transition-opacity"
-                        transform={`translate(${(arrow.fromX + arrow.toX) / 2}, ${(arrow.fromY + arrow.toY) / 2})`}
-                      >
-                        <line x1="-3" y1="-3" x2="3" y2="3" className="stroke-destructive" strokeWidth="1.5" />
-                        <line x1="3" y1="-3" x2="-3" y2="3" className="stroke-destructive" strokeWidth="1.5" />
-                      </g>
+                      {/* Delete handle — visible only when the dependency is selected */}
+                      {isSelected && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <g
+                                className="cursor-pointer pointer-events-auto"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRemoveDependency(arrow.id);
+                                  setSelectedDependencyId(null);
+                                }}
+                              >
+                                <circle
+                                  cx={midX}
+                                  cy={midY}
+                                  r="9"
+                                  className="fill-background stroke-destructive"
+                                  strokeWidth="1.5"
+                                />
+                                <line x1={midX - 3.5} y1={midY - 3.5} x2={midX + 3.5} y2={midY + 3.5} className="stroke-destructive pointer-events-none" strokeWidth="1.75" />
+                                <line x1={midX + 3.5} y1={midY - 3.5} x2={midX - 3.5} y2={midY + 3.5} className="stroke-destructive pointer-events-none" strokeWidth="1.75" />
+                              </g>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-xs">Eliminar dependencia</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </g>
                   );
                 })}
