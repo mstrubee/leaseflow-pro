@@ -12,8 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -117,16 +115,34 @@ export default function BulkOCImport() {
   useEffect(() => {
     async function load() {
       setLoadingRef(true);
-      const [locRes, supRes, batchRes] = await Promise.all([
-        supabase
-          .from("maintenance_locations" as any)
-          .select("id, contract_id, name, centro_sap")
-          .eq("is_active", true)
-          .order("name"),
-        supabase
-          .from("suppliers")
-          .select("id, name")
-          .order("name"),
+      // Load CEBE codes from contract_custom_field_values
+      const { data: cebeFields } = await supabase
+        .from("contract_custom_fields" as any)
+        .select("id")
+        .ilike("field_name", "%cebe%") as any;
+
+      const fieldIds: string[] = (cebeFields || []).map((f: any) => f.id);
+
+      let cebeLocations: FullLocation[] = [];
+      if (fieldIds.length > 0) {
+        const { data: cebeValues } = await supabase
+          .from("contract_custom_field_values" as any)
+          .select("contract_id, field_value, contracts(name)")
+          .in("field_id", fieldIds)
+          .not("field_value", "is", null) as any;
+
+        cebeLocations = ((cebeValues || []) as any[])
+          .filter((v: any) => v.contract_id && v.field_value && v.contracts?.name)
+          .map((v: any) => ({
+            id:            v.contract_id,
+            contract_id:   v.contract_id,
+            contract_name: v.contracts.name as string,
+            centro_sap:    v.field_value as string,
+          }));
+      }
+
+      const [supRes, batchRes] = await Promise.all([
+        supabase.from("suppliers").select("id, name").order("name"),
         supabase
           .from("oc_import_batches" as any)
           .select("id,filename,storage_path,imported_at,rows_total,rows_ok,rows_pending_supplier,rows_pending_local,rows_duplicate,drive_synced_at")
@@ -134,7 +150,7 @@ export default function BulkOCImport() {
           .limit(20),
       ]);
 
-      setAllLocations(((locRes.data || []) as any[]) as FullLocation[]);
+      setAllLocations(cebeLocations);
       setSuppliers(((supRes.data || []) as any[]) as OCSupplier[]);
       setBatches(((batchRes.data || []) as any[]) as ImportBatch[]);
       setLoadingRef(false);
@@ -248,21 +264,7 @@ export default function BulkOCImport() {
   }
 
   async function applyMappings() {
-    // 1. Save centro_sap for "remember" mappings
-    const toSave = mappings.filter(m => m.remember && m.locationId && m.contractId);
-    for (const m of toSave) {
-      const cebeValue = `H${m.centroCode}`;
-      await supabase
-        .from("maintenance_locations" as any)
-        .update({ centro_sap: cebeValue } as any)
-        .eq("id", m.locationId!);
-      // Update local cache
-      setAllLocations(prev => prev.map(l =>
-        l.id === m.locationId ? { ...l, centro_sap: cebeValue } : l
-      ));
-    }
-
-    // 2. Build complete location list (known + manually mapped)
+    // Build complete location list (known + manually mapped)
     const manualLocations = mappings
       .filter(m => m.contractId)
       .map(m => ({
@@ -598,7 +600,6 @@ export default function BulkOCImport() {
                     <TableRow>
                       <TableHead className="w-[120px]">Código Centro</TableHead>
                       <TableHead>Local en el sistema</TableHead>
-                      <TableHead className="w-[120px] text-center">Recordar mapeo</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -621,13 +622,6 @@ export default function BulkOCImport() {
                             options={locationOptions}
                             placeholder="Buscar local…"
                             className="w-full max-w-sm"
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Checkbox
-                            id={`remember-${m.centroCode}`}
-                            checked={m.remember}
-                            onCheckedChange={v => updateMapping(m.centroCode, { remember: !!v })}
                           />
                         </TableCell>
                       </TableRow>
