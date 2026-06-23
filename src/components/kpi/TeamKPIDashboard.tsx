@@ -1005,7 +1005,7 @@ export function TeamKPIDashboard() {
         const { data: execForms } = await supabase
           .from("maintenance_forms" as any)
           .select("id, sub_status")
-          .in("sub_status", ["ejecutado", "resuelto"])
+          .in("sub_status", ["Ejecutado", "Resuelto"])
           .eq("year", 2026)
           .is("deleted_at", null);
 
@@ -1018,8 +1018,8 @@ export function TeamKPIDashboard() {
           velocidadPromedio: velocidades.length > 0
             ? velocidades.reduce((a, b) => a + b, 0) / velocidades.length
             : null,
-          formsEjecutados: execList.filter((f: any) => f.sub_status === "ejecutado").length,
-          formsResueltos:  execList.filter((f: any) => f.sub_status === "resuelto").length,
+          formsEjecutados: execList.filter((f: any) => f.sub_status === "Ejecutado").length,
+          formsResueltos:  execList.filter((f: any) => f.sub_status === "Resuelto").length,
         });
       } finally {
         setLoadingEvelyn(false);
