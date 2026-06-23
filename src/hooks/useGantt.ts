@@ -108,11 +108,7 @@ export function useGantt(contractId: string) {
   const [saving, setSaving] = useState(false);
 
   const loadOrgMembers = useCallback(async () => {
-    const { data } = await supabase
-      .from("org_members")
-      .select("id, name, position")
-      .order("display_order", { ascending: true })
-      .order("name", { ascending: true });
+    const { data } = await supabase.rpc("get_org_members_basic");
     if (data) setOrgMembers(data as OrgMember[]);
   }, []);
 
