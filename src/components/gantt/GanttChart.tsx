@@ -404,6 +404,10 @@ export function GanttChart({
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>(100);
   const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
+  const [colSelectMode, setColSelectMode] = useState(false);
+  const [colPending, setColPending] = useState<Set<string>>(new Set());
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
@@ -712,8 +716,6 @@ export function GanttChart({
       childTaskId: string;
     }> = [];
 
-    const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
-
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task || !task.dependencies || task.dependencies.length === 0) return;
 
@@ -733,9 +735,9 @@ export function GanttChart({
         // Shift the whole arrow to the RIGHT so it starts just to the right of
         // the parent's vertical edge, and the arrowhead lands ~50% over the
         // dependent task bar.
-        const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width + 8;
+        const fromX = headerOffset + parentPosition.left + parentPosition.width + 8;
         const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const toX = HEADER_OFFSET + taskPosition.left + Math.min(Math.max(taskPosition.width / 2, 10), 24);
+        const toX = headerOffset + taskPosition.left + Math.min(Math.max(taskPosition.width / 2, 10), 24);
         const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
 
         arrows.push({
@@ -751,7 +753,7 @@ export function GanttChart({
     });
 
     return arrows;
-  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, taskNameColWidth]);
+  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
 
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
@@ -1328,6 +1330,14 @@ export function GanttChart({
     return m;
   }, [tasks]);
 
+  const headerOffset = useMemo(() => {
+    const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
+    return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
+      get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
+      get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
+      get("end", DATE_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
+  }, [hiddenCols, taskNameColWidth]);
+
   const hierarchicalLabels = useMemo(() => {
     const map = new Map<string, string>();
     const walk = (tasks: GanttTask[], prefix: string) => {
@@ -1460,7 +1470,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 24 + INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 18 + headerOffset }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span>Cronograma</span>
@@ -1480,6 +1490,40 @@ export function GanttChart({
                   )}
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant={colSelectMode ? "default" : "outline"}
+                    className="h-6 px-2 text-xs"
+                    onClick={() => { setColSelectMode(v => !v); setColPending(new Set()); }}
+                    title="Seleccionar columnas para ocultar"
+                  >
+                    Columnas
+                  </Button>
+                  {colSelectMode && (
+                    <Button
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      disabled={colPending.size === 0}
+                      onClick={() => {
+                        setHiddenCols(prev => new Set([...prev, ...colPending]));
+                        setColSelectMode(false);
+                        setColPending(new Set());
+                      }}
+                    >
+                      Ocultar seleccionadas
+                    </Button>
+                  )}
+                  {!colSelectMode && hiddenCols.size > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-muted-foreground"
+                      onClick={() => setHiddenCols(new Set())}
+                      title="Restaurar todas las columnas ocultas"
+                    >
+                      Mostrar todo
+                    </Button>
+                  )}
                   <label
                     className={cn(
                       "flex items-center gap-1.5 h-6 px-2 text-xs rounded border bg-background cursor-pointer select-none",
@@ -1586,8 +1630,23 @@ export function GanttChart({
 
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
             <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: INDEX_COL_WIDTH }}>
-              #
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("index", INDEX_COL_WIDTH) }}
+            >
+              {cw("index", INDEX_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("index") ? n.delete("index") : n.add("index"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("index")} className="h-3 w-3 pointer-events-none" />
+                    <span>#</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">#</div>
+                )
+              )}
             </div>
             <div className="relative flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: taskNameColWidth - 6 }}>
               Tarea
@@ -1610,23 +1669,113 @@ export function GanttChart({
                 }}
               />
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: RESPONSIBLE_COL_WIDTH }}>
-              Responsable
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }}
+            >
+              {cw("responsible", RESPONSIBLE_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("responsible") ? n.delete("responsible") : n.add("responsible"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("responsible")} className="h-3 w-3 pointer-events-none" />
+                    <span>Responsable</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">Responsable</div>
+                )
+              )}
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: ORIGIN_COL_WIDTH }}>
-              Origen
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("origin", ORIGIN_COL_WIDTH) }}
+            >
+              {cw("origin", ORIGIN_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("origin") ? n.delete("origin") : n.add("origin"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("origin")} className="h-3 w-3 pointer-events-none" />
+                    <span>Origen</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">Origen</div>
+                )
+              )}
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
-              Inicio
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("start", DATE_COL_WIDTH) }}
+            >
+              {cw("start", DATE_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("start") ? n.delete("start") : n.add("start"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("start")} className="h-3 w-3 pointer-events-none" />
+                    <span>Inicio</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">Inicio</div>
+                )
+              )}
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DURATION_COL_WIDTH }}>
-              Plazo
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("duration", DURATION_COL_WIDTH) }}
+            >
+              {cw("duration", DURATION_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("duration") ? n.delete("duration") : n.add("duration"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("duration")} className="h-3 w-3 pointer-events-none" />
+                    <span>Plazo</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">Plazo</div>
+                )
+              )}
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
-              Término
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("end", DATE_COL_WIDTH) }}
+            >
+              {cw("end", DATE_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("end") ? n.delete("end") : n.add("end"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("end")} className="h-3 w-3 pointer-events-none" />
+                    <span>Término</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">Término</div>
+                )
+              )}
             </div>
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: PROGRESS_COL_WIDTH }}>
-              % Avance
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}
+            >
+              {cw("progress", PROGRESS_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("progress") ? n.delete("progress") : n.add("progress"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("progress")} className="h-3 w-3 pointer-events-none" />
+                    <span>% Avance</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">% Avance</div>
+                )
+              )}
             </div>
             
             {/* Days header */}
@@ -1679,12 +1828,11 @@ export function GanttChart({
               const todayStr = format(new Date(), "yyyy-MM-dd");
               const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
               if (todayIdx < 0) return null;
-              const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               return (
                 <div
                   className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
                   style={{
-                    left: HEADER_OFFSET + todayIdx * DAY_WIDTH,
+                    left: headerOffset + todayIdx * DAY_WIDTH,
                     width: DAY_WIDTH,
                     height: visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT,
                   }}
@@ -1696,14 +1844,13 @@ export function GanttChart({
               if (!rentStartDate) return null;
               const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
               if (idx < 0) return null;
-              const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT;
               const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
               return (
                 <div
                   className="absolute top-0 pointer-events-none z-[6] group"
                   style={{
-                    left: HEADER_OFFSET + idx * DAY_WIDTH + DAY_WIDTH / 2 - 1,
+                    left: headerOffset + idx * DAY_WIDTH + DAY_WIDTH / 2 - 1,
                     width: 2,
                     height: totalHeight,
                     borderLeft: "2px dashed hsl(var(--destructive))",
@@ -1718,7 +1865,6 @@ export function GanttChart({
             })()}
             {/* Week separators (Fri→Mon) when weekends are hidden */}
             {hideWeekends && (() => {
-              const HEADER_OFFSET = INDEX_COL_WIDTH + taskNameColWidth + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + ROW_HEIGHT;
               const seps: number[] = [];
               for (let i = 0; i < days.length - 1; i++) {
@@ -1729,7 +1875,7 @@ export function GanttChart({
                   key={`wk-sep-${sepIdx}`}
                   className="absolute top-0 pointer-events-none z-[6]"
                   style={{
-                    left: HEADER_OFFSET + sepIdx * DAY_WIDTH + 11,
+                    left: headerOffset + sepIdx * DAY_WIDTH + 11,
                     width: 2,
                     height: totalHeight,
                     background: "hsl(var(--foreground))",
@@ -1864,7 +2010,7 @@ export function GanttChart({
                     onKeyDown={handleKeyDown}
                   >
                     <div className="flex-shrink-0 w-6" />
-                    <div className="flex-shrink-0 border-r" style={{ width: INDEX_COL_WIDTH }} />
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("index", INDEX_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: taskNameColWidth - 6, paddingLeft: indent }}>
                       <span className="w-4 flex-shrink-0" />
                       <Input
@@ -1875,9 +2021,9 @@ export function GanttChart({
                         className="h-7 text-xs"
                       />
                     </div>
-                    <div className="flex-shrink-0 border-r" style={{ width: RESPONSIBLE_COL_WIDTH }} />
-                    <div className="flex-shrink-0 border-r" style={{ width: ORIGIN_COL_WIDTH }} />
-                    <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("origin", ORIGIN_COL_WIDTH) }} />
+                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
                       <DatePickerCell
                         value={newTaskRow!.start_date || null}
                         onChange={(date) => handleNewTaskChange("start_date", date)}
@@ -1886,7 +2032,7 @@ export function GanttChart({
                         taskDates={taskDates}
                       />
                     </div>
-                    <div className="flex-shrink-0 border-r flex items-center px-1 gap-1" style={{ width: DURATION_COL_WIDTH }}>
+                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center px-1 gap-1" style={{ width: cw("duration", DURATION_COL_WIDTH) }}>
                       <Input
                         type="number"
                         min={1}
@@ -1907,7 +2053,7 @@ export function GanttChart({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", DATE_COL_WIDTH) }}>
                       <DatePickerCell
                         value={newTaskRow!.end_date || null}
                         onChange={(date) => handleNewTaskChange("end_date", date)}
@@ -1916,7 +2062,7 @@ export function GanttChart({
                         taskDates={taskDates}
                       />
                     </div>
-                    <div className="flex-shrink-0 border-r" style={{ width: PROGRESS_COL_WIDTH }} />
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
                     <div className="flex items-center px-2 gap-2">
                       <Button size="sm" className="h-7 text-xs" onClick={handleSaveNewTask} disabled={!newTaskRow!.name.trim() || isSaving}>
                         {isSaving ? "..." : "Agregar"}
@@ -1962,8 +2108,8 @@ export function GanttChart({
 
                   {/* Row number — con marco del color de la línea (padre: su color; hija: tono más claro) */}
                   <div
-                    className="flex-shrink-0 border-r flex items-center justify-center"
-                    style={{ width: INDEX_COL_WIDTH }}
+                    className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center"
+                    style={{ width: cw("index", INDEX_COL_WIDTH) }}
                   >
                     <span
                       className="inline-flex items-center justify-center text-[11px] font-semibold rounded min-w-[22px] h-5 px-1"
@@ -2212,8 +2358,8 @@ export function GanttChart({
 
                   {/* Responsable */}
                   <div
-                    className="flex-shrink-0 border-r flex items-center px-1"
-                    style={{ width: RESPONSIBLE_COL_WIDTH }}
+                    className="flex-shrink-0 border-r overflow-hidden flex items-center px-1"
+                    style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }}
                   >
                     {isAdmin ? (
                       <SearchableSelect
@@ -2241,8 +2387,8 @@ export function GanttChart({
 
                   {/* Origen */}
                   <div
-                    className="flex-shrink-0 border-r flex items-center px-1"
-                    style={{ width: ORIGIN_COL_WIDTH }}
+                    className="flex-shrink-0 border-r overflow-hidden flex items-center px-1"
+                    style={{ width: cw("origin", ORIGIN_COL_WIDTH) }}
                   >
                     {isAdmin ? (
                       <SearchableSelect
@@ -2270,7 +2416,7 @@ export function GanttChart({
                     )}
                   </div>
 
-                  <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
                     {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).start : task.start_date}
@@ -2281,7 +2427,7 @@ export function GanttChart({
                   </div>
 
                   {/* Duration */}
-                  <div className="flex-shrink-0 border-r flex items-center px-1" style={{ width: DURATION_COL_WIDTH }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center px-1" style={{ width: cw("duration", DURATION_COL_WIDTH) }}>
                     {hasChildren ? (
                       <span className="text-xs px-1 text-muted-foreground" title="Calculado según las líneas hijas">
                         {(() => {
@@ -2303,7 +2449,7 @@ export function GanttChart({
                   </div>
 
                   {/* End date */}
-                  <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", DATE_COL_WIDTH) }}>
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).end : task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
@@ -2313,7 +2459,7 @@ export function GanttChart({
                   </div>
 
                   {/* Progress % */}
-                  <div className="flex-shrink-0 border-r flex items-center justify-center px-1" style={{ width: PROGRESS_COL_WIDTH }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}>
                     <Input
                       type="number"
                       min={0}
