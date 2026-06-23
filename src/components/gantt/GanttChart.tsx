@@ -1981,15 +1981,34 @@ export function GanttChart({
                              L ${arrow.toX} ${arrow.toY}`;
                   }
                   
+                  const isSelected = selectedDependencyId === arrow.id;
                   return (
                     <g key={arrow.id} className="group/arrow">
-                      {/* Visible arrow path - click handled via midpoint circle below */}
+                      {/* Wide invisible hit area — click to select the dependency */}
                       <path
                         d={pathD}
                         fill="none"
-                        className="stroke-primary group-hover/arrow:stroke-destructive transition-colors pointer-events-none"
-                        strokeWidth="2"
-                        markerEnd="url(#arrowhead)"
+                        stroke="transparent"
+                        strokeWidth="12"
+                        className="cursor-pointer pointer-events-stroke"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        onClick={() =>
+                          setSelectedDependencyId((prev) => (prev === arrow.id ? null : arrow.id))
+                        }
+                      />
+                      {/* Visible arrow path */}
+                      <path
+                        d={pathD}
+                        fill="none"
+                        className={cn(
+                          "transition-colors pointer-events-none",
+                          isSelected
+                            ? "stroke-amber-500"
+                            : "stroke-primary group-hover/arrow:stroke-destructive",
+                        )}
+                        strokeWidth={isSelected ? "3.5" : "2"}
+                        markerEnd={isSelected ? "url(#arrowhead-selected)" : "url(#arrowhead)"}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
