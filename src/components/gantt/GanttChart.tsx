@@ -1373,6 +1373,18 @@ export function GanttChart({
 
   const handleSetColor = async (taskId: string, color: string | null) => {
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
+    // Propagar el color a TODAS las líneas de nivel inferior (hijas, nietas, etc.),
+    // sin importar si tienen hijas propias. Todas adoptan el mismo color.
+    const collectDescendants = (parentId: string): GanttTask[] => {
+      const direct = tasks.filter((t) => t.parent_id === parentId);
+      return direct.flatMap((c) => [c, ...collectDescendants(c.id)]);
+    };
+    const descendants = collectDescendants(taskId);
+    for (const d of descendants) {
+      if (d.color !== color) {
+        await onUpdateTask(d.id, { color } as Partial<GanttTask>, { skipPropagation: true });
+      }
+    }
   };
 
   // Open dialog to change parent
