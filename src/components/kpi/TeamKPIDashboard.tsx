@@ -29,38 +29,48 @@ function pct(num: number, den: number) {
   return Math.round((num / den) * 100);
 }
 
-// Native <details> avoids Collapsible issues inside Dialog
 function AdminSection({ label, onSave, onCancel, children }: {
   label?: string;
   onSave?: () => void;
   onCancel?: () => void;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+
+  const handleSave = () => { onSave?.(); setOpen(false); };
+  const handleCancel = () => { onCancel?.(); setOpen(false); };
+
   return (
-    <details className="mt-2 group">
-      <summary className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer list-none select-none py-1">
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-full py-1 select-none"
+      >
         <Settings className="h-3.5 w-3.5 shrink-0" />
         <span>{label ?? "Configuración admin"}</span>
-        <ChevronDown className="h-3.5 w-3.5 ml-auto transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="mt-2 border rounded-md p-3 bg-muted/30 space-y-3 text-xs">
-        {children}
-        {(onSave || onCancel) && (
-          <div className="flex gap-2 justify-end pt-2 border-t border-border/50">
-            {onCancel && (
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onCancel}>
-                Cancelar
-              </Button>
-            )}
-            {onSave && (
-              <Button size="sm" className="h-7 text-xs" onClick={onSave}>
-                Guardar
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    </details>
+        <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-2 border rounded-md p-3 bg-muted/30 space-y-3 text-xs">
+          {children}
+          {(onSave || onCancel) && (
+            <div className="flex gap-2 justify-end pt-2 border-t border-border/50">
+              {onCancel && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" type="button" onClick={handleCancel}>
+                  Cancelar
+                </Button>
+              )}
+              {onSave && (
+                <Button size="sm" className="h-7 text-xs" type="button" onClick={handleSave}>
+                  Guardar
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -236,7 +246,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
       {/* ── Detail dialog ── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[95vw] max-w-[95vw]">
+        <DialogContent className="w-[95vw] max-w-[95vw]" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Beatriz Valenzuela — Cobertura de Proveedores</DialogTitle>
           </DialogHeader>
@@ -519,7 +529,7 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
 
       {/* ── Detail dialog — forms table + admin ── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Franco Leiva — Detalle y Configuración</DialogTitle>
           </DialogHeader>
@@ -734,7 +744,7 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
 
       {/* ── Detail dialog ── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Evelyn Padilla — OC y Facturas al Día</DialogTitle>
           </DialogHeader>
