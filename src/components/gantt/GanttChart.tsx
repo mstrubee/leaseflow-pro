@@ -410,6 +410,9 @@ export function GanttChart({
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
+  // Dependency line selected by clicking it in the bar chart (highlights the
+  // predecessor + dependent tasks).
+  const [selectedDependencyId, setSelectedDependencyId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
   const [hideWeekends, setHideWeekends] = useState(false);
@@ -761,6 +764,17 @@ export function GanttChart({
 
     return arrows;
   }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
+
+  // Resolve the currently selected dependency line into its predecessor/dependent.
+  const selectedDependency = useMemo(() => {
+    if (!selectedDependencyId) return null;
+    const arrow = dependencyArrows.find((a) => a.id === selectedDependencyId);
+    if (!arrow) return null;
+    const predecessor = tasks.find((t) => t.id === arrow.parentTaskId) || null;
+    const dependent = tasks.find((t) => t.id === arrow.childTaskId) || null;
+    return { predecessorId: arrow.parentTaskId, dependentId: arrow.childTaskId, predecessor, dependent };
+  }, [selectedDependencyId, dependencyArrows, tasks]);
+
 
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
@@ -1465,6 +1479,28 @@ export function GanttChart({
 
   return (
     <div className="border rounded-lg overflow-hidden bg-background">
+      {selectedDependency && (
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 border-b bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs">
+          <span className="font-semibold text-amber-700 dark:text-amber-400">Dependencia seleccionada</span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500" />
+            <span className="text-muted-foreground">Precedente:</span>
+            <span className="font-medium">{selectedDependency.predecessor?.name ?? "—"}</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-violet-500" />
+            <span className="text-muted-foreground">Dependiente:</span>
+            <span className="font-medium">{selectedDependency.dependent?.name ?? "—"}</span>
+          </span>
+          <button
+            type="button"
+            className="ml-auto text-muted-foreground hover:text-foreground underline"
+            onClick={() => setSelectedDependencyId(null)}
+          >
+            Limpiar selección
+          </button>
+        </div>
+      )}
       <style>{`
         .gantt-scroll::-webkit-scrollbar { height: 16px; width: 12px; }
         .gantt-scroll::-webkit-scrollbar-track { background: hsl(var(--muted)); }
@@ -1933,6 +1969,19 @@ export function GanttChart({
                       className="fill-destructive"
                     />
                   </marker>
+                  <marker
+                    id="arrowhead-selected"
+                    markerWidth="9"
+                    markerHeight="7"
+                    refX="7"
+                    refY="3.5"
+                    orient="auto"
+                  >
+                    <polygon
+                      points="0 0, 9 3.5, 0 7"
+                      className="fill-amber-500"
+                    />
+                  </marker>
                 </defs>
                 {dependencyArrows.map((arrow) => {
                   // The arrow must ALWAYS arrive at the left edge of the dependent task
@@ -1967,15 +2016,34 @@ export function GanttChart({
                              L ${arrow.toX} ${arrow.toY}`;
                   }
                   
+                  const isSelected = selectedDependencyId === arrow.id;
                   return (
                     <g key={arrow.id} className="group/arrow">
-                      {/* Visible arrow path - click handled via midpoint circle below */}
+                      {/* Wide invisible hit area — click to select the dependency */}
                       <path
                         d={pathD}
                         fill="none"
-                        className="stroke-primary group-hover/arrow:stroke-destructive transition-colors pointer-events-none"
-                        strokeWidth="2"
-                        markerEnd="url(#arrowhead)"
+                        stroke="transparent"
+                        strokeWidth="12"
+                        className="cursor-pointer [pointer-events:stroke]"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        onClick={() =>
+                          setSelectedDependencyId((prev) => (prev === arrow.id ? null : arrow.id))
+                        }
+                      />
+                      {/* Visible arrow path */}
+                      <path
+                        d={pathD}
+                        fill="none"
+                        className={cn(
+                          "transition-colors pointer-events-none",
+                          isSelected
+                            ? "stroke-amber-500"
+                            : "stroke-primary group-hover/arrow:stroke-destructive",
+                        )}
+                        strokeWidth={isSelected ? "3.5" : "2"}
+                        markerEnd={isSelected ? "url(#arrowhead-selected)" : "url(#arrowhead)"}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
@@ -2563,7 +2631,9 @@ export function GanttChart({
                                 "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
                                 !effective.color && getTaskStatusColor(task.status, task.end_date),
                                 dragSource === task.id && "opacity-50 ring-2 ring-primary",
-                                barDragTaskId === task.id && "ring-2 ring-primary"
+                                barDragTaskId === task.id && "ring-2 ring-primary",
+                                selectedDependency?.predecessorId === task.id && "ring-2 ring-amber-500 ring-offset-1",
+                                selectedDependency?.dependentId === task.id && "ring-2 ring-violet-500 ring-offset-1"
                               )}
                               style={{
                                 left: position.left,

@@ -426,74 +426,98 @@ export function useGantt(contractId: string) {
     const result = new Map<string, Partial<GanttTask>>();
     const taskById = new Map(allTasks.map((t) => [t.id, t]));
 
-    // Reverse adjacency: predecessorId -> [{ task_id, dep_type, lag_days }]
-    const successorsOf = new Map<string, { task_id: string; dep_type: "start" | "end"; lag_days: number }[]>();
+    // Reverse adjacency: predecessorId -> [successorTaskId]
+    const successorsOf = new Map<string, string[]>();
     for (const t of allTasks) {
       for (const dep of t.dependencies || []) {
         const arr = successorsOf.get(dep.depends_on_task_id) || [];
-        arr.push({ task_id: t.id, dep_type: dep.dep_type, lag_days: dep.lag_days ?? 0 });
+        arr.push(t.id);
         successorsOf.set(dep.depends_on_task_id, arr);
       }
     }
 
-    // Track the effective end date for each task (used as anchor by its successors).
-    const effectiveEnd = new Map<string, string>();
-    const effectiveStart = new Map<string, string>();
-    effectiveEnd.set(taskId, newEndDate);
-    effectiveStart.set(taskId, newStartDate);
-
-    // Topological BFS: only enqueue a successor once ALL its predecessors have
-    // been resolved so we can take the latest anchor date across all of them.
-    const inDegree = new Map<string, number>(); // remaining unresolved predecessors
+    // Effective start/end dates for every task. Seed with current values, then
+    // override the edited task with its new dates.
+    const effStart = new Map<string, string>();
+    const effEnd = new Map<string, string>();
     for (const t of allTasks) {
-      const deps = t.dependencies || [];
-      if (deps.length > 0) inDegree.set(t.id, deps.length);
+      if (t.start_date) effStart.set(t.id, t.start_date);
+      if (t.end_date) effEnd.set(t.id, t.end_date);
     }
+    effStart.set(taskId, newStartDate);
+    effEnd.set(taskId, newEndDate);
 
-    const queue: string[] = [taskId];
-    const processed = new Set<string>([taskId]);
-
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      const resolvedEnd = effectiveEnd.get(id)!;
-      const resolvedStart = effectiveStart.get(id)!;
-
-      for (const s of successorsOf.get(id) || []) {
-        const dependent = taskById.get(s.task_id);
-        if (!dependent) continue;
-
-        // Compute the candidate start date this predecessor implies.
-        const anchor = s.dep_type === "start" ? resolvedStart : resolvedEnd;
-        const anchorDate = parseISO(anchor);
-        const baseOffset = s.dep_type === "start" ? 0 : 1;
-        const candidateStart = addDays(anchorDate, baseOffset + (s.lag_days ?? 0));
-
-        // Keep the latest candidate across all predecessors.
-        const prev = effectiveStart.get(s.task_id);
-        if (!prev || candidateStart > parseISO(prev)) {
-          effectiveStart.set(s.task_id, format(candidateStart, "yyyy-MM-dd"));
-          const duration = dependent.duration_days || 1;
-          effectiveEnd.set(s.task_id, format(addDays(candidateStart, duration - 1), "yyyy-MM-dd"));
-        }
-
-        // Decrement in-degree; enqueue only when all predecessors resolved.
-        const remaining = (inDegree.get(s.task_id) ?? 1) - 1;
-        inDegree.set(s.task_id, remaining);
-        if (remaining <= 0 && !processed.has(s.task_id)) {
-          processed.add(s.task_id);
-          queue.push(s.task_id);
+    // All tasks reachable downstream from the edited task.
+    const reachable = new Set<string>();
+    const stack = [taskId];
+    while (stack.length) {
+      const id = stack.pop()!;
+      for (const sid of successorsOf.get(id) || []) {
+        if (!reachable.has(sid)) {
+          reachable.add(sid);
+          stack.push(sid);
         }
       }
     }
 
-    // Build result map (skip the origin task itself).
-    for (const [tid, start] of effectiveStart) {
-      if (tid === taskId) continue;
-      result.set(tid, { start_date: start, end_date: effectiveEnd.get(tid) });
+    // In-degree within the reachable subgraph (predecessors that are the origin
+    // or are themselves reachable). Kahn's algorithm guarantees a successor is
+    // only computed once ALL its relevant predecessors have been resolved.
+    const inDegree = new Map<string, number>();
+    for (const sid of reachable) {
+      const deps = taskById.get(sid)?.dependencies || [];
+      const count = deps.filter(
+        (d) => d.depends_on_task_id === taskId || reachable.has(d.depends_on_task_id),
+      ).length;
+      inDegree.set(sid, count);
+    }
+
+    const queue: string[] = [];
+    const resolveAndPush = (id: string) => {
+      for (const sid of successorsOf.get(id) || []) {
+        if (!reachable.has(sid)) continue;
+        const rem = (inDegree.get(sid) ?? 1) - 1;
+        inDegree.set(sid, rem);
+        if (rem <= 0) queue.push(sid);
+      }
+    };
+    resolveAndPush(taskId);
+
+    while (queue.length) {
+      const id = queue.shift()!;
+      const t = taskById.get(id);
+      if (!t) continue;
+
+      // Start at the LATEST date implied across ALL of this task's dependencies.
+      let latest: Date | null = null;
+      for (const dep of t.dependencies || []) {
+        const anchorStr =
+          dep.dep_type === "start"
+            ? effStart.get(dep.depends_on_task_id)
+            : effEnd.get(dep.depends_on_task_id);
+        if (!anchorStr) continue;
+        const baseOffset = dep.dep_type === "start" ? 0 : 1;
+        const candidate = addDays(parseISO(anchorStr), baseOffset + (dep.lag_days ?? 0));
+        if (!latest || candidate > latest) latest = candidate;
+      }
+
+      if (latest) {
+        const duration = t.duration_days || 1;
+        const startStr = format(latest, "yyyy-MM-dd");
+        const endStr = format(addDays(latest, duration - 1), "yyyy-MM-dd");
+        effStart.set(id, startStr);
+        effEnd.set(id, endStr);
+        if (startStr !== t.start_date || endStr !== t.end_date) {
+          result.set(id, { start_date: startStr, end_date: endStr });
+        }
+      }
+
+      resolveAndPush(id);
     }
 
     return result;
   };
+
 
   const updateTask = async (
     taskId: string,
