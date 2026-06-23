@@ -4,7 +4,6 @@ import { Holiday, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUt
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
 import {
@@ -1466,11 +1465,23 @@ export function GanttChart({
 
   return (
     <div className="border rounded-lg overflow-hidden bg-background">
-      <ScrollArea className="w-full h-[75vh]">
+      <style>{`
+        .gantt-scroll::-webkit-scrollbar { height: 16px; width: 12px; }
+        .gantt-scroll::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+        .gantt-scroll::-webkit-scrollbar-thumb {
+          background: hsl(var(--muted-foreground));
+          border-radius: 8px;
+          border: 3px solid hsl(var(--muted));
+        }
+        .gantt-scroll::-webkit-scrollbar-thumb:hover { background: hsl(var(--foreground)); }
+        .gantt-scroll::-webkit-scrollbar-corner { background: hsl(var(--muted)); }
+        .gantt-scroll { scrollbar-width: auto; scrollbar-color: hsl(var(--muted-foreground)) hsl(var(--muted)); }
+      `}</style>
+      <div className="gantt-scroll w-full h-[75vh] overflow-auto">
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 18 + headerOffset }}>
+            <div className="flex-shrink-0 border-r sticky left-0 z-[31] bg-muted" style={{ width: 18 + headerOffset }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span>Cronograma</span>
@@ -1629,6 +1640,7 @@ export function GanttChart({
           </div>
 
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
+            <div className="flex sticky left-0 z-[21] bg-muted flex-shrink-0">
             <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
@@ -1777,7 +1789,8 @@ export function GanttChart({
                 )
               )}
             </div>
-            
+            </div>
+
             {/* Days header */}
             <div className="flex">
               {days.map((day, idx) => {
@@ -2009,6 +2022,7 @@ export function GanttChart({
                     style={{ height: ROW_HEIGHT }}
                     onKeyDown={handleKeyDown}
                   >
+                    <div className="flex sticky left-0 z-[15] bg-primary/5 flex-shrink-0">
                     <div className="flex-shrink-0 w-6" />
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("index", INDEX_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: taskNameColWidth - 6, paddingLeft: indent }}>
@@ -2063,6 +2077,7 @@ export function GanttChart({
                       />
                     </div>
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
+                    </div>
                     <div className="flex items-center px-2 gap-2">
                       <Button size="sm" className="h-7 text-xs" onClick={handleSaveNewTask} disabled={!newTaskRow!.name.trim() || isSaving}>
                         {isSaving ? "..." : "Agregar"}
@@ -2101,6 +2116,8 @@ export function GanttChart({
                       )}
                       style={{ height: ROW_HEIGHT }}
                     >
+                  {/* Columnas fijas congeladas en el scroll horizontal */}
+                  <div className="flex sticky left-0 z-[15] flex-shrink-0 bg-background">
                   {/* Drag handle */}
                   <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -2488,6 +2505,7 @@ export function GanttChart({
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
+                  </div>
 
                   {/* Gantt bar area */}
                   <div
@@ -2685,8 +2703,7 @@ export function GanttChart({
             )}
           </div>
         </div>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
+      </div>
 
       <AlertDialog open={!!pendingDateEdit} onOpenChange={(o) => { if (!o) setPendingDateEdit(null); }}>
         <AlertDialogContent>
