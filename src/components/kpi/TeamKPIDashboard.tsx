@@ -106,6 +106,8 @@ interface EvelynData {
   ocConNumero: number; ocConFactura: number;
   ocSinFactura: Array<{ order_number: string; order_date: string | null }>;
   velocidadPromedio: number | null;
+  formsEjecutados: number;  // en sub_status "ejecutado" → pendientes de OT
+  formsResueltos: number;   // pasaron de "ejecutado" a "resuelto" por Evelyn
 }
 
 interface BeatrizData {
@@ -626,11 +628,11 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
 
 const EVELYN_CFG_KEY = "evelyn_kpi_cfg";
 interface EvelynCfg {
-  wCobertura: number; wVelocidad: number;
+  wCobertura: number; wVelocidad: number; wOTs: number;
   velOptimo: number; velMeta: number; velMinimo: number;
 }
 const EVELYN_DEFAULTS: EvelynCfg = {
-  wCobertura: 70, wVelocidad: 30,
+  wCobertura: 70, wVelocidad: 20, wOTs: 10,
   velOptimo: 3, velMeta: 5, velMinimo: 10,
 };
 
@@ -654,8 +656,10 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
 
   if (loading) return <CardSkeleton title="Evelyn Padilla" subtitle="OC y Facturas al Día" />;
 
-  const cobertura = data ? pct(data.ocConFactura, data.ocConNumero) : 0;
-  const velocidad = data?.velocidadPromedio ?? null;
+  const cobertura  = data ? pct(data.ocConFactura, data.ocConNumero) : 0;
+  const velocidad  = data?.velocidadPromedio ?? null;
+  const totalOTs   = data ? data.formsEjecutados + data.formsResueltos : 0;
+  const otsResueltas = data ? pct(data.formsResueltos, totalOTs) : 0;
 
   const velScore = velocidad === null ? 0
     : velocidad <= cfg.velOptimo ? 130
@@ -663,8 +667,12 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
     : velocidad <= cfg.velMinimo ? 70
     : 0;
 
-  const totalW = cfg.wCobertura + cfg.wVelocidad;
-  const score  = totalW > 0 ? Math.round((cobertura * cfg.wCobertura + velScore * cfg.wVelocidad) / totalW) : 0;
+  const totalW = cfg.wCobertura + cfg.wVelocidad + cfg.wOTs;
+  const score  = totalW > 0
+    ? Math.round(
+        (cobertura * cfg.wCobertura + velScore * cfg.wVelocidad + otsResueltas * cfg.wOTs) / totalW
+      )
+    : 0;
   const superPerformance = cobertura >= 100 && velocidad !== null && velocidad <= cfg.velOptimo;
 
   return (
@@ -698,6 +706,18 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               <span className={`font-semibold text-sm ${velocidad <= cfg.velOptimo ? "text-emerald-600" : velocidad <= cfg.velMeta ? "text-blue-600" : velocidad <= cfg.velMinimo ? "text-amber-500" : "text-destructive"}`}>
                 {velocidad.toFixed(1)} días háb.
               </span>
+            </div>
+          )}
+          {data && (
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-muted-foreground">OTs subidas: Ejecutado → Resuelto</span>
+                <span className="font-semibold">{otsResueltas}%</span>
+              </div>
+              <Progress value={otsResueltas} className="h-2" />
+              <p className="text-xs text-muted-foreground mt-1">
+                {data.formsResueltos} resueltos · {data.formsEjecutados} pendientes de OT
+              </p>
             </div>
           )}
           {superPerformance && (
@@ -740,6 +760,27 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               </div>
             )}
 
+            {data && (
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>
+                    OTs subidas: Ejecutado → Resuelto
+                    <span className="text-muted-foreground text-xs ml-1">({cfg.wOTs}% peso)</span>
+                  </span>
+                  <span className={`font-semibold ${otsResueltas >= 100 ? "text-emerald-600" : otsResueltas >= 70 ? "text-amber-500" : "text-destructive"}`}>
+                    {otsResueltas}%
+                  </span>
+                </div>
+                <Progress value={otsResueltas} className="h-2" />
+                <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                  <span>{data.formsResueltos} resueltos (OT subida)</span>
+                  <span className={data.formsEjecutados > 0 ? "text-amber-600 font-medium" : ""}>
+                    {data.formsEjecutados} pendientes de OT
+                  </span>
+                </div>
+              </div>
+            )}
+
             {superPerformance && (
               <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 space-y-1">
                 <div className="flex items-center gap-1 font-semibold"><TrendingUp className="h-3.5 w-3.5" /> Equipo en ritmo óptimo</div>
@@ -767,8 +808,9 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               <div>
                 <p className="font-medium mb-2">Ponderaciones (%)</p>
                 <div className="space-y-1.5">
-                  <WeightRow label="Cobertura OC"    value={cfg.wCobertura} onChange={v => updateCfg({ wCobertura: v })} />
-                  <WeightRow label="Velocidad carga" value={cfg.wVelocidad} onChange={v => updateCfg({ wVelocidad: v })} />
+                  <WeightRow label="Cobertura OC"         value={cfg.wCobertura} onChange={v => updateCfg({ wCobertura: v })} />
+                  <WeightRow label="Velocidad carga"       value={cfg.wVelocidad} onChange={v => updateCfg({ wVelocidad: v })} />
+                  <WeightRow label="OTs Ejecutado→Resuelto" value={cfg.wOTs}      onChange={v => updateCfg({ wOTs: v })}       />
                 </div>
               </div>
               <div>
@@ -949,6 +991,16 @@ export function TeamKPIDashboard() {
           if (dias >= 0) velocidades.push(dias);
         });
 
+        // OTs KPI: forms en sub_status "ejecutado" (pendientes) y "resuelto" (completados por Evelyn)
+        const { data: execForms } = await supabase
+          .from("maintenance_forms" as any)
+          .select("id, sub_status")
+          .in("sub_status", ["ejecutado", "resuelto"])
+          .eq("year", 2026)
+          .is("deleted_at", null);
+
+        const execList = (execForms || []) as any[];
+
         setEvelynData({
           ocConNumero:       ocList.length,
           ocConFactura:      ocConFactura.length,
@@ -956,6 +1008,8 @@ export function TeamKPIDashboard() {
           velocidadPromedio: velocidades.length > 0
             ? velocidades.reduce((a, b) => a + b, 0) / velocidades.length
             : null,
+          formsEjecutados: execList.filter((f: any) => f.sub_status === "ejecutado").length,
+          formsResueltos:  execList.filter((f: any) => f.sub_status === "resuelto").length,
         });
       } finally {
         setLoadingEvelyn(false);
