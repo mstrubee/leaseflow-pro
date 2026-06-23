@@ -414,18 +414,32 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onReorderTask={reorderTask}
               isAdmin={canEdit}
               rentStartDate={rentStartDate}
-              onExportPDF={async (hideCompleted) => {
+              onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
                 try {
                   const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
                   if (data?.name) contractName = data.name;
                 } catch {}
-                await exportGanttToPDF(taskTree, tasks, holidays, {
-                  contractName,
-                  timelineName: timeline.name,
-                  hideCompleted,
-                  orgMembers,
-                });
+                if (mode === "all") {
+                  await exportGanttToPDF(taskTree, tasks, holidays, {
+                    contractName,
+                    timelineName: timeline.name,
+                    hideCompleted,
+                    orgMembers,
+                  });
+                } else {
+                  const parents = mode === "selected"
+                    ? taskTree.filter(t => selectedParentIds?.includes(t.id))
+                    : taskTree;
+                  for (const parent of parents) {
+                    await exportGanttToPDF([parent], tasks, holidays, {
+                      contractName: `${contractName} — ${parent.name}`,
+                      timelineName: timeline.name,
+                      hideCompleted,
+                      orgMembers,
+                    });
+                  }
+                }
               }}
             />
           </TabsContent>
@@ -444,18 +458,32 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onUpdateDependency={updateDependency}
               onLinkPurchaseOrder={linkPurchaseOrder}
               onUnlinkPurchaseOrder={unlinkPurchaseOrder}
-              onExportPDF={async (hideCompleted) => {
+              onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
                 try {
                   const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
                   if (data?.name) contractName = data.name;
                 } catch {}
-                await exportGanttToPDF(taskTree, tasks, holidays, {
-                  contractName,
-                  timelineName: timeline.name,
-                  hideCompleted,
-                  orgMembers,
-                });
+                if (mode === "all") {
+                  await exportGanttToPDF(taskTree, tasks, holidays, {
+                    contractName,
+                    timelineName: timeline.name,
+                    hideCompleted,
+                    orgMembers,
+                  });
+                } else {
+                  const parents = mode === "selected"
+                    ? taskTree.filter(t => selectedParentIds?.includes(t.id))
+                    : taskTree;
+                  for (const parent of parents) {
+                    await exportGanttToPDF([parent], tasks, holidays, {
+                      contractName: `${contractName} — ${parent.name}`,
+                      timelineName: timeline.name,
+                      hideCompleted,
+                      orgMembers,
+                    });
+                  }
+                }
               }}
             />
           </TabsContent>

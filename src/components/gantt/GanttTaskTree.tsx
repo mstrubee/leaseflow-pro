@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -103,7 +104,7 @@ interface GanttTaskTreeProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
-  onExportPDF?: (hideCompleted: boolean) => void;
+  onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
 }
 
 export function GanttTaskTree({
@@ -165,6 +166,9 @@ export function GanttTaskTree({
   const [editTaskDialogOpen, setEditTaskDialogOpen] = useState(false);
   const [dependencyDialogOpen, setDependencyDialogOpen] = useState(false);
   const [poDialogOpen, setPODialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
+  const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<GanttTask | null>(null);
   const [newTaskName, setNewTaskName] = useState("");
@@ -455,7 +459,7 @@ export function GanttTaskTree({
             {hideCompleted ? "Mostrar completadas" : "Ocultar completadas"}
           </Button>
           {onExportPDF && (
-            <Button variant="outline" size="sm" onClick={() => onExportPDF(hideCompleted)}>
+            <Button variant="outline" size="sm" onClick={() => { setExportMode("all"); setExportSelectedIds(new Set()); setExportDialogOpen(true); }}>
               <FileDown className="h-4 w-4 mr-2" />
               Exportar PDF
             </Button>
@@ -813,6 +817,76 @@ export function GanttTaskTree({
           </div>
           <DialogFooter>
             <Button onClick={() => setPODialogOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export PDF dialog */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Exportar cronograma PDF</DialogTitle>
+          </DialogHeader>
+
+          <RadioGroup value={exportMode} onValueChange={(v) => setExportMode(v as typeof exportMode)} className="gap-3 py-2">
+            <div className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/40" onClick={() => setExportMode("all")}>
+              <RadioGroupItem value="all" id="tree-exp-all" className="mt-0.5" />
+              <Label htmlFor="tree-exp-all" className="cursor-pointer flex flex-col gap-0.5">
+                <span className="font-medium">Todo el cronograma</span>
+                <span className="text-xs text-muted-foreground">Un PDF con todas las líneas del cronograma</span>
+              </Label>
+            </div>
+            <div className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/40" onClick={() => setExportMode("separate")}>
+              <RadioGroupItem value="separate" id="tree-exp-sep" className="mt-0.5" />
+              <Label htmlFor="tree-exp-sep" className="cursor-pointer flex flex-col gap-0.5">
+                <span className="font-medium">PDF por línea padre</span>
+                <span className="text-xs text-muted-foreground">Un PDF separado por cada línea padre, incluyendo sus hijas y descendientes</span>
+              </Label>
+            </div>
+            <div className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/40" onClick={() => setExportMode("selected")}>
+              <RadioGroupItem value="selected" id="tree-exp-sel" className="mt-0.5" />
+              <Label htmlFor="tree-exp-sel" className="cursor-pointer flex flex-col gap-0.5">
+                <span className="font-medium">Líneas padre seleccionadas</span>
+                <span className="text-xs text-muted-foreground">Elige qué líneas padre exportar, con sus hijas y descendientes</span>
+              </Label>
+            </div>
+          </RadioGroup>
+
+          {exportMode === "selected" && (
+            <div className="border rounded-lg max-h-52 overflow-y-auto">
+              <div className="p-2 border-b bg-muted/40 flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Líneas padre</span>
+                <button className="text-xs text-blue-600 hover:underline" onClick={() => setExportSelectedIds(new Set(tasks.map(t => t.id)))}>
+                  Seleccionar todas
+                </button>
+              </div>
+              {tasks.map(parent => (
+                <label key={parent.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/30 cursor-pointer">
+                  <Checkbox
+                    checked={exportSelectedIds.has(parent.id)}
+                    onCheckedChange={(checked) =>
+                      setExportSelectedIds(prev => { const n = new Set(prev); checked ? n.add(parent.id) : n.delete(parent.id); return n; })
+                    }
+                  />
+                  <span className="text-sm truncate">{parent.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
+            <Button
+              size="sm"
+              disabled={exportMode === "selected" && exportSelectedIds.size === 0}
+              onClick={() => {
+                setExportDialogOpen(false);
+                onExportPDF?.(hideCompleted, exportMode, exportMode === "selected" ? Array.from(exportSelectedIds) : undefined);
+              }}
+            >
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Exportar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
