@@ -19,7 +19,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAppLogos } from "@/hooks/useAppLogos";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { uploadFileToStorage } from "@/lib/storageUtils";
+import { uploadFileToStorage, extractStoragePath } from "@/lib/storageUtils";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
   OCSupplier, GroupedOC, OCAllocation, OCRowStatus, DuplicateResolution,
@@ -531,10 +531,15 @@ export default function BulkOCImport() {
       toast.error("Este lote no tiene archivo almacenado.");
       return;
     }
+    const filePath = extractStoragePath(b.storage_path);
+    if (!filePath) {
+      toast.error("Ruta de archivo inválida.");
+      return;
+    }
     toast.info("Descargando archivo almacenado…");
     const { data: blob, error } = await supabase.storage
-      .from("oc-imports")
-      .download(b.storage_path);
+      .from("repository-files")
+      .download(filePath);
     if (error || !blob) {
       toast.error("No se pudo descargar el archivo.");
       return;
