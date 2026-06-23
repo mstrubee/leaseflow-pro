@@ -5,23 +5,44 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   ArrowLeft, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle,
-  MapPin, User, Loader2, CloudUpload, History, RefreshCw, ChevronDown, ChevronUp,
+  MapPin, User, Loader2, CloudUpload, History, RefreshCw,
+  ChevronDown, ChevronUp, Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
-  OCLocation, OCSupplier, GroupedOC, OCRowStatus, DuplicateResolution,
+  OCSupplier, GroupedOC, OCRowStatus, DuplicateResolution,
+  RawOCRow,
 } from "@/lib/parseBulkOCExcel";
+
+// ── Extended location type (includes id for centro_sap update) ────────────────
+
+interface FullLocation {
+  id: string;
+  contract_id: string | null;
+  contract_name: string;
+  centro_sap: string | null;
+}
+
+interface CentroMapping {
+  centroCode: string;       // raw value from Excel, e.g. "0428"
+  locationId: string | null;
+  contractId: string | null;
+  contractName: string | null;
+  remember: boolean;        // save to centro_sap for future imports
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,7 +59,7 @@ interface ImportBatch {
   drive_synced_at: string | null;
 }
 
-type Stage = "idle" | "parsing" | "review" | "importing" | "done";
+type Stage = "idle" | "parsing" | "mapping" | "review" | "importing" | "done";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -52,11 +73,18 @@ function statusBadge(status: OCRowStatus) {
 }
 
 function fmtClp(n: number) {
-  return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("es-CL", {
+    style: "currency", currency: "CLP", maximumFractionDigits: 0,
+  }).format(n);
 }
 
 function fmtDate(iso: string) {
   try { return format(parseISO(iso), "dd/MM/yyyy", { locale: es }); } catch { return iso; }
+}
+
+function extractCentroCode(cebe: string | null): string {
+  if (!cebe) return "";
+  return cebe.replace(/^H/i, "").replace(/P\d+$/i, "").trim();
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -66,19 +94,21 @@ export default function BulkOCImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reference data
-  const [locations, setLocations]   = useState<OCLocation[]>([]);
-  const [suppliers, setSuppliers]   = useState<OCSupplier[]>([]);
-  const [batches,   setBatches]     = useState<ImportBatch[]>([]);
-  const [loadingRef, setLoadingRef] = useState(true);
+  const [allLocations, setAllLocations] = useState<FullLocation[]>([]);
+  const [suppliers,    setSuppliers]    = useState<OCSupplier[]>([]);
+  const [batches,      setBatches]      = useState<ImportBatch[]>([]);
+  const [loadingRef,   setLoadingRef]   = useState(true);
 
   // Import flow
-  const [stage,   setStage]   = useState<Stage>("idle");
-  const [file,    setFile]    = useState<File | null>(null);
-  const [grouped, setGrouped] = useState<GroupedOC[]>([]);
+  const [stage,    setStage]    = useState<Stage>("idle");
+  const [file,     setFile]     = useState<File | null>(null);
+  const [rawRows,  setRawRows]  = useState<RawOCRow[]>([]);
+  const [grouped,  setGrouped]  = useState<GroupedOC[]>([]);
+  const [mappings, setMappings] = useState<CentroMapping[]>([]);
   const [progress, setProgress] = useState(0);
   const [showHistory, setShowHistory] = useState(true);
 
-  // ── Load reference data ──────────────────────────────────────────────────
+  // ── Load reference data ────────────────────────────────────────────────────
 
   useEffect(() => {
     async function load() {
@@ -86,9 +116,9 @@ export default function BulkOCImport() {
       const [locRes, supRes, batchRes] = await Promise.all([
         supabase
           .from("maintenance_locations" as any)
-          .select("contract_id, name, centro_sap")
+          .select("id, contract_id, name, centro_sap")
           .eq("is_active", true)
-          .not("contract_id", "is", null),
+          .order("name"),
         supabase
           .from("suppliers")
           .select("id, name")
@@ -100,12 +130,7 @@ export default function BulkOCImport() {
           .limit(20),
       ]);
 
-      const locs: OCLocation[] = ((locRes.data || []) as any[]).map(l => ({
-        contract_id:   l.contract_id,
-        contract_name: l.name,
-        centro_sap:    l.centro_sap,
-      }));
-      setLocations(locs);
+      setAllLocations(((locRes.data || []) as any[]) as FullLocation[]);
       setSuppliers(((supRes.data || []) as any[]) as OCSupplier[]);
       setBatches(((batchRes.data || []) as any[]) as ImportBatch[]);
       setLoadingRef(false);
@@ -113,7 +138,13 @@ export default function BulkOCImport() {
     load();
   }, []);
 
-  // ── File handling ─────────────────────────────────────────────────────────
+  // ── Location options for SearchableSelect ──────────────────────────────────
+
+  const locationOptions = allLocations
+    .filter(l => l.contract_id)
+    .map(l => ({ value: l.id, label: l.contract_name }));
+
+  // ── File handling ──────────────────────────────────────────────────────────
 
   const handleFile = useCallback(async (f: File) => {
     if (!f.name.match(/\.(xlsx|xls)$/i)) {
@@ -129,7 +160,7 @@ export default function BulkOCImport() {
       const { rows, missingColumns } = parseOCExcelSheet(wb);
 
       if (missingColumns.length > 0) {
-        toast.warning(`Columnas no encontradas: ${missingColumns.join(", ")}. Verifica el formato del archivo.`);
+        toast.warning(`Columnas no encontradas: ${missingColumns.join(", ")}`);
       }
       if (rows.length === 0) {
         toast.error("No se encontraron filas de datos en el archivo.");
@@ -137,39 +168,61 @@ export default function BulkOCImport() {
         return;
       }
 
-      const parsed   = resolveRows(rows, locations, suppliers);
+      setRawRows(rows);
+
+      // Build OCLocation array from locations that have centro_sap populated
+      const knownLocations = allLocations
+        .filter(l => l.centro_sap && l.contract_id)
+        .map(l => ({
+          contract_id:   l.contract_id!,
+          contract_name: l.contract_name,
+          centro_sap:    l.centro_sap,
+        }));
+
+      const parsed  = resolveRows(rows, knownLocations, suppliers);
       const grouped_ = groupByOrderNumber(parsed);
 
-      // Mark duplicates
-      const numbers = grouped_.map(g => g.orderNumber).filter(Boolean);
-      if (numbers.length > 0) {
-        const { data: existing } = await supabase
-          .from("purchase_orders")
-          .select("id, order_number")
-          .in("order_number", numbers)
-          .is("deleted_at", null) as any;
-
-        const existingMap = new Map<string, string>();
-        for (const o of (existing || []) as any[]) {
-          existingMap.set(o.order_number, o.id);
-        }
-        for (const g of grouped_) {
-          if (existingMap.has(g.orderNumber)) {
-            g.isDuplicate = true;
-            g.existingId  = existingMap.get(g.orderNumber) ?? null;
-          }
-        }
+      // Collect distinct unmatched Centro codes
+      const unmatchedCodes = new Set<string>();
+      for (const row of parsed) {
+        if (!row.contractId) unmatchedCodes.add(row.centro.trim());
       }
 
-      setGrouped(grouped_);
-      setStage("review");
-      toast.success(`${rows.length} filas leídas → ${grouped_.length} OC únicas`);
+      if (unmatchedCodes.size > 0) {
+        // Pre-populate with any already-mapped locations (centro_sap without leading zeros)
+        const initialMappings: CentroMapping[] = [...unmatchedCodes].map(code => {
+          // Try to auto-match via existing centro_sap
+          const stripped = code.replace(/^0+/, "");
+          const auto = allLocations.find(l => {
+            const existing = extractCentroCode(l.centro_sap);
+            return existing === code || existing.replace(/^0+/, "") === stripped;
+          });
+          return {
+            centroCode:   code,
+            locationId:   auto?.id ?? null,
+            contractId:   auto?.contract_id ?? null,
+            contractName: auto?.contract_name ?? null,
+            remember:     true,
+          };
+        });
+
+        setRawRows(rows);
+        setGrouped(grouped_);
+        setMappings(initialMappings);
+        setStage("mapping");
+        toast.info(`${unmatchedCodes.size} código(s) Centro sin match — asigna los locales correspondientes`);
+      } else {
+        await markDuplicates(grouped_);
+        setGrouped(grouped_);
+        setStage("review");
+        toast.success(`${rows.length} filas → ${grouped_.length} OC únicas`);
+      }
     } catch (err) {
       console.error(err);
       toast.error("Error al procesar el archivo Excel.");
       setStage("idle");
     }
-  }, [locations, suppliers]);
+  }, [allLocations, suppliers]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -182,7 +235,78 @@ export default function BulkOCImport() {
     if (f) handleFile(f);
   };
 
-  // ── Duplicate resolution ──────────────────────────────────────────────────
+  // ── Mapping step ───────────────────────────────────────────────────────────
+
+  function updateMapping(centroCode: string, patch: Partial<CentroMapping>) {
+    setMappings(prev => prev.map(m =>
+      m.centroCode === centroCode ? { ...m, ...patch } : m
+    ));
+  }
+
+  async function applyMappings() {
+    // 1. Save centro_sap for "remember" mappings
+    const toSave = mappings.filter(m => m.remember && m.locationId && m.contractId);
+    for (const m of toSave) {
+      const cebeValue = `H${m.centroCode}`;
+      await supabase
+        .from("maintenance_locations" as any)
+        .update({ centro_sap: cebeValue } as any)
+        .eq("id", m.locationId!);
+      // Update local cache
+      setAllLocations(prev => prev.map(l =>
+        l.id === m.locationId ? { ...l, centro_sap: cebeValue } : l
+      ));
+    }
+
+    // 2. Build complete location list (known + manually mapped)
+    const manualLocations = mappings
+      .filter(m => m.contractId)
+      .map(m => ({
+        contract_id:   m.contractId!,
+        contract_name: m.contractName!,
+        centro_sap:    m.centroCode,  // use raw code directly for this resolve pass
+      }));
+
+    const knownLocations = allLocations
+      .filter(l => l.centro_sap && l.contract_id)
+      .map(l => ({
+        contract_id:   l.contract_id!,
+        contract_name: l.contract_name,
+        centro_sap:    l.centro_sap,
+      }));
+
+    const allLocs = [...knownLocations, ...manualLocations];
+    const parsed   = resolveRows(rawRows, allLocs, suppliers);
+    const grouped_ = groupByOrderNumber(parsed);
+
+    await markDuplicates(grouped_);
+    setGrouped(grouped_);
+    setStage("review");
+    toast.success(`${grouped_.length} OC listas para revisión`);
+  }
+
+  // ── Duplicate detection ────────────────────────────────────────────────────
+
+  async function markDuplicates(groups: GroupedOC[]) {
+    const numbers = groups.map(g => g.orderNumber).filter(Boolean);
+    if (numbers.length === 0) return;
+    const { data: existing } = await supabase
+      .from("purchase_orders")
+      .select("id, order_number")
+      .in("order_number", numbers)
+      .is("deleted_at", null) as any;
+
+    const existingMap = new Map<string, string>();
+    for (const o of (existing || []) as any[]) existingMap.set(o.order_number, o.id);
+    for (const g of groups) {
+      if (existingMap.has(g.orderNumber)) {
+        g.isDuplicate = true;
+        g.existingId  = existingMap.get(g.orderNumber) ?? null;
+      }
+    }
+  }
+
+  // ── Duplicate resolution ───────────────────────────────────────────────────
 
   function setResolution(orderNumber: string, res: DuplicateResolution) {
     setGrouped(prev => prev.map(g =>
@@ -193,7 +317,7 @@ export default function BulkOCImport() {
   const unresolvedDuplicates = grouped.filter(g => g.isDuplicate && g.duplicateResolution === null);
   const toImport             = grouped.filter(g => !g.isDuplicate || g.duplicateResolution !== "keep_existing");
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
+  // ── Stats ──────────────────────────────────────────────────────────────────
 
   const stats = {
     total:           grouped.length,
@@ -204,11 +328,11 @@ export default function BulkOCImport() {
     duplicates:      grouped.filter(g => g.isDuplicate).length,
   };
 
-  // ── Import ────────────────────────────────────────────────────────────────
+  // ── Import ─────────────────────────────────────────────────────────────────
 
   async function handleImport() {
     if (unresolvedDuplicates.length > 0) {
-      toast.warning("Hay duplicados sin resolver. Defina qué hacer con cada uno antes de importar.");
+      toast.warning("Hay duplicados sin resolver.");
       return;
     }
     if (!file) return;
@@ -217,54 +341,47 @@ export default function BulkOCImport() {
     setProgress(0);
 
     let storagePath: string | null = null;
-
-    // 1. Upload Excel to storage
     try {
       const year = new Date().getFullYear();
       const ts   = Date.now();
-      const path = `oc-imports/${year}/${ts}_${file.name}`;
-      const result = await uploadFileToStorage(path, file);
-      if (!result.error) storagePath = result.path;
+      const { path, error } = await uploadFileToStorage(`oc-imports/${year}/${ts}_${file.name}`, file);
+      if (!error) storagePath = path;
     } catch { /* non-blocking */ }
 
-    // 2. Create batch record
     const { data: batchData } = await supabase
       .from("oc_import_batches" as any)
       .insert({
-        filename:             file.name,
-        storage_path:         storagePath,
-        rows_total:           stats.total,
-        rows_ok:              stats.ok,
+        filename:              file.name,
+        storage_path:          storagePath,
+        rows_total:            stats.total,
+        rows_ok:               stats.ok,
         rows_pending_supplier: stats.pendingSupplier,
-        rows_pending_local:   stats.pendingLocal,
-        rows_duplicate:       stats.duplicates,
+        rows_pending_local:    stats.pendingLocal,
+        rows_duplicate:        stats.duplicates,
       })
       .select("id")
       .single() as any;
 
     const batchId: string | null = batchData?.id ?? null;
-
-    // 3. Insert each OC
     let inserted = 0;
-    const ocList = toImport;
-    for (let i = 0; i < ocList.length; i++) {
-      const g = ocList[i];
-      setProgress(Math.round(((i + 1) / ocList.length) * 100));
+
+    for (let i = 0; i < toImport.length; i++) {
+      const g = toImport[i];
+      setProgress(Math.round(((i + 1) / toImport.length) * 100));
 
       try {
-        const orderYear = g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear();
+        const orderYear    = g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear();
         const primaryAlloc = g.allocations.find(a => a.contractId) ?? g.allocations[0];
 
         if (g.isDuplicate && g.duplicateResolution === "replace" && g.existingId) {
-          // Update existing
           await (supabase
             .from("purchase_orders")
             .update({
-              description:   g.description,
-              amount_clp:    g.totalAmountClp,
-              supplier_id:   g.supplierId,
-              supplier_name: g.supplierName,
-              order_date:    g.orderDate,
+              description:             g.description,
+              amount_clp:              g.totalAmountClp,
+              supplier_id:             g.supplierId,
+              supplier_name:           g.supplierName,
+              order_date:              g.orderDate,
               import_pending_supplier: !g.supplierId,
               import_pending_local:    g.allocations.some(a => !a.contractId),
             } as any)
@@ -273,34 +390,33 @@ export default function BulkOCImport() {
           continue;
         }
 
-        const insertPayload: Record<string, unknown> = {
-          order_number:    g.orderNumber,
-          description:     g.description,
-          amount_uf:       0,
-          amount_clp:      g.totalAmountClp,
-          input_currency:  "CLP",
-          status:          "abierta",
-          budget_classification: "OPEX",
-          order_date:      g.orderDate,
-          year:            orderYear,
-          contract_id:     primaryAlloc?.contractId ?? null,
-          supplier_id:     g.supplierId,
-          supplier_name:   g.supplierName,
-          is_multi_contract: g.isMultiContract,
+        const payload: Record<string, unknown> = {
+          order_number:            g.orderNumber,
+          description:             g.description,
+          amount_uf:               0,
+          amount_clp:              g.totalAmountClp,
+          input_currency:          "CLP",
+          status:                  "abierta",
+          budget_classification:   "OPEX",
+          order_date:              g.orderDate,
+          year:                    orderYear,
+          contract_id:             primaryAlloc?.contractId ?? null,
+          supplier_id:             g.supplierId,
+          supplier_name:           g.supplierName,
+          is_multi_contract:       g.isMultiContract,
           import_pending_supplier: !g.supplierId,
           import_pending_local:    g.allocations.some(a => !a.contractId),
-          import_batch_id: batchId,
+          import_batch_id:         batchId,
         };
 
         const { data: newOC, error: insertErr } = await (supabase
           .from("purchase_orders")
-          .insert(insertPayload as any)
+          .insert(payload as any)
           .select("id")
           .single() as any);
 
         if (insertErr) { console.error(insertErr); continue; }
 
-        // Insert allocations for each local
         if (newOC?.id) {
           const allocRows = g.allocations
             .filter(a => a.contractId)
@@ -326,7 +442,6 @@ export default function BulkOCImport() {
     setStage("done");
     toast.success(`${inserted} OC importadas correctamente.`);
 
-    // Refresh history
     const { data: freshBatches } = await supabase
       .from("oc_import_batches" as any)
       .select("id,filename,storage_path,imported_at,rows_total,rows_ok,rows_pending_supplier,rows_pending_local,rows_duplicate,drive_synced_at")
@@ -337,16 +452,19 @@ export default function BulkOCImport() {
 
   function reset() {
     setFile(null);
+    setRawRows([]);
     setGrouped([]);
+    setMappings([]);
     setStage("idle");
     setProgress(0);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-  const duplicates = grouped.filter(g => g.isDuplicate);
+  const duplicates    = grouped.filter(g => g.isDuplicate);
   const nonDuplicates = grouped.filter(g => !g.isDuplicate);
+  const mappedCount   = mappings.filter(m => m.contractId).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -362,16 +480,18 @@ export default function BulkOCImport() {
               <p className="text-xs text-muted-foreground">Órdenes de Compra — Mantenciones</p>
             </div>
           </div>
-          {stage === "review" && (
-            <Button variant="outline" size="sm" onClick={reset}>
-              <RefreshCw className="h-4 w-4 mr-1" /> Cargar otro archivo
-            </Button>
-          )}
-          {stage === "done" && (
-            <Button size="sm" onClick={() => navigate("/purchase-orders")}>
-              Ver listado de OC
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {(stage === "mapping" || stage === "review") && (
+              <Button variant="outline" size="sm" onClick={reset}>
+                <RefreshCw className="h-4 w-4 mr-1" /> Cargar otro archivo
+              </Button>
+            )}
+            {stage === "done" && (
+              <Button size="sm" onClick={() => navigate("/purchase-orders")}>
+                Ver listado de OC
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -403,11 +523,88 @@ export default function BulkOCImport() {
                     <Upload className="h-10 w-10 text-muted-foreground" />
                     <div>
                       <p className="font-medium">Arrastra el archivo aquí o haz clic para seleccionar</p>
-                      <p className="text-sm text-muted-foreground mt-1">.xlsx / .xls — columnas requeridas: Centro, Documento compras, Fecha Documento, Texto Breve, Precio Neto, Proveedor/Centro suministrador</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        .xlsx / .xls — columnas: Centro, Documento compras, Fecha Documento, Texto Breve, Precio Neto, Proveedor/Centro suministrador
+                      </p>
                     </div>
                   </div>
                 )}
                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onInputChange} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── STAGE: mapping ── */}
+        {stage === "mapping" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Link2 className="h-5 w-5 text-amber-500" />
+                Asignar códigos Centro a locales del sistema
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Los siguientes códigos SAP no tienen match automático. Asígnalos manualmente.
+                Los marcados con "Recordar" quedarán guardados para futuros archivos.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Código Centro</TableHead>
+                      <TableHead>Local en el sistema</TableHead>
+                      <TableHead className="w-[120px] text-center">Recordar mapeo</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mappings.map(m => (
+                      <TableRow key={m.centroCode}>
+                        <TableCell>
+                          <code className="bg-muted rounded px-2 py-0.5 text-sm font-mono">{m.centroCode}</code>
+                        </TableCell>
+                        <TableCell>
+                          <SearchableSelect
+                            value={m.locationId ?? ""}
+                            onValueChange={val => {
+                              const loc = allLocations.find(l => l.id === val);
+                              updateMapping(m.centroCode, {
+                                locationId:   loc?.id ?? null,
+                                contractId:   loc?.contract_id ?? null,
+                                contractName: loc?.contract_name ?? null,
+                              });
+                            }}
+                            options={locationOptions}
+                            placeholder="Buscar local…"
+                            className="w-full max-w-sm"
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Checkbox
+                            id={`remember-${m.centroCode}`}
+                            checked={m.remember}
+                            onCheckedChange={v => updateMapping(m.centroCode, { remember: !!v })}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t">
+                <p className="text-sm text-muted-foreground">
+                  {mappedCount} de {mappings.length} código(s) asignados
+                  {mappings.length - mappedCount > 0 && (
+                    <span className="text-orange-600 ml-1">
+                      — los {mappings.length - mappedCount} restantes se importarán como "Sin local"
+                    </span>
+                  )}
+                </p>
+                <Button onClick={applyMappings}>
+                  Continuar con revisión →
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -445,7 +642,7 @@ export default function BulkOCImport() {
                 <CardContent className="space-y-4">
                   {duplicates.map(g => (
                     <div key={g.orderNumber} className="border rounded-lg p-4 space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <div>
                           <span className="font-mono font-semibold">OC {g.orderNumber}</span>
                           <span className="text-muted-foreground text-sm ml-2">— {g.description}</span>
@@ -461,20 +658,22 @@ export default function BulkOCImport() {
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="bg-muted/40 rounded p-3">
                           <p className="font-medium text-xs text-muted-foreground mb-1">IMPORTADO</p>
-                          <p>{g.description}</p>
+                          <p>{g.description || "—"}</p>
                           <p className="text-muted-foreground">{g.supplierName}</p>
                           <p className="font-semibold">{fmtClp(g.totalAmountClp)}</p>
                           <p className="text-xs text-muted-foreground">{fmtDate(g.orderDate)}</p>
                         </div>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3">
                           <p className="font-medium text-xs text-amber-700 mb-1">EN EL SISTEMA</p>
-                          <p className="text-xs text-muted-foreground italic">Ver en listado de OC (ID: {g.existingId?.slice(0, 8)}…)</p>
+                          <p className="text-xs text-muted-foreground italic">
+                            ID: {g.existingId?.slice(0, 8)}… — ver en listado de OC
+                          </p>
                         </div>
                       </div>
                       <div className="flex gap-2 flex-wrap">
-                        <Button size="sm" variant={g.duplicateResolution === "keep_existing" ? "default"  : "outline"} onClick={() => setResolution(g.orderNumber, "keep_existing")}>Mantener existente</Button>
-                        <Button size="sm" variant={g.duplicateResolution === "replace"       ? "default"  : "outline"} onClick={() => setResolution(g.orderNumber, "replace")}>Reemplazar con importado</Button>
-                        <Button size="sm" variant={g.duplicateResolution === "keep_both"     ? "default"  : "outline"} onClick={() => setResolution(g.orderNumber, "keep_both")}>Mantener ambas</Button>
+                        <Button size="sm" variant={g.duplicateResolution === "keep_existing" ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "keep_existing")}>Mantener existente</Button>
+                        <Button size="sm" variant={g.duplicateResolution === "replace"       ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "replace")}>Reemplazar con importado</Button>
+                        <Button size="sm" variant={g.duplicateResolution === "keep_both"     ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "keep_both")}>Mantener ambas</Button>
                       </div>
                     </div>
                   ))}
@@ -494,7 +693,7 @@ export default function BulkOCImport() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[120px]">Nº OC</TableHead>
+                        <TableHead className="w-[130px]">Nº OC</TableHead>
                         <TableHead>Local(es)</TableHead>
                         <TableHead>Proveedor</TableHead>
                         <TableHead className="text-right">Monto</TableHead>
@@ -515,20 +714,20 @@ export default function BulkOCImport() {
                             {g.allocations.map((a, i) => (
                               <div key={i} className="flex items-center gap-1">
                                 {a.pendingLocal
-                                  ? <span className="text-orange-600 flex items-center gap-1"><MapPin className="h-3 w-3" />{a.rawCentro} (no encontrado)</span>
-                                  : <span className="truncate max-w-[160px]">{a.contractName}</span>
+                                  ? <span className="text-orange-600 flex items-center gap-1 text-xs"><MapPin className="h-3 w-3" />{a.rawCentro}</span>
+                                  : <span className="truncate max-w-[180px]">{a.contractName}</span>
                                 }
                               </div>
                             ))}
                           </TableCell>
-                          <TableCell className="text-sm">
+                          <TableCell className="text-sm max-w-[160px] truncate">
                             {g.supplierId
                               ? g.supplierName
-                              : <span className="text-amber-600 flex items-center gap-1"><User className="h-3 w-3" />{g.rawProveedor}</span>
+                              : <span className="text-amber-600 flex items-center gap-1"><User className="h-3 w-3" /><span className="truncate">{g.rawProveedor}</span></span>
                             }
                           </TableCell>
                           <TableCell className="text-right text-sm font-medium">{fmtClp(g.totalAmountClp)}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{fmtDate(g.orderDate)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtDate(g.orderDate)}</TableCell>
                           <TableCell>{statusBadge(g.status)}</TableCell>
                         </TableRow>
                       ))}
@@ -629,7 +828,7 @@ export default function BulkOCImport() {
                         {batches.map(b => (
                           <TableRow key={b.id}>
                             <TableCell className="text-sm font-medium">{b.filename}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
+                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                               {b.imported_at ? format(parseISO(b.imported_at), "dd/MM/yyyy HH:mm", { locale: es }) : "—"}
                             </TableCell>
                             <TableCell className="text-center">{b.rows_total}</TableCell>
