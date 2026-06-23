@@ -410,6 +410,9 @@ export function GanttChart({
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
+  // Dependency line selected by clicking it in the bar chart (highlights the
+  // predecessor + dependent tasks).
+  const [selectedDependencyId, setSelectedDependencyId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
   const [hideWeekends, setHideWeekends] = useState(false);
