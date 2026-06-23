@@ -30,7 +30,12 @@ function pct(num: number, den: number) {
 }
 
 // Native <details> avoids Collapsible issues inside Dialog
-function AdminSection({ label, children }: { label?: string; children: React.ReactNode }) {
+function AdminSection({ label, onSave, onCancel, children }: {
+  label?: string;
+  onSave?: () => void;
+  onCancel?: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <details className="mt-2 group">
       <summary className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer list-none select-none py-1">
@@ -39,11 +44,21 @@ function AdminSection({ label, children }: { label?: string; children: React.Rea
         <ChevronDown className="h-3.5 w-3.5 ml-auto transition-transform group-open:rotate-180" />
       </summary>
       <div className="mt-2 border rounded-md p-3 bg-muted/30 space-y-3 text-xs">
-        <p className="text-muted-foreground italic">
-          Las ponderaciones definen el peso relativo entre métricas. Pueden sumar menos de 100% si
-          parte de la evaluación proviene de métricas externas a esta plataforma.
-        </p>
         {children}
+        {(onSave || onCancel) && (
+          <div className="flex gap-2 justify-end pt-2 border-t border-border/50">
+            {onCancel && (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onCancel}>
+                Cancelar
+              </Button>
+            )}
+            {onSave && (
+              <Button size="sm" className="h-7 text-xs" onClick={onSave}>
+                Guardar
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </details>
   );
@@ -119,7 +134,11 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
   const [excludedIds, setExcludedIds] = useState<Set<string>>(() =>
     new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
   );
+  const [savedExcludedIds, setSavedExcludedIds] = useState<Set<string>>(() =>
+    new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
+  );
   const [cfg, setCfg]           = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
+  const [savedCfg, setSavedCfg] = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const [detailOpen, setDetailOpen]     = useState(false);
   const [searchQuery, setSearchQuery]   = useState("");
@@ -130,13 +149,24 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
     setExcludedIds(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
-      saveLS(BEATRIZ_EXCLUDED_KEY, [...next]);
-      return next;
+      return next; // no auto-save — committed on Guardar
     });
   };
 
   const updateCfg = (patch: Partial<BeatrizCfg>) => {
-    setCfg(prev => { const next = { ...prev, ...patch }; saveLS(BEATRIZ_CFG_KEY, next); return next; });
+    setCfg(prev => ({ ...prev, ...patch })); // no auto-save
+  };
+
+  const saveBeatrizAdmin = () => {
+    saveLS(BEATRIZ_CFG_KEY, cfg);
+    saveLS(BEATRIZ_EXCLUDED_KEY, [...excludedIds]);
+    setSavedCfg(cfg);
+    setSavedExcludedIds(new Set(excludedIds));
+  };
+
+  const cancelBeatrizAdmin = () => {
+    setCfg(savedCfg);
+    setExcludedIds(new Set(savedExcludedIds));
   };
 
   if (loading) return <CardSkeleton title="Beatriz Valenzuela" subtitle="Cobertura de Proveedores" />;
@@ -343,7 +373,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
             {/* Admin */}
             {data && (
-              <AdminSection label="Configuración admin">
+              <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
                 <div>
                   <p className="font-medium mb-2">Umbrales de cobertura</p>
                   <div className="space-y-2">
@@ -397,10 +427,20 @@ const FRANCO_DEFAULTS: FrancoCfg = {
 
 function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boolean }) {
   const [cfg, setCfg]             = useState<FrancoCfg>(() => loadLS(FRANCO_CFG_KEY, FRANCO_DEFAULTS));
+  const [savedCfg, setSavedCfg]   = useState<FrancoCfg>(() => loadLS(FRANCO_CFG_KEY, FRANCO_DEFAULTS));
   const [detailOpen, setDetailOpen] = useState(false);
 
   const updateCfg = (patch: Partial<FrancoCfg>) => {
-    setCfg(prev => { const next = { ...prev, ...patch }; saveLS(FRANCO_CFG_KEY, next); return next; });
+    setCfg(prev => ({ ...prev, ...patch })); // no auto-save
+  };
+
+  const saveFrancoAdmin = () => {
+    saveLS(FRANCO_CFG_KEY, cfg);
+    setSavedCfg(cfg);
+  };
+
+  const cancelFrancoAdmin = () => {
+    setCfg(savedCfg);
   };
 
   if (loading) return <CardSkeleton title="Franco Leiva" subtitle="Resolución de Forms" />;
@@ -523,7 +563,7 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
             )}
 
             {/* Admin */}
-            <AdminSection>
+            <AdminSection onSave={saveFrancoAdmin} onCancel={cancelFrancoAdmin}>
               {/* Suma total de ponderaciones */}
               <div>
                 <p className="font-medium mb-1">Suma total de ponderaciones</p>
@@ -596,10 +636,20 @@ const EVELYN_DEFAULTS: EvelynCfg = {
 
 function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; loading: boolean; francoData: FrancoData | null }) {
   const [cfg, setCfg]               = useState<EvelynCfg>(() => loadLS(EVELYN_CFG_KEY, EVELYN_DEFAULTS));
+  const [savedCfg, setSavedCfg]     = useState<EvelynCfg>(() => loadLS(EVELYN_CFG_KEY, EVELYN_DEFAULTS));
   const [detailOpen, setDetailOpen] = useState(false);
 
   const updateCfg = (patch: Partial<EvelynCfg>) => {
-    setCfg(prev => { const next = { ...prev, ...patch }; saveLS(EVELYN_CFG_KEY, next); return next; });
+    setCfg(prev => ({ ...prev, ...patch })); // no auto-save
+  };
+
+  const saveEvelynAdmin = () => {
+    saveLS(EVELYN_CFG_KEY, cfg);
+    setSavedCfg(cfg);
+  };
+
+  const cancelEvelynAdmin = () => {
+    setCfg(savedCfg);
   };
 
   if (loading) return <CardSkeleton title="Evelyn Padilla" subtitle="OC y Facturas al Día" />;
@@ -713,7 +763,7 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
               </div>
             )}
 
-            <AdminSection>
+            <AdminSection onSave={saveEvelynAdmin} onCancel={cancelEvelynAdmin}>
               <div>
                 <p className="font-medium mb-2">Ponderaciones (%)</p>
                 <div className="space-y-1.5">
