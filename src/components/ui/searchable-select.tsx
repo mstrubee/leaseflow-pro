@@ -19,6 +19,8 @@ import {
 export interface SearchableSelectOption {
   value: string;
   label: string;
+  /** Extra text used for fuzzy search without being shown in the label */
+  searchValue?: string;
   icon?: React.ReactNode;
 }
 
@@ -90,7 +92,7 @@ export function SearchableSelect({
               {options.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.label}
+                  value={option.searchValue ? `${option.label} ${option.searchValue}` : option.label}
                   onSelect={() => {
                     onValueChange(option.value);
                     setOpen(false);

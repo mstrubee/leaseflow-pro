@@ -16,6 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useAppLogos } from "@/hooks/useAppLogos";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage } from "@/lib/storageUtils";
@@ -90,6 +91,7 @@ function extractCentroCode(cebe: string | null): string {
 export default function BulkOCImport() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { logos } = useAppLogos();
 
   // Reference data
   const [allLocations, setAllLocations] = useState<FullLocation[]>([]);
@@ -160,9 +162,28 @@ export default function BulkOCImport() {
 
   // ── Location options for SearchableSelect ──────────────────────────────────
 
+  function logoForName(name: string): string | null {
+    const n = name.toLowerCase();
+    if (/grupo\s*planet/.test(n)) return logos.grupoPlanet;
+    if (n.includes("autoplanet")) return logos.autoplanet;
+    if (n.includes("agroplanet")) return logos.agroplanet;
+    return null;
+  }
+
   const locationOptions = allLocations
     .filter(l => l.contract_id)
-    .map(l => ({ value: l.id, label: l.contract_name }));
+    .map(l => {
+      const cebeCode = extractCentroCode(l.centro_sap);
+      const logoUrl  = logoForName(l.contract_name);
+      return {
+        value:       l.id,
+        label:       l.contract_name,
+        searchValue: cebeCode,
+        icon: logoUrl
+          ? <img src={logoUrl} alt="" className="h-5 w-5 rounded object-contain flex-shrink-0" />
+          : undefined,
+      };
+    });
 
   // ── File handling ──────────────────────────────────────────────────────────
 
