@@ -6493,6 +6493,18 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_org_members_basic: {
+        Args: never
+        Returns: {
+          company_id: string
+          created_at: string
+          display_order: number
+          id: string
+          name: string
+          parent_id: string
+          position: string
+        }[]
+      }
       get_termination_alerts: { Args: never; Returns: Json }
       has_permission: {
         Args: {
