@@ -23,7 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
-  OCSupplier, GroupedOC, OCRowStatus, DuplicateResolution,
+  OCSupplier, GroupedOC, OCAllocation, OCRowStatus, DuplicateResolution,
   RawOCRow,
 } from "@/lib/parseBulkOCExcel";
 
@@ -107,6 +107,10 @@ export default function BulkOCImport() {
   const [mappings, setMappings] = useState<CentroMapping[]>([]);
   const [progress, setProgress] = useState(0);
   const [showHistory, setShowHistory] = useState(true);
+
+  // Inline editing in review table (key = "orderNumber:allocIdx" for local, "orderNumber" for supplier)
+  const [editingLocalKey,    setEditingLocalKey]    = useState<string | null>(null);
+  const [editingSupplierKey, setEditingSupplierKey] = useState<string | null>(null);
 
   // ── Load reference data ────────────────────────────────────────────────────
 
@@ -283,6 +287,45 @@ export default function BulkOCImport() {
     setGrouped(grouped_);
     setStage("review");
     toast.success(`${grouped_.length} OC listas para revisión`);
+  }
+
+  // ── Inline edit helpers ────────────────────────────────────────────────────
+
+  function recomputeStatus(allocs: OCAllocation[], supplierId: string | null): OCRowStatus {
+    const pendingLocal    = allocs.some(a => a.pendingLocal);
+    const pendingSupplier = !supplierId;
+    if (pendingLocal && pendingSupplier) return "pending_both";
+    if (pendingLocal)                   return "pending_local";
+    if (pendingSupplier)                return "pending_supplier";
+    return "ok";
+  }
+
+  function handleLocalPick(orderNumber: string, allocIdx: number, locationId: string) {
+    const loc = allLocations.find(l => l.id === locationId);
+    setGrouped(prev => prev.map(g => {
+      if (g.orderNumber !== orderNumber) return g;
+      const newAllocs: OCAllocation[] = g.allocations.map((a, i) =>
+        i === allocIdx
+          ? { ...a, contractId: loc?.contract_id ?? null, contractName: loc?.contract_name ?? null, pendingLocal: !loc?.contract_id }
+          : a
+      );
+      return { ...g, allocations: newAllocs, status: recomputeStatus(newAllocs, g.supplierId) };
+    }));
+    setEditingLocalKey(null);
+  }
+
+  function handleSupplierPick(orderNumber: string, supplierId: string) {
+    const sup = suppliers.find(s => s.id === supplierId);
+    setGrouped(prev => prev.map(g => {
+      if (g.orderNumber !== orderNumber) return g;
+      return {
+        ...g,
+        supplierId:   sup?.id   ?? null,
+        supplierName: sup?.name ?? g.rawProveedor,
+        status: recomputeStatus(g.allocations, sup?.id ?? null),
+      };
+    }));
+    setEditingSupplierKey(null);
   }
 
   // ── Duplicate detection ────────────────────────────────────────────────────
@@ -710,23 +753,72 @@ export default function BulkOCImport() {
                               <Badge variant="outline" className="ml-1 text-xs">{g.allocations.length} locales</Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-sm">
-                            {g.allocations.map((a, i) => (
-                              <div key={i} className="flex items-center gap-1">
-                                {a.pendingLocal
-                                  ? <span className="text-orange-600 flex items-center gap-1 text-xs"><MapPin className="h-3 w-3" />{a.rawCentro}</span>
-                                  : <span className="truncate max-w-[180px]">{a.contractName}</span>
-                                }
-                              </div>
-                            ))}
+
+                          {/* Local(es) — clickeable cuando hay pendiente */}
+                          <TableCell className="text-sm min-w-[200px]">
+                            {g.allocations.map((a, idx) => {
+                              const editKey = `${g.orderNumber}:${idx}`;
+                              const isEditing = editingLocalKey === editKey;
+                              if (a.pendingLocal) {
+                                return (
+                                  <div key={idx} className="mb-1">
+                                    {isEditing ? (
+                                      <SearchableSelect
+                                        value=""
+                                        onValueChange={val => handleLocalPick(g.orderNumber, idx, val)}
+                                        options={locationOptions}
+                                        placeholder="Buscar local…"
+                                        className="w-[220px]"
+                                      />
+                                    ) : (
+                                      <button
+                                        className="flex items-center gap-1 text-orange-600 hover:text-orange-800 hover:underline text-xs text-left"
+                                        onClick={() => { setEditingLocalKey(editKey); setEditingSupplierKey(null); }}
+                                        title="Clic para asignar local"
+                                      >
+                                        <MapPin className="h-3 w-3 shrink-0" />
+                                        {a.rawCentro} (no encontrado)
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div key={idx} className="truncate max-w-[220px] text-xs">
+                                  {a.contractName}
+                                </div>
+                              );
+                            })}
                           </TableCell>
-                          <TableCell className="text-sm max-w-[160px] truncate">
-                            {g.supplierId
-                              ? g.supplierName
-                              : <span className="text-amber-600 flex items-center gap-1"><User className="h-3 w-3" /><span className="truncate">{g.rawProveedor}</span></span>
-                            }
+
+                          {/* Proveedor — clickeable cuando hay pendiente */}
+                          <TableCell className="text-sm min-w-[180px]">
+                            {g.supplierId ? (
+                              <span className="truncate max-w-[180px] block">{g.supplierName}</span>
+                            ) : (
+                              editingSupplierKey === g.orderNumber ? (
+                                <SearchableSelect
+                                  value=""
+                                  onValueChange={val => handleSupplierPick(g.orderNumber, val)}
+                                  options={suppliers.map(s => ({ value: s.id, label: s.name }))}
+                                  placeholder="Buscar proveedor…"
+                                  className="w-[220px]"
+                                  autoFocus
+                                />
+                              ) : (
+                                <button
+                                  className="flex items-center gap-1 text-amber-600 hover:text-amber-800 hover:underline text-xs text-left"
+                                  onClick={() => { setEditingSupplierKey(g.orderNumber); setEditingLocalKey(null); }}
+                                  title="Clic para asignar proveedor"
+                                >
+                                  <User className="h-3 w-3 shrink-0" />
+                                  <span className="truncate max-w-[160px]">{g.rawProveedor}</span>
+                                </button>
+                              )
+                            )}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-medium">{fmtClp(g.totalAmountClp)}</TableCell>
+
+                          <TableCell className="text-right text-sm font-medium whitespace-nowrap">{fmtClp(g.totalAmountClp)}</TableCell>
                           <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtDate(g.orderDate)}</TableCell>
                           <TableCell>{statusBadge(g.status)}</TableCell>
                         </TableRow>
@@ -737,21 +829,31 @@ export default function BulkOCImport() {
               </CardContent>
             </Card>
 
-            {/* Import button */}
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {unresolvedDuplicates.length > 0
-                  ? `⚠ ${unresolvedDuplicates.length} duplicados sin resolver`
-                  : `${toImport.length} OC listas para importar`}
-              </p>
-              <Button
-                size="lg"
-                disabled={unresolvedDuplicates.length > 0 || toImport.length === 0}
-                onClick={handleImport}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Importar {toImport.length} OC
-              </Button>
+            {/* Cancelar / Guardar */}
+            <div className="flex items-center justify-between border-t pt-4">
+              <div className="text-sm text-muted-foreground">
+                {unresolvedDuplicates.length > 0 && (
+                  <span className="text-destructive font-medium">
+                    ⚠ {unresolvedDuplicates.length} duplicado(s) sin resolver — resuélvelos antes de guardar
+                  </span>
+                )}
+                {unresolvedDuplicates.length === 0 && (
+                  <span>{toImport.length} OC listas para guardar</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" size="lg" onClick={reset}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="lg"
+                  disabled={unresolvedDuplicates.length > 0 || toImport.length === 0}
+                  onClick={handleImport}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Guardar {toImport.length} OC
+                </Button>
+              </div>
             </div>
           </>
         )}
