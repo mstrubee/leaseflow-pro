@@ -6,9 +6,10 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown } from "lucide-react";
 import { format, parseISO, differenceInBusinessDays } from "date-fns";
-import { es } from "date-fns/locale";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,10 @@ function AdminSection({ label, open, onOpenChange, children }: {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-2 border rounded-md p-3 bg-muted/30 space-y-3 text-xs">
+          <p className="text-muted-foreground italic">
+            Las ponderaciones definen el peso relativo entre métricas. Pueden sumar menos de 100% si
+            parte de la evaluación proviene de métricas externas a esta plataforma.
+          </p>
           {children}
         </div>
       </CollapsibleContent>
@@ -132,6 +137,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
   const [cfg, setCfg] = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
   const toggleExclude = (id: string) => {
@@ -164,130 +170,177 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
   const score = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle className="text-base">Beatriz Valenzuela</CardTitle>
-              <p className="text-xs text-muted-foreground">Encargada Activos Fijos y Proveedores</p>
+    <>
+      {/* ── Summary card ── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-base">Beatriz Valenzuela</CardTitle>
+                <p className="text-xs text-muted-foreground">Activos Fijos y Proveedores</p>
+              </div>
             </div>
+            {data && scoreBadge(score)}
           </div>
-          {data && scoreBadge(score)}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span>Cobertura ≥{cfg.metaMin} proveedores (meta 100%)</span>
-            <span className="font-semibold">{score100}%</span>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground">Cobertura ≥{cfg.metaMin} prov. (meta)</span>
+              <span className="font-semibold">{score100}%</span>
+            </div>
+            <Progress value={Math.min(score100, 100)} className="h-2" />
           </div>
-          <Progress value={Math.min(score100, 100)} className="h-2" />
-          <p className="text-xs text-muted-foreground mt-1">{cubiertas3} de {totalComb} combinaciones cubiertas</p>
-        </div>
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span>Cobertura ≥{cfg.metaSobre} proveedores (sobrecumplimiento)</span>
-            <span className="font-semibold">{score130}%</span>
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground">Cobertura ≥{cfg.metaSobre} prov. (sobre)</span>
+              <span className="font-semibold">{score130}%</span>
+            </div>
+            <Progress value={Math.min(score130, 100)} className="h-2" />
           </div>
-          <Progress value={Math.min(score130, 100)} className="h-2" />
-        </div>
+          <p className="text-xs text-muted-foreground">
+            {cubiertas3} de {totalComb} combinaciones categoría × zona cubiertas
+          </p>
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
+            Ver detalle
+          </Button>
+        </CardContent>
+      </Card>
 
-        {data && activeCats.length > 0 && zones.length > 0 && (
-          <div className="overflow-x-auto">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Matriz cobertura (categoría × zona)</p>
-            <table className="text-xs border-collapse w-full">
-              <thead>
-                <tr>
-                  <th className="text-left py-1 pr-2 font-medium text-muted-foreground min-w-[120px]">Categoría</th>
-                  {zones.map(z => (
-                    <th key={z} className="text-center py-1 px-1 font-medium text-muted-foreground whitespace-nowrap min-w-[60px]" title={z}>
-                      {z.length > 8 ? z.slice(0, 8) + "…" : z}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {activeCats.map(c => {
-                  const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
-                  return (
-                    <>
-                      <tr key={c.id} className="border-t">
-                        <td className="py-1 pr-2 truncate max-w-[140px]" title={c.name}>{c.name}</td>
-                        {zones.map(z => {
-                          const key = `${c.id}||${z}`;
-                          const count = matrix[key] ?? 0;
-                          const isOpen = expandedCell === key;
-                          return (
-                            <td key={z} className="text-center py-1 px-1">
-                              <button
-                                onClick={() => count > 0 ? toggleCell(key) : undefined}
-                                className={`inline-block rounded border px-1.5 py-0.5 font-semibold transition-opacity ${cellColor(count, cfg.metaMin, cfg.metaSobre)} ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"} ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
-                              >
-                                {count}
-                              </button>
-                            </td>
-                          );
-                        })}
+      {/* ── Detail dialog ── */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Beatriz Valenzuela — Cobertura de Proveedores</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto space-y-4 pr-1">
+            {/* Score summary */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Cobertura ≥{cfg.metaMin} proveedores (meta 100%)</span>
+                  <span className="font-semibold">{score100}%</span>
+                </div>
+                <Progress value={Math.min(score100, 100)} className="h-2" />
+                <p className="text-xs text-muted-foreground mt-1">{cubiertas3} de {totalComb} combinaciones</p>
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Cobertura ≥{cfg.metaSobre} proveedores (sobrecumplimiento)</span>
+                  <span className="font-semibold">{score130}%</span>
+                </div>
+                <Progress value={Math.min(score130, 100)} className="h-2" />
+                <p className="text-xs text-muted-foreground mt-1">{cubiertas5} de {totalComb} combinaciones</p>
+              </div>
+            </div>
+
+            {/* Matrix */}
+            {data && activeCats.length > 0 && zones.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Matriz de cobertura (categoría × zona)</p>
+                <div className="overflow-x-auto">
+                  <table className="text-xs border-collapse w-full">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[140px]">Categoría</th>
+                        {zones.map(z => (
+                          <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[70px]">
+                            {z}
+                          </th>
+                        ))}
                       </tr>
-                      {openZone && (() => {
-                        const key = `${c.id}||${openZone}`;
-                        const suppList = data?.suppliersMap?.[key] ?? [];
+                    </thead>
+                    <tbody>
+                      {activeCats.map(c => {
+                        const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
                         return (
-                          <tr key={`${c.id}-detail`} className="bg-muted/40">
-                            <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
-                              <div className="flex items-center gap-2 mb-1.5 font-medium">
-                                <span>{c.name}</span><span className="text-muted-foreground">·</span>
-                                <span className="text-muted-foreground">{openZone}</span>
-                                <span className="ml-auto text-muted-foreground">{suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}</span>
-                              </div>
-                              <ul className="space-y-0.5 columns-2">
-                                {suppList.map(s => <li key={s.id} className="text-muted-foreground">• {s.name}</li>)}
-                              </ul>
-                            </td>
-                          </tr>
+                          <>
+                            <tr key={c.id} className="border-t">
+                              <td className="py-1.5 pr-3 font-medium">{c.name}</td>
+                              {zones.map(z => {
+                                const key = `${c.id}||${z}`;
+                                const count = matrix[key] ?? 0;
+                                const isOpen = expandedCell === key;
+                                return (
+                                  <td key={z} className="text-center py-1.5 px-2">
+                                    <button
+                                      onClick={() => count > 0 ? toggleCell(key) : undefined}
+                                      className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity ${cellColor(count, cfg.metaMin, cfg.metaSobre)} ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"} ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                                    >
+                                      {count}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                            {openZone && (() => {
+                              const key = `${c.id}||${openZone}`;
+                              const suppList = data?.suppliersMap?.[key] ?? [];
+                              return (
+                                <tr key={`${c.id}-detail`} className="bg-muted/40">
+                                  <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
+                                    <div className="flex items-center gap-2 mb-1.5 font-medium">
+                                      <span>{c.name}</span>
+                                      <span className="text-muted-foreground">·</span>
+                                      <span className="text-muted-foreground">{openZone}</span>
+                                      <span className="ml-auto text-muted-foreground">
+                                        {suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}
+                                      </span>
+                                    </div>
+                                    <ul className="space-y-0.5 columns-2">
+                                      {suppList.map(s => <li key={s.id} className="text-muted-foreground">• {s.name}</li>)}
+                                    </ul>
+                                  </td>
+                                </tr>
+                              );
+                            })()}
+                          </>
                         );
-                      })()}
-                    </>
-                  );
-                })}
-              </tbody>
-            </table>
-            <div className="flex gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ≥{cfg.metaSobre} óptimo</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> {cfg.metaMin}–{cfg.metaSobre - 1} meta</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 1–{cfg.metaMin - 1} bajo</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
-            </div>
-          </div>
-        )}
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ≥{cfg.metaSobre} óptimo</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> {cfg.metaMin}–{cfg.metaSobre - 1} meta</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 1–{cfg.metaMin - 1} bajo</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
+                </div>
+              </div>
+            )}
 
-        {data && (
-          <AdminSection label="Configuración admin" open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <div>
-              <p className="font-medium mb-2">Umbrales de cobertura</p>
-              <div className="space-y-2">
-                <WeightRow label={`Meta (≥N proveedores)`} value={cfg.metaMin} onChange={v => updateCfg({ metaMin: v })} />
-                <WeightRow label={`Sobrecumplimiento (≥N proveedores)`} value={cfg.metaSobre} onChange={v => updateCfg({ metaSobre: v })} />
-              </div>
-            </div>
-            <div>
-              <p className="font-medium mb-2">Excluir categorías de la meta</p>
-              <div className="space-y-1.5">
-                {data.categories.map(c => (
-                  <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground">
-                    <Checkbox checked={excludedIds.has(c.id)} onCheckedChange={() => toggleExclude(c.id)} />
-                    <span className={excludedIds.has(c.id) ? "line-through" : ""}>{c.name}</span>
-                  </label>
-                ))}
-              </div>
-              {excludedIds.size > 0 && <p className="text-amber-600 mt-1">{excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""}.</p>}
-            </div>
-          </AdminSection>
-        )}
-      </CardContent>
-    </Card>
+            {/* Admin */}
+            {data && (
+              <AdminSection label="Configuración admin" open={settingsOpen} onOpenChange={setSettingsOpen}>
+                <div>
+                  <p className="font-medium mb-2">Umbrales de cobertura</p>
+                  <div className="space-y-2">
+                    <WeightRow label="Meta (≥N proveedores)" value={cfg.metaMin} onChange={v => updateCfg({ metaMin: v })} />
+                    <WeightRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaSobre} onChange={v => updateCfg({ metaSobre: v })} />
+                  </div>
+                </div>
+                <div>
+                  <p className="font-medium mb-2">Excluir categorías de la meta</p>
+                  <div className="space-y-1.5">
+                    {data.categories.map(c => (
+                      <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground">
+                        <Checkbox checked={excludedIds.has(c.id)} onCheckedChange={() => toggleExclude(c.id)} />
+                        <span className={excludedIds.has(c.id) ? "line-through" : ""}>{c.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {excludedIds.size > 0 && (
+                    <p className="text-amber-600 mt-1">{excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""}.</p>
+                  )}
+                </div>
+              </AdminSection>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -310,6 +363,7 @@ const FRANCO_DEFAULTS: FrancoCfg = {
 function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boolean }) {
   const [cfg, setCfg] = useState<FrancoCfg>(() => loadLS(FRANCO_CFG_KEY, FRANCO_DEFAULTS));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const updateCfg = (patch: Partial<FrancoCfg>) => {
     setCfg(prev => { const next = { ...prev, ...patch }; saveLS(FRANCO_CFG_KEY, next); return next; });
@@ -336,109 +390,158 @@ function FrancoCard({ data, loading }: { data: FrancoData | null; loading: boole
     { label: "Críticos H1",        val: pCritH1, meta: cfg.tCritH1, peso: cfg.wCritH1 },
     { label: "Altos H1",           val: pAltH1,  meta: cfg.tAltH1,  peso: cfg.wAltH1  },
     { label: "Medios+Bajos H1",    val: pMedH1,  meta: cfg.tMedH1,  peso: cfg.wMedH1  },
-    { label: `Críticos H2 SLA ≤${cfg.slaCritico}d`,    val: pCritH2, meta: cfg.tCritH2, peso: cfg.wCritH2 },
-    { label: `Altos H2 SLA ≤${cfg.slaAlto}d`,          val: pAltH2,  meta: cfg.tAltH2,  peso: cfg.wAltH2  },
-    { label: `Medios+Bajos H2 SLA ≤${cfg.slaMedioBajo}d`, val: pMedH2, meta: cfg.tMedH2, peso: cfg.wMedH2 },
+    { label: `Críticos H2 SLA ≤${cfg.slaCritico}d`,       val: pCritH2, meta: cfg.tCritH2, peso: cfg.wCritH2 },
+    { label: `Altos H2 SLA ≤${cfg.slaAlto}d`,             val: pAltH2,  meta: cfg.tAltH2,  peso: cfg.wAltH2  },
+    { label: `Medios+Bajos H2 SLA ≤${cfg.slaMedioBajo}d`, val: pMedH2,  meta: cfg.tMedH2,  peso: cfg.wMedH2  },
   ];
 
-  const warnTotal = totalW !== 100 && <p className="text-amber-600 text-xs">⚠ Las ponderaciones suman {totalW}% (deben sumar 100%)</p>;
-
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wrench className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle className="text-base">Franco Leiva</CardTitle>
-              <p className="text-xs text-muted-foreground">Encargado de Mantenciones</p>
+    <>
+      {/* ── Summary card ── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-base">Franco Leiva</CardTitle>
+                <p className="text-xs text-muted-foreground">Encargado de Mantenciones</p>
+              </div>
+            </div>
+            {data && scoreBadge(score)}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground">Score ponderado</span>
+              <span className="font-semibold">{score}%</span>
+            </div>
+            <Progress value={Math.min(score, 100)} className="h-2" />
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-muted/50 rounded-md p-2 space-y-0.5">
+              <p className="text-muted-foreground">H1 Críticos</p>
+              <p className="font-semibold text-sm">
+                {data ? `${pCritH1}%` : "—"}
+                {data && <span className="text-muted-foreground font-normal text-xs"> ({data.criticosH1Resueltos}/{data.criticosH1Total})</span>}
+              </p>
+            </div>
+            <div className="bg-muted/50 rounded-md p-2 space-y-0.5">
+              <p className="text-muted-foreground">H2 Críticos SLA</p>
+              <p className="font-semibold text-sm">
+                {data ? `${pCritH2}%` : "—"}
+                {data && <span className="text-muted-foreground font-normal text-xs"> ({data.criticosH2EnSLA}/{data.criticosH2Total})</span>}
+              </p>
             </div>
           </div>
-          {data && scoreBadge(score)}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {rows.map(r => (
-          <div key={r.label}>
-            <div className="flex justify-between text-xs mb-1">
-              <span>{r.label} <span className="text-muted-foreground">(meta: {r.meta}% · peso: {r.peso}%)</span></span>
-              <span className={`font-semibold ${r.val >= r.meta ? "text-emerald-600" : r.val >= r.meta * 0.7 ? "text-amber-500" : "text-destructive"}`}>
-                {r.val}%
-              </span>
-            </div>
-            <Progress value={Math.min((r.val / r.meta) * 100, 100)} className="h-1.5" />
-          </div>
-        ))}
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
+            Ver detalle
+          </Button>
+        </CardContent>
+      </Card>
 
-        {data && data.detalle.length > 0 && (
-          <details className="text-xs mt-2">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-              Ver detalle de forms resueltos ({data.detalle.filter(d => d.resuelto_at).length})
-            </summary>
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="text-left py-1 pr-2">Form</th>
-                    <th className="text-left py-1 pr-2">Criticidad</th>
-                    <th className="text-left py-1 pr-2">Sem.</th>
-                    <th className="text-left py-1 pr-2">Creado</th>
-                    <th className="text-left py-1 pr-2">Resuelto</th>
-                    <th className="text-right py-1">Días háb.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.detalle.filter(d => d.resuelto_at).map((d, i) => (
-                    <tr key={i} className="border-b hover:bg-muted/30">
-                      <td className="py-1 pr-2 font-mono">{d.form_number}</td>
-                      <td className="py-1 pr-2">{d.criticidad}</td>
-                      <td className="py-1 pr-2">{d.semestre}</td>
-                      <td className="py-1 pr-2">{d.created_date ? format(parseISO(d.created_date), "dd/MM/yy") : "—"}</td>
-                      <td className="py-1 pr-2">{d.resuelto_at ? format(parseISO(d.resuelto_at), "dd/MM/yy") : "—"}</td>
-                      <td className={`py-1 text-right font-semibold ${d.en_sla ? "text-emerald-600" : "text-destructive"}`}>{d.dias_habiles ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* ── Detail dialog ── */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Franco Leiva — Resolución de Forms</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto space-y-4 pr-1">
+            {/* All metric rows */}
+            <div className="space-y-3">
+              {rows.map(r => (
+                <div key={r.label}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>
+                      {r.label}
+                      <span className="text-muted-foreground text-xs ml-1">(meta: {r.meta}% · peso: {r.peso}%)</span>
+                    </span>
+                    <span className={`font-semibold ${r.val >= r.meta ? "text-emerald-600" : r.val >= r.meta * 0.7 ? "text-amber-500" : "text-destructive"}`}>
+                      {r.val}%
+                    </span>
+                  </div>
+                  <Progress value={Math.min((r.val / r.meta) * 100, 100)} className="h-1.5" />
+                </div>
+              ))}
             </div>
-          </details>
-        )}
 
-        <AdminSection open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <div>
-            <p className="font-medium mb-2">Ponderaciones (%)</p>
-            {warnTotal}
-            <div className="space-y-1.5 mt-1">
-              <WeightRow label="Críticos H1"     value={cfg.wCritH1} onChange={v => updateCfg({ wCritH1: v })} />
-              <WeightRow label="Altos H1"         value={cfg.wAltH1}  onChange={v => updateCfg({ wAltH1: v })}  />
-              <WeightRow label="Medios+Bajos H1"  value={cfg.wMedH1}  onChange={v => updateCfg({ wMedH1: v })}  />
-              <WeightRow label="Críticos H2"      value={cfg.wCritH2} onChange={v => updateCfg({ wCritH2: v })} />
-              <WeightRow label="Altos H2"         value={cfg.wAltH2}  onChange={v => updateCfg({ wAltH2: v })}  />
-              <WeightRow label="Medios+Bajos H2"  value={cfg.wMedH2}  onChange={v => updateCfg({ wMedH2: v })}  />
-            </div>
+            {/* Forms detail table */}
+            {data && data.detalle.length > 0 && (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-muted/50 border-b">
+                  <p className="text-sm font-medium">
+                    Detalle de forms resueltos ({data.detalle.filter(d => d.resuelto_at).length})
+                  </p>
+                </div>
+                <div className="overflow-x-auto max-h-60 overflow-y-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 bg-background border-b">
+                      <tr className="text-muted-foreground">
+                        <th className="text-left py-2 px-3">Form</th>
+                        <th className="text-left py-2 px-2">Criticidad</th>
+                        <th className="text-left py-2 px-2">Sem.</th>
+                        <th className="text-left py-2 px-2">Creado</th>
+                        <th className="text-left py-2 px-2">Resuelto</th>
+                        <th className="text-right py-2 px-3">Días háb.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.detalle.filter(d => d.resuelto_at).map((d, i) => (
+                        <tr key={i} className="border-b hover:bg-muted/30">
+                          <td className="py-1.5 px-3 font-mono">{d.form_number}</td>
+                          <td className="py-1.5 px-2">{d.criticidad}</td>
+                          <td className="py-1.5 px-2">{d.semestre}</td>
+                          <td className="py-1.5 px-2">{d.created_date ? format(parseISO(d.created_date), "dd/MM/yy") : "—"}</td>
+                          <td className="py-1.5 px-2">{d.resuelto_at ? format(parseISO(d.resuelto_at), "dd/MM/yy") : "—"}</td>
+                          <td className={`py-1.5 px-3 text-right font-semibold ${d.en_sla ? "text-emerald-600" : "text-destructive"}`}>
+                            {d.dias_habiles ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Admin */}
+            <AdminSection open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <div>
+                <p className="font-medium mb-2">Ponderaciones (%)</p>
+                <div className="space-y-1.5">
+                  <WeightRow label="Críticos H1"        value={cfg.wCritH1} onChange={v => updateCfg({ wCritH1: v })} />
+                  <WeightRow label="Altos H1"            value={cfg.wAltH1}  onChange={v => updateCfg({ wAltH1: v })}  />
+                  <WeightRow label="Medios+Bajos H1"     value={cfg.wMedH1}  onChange={v => updateCfg({ wMedH1: v })}  />
+                  <WeightRow label="Críticos H2"         value={cfg.wCritH2} onChange={v => updateCfg({ wCritH2: v })} />
+                  <WeightRow label="Altos H2"            value={cfg.wAltH2}  onChange={v => updateCfg({ wAltH2: v })}  />
+                  <WeightRow label="Medios+Bajos H2"     value={cfg.wMedH2}  onChange={v => updateCfg({ wMedH2: v })}  />
+                </div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">Metas (%)</p>
+                <div className="space-y-1.5">
+                  <WeightRow label="Meta Críticos H1"        value={cfg.tCritH1} onChange={v => updateCfg({ tCritH1: v })} />
+                  <WeightRow label="Meta Altos H1"            value={cfg.tAltH1}  onChange={v => updateCfg({ tAltH1: v })}  />
+                  <WeightRow label="Meta Medios+Bajos H1"     value={cfg.tMedH1}  onChange={v => updateCfg({ tMedH1: v })}  />
+                  <WeightRow label="Meta Críticos H2"         value={cfg.tCritH2} onChange={v => updateCfg({ tCritH2: v })} />
+                  <WeightRow label="Meta Altos H2"            value={cfg.tAltH2}  onChange={v => updateCfg({ tAltH2: v })}  />
+                  <WeightRow label="Meta Medios+Bajos H2"     value={cfg.tMedH2}  onChange={v => updateCfg({ tMedH2: v })}  />
+                </div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">SLA H2 (días hábiles)</p>
+                <div className="space-y-1.5">
+                  <WeightRow label="SLA Críticos"        value={cfg.slaCritico}   onChange={v => updateCfg({ slaCritico: v })}   />
+                  <WeightRow label="SLA Altos"            value={cfg.slaAlto}      onChange={v => updateCfg({ slaAlto: v })}      />
+                  <WeightRow label="SLA Medios+Bajos"     value={cfg.slaMedioBajo} onChange={v => updateCfg({ slaMedioBajo: v })} />
+                </div>
+              </div>
+            </AdminSection>
           </div>
-          <div>
-            <p className="font-medium mb-2">Metas (%)</p>
-            <div className="space-y-1.5">
-              <WeightRow label="Meta Críticos H1"     value={cfg.tCritH1} onChange={v => updateCfg({ tCritH1: v })} />
-              <WeightRow label="Meta Altos H1"         value={cfg.tAltH1}  onChange={v => updateCfg({ tAltH1: v })}  />
-              <WeightRow label="Meta Medios+Bajos H1"  value={cfg.tMedH1}  onChange={v => updateCfg({ tMedH1: v })}  />
-              <WeightRow label="Meta Críticos H2"      value={cfg.tCritH2} onChange={v => updateCfg({ tCritH2: v })} />
-              <WeightRow label="Meta Altos H2"         value={cfg.tAltH2}  onChange={v => updateCfg({ tAltH2: v })}  />
-              <WeightRow label="Meta Medios+Bajos H2"  value={cfg.tMedH2}  onChange={v => updateCfg({ tMedH2: v })}  />
-            </div>
-          </div>
-          <div>
-            <p className="font-medium mb-2">SLA H2 (días hábiles)</p>
-            <div className="space-y-1.5">
-              <WeightRow label="SLA Críticos"     value={cfg.slaCritico}    onChange={v => updateCfg({ slaCritico: v })}    />
-              <WeightRow label="SLA Altos"         value={cfg.slaAlto}       onChange={v => updateCfg({ slaAlto: v })}       />
-              <WeightRow label="SLA Medios+Bajos"  value={cfg.slaMedioBajo}  onChange={v => updateCfg({ slaMedioBajo: v })}  />
-            </div>
-          </div>
-        </AdminSection>
-      </CardContent>
-    </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -457,6 +560,7 @@ const EVELYN_DEFAULTS: EvelynCfg = {
 function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; loading: boolean; francoData: FrancoData | null }) {
   const [cfg, setCfg] = useState<EvelynCfg>(() => loadLS(EVELYN_CFG_KEY, EVELYN_DEFAULTS));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const updateCfg = (patch: Partial<EvelynCfg>) => {
     setCfg(prev => { const next = { ...prev, ...patch }; saveLS(EVELYN_CFG_KEY, next); return next; });
@@ -476,89 +580,131 @@ function EvelynCard({ data, loading, francoData }: { data: EvelynData | null; lo
   const totalW = cfg.wCobertura + cfg.wVelocidad;
   const score = totalW > 0 ? Math.round((cobertura * cfg.wCobertura + velScore * cfg.wVelocidad) / totalW) : 0;
   const superPerformance = cobertura >= 100 && velocidad !== null && velocidad <= cfg.velOptimo;
-  const warnTotal = totalW !== 100 && <p className="text-amber-600">⚠ Las ponderaciones suman {totalW}% (deben sumar 100%)</p>;
 
   return (
-    <Card className={superPerformance ? "border-emerald-500 border-2" : ""}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle className="text-base">Evelyn Padilla</CardTitle>
-              <p className="text-xs text-muted-foreground">Encargada de Digitación y Control de Gestión</p>
+    <>
+      {/* ── Summary card ── */}
+      <Card className={superPerformance ? "border-emerald-500 border-2" : ""}>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-base">Evelyn Padilla</CardTitle>
+                <p className="text-xs text-muted-foreground">Digitación y Control de Gestión</p>
+              </div>
             </div>
+            {data && scoreBadge(score)}
           </div>
-          {data && scoreBadge(score)}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span>OC con factura registrada (meta: 100%) <span className="text-muted-foreground text-xs">({cfg.wCobertura}%)</span></span>
-            <span className="font-semibold">{cobertura}%</span>
-          </div>
-          <Progress value={cobertura} className="h-2" />
-          {data && <p className="text-xs text-muted-foreground mt-1">{data.ocConFactura} de {data.ocConNumero} OC con factura</p>}
-        </div>
-
-        {velocidad !== null && (
+        </CardHeader>
+        <CardContent className="space-y-3">
           <div>
             <div className="flex justify-between text-sm mb-1">
-              <span>Velocidad promedio de carga <span className="text-muted-foreground text-xs">({cfg.wVelocidad}%)</span></span>
+              <span className="text-muted-foreground">OC con factura (meta 100%)</span>
+              <span className="font-semibold">{cobertura}%</span>
+            </div>
+            <Progress value={cobertura} className="h-2" />
+            {data && <p className="text-xs text-muted-foreground mt-1">{data.ocConFactura} de {data.ocConNumero} OC</p>}
+          </div>
+          {velocidad !== null && (
+            <div className="bg-muted/50 rounded-md px-3 py-2 flex justify-between items-center text-sm">
+              <span className="text-muted-foreground text-xs">Velocidad promedio</span>
               <span className={`font-semibold ${velocidad <= cfg.velOptimo ? "text-emerald-600" : velocidad <= cfg.velMeta ? "text-blue-600" : velocidad <= cfg.velMinimo ? "text-amber-500" : "text-destructive"}`}>
                 {velocidad.toFixed(1)} días háb.
               </span>
             </div>
-            <p className="text-xs text-muted-foreground">Óptimo: ≤{cfg.velOptimo}d · Meta: ≤{cfg.velMeta}d · Mínimo: ≤{cfg.velMinimo}d</p>
-          </div>
-        )}
+          )}
+          {superPerformance && (
+            <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800 flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+              <span className="font-semibold">Equipo en ritmo óptimo</span>
+            </div>
+          )}
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
+            Ver detalle
+          </Button>
+        </CardContent>
+      </Card>
 
-        {superPerformance && (
-          <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 space-y-1">
-            <div className="flex items-center gap-1 font-semibold"><TrendingUp className="h-3.5 w-3.5" /> Equipo en ritmo óptimo</div>
-            {francoData && <p>Franco tiene {francoData.criticosH1Resueltos + francoData.altosH1Resueltos} forms cerrados habilitados por OC completas.</p>}
-          </div>
-        )}
+      {/* ── Detail dialog ── */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Evelyn Padilla — OC y Facturas al Día</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto space-y-4 pr-1">
+            {/* Cobertura */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span>OC con factura registrada (meta: 100%)</span>
+                <span className="font-semibold">{cobertura}%</span>
+              </div>
+              <Progress value={cobertura} className="h-2" />
+              {data && <p className="text-xs text-muted-foreground mt-1">{data.ocConFactura} de {data.ocConNumero} OC con factura</p>}
+            </div>
 
-        {data && data.ocSinFactura.length > 0 && (
-          <details className="text-xs">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-              {data.ocSinFactura.length} OC sin factura registrada (pendientes)
-            </summary>
-            <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-              {data.ocSinFactura.map((oc, i) => (
-                <div key={i} className="flex justify-between border-b pb-1">
-                  <span className="font-mono">{oc.order_number}</span>
-                  <span className="text-muted-foreground">{oc.order_date ? format(parseISO(oc.order_date), "dd/MM/yyyy") : "—"}</span>
+            {/* Velocidad */}
+            {velocidad !== null && (
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Velocidad promedio de carga <span className="text-muted-foreground text-xs">({cfg.wVelocidad}% peso)</span></span>
+                  <span className={`font-semibold ${velocidad <= cfg.velOptimo ? "text-emerald-600" : velocidad <= cfg.velMeta ? "text-blue-600" : velocidad <= cfg.velMinimo ? "text-amber-500" : "text-destructive"}`}>
+                    {velocidad.toFixed(1)} días háb.
+                  </span>
                 </div>
-              ))}
-            </div>
-          </details>
-        )}
+                <p className="text-xs text-muted-foreground">Óptimo: ≤{cfg.velOptimo}d · Meta: ≤{cfg.velMeta}d · Mínimo: ≤{cfg.velMinimo}d</p>
+              </div>
+            )}
 
-        <AdminSection open={settingsOpen} onOpenChange={setSettingsOpen}>
-          {warnTotal}
-          <div>
-            <p className="font-medium mb-2">Ponderaciones (%)</p>
-            <div className="space-y-1.5">
-              <WeightRow label="Cobertura OC"     value={cfg.wCobertura} onChange={v => updateCfg({ wCobertura: v })} />
-              <WeightRow label="Velocidad carga"  value={cfg.wVelocidad} onChange={v => updateCfg({ wVelocidad: v })} />
-            </div>
+            {superPerformance && (
+              <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 space-y-1">
+                <div className="flex items-center gap-1 font-semibold"><TrendingUp className="h-3.5 w-3.5" /> Equipo en ritmo óptimo</div>
+                {francoData && <p>Franco tiene {francoData.criticosH1Resueltos + francoData.altosH1Resueltos} forms cerrados habilitados por OC completas.</p>}
+              </div>
+            )}
+
+            {/* OC sin factura */}
+            {data && data.ocSinFactura.length > 0 && (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-muted/50 border-b">
+                  <p className="text-sm font-medium">{data.ocSinFactura.length} OC sin factura registrada (pendientes)</p>
+                </div>
+                <div className="max-h-48 overflow-y-auto divide-y text-xs">
+                  {data.ocSinFactura.map((oc, i) => (
+                    <div key={i} className="flex justify-between px-3 py-1.5">
+                      <span className="font-mono">{oc.order_number}</span>
+                      <span className="text-muted-foreground">{oc.order_date ? format(parseISO(oc.order_date), "dd/MM/yyyy") : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Admin */}
+            <AdminSection open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <div>
+                <p className="font-medium mb-2">Ponderaciones (%)</p>
+                <div className="space-y-1.5">
+                  <WeightRow label="Cobertura OC"    value={cfg.wCobertura} onChange={v => updateCfg({ wCobertura: v })} />
+                  <WeightRow label="Velocidad carga" value={cfg.wVelocidad} onChange={v => updateCfg({ wVelocidad: v })} />
+                </div>
+              </div>
+              <div>
+                <p className="font-medium mb-2">Velocidad (días hábiles)</p>
+                <div className="space-y-1.5">
+                  <WeightRow label="Óptimo (≤N días)" value={cfg.velOptimo}  onChange={v => updateCfg({ velOptimo: v })}  />
+                  <WeightRow label="Meta (≤N días)"    value={cfg.velMeta}    onChange={v => updateCfg({ velMeta: v })}    />
+                  <WeightRow label="Mínimo (≤N días)"  value={cfg.velMinimo}  onChange={v => updateCfg({ velMinimo: v })}  />
+                </div>
+              </div>
+            </AdminSection>
           </div>
-          <div>
-            <p className="font-medium mb-2">Velocidad (días hábiles)</p>
-            <div className="space-y-1.5">
-              <WeightRow label="Óptimo (≤N días)"  value={cfg.velOptimo}  onChange={v => updateCfg({ velOptimo: v })}  />
-              <WeightRow label="Meta (≤N días)"     value={cfg.velMeta}    onChange={v => updateCfg({ velMeta: v })}    />
-              <WeightRow label="Mínimo (≤N días)"   value={cfg.velMinimo}  onChange={v => updateCfg({ velMinimo: v })}  />
-            </div>
-          </div>
-        </AdminSection>
-      </CardContent>
-    </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function CardSkeleton({ title, subtitle }: { title: string; subtitle: string }) {
@@ -599,7 +745,6 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingFranco(true);
       try {
-        // Fetch criticality categories
         const { data: cats } = await supabase
           .from("maintenance_criticality_categories" as any)
           .select("id, code, name");
@@ -610,7 +755,6 @@ export function TeamKPIDashboard() {
         const altoIds      = (cats || []).filter((c: any) => c.code === "alto").map((c: any) => c.id);
         const medioBajoIds = (cats || []).filter((c: any) => ["medio", "bajo"].includes(c.code)).map((c: any) => c.id);
 
-        // Fetch all forms (all criticalities) this year
         const { data: forms } = await supabase
           .from("maintenance_forms" as any)
           .select("id, form_number, sub_status, created_date, sub_status_resuelto_at, criticality_category_id")
@@ -634,14 +778,12 @@ export function TeamKPIDashboard() {
         const altosH2      = allForms.filter(f => isAlto(f)      && isH2(f));
         const mediosBajosH2 = allForms.filter(f => isMedioBajo(f) && isH2(f));
 
-        // SLA: only forms with sub_status_resuelto_at (tracked from today)
         const enSLA = (f: any, maxDays: number) => {
           if (!f.sub_status_resuelto_at || !f.created_date) return false;
           const dias = differenceInBusinessDays(parseISO(f.sub_status_resuelto_at), parseISO(f.created_date));
           return dias <= maxDays;
         };
 
-        // Detalle para tabla
         const detalle = allForms
           .filter(f => f.sub_status_resuelto_at || isResuelto(f))
           .map(f => {
@@ -715,7 +857,6 @@ export function TeamKPIDashboard() {
           .filter((o: any) => !invoiceMap.has(o.id))
           .map((o: any) => ({ order_number: o.order_number, order_date: o.order_date }));
 
-        // Velocidad: days between order_date and earliest invoice_date
         const velocidades: number[] = [];
         ocConFactura.forEach((o: any) => {
           const invDates = invoiceMap.get(o.id) || [];
@@ -746,7 +887,6 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingBeatriz(true);
       try {
-        // Load ALL categories (no parent_id filter), ordered by name
         const { data: cats, error: catsErr } = await supabase
           .from("supplier_categories" as any)
           .select("id, name")
@@ -757,7 +897,6 @@ export function TeamKPIDashboard() {
           .select("supplier_id, region")
           .limit(5000);
 
-        // Fetch all suppliers with name (suppliers table has no deleted_at)
         const { data: suppliers, error: suppsErr } = await supabase
           .from("suppliers" as any)
           .select("id, name, category_id")
@@ -772,7 +911,6 @@ export function TeamKPIDashboard() {
         const zoneList = (zones || []) as any[];
         const suppList = (suppliers || []) as any[];
 
-        // Map supplier → set of zones
         const suppZones = new Map<string, Set<string>>();
         zoneList.forEach((z: any) => {
           const s = suppZones.get(z.supplier_id) || new Set();
@@ -780,11 +918,9 @@ export function TeamKPIDashboard() {
           suppZones.set(z.supplier_id, s);
         });
 
-        // Unique zones sorted
         const allZones = new Set<string>();
         zoneList.forEach((z: any) => allZones.add(z.region));
 
-        // Build count matrix + supplier name lists per category×zone
         const matrix: Record<string, number> = {};
         const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
 
@@ -798,7 +934,6 @@ export function TeamKPIDashboard() {
           });
         });
 
-        // Sort each cell's supplier list alphabetically
         Object.values(suppliersMap).forEach(list =>
           list.sort((a, b) => a.name.localeCompare(b.name, "es"))
         );
