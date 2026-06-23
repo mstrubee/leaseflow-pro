@@ -119,15 +119,14 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
           .in("contract_id", contractIds),
       ]);
 
-      // Get org member names
-      const orgMemberIds = [...new Set((orgContractsResult.data || []).map((r: any) => r.org_member_id))];
+      // Get org member names (non-sensitive fields only)
+      const orgMemberIds = new Set((orgContractsResult.data || []).map((r: any) => r.org_member_id));
       let orgMemberNames: Record<string, string> = {};
-      if (orgMemberIds.length > 0) {
-        const { data: orgMembers } = await supabase
-          .from("org_members")
-          .select("id, name")
-          .in("id", orgMemberIds);
-        (orgMembers || []).forEach((m: any) => { orgMemberNames[m.id] = m.name; });
+      if (orgMemberIds.size > 0) {
+        const { data: orgMembers } = await supabase.rpc("get_org_members_basic");
+        (orgMembers || []).forEach((m: any) => {
+          if (orgMemberIds.has(m.id)) orgMemberNames[m.id] = m.name;
+        });
       }
 
       // Build contract -> org member names map

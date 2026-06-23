@@ -3623,6 +3623,51 @@ export type Database = {
           },
         ]
       }
+      oc_import_batches: {
+        Row: {
+          drive_file_id: string | null
+          drive_synced_at: string | null
+          filename: string
+          id: string
+          imported_at: string | null
+          imported_by: string | null
+          rows_duplicate: number | null
+          rows_ok: number | null
+          rows_pending_local: number | null
+          rows_pending_supplier: number | null
+          rows_total: number | null
+          storage_path: string | null
+        }
+        Insert: {
+          drive_file_id?: string | null
+          drive_synced_at?: string | null
+          filename: string
+          id?: string
+          imported_at?: string | null
+          imported_by?: string | null
+          rows_duplicate?: number | null
+          rows_ok?: number | null
+          rows_pending_local?: number | null
+          rows_pending_supplier?: number | null
+          rows_total?: number | null
+          storage_path?: string | null
+        }
+        Update: {
+          drive_file_id?: string | null
+          drive_synced_at?: string | null
+          filename?: string
+          id?: string
+          imported_at?: string | null
+          imported_by?: string | null
+          rows_duplicate?: number | null
+          rows_ok?: number | null
+          rows_pending_local?: number | null
+          rows_pending_supplier?: number | null
+          rows_total?: number | null
+          storage_path?: string | null
+        }
+        Relationships: []
+      }
       oc_payment_plans: {
         Row: {
           amount_uf: number
@@ -5137,13 +5182,16 @@ export type Database = {
             | null
           budget_id: string | null
           budget_line_id: string | null
-          contract_id: string
+          contract_id: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: string | null
           description: string | null
           drive_file_id: string | null
           id: string
+          import_batch_id: string | null
+          import_pending_local: boolean | null
+          import_pending_supplier: boolean | null
           input_currency: string | null
           is_multi_contract: boolean | null
           maintenance_form_ids: string[] | null
@@ -5168,13 +5216,16 @@ export type Database = {
             | null
           budget_id?: string | null
           budget_line_id?: string | null
-          contract_id: string
+          contract_id?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
           drive_file_id?: string | null
           id?: string
+          import_batch_id?: string | null
+          import_pending_local?: boolean | null
+          import_pending_supplier?: boolean | null
           input_currency?: string | null
           is_multi_contract?: boolean | null
           maintenance_form_ids?: string[] | null
@@ -5199,13 +5250,16 @@ export type Database = {
             | null
           budget_id?: string | null
           budget_line_id?: string | null
-          contract_id?: string
+          contract_id?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
           drive_file_id?: string | null
           id?: string
+          import_batch_id?: string | null
+          import_pending_local?: boolean | null
+          import_pending_supplier?: boolean | null
           input_currency?: string | null
           is_multi_contract?: boolean | null
           maintenance_form_ids?: string[] | null
@@ -6438,6 +6492,18 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      get_org_members_basic: {
+        Args: never
+        Returns: {
+          company_id: string
+          created_at: string
+          display_order: number
+          id: string
+          name: string
+          parent_id: string
+          position: string
+        }[]
       }
       get_termination_alerts: { Args: never; Returns: Json }
       has_permission: {

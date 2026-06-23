@@ -189,10 +189,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   useEffect(() => {
     loadTemplates();
     (async () => {
-      const { data } = await supabase
-        .from("org_members")
-        .select("id, name, position")
-        .order("display_order", { ascending: true });
+      const { data } = await supabase.rpc("get_org_members_basic");
       setOrgMembers((data as OrgMember[]) || []);
     })();
   }, [loadTemplates]);
