@@ -386,13 +386,18 @@ export function RoutePanel({
                   {/* Cabecera del día (2-3 filas): fecha · inicio · resumen */}
                   <div className="bg-purple-50">
                     {/* Fila 1: día + fecha (calendario en el día 1) */}
-                    <div onClick={() => toggleDayCollapse(day)}
-                      className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-purple-100/60 transition-colors">
-                      {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-purple-600 shrink-0" /> : <ChevronUp className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
-                      <span className="text-[11px] font-bold text-purple-700 flex-1 min-w-0 truncate">📅 Día {day + 1}</span>
+                    <div className="flex items-center gap-2 px-2 py-1">
+                      {/* Solo el chevron + label colapsan el día */}
+                      <button
+                        onClick={() => toggleDayCollapse(day)}
+                        className="flex items-center gap-1.5 flex-1 min-w-0 hover:bg-purple-100/60 rounded transition-colors py-0.5 px-0.5 text-left"
+                      >
+                        {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-purple-600 shrink-0" /> : <ChevronUp className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
+                        <span className="text-[11px] font-bold text-purple-700 truncate">📅 Día {day + 1}</span>
+                      </button>
                       {isFirstDay ? (
                         <input type="date" value={scheduledDate} onChange={(e) => onScheduledDate(e.target.value)}
-                          onClick={(e) => e.stopPropagation()} title="Fecha de inicio de la gira"
+                          title="Fecha de inicio de la gira"
                           className="h-7 shrink-0 min-w-[8rem] border border-purple-300 rounded px-1.5 text-[11px] text-purple-700 focus:outline-none focus:border-purple-500" />
                       ) : (
                         <span className="text-[10px] font-medium text-purple-600 capitalize shrink-0">{dayDateLabel(scheduledDate, day)}</span>
