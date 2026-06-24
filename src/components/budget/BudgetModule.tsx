@@ -1839,7 +1839,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed || forceReadOnly}
               compactView={forceReadOnly}
-              onReorderLines={handleReorderLines}
+              
               focusNewLineId={focusNewLineId}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}

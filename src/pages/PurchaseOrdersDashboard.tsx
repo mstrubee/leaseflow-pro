@@ -123,6 +123,7 @@ interface PurchaseOrder {
   description: string | null;
   amount_uf: number;
   amount_clp?: number;
+  uf_value_at_entry?: number | null;
   status: string;
   budget_classification: string | null;
   created_at: string;
