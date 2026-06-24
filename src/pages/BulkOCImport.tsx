@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAppLogos } from "@/hooks/useAppLogos";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage, extractStoragePath } from "@/lib/storageUtils";
@@ -92,6 +93,7 @@ export default function BulkOCImport() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { logos } = useAppLogos();
+  const { ufValue } = useEconomicIndicators();
 
   // Reference data
   const [allLocations, setAllLocations] = useState<FullLocation[]>([]);
@@ -459,8 +461,9 @@ export default function BulkOCImport() {
         const payload: Record<string, unknown> = {
           order_number:            g.orderNumber,
           description:             g.description,
-          amount_uf:               0,
+          amount_uf:               ufValue > 0 ? g.totalAmountClp / ufValue : 0,
           amount_clp:              g.totalAmountClp,
+          uf_value_at_entry:       ufValue > 0 ? ufValue : null,
           input_currency:          "CLP",
           status:                  "abierta",
           budget_classification:   "OPEX",
@@ -489,7 +492,7 @@ export default function BulkOCImport() {
             .map(a => ({
               purchase_order_id: newOC.id,
               contract_id:       a.contractId,
-              amount_uf:         0,
+              amount_uf:         ufValue > 0 ? a.amountClp / ufValue : 0,
               amount_clp:        a.amountClp,
             }));
           if (allocRows.length > 0) {

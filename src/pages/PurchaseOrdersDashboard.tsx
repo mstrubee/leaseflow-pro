@@ -902,8 +902,10 @@ const PurchaseOrdersDashboard = () => {
       // Calculate totals
       const totalAmount = ordersList.reduce((sum, o) => {
         if ((o.amount_uf || 0) > 0) return sum + o.amount_uf;
-        if ((o.amount_clp || 0) > 0 && (o.uf_value_at_entry || 0) > 0)
-          return sum + (o.amount_clp / o.uf_value_at_entry!);
+        if ((o.amount_clp || 0) > 0) {
+          const rate = (o.uf_value_at_entry || 0) > 0 ? o.uf_value_at_entry! : ufValue;
+          if (rate > 0) return sum + (o.amount_clp / rate);
+        }
         return sum;
       }, 0);
       const totalAmountClp = ordersList.reduce((sum, o) => sum + (o.amount_clp || Math.round((o.amount_uf || 0) * ufValue)), 0);
