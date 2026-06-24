@@ -737,10 +737,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               </div>
               <div className="text-right">
                 {(() => {
-                  const capexAuthorizedClp = convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized);
+                  const capexTotalUf = capexSummary.authorized + capexSummary.unauthorized;
+                  const capexAuthorizedClp = convertUFToPesos(capexTotalUf);
                   const totalPresupuesto = capexAuthorizedClp + opexTotals.ocClp;
-                  const capexAuthorizedUf = capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized;
-                  const totalPresupuestoUf = capexAuthorizedUf + opexTotals.ocUf;
+                  const totalPresupuestoUf = capexTotalUf + opexTotals.ocUf;
                   return (
                     <>
                       <span className="font-medium">{formatCLP(totalPresupuesto)}</span>
