@@ -900,7 +900,12 @@ const PurchaseOrdersDashboard = () => {
       const isMulti = ordersList.length > 1;
       
       // Calculate totals
-      const totalAmount = ordersList.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+      const totalAmount = ordersList.reduce((sum, o) => {
+        if ((o.amount_uf || 0) > 0) return sum + o.amount_uf;
+        if ((o.amount_clp || 0) > 0 && (o.uf_value_at_entry || 0) > 0)
+          return sum + (o.amount_clp / o.uf_value_at_entry!);
+        return sum;
+      }, 0);
       const totalAmountClp = ordersList.reduce((sum, o) => sum + (o.amount_clp || Math.round((o.amount_uf || 0) * ufValue)), 0);
       const totalInvoicesCount = ordersList.reduce((sum, o) => sum + (o.invoices_count || 0), 0);
       const totalInvoicesAmount = ordersList.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
@@ -1848,7 +1853,7 @@ const PurchaseOrdersDashboard = () => {
     let status: "abierta" | "cerrada" | "sobrepasada" = "abierta";
     if (netInvoiced > groupedOrder.total_amount_uf + 0.01) {
       status = "sobrepasada";
-    } else if (Math.abs(netInvoiced - groupedOrder.total_amount_uf) < 0.01) {
+    } else if (netInvoiced > 0 && Math.abs(netInvoiced - groupedOrder.total_amount_uf) < 0.01) {
       status = "cerrada";
     }
 
