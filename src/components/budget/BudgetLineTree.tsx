@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight, GripVertical } from "lucide-react";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +196,10 @@ interface BudgetLineTreeProps {
   onReload?: () => void;
   /** Called when the user wants to move this line under a different parent (reparent). */
   onMoveLine?: (lineId: string) => void;
+  /** Called with reordered siblings after a drag-and-drop reorder. */
+  onReorderLines?: (reorderedSiblings: BudgetLine[]) => void;
+  /** ID of a newly-created line that should auto-focus its name input. */
+  focusNewLineId?: string | null;
 }
 export const BudgetLineTree = ({
   lines,
@@ -219,7 +226,22 @@ export const BudgetLineTree = ({
   onToggleSelect,
   onReload,
   onMoveLine,
+  onReorderLines,
+  focusNewLineId,
 }: BudgetLineTreeProps) => {
+  const { isAdmin } = useAuth();
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedLines.findIndex(l => l.id === active.id);
+    const newIndex = sortedLines.findIndex(l => l.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorderLines?.(arrayMove(sortedLines, oldIndex, newIndex));
+  };
+
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
     if (level > 0) return null; // Don't compute for nested trees
@@ -259,39 +281,53 @@ export const BudgetLineTree = ({
     });
   }, [lines, compactView]);
 
-  return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-    {sortedLines.map(line => <BudgetLineItem
-        key={line.id} 
-        line={line} 
-        level={level} 
-        linesMap={effectiveLinesMap}
-        onAddLine={onAddLine} 
-        onUpdateLine={onUpdateLine} 
-        onDeleteLine={onDeleteLine} 
-        onCreateOC={onCreateOC} 
-        onCreateOCRequest={onCreateOCRequest}
-        onCreateInvoice={onCreateInvoice} 
-        onViewLineDetails={onViewLineDetails} 
-        readOnly={readOnly}
-        compactView={compactView}
-        parentCategoryId={line.category_id || parentCategoryId}
-        globalExpandState={globalExpandState}
-        templatePricesMap={templatePricesMap}
-        collapsedIds={collapsedIds}
-        onToggleExpand={onToggleExpand}
-        superficieEdificada={superficieEdificada}
-        internalTransferSupplierIds={internalTransferSupplierIds}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        onToggleSelect={onToggleSelect}
-        onReload={onReload}
-        onMoveLine={onMoveLine}
-      />)}
-      {level === 0 && !readOnly && isAdmin && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
+  const itemList = sortedLines.map(line => <BudgetLineItem
+      key={line.id}
+      line={line}
+      level={level}
+      linesMap={effectiveLinesMap}
+      onAddLine={onAddLine}
+      onUpdateLine={onUpdateLine}
+      onDeleteLine={onDeleteLine}
+      onCreateOC={onCreateOC}
+      onCreateOCRequest={onCreateOCRequest}
+      onCreateInvoice={onCreateInvoice}
+      onViewLineDetails={onViewLineDetails}
+      readOnly={readOnly}
+      compactView={compactView}
+      parentCategoryId={line.category_id || parentCategoryId}
+      globalExpandState={globalExpandState}
+      templatePricesMap={templatePricesMap}
+      collapsedIds={collapsedIds}
+      onToggleExpand={onToggleExpand}
+      superficieEdificada={superficieEdificada}
+      internalTransferSupplierIds={internalTransferSupplierIds}
+      selectionMode={selectionMode}
+      selectedIds={selectedIds}
+      onToggleSelect={onToggleSelect}
+      onReload={onReload}
+      onMoveLine={onMoveLine}
+      onReorderLines={onReorderLines}
+      focusNewLineId={focusNewLineId}
+    />);
+
+  return (
+    <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
+      {!readOnly && !compactView && onReorderLines ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={sortedLines.map(l => l.id)} strategy={verticalListSortingStrategy}>
+            {itemList}
+          </SortableContext>
+        </DndContext>
+      ) : itemList}
+      {level === 0 && !readOnly && isAdmin && (
+        <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
-        </Button>}
-    </div>;
+        </Button>
+      )}
+    </div>
+  );
 };
 interface BudgetLineItemProps {
   line: BudgetLine;
@@ -318,6 +354,8 @@ interface BudgetLineItemProps {
   onToggleSelect?: (id: string) => void;
   onReload?: () => void;
   onMoveLine?: (lineId: string) => void;
+  onReorderLines?: (reorderedSiblings: BudgetLine[]) => void;
+  focusNewLineId?: string | null;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -350,10 +388,17 @@ const BudgetLineItemInner = ({
   onToggleSelect,
   onReload,
   onMoveLine,
+  onReorderLines,
+  focusNewLineId,
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
   const { isAdmin } = useAuth();
+
+  // DnD sortable
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: line.id });
+  const dndStyle = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
+
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
   const isExpanded = collapsedIds ? !collapsedIds.has(line.id) : localExpanded;
@@ -364,7 +409,7 @@ const BudgetLineItemInner = ({
       setLocalExpanded(val);
     }
   };
-  const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(() => focusNewLineId === line.id);
   const [isEditingQuantity, setIsEditingQuantity] = useState(false);
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
@@ -381,6 +426,14 @@ const BudgetLineItemInner = ({
   const [surchargeReason, setSurchargeReason] = useState("");
   const [savingSurcharge, setSavingSurcharge] = useState(false);
   const [editName, setEditName] = useState(line.name);
+  // Auto-focus name input when this line is newly created
+  useEffect(() => {
+    if (focusNewLineId === line.id && !effectiveReadOnly) {
+      setEditName(line.name);
+      setIsEditingName(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNewLineId, line.id]);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
@@ -823,7 +876,7 @@ const BudgetLineItemInner = ({
     );
   }
 
-  return <div>
+  return <div ref={setNodeRef} style={dndStyle}>
       <div
         data-line-id={line.id}
         onClick={selectionMode ? (e) => {
@@ -862,6 +915,17 @@ const BudgetLineItemInner = ({
           >
             {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
           </div>
+        )}
+        {!readOnly && !compactView && onReorderLines && (
+          <span
+            data-no-select
+            {...attributes}
+            {...listeners}
+            className="opacity-0 group-hover:opacity-50 hover:!opacity-100 cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground flex-shrink-0"
+            title="Arrastrar para reordenar"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </span>
         )}
         <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
@@ -1374,7 +1438,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} onReorderLines={onReorderLines} focusNewLineId={focusNewLineId} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
@@ -1527,6 +1591,7 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   if ((prev.line.calc_type === "percentage" || isParentLine) && prev.linesMap !== next.linesMap) return false;
   if (prev.parentCategoryId !== next.parentCategoryId) return false;
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
+  if (prev.focusNewLineId !== next.focusNewLineId) return false;
   // Callbacks are stable (useCallback in parent), skip comparing
   return true;
 });

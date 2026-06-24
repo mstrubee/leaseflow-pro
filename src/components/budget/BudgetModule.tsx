@@ -400,6 +400,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
   const { isAdmin } = useAuth();
+  const [focusNewLineId, setFocusNewLineId] = useState<string | null>(null);
 
   useEffect(() => {
     loadBudgets();
@@ -504,7 +505,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     if (!budget || budget.is_closed) return;
 
     try {
-      const { error } = await supabase.from("budget_lines").insert({
+      const { data: newLine, error } = await (supabase.from("budget_lines").insert({
         budget_id: budget.id,
         parent_id: parentId,
         name: "Nueva línea",
@@ -514,13 +515,25 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         unit_type: "m2",
         currency: "UF",
         unit_price: 0,
-      });
+      } as any).select("id").single() as any);
 
       if (error) throw error;
-      loadLines(budget.id);
+      setFocusNewLineId(newLine?.id ?? null);
+      await loadLines(budget.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
+  };
+
+  const handleReorderLines = async (reorderedSiblings: BudgetLine[]) => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+    await Promise.all(
+      reorderedSiblings.map((line, index) =>
+        supabase.from("budget_lines").update({ display_order: index } as any).eq("id", line.id)
+      )
+    );
+    loadLines(budget.id);
   };
 
   const handleUpdateLine = async (id: string, data: Partial<BudgetLine>) => {
@@ -1826,6 +1839,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed || forceReadOnly}
               compactView={forceReadOnly}
+              onReorderLines={handleReorderLines}
+              focusNewLineId={focusNewLineId}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
               collapsedIds={collapsedIds}
