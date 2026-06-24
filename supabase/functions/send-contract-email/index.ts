@@ -6,6 +6,8 @@ const ALLOWED_ORIGINS = [
   'https://tgxiqvfpirwvhktgqqfa.lovable.app',
   'https://id-preview--73a8d508-7010-4c00-aa8e-6eb117cc7286.lovable.app',
   'https://rental-flow-desk.lovable.app',
+  'https://gplanet.vercel.app',
+  'https://leaseflow-cx7iispoy-matias-strubes-projects-ad768903.vercel.app',
   'http://localhost:5173',
   'http://localhost:8080',
   'http://localhost:3000',
