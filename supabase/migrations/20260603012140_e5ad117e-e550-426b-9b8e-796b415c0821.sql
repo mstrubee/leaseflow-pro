@@ -1,3 +1,12 @@
+-- 0) Create app_settings if it was not created via a prior migration (Lovable dashboard table)
+CREATE TABLE IF NOT EXISTS public.app_settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL,
+  updated_at timestamptz DEFAULT now(),
+  updated_by uuid REFERENCES auth.users(id)
+);
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+
 -- 1) app_settings: restrict read to authenticated users only
 DROP POLICY IF EXISTS "app_settings lectura" ON public.app_settings;
 CREATE POLICY "app_settings lectura"

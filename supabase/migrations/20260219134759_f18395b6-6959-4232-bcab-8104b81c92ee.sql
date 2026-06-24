@@ -30,14 +30,19 @@ CREATE POLICY "Admins can manage patent_shared_items"
   USING (public.has_role(auth.uid(), 'admin'))
   WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
--- 4. Insert mappings for the 6 shared items
-INSERT INTO public.patent_shared_items (checklist_item_id, shared_folder_id) VALUES
-  ('57bc2b0c-130f-4aff-906c-1ece6b789b68', 'b1000001-0000-0000-0000-000000000001'),
-  ('668883c5-f009-4f63-b0cf-db2a5ebaefb8', 'b1000001-0000-0000-0000-000000000002'),
-  ('edf51cd9-95f2-403d-9859-fd94779db9ea', 'b1000001-0000-0000-0000-000000000003'),
-  ('06546bd0-c310-4ce8-874d-784bebef23ad', 'b1000001-0000-0000-0000-000000000004'),
-  ('8fd7edbe-bed3-4f2a-8d04-95de0aa45638', 'b1000001-0000-0000-0000-000000000005'),
-  ('ac7ba77d-39ad-4b5e-8477-729ace039dfe', 'b1000001-0000-0000-0000-000000000006');
+-- 4. Insert mappings for the 6 shared items (guardrail: skip if checklist_items not present yet)
+DO $$
+BEGIN
+  INSERT INTO public.patent_shared_items (checklist_item_id, shared_folder_id) VALUES
+    ('57bc2b0c-130f-4aff-906c-1ece6b789b68', 'b1000001-0000-0000-0000-000000000001'),
+    ('668883c5-f009-4f63-b0cf-db2a5ebaefb8', 'b1000001-0000-0000-0000-000000000002'),
+    ('edf51cd9-95f2-403d-9859-fd94779db9ea', 'b1000001-0000-0000-0000-000000000003'),
+    ('06546bd0-c310-4ce8-874d-784bebef23ad', 'b1000001-0000-0000-0000-000000000004'),
+    ('8fd7edbe-bed3-4f2a-8d04-95de0aa45638', 'b1000001-0000-0000-0000-000000000005'),
+    ('ac7ba77d-39ad-4b5e-8477-729ace039dfe', 'b1000001-0000-0000-0000-000000000006');
+EXCEPTION WHEN foreign_key_violation THEN
+  RAISE NOTICE 'Skipping patent_shared_items seed - checklist_items not present in empty DB';
+END $$;
 
 -- 5. RLS policy for shared repository folders (contract_id IS NULL)
 CREATE POLICY "Authenticated users can read shared repository folders"
