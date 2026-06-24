@@ -193,6 +193,8 @@ interface BudgetLineTreeProps {
   onReload?: () => void;
   /** Called when the user wants to move this line under a different parent (reparent). */
   onMoveLine?: (lineId: string) => void;
+  /** Id of a newly created line to focus/scroll into view. */
+  focusNewLineId?: string | null;
 }
 export const BudgetLineTree = ({
   lines,
