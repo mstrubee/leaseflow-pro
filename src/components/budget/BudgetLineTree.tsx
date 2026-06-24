@@ -220,6 +220,7 @@ export const BudgetLineTree = ({
   onReload,
   onMoveLine,
 }: BudgetLineTreeProps) => {
+  const { isAdmin } = useAuth();
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
     if (level > 0) return null; // Don't compute for nested trees
