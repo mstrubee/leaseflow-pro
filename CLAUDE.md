@@ -17,10 +17,37 @@ LeaseFlow-pro es un CRM para la administración de contratos de arriendo y presu
 
 ## Stack actual y migración
 
-- **Origen:** Lovable (React + Supabase generado automáticamente)
-- **Destino:** por definir con el equipo
+- **Origen:** Lovable (React + Supabase `tgxiqvfpirwvhktgqqfa`, rama `main`)
+- **Destino:** Vercel + Supabase propio `ilcumthwzhmtumaklgvo` (rama `migration`)
 - **Regla crítica:** durante la migración, mantener paridad funcional con lo que está en producción. Cada cambio debe ser incremental y reversible.
 - Antes de proponer refactors grandes, preguntar si estamos en fase de migración activa o en desarrollo de nuevas features
+
+---
+
+## ⛔ REGLAS DE SEGURIDAD PARA MIGRACIÓN — LEER ANTES DE CUALQUIER ACCIÓN
+
+### Rama `main` = Lovable en producción. ES INTOCABLE.
+- **NUNCA** hacer commit a `main` de cambios relacionados con la migración
+- **NUNCA** modificar `supabase/config.toml` en `main` (apunta a `tgxiqvfpirwvhktgqqfa` y debe quedarse así)
+- **NUNCA** modificar archivos en `supabase/migrations/` en `main` (Lovable puede re-correrlos)
+- **NUNCA** hacer `git push` a `main` sin confirmación explícita de Matias
+- Cualquier cambio en `main` que Lovable detecte se despliega automáticamente en producción
+
+### Todo el trabajo de migración va en la rama `migration`
+- Cambios de config (Supabase nuevo, Vercel, variables de entorno) → solo en `migration`
+- Correcciones de migraciones SQL para la DB nueva → solo en `migration`
+- Vercel está conectado a `migration`, no a `main`
+
+### Antes de cualquier commit, preguntarse:
+1. ¿Estoy en la rama correcta? (`git branch` para verificar)
+2. ¿Este archivo existe en Lovable? Si sí → solo va en `migration`
+3. ¿Podría Lovable desplegar esto automáticamente? Si sí → STOP, confirmar con Matias primero
+
+### Archivos que NUNCA deben cambiar en `main` durante la migración:
+- `supabase/config.toml`
+- `supabase/migrations/*.sql` (cualquier archivo existente)
+- `.env` (el original apunta a Lovable)
+- `src/integrations/supabase/client.ts`
 
 ---
 
