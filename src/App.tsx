@@ -7,6 +7,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
 import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -66,11 +67,12 @@ const App = () => (
             <MainLayout>
               <FloatingPermissionSelector />
               <ConditionalFloatingAlerts />
+              <ErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   {/* Public routes */}
                   <Route path="/auth" element={<Auth />} />
-                  
+
                   {/* Protected routes - require authentication */}
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -102,6 +104,7 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
+              </ErrorBoundary>
             </MainLayout>
           </BrowserRouter>
         </PermissionSelectionProvider>
