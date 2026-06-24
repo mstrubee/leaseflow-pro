@@ -2882,10 +2882,32 @@ const PurchaseOrdersDashboard = () => {
                                 <TableRow className="bg-green-50/30 dark:bg-green-950/10">
                                   <TableCell colSpan={isAdmin ? 11 : 10} className="py-3 px-4">
                                     <div className="space-y-3">
-                                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                                        <Receipt className="h-4 w-4" />
-                                        Facturas y Notas de Crédito ({uniqueInvoiceCount})
-                                      </p>
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                          <Receipt className="h-4 w-4" />
+                                          Facturas y Notas de Crédito ({uniqueInvoiceCount})
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 text-xs gap-1"
+                                            onClick={() => handleOpenInvoiceDialogForGroup(groupedOrder)}
+                                          >
+                                            <Receipt className="h-3.5 w-3.5" />
+                                            + Agregar Factura
+                                          </Button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 text-xs gap-1"
+                                            onClick={() => handleOpenCreditNoteDialog(null, groupedOrder)}
+                                          >
+                                            <CreditCard className="h-3.5 w-3.5" />
+                                            + Agregar Nota de Crédito
+                                          </Button>
+                                        </div>
+                                      </div>
                                       <Table>
                                         <TableHeader>
                                           <TableRow>
