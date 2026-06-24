@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store, X, CalendarCheck } from "lucide-react";
+import { GripVertical, Trash2, Save, RotateCcw, MapPin, Clock, ChevronDown, ChevronUp, Car, Link2, ShoppingCart, Loader2, Store, X, CalendarCheck, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { MinutesInput } from "./MinutesInput";
 import { SupplierCombobox } from "./SupplierCombobox";
@@ -74,6 +74,7 @@ interface Props {
   onReset: () => void;
   isEditing?: boolean;
   onSelectLocation?: (loc: MaintenanceLocation) => void;
+  onEdit?: () => void;
 }
 
 function fmt(m: number) {
@@ -211,7 +212,7 @@ export function RoutePanel({
   routeName, supplierId, scheduledDate, startTime, urbanSpeed, highwaySpeed, saving,
   onRouteName, onSupplierId, onScheduledDate, onStartTime, onUrbanSpeed, onHighwaySpeed,
   dayStartTimes, onRemoveStop, onReorder, onSetFormMinutes, onSetStopMinutes, onAddErrand, onAddPurchaseStop, workingPoint,
-  purchaseCandidates, searchingPurchase, onSearchPurchase, onClearPurchase, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation,
+  purchaseCandidates, searchingPurchase, onSearchPurchase, onClearPurchase, onSetDayStartTimeForDay, onSave, onReset, isEditing, onSelectLocation, onEdit,
 }: Props) {
   const [dragging, setDragging]   = useState<number | null>(null);
   const [dragOver, setDragOver]   = useState<number | null>(null);
@@ -254,6 +255,16 @@ export function RoutePanel({
       next.has(day) ? next.delete(day) : next.add(day);
       return next;
     });
+
+  const handleRemoveDay = (dayIndex: number) => {
+    const uniqueStopIndices = [...new Set(
+      schedule.filter((e) => e.dayIndex === dayIndex).map((e) => e.stopIndex),
+    )];
+    uniqueStopIndices.forEach((idx) => {
+      const loc = stops[idx];
+      if (loc) onRemoveStop(loc.locationId);
+    });
+  };
 
   const handleDrop = (i: number) => {
     if (dragging === null || dragging === i) { setDragging(null); setDragOver(null); return; }
@@ -402,6 +413,13 @@ export function RoutePanel({
                       ) : (
                         <span className="text-[10px] font-medium text-purple-600 capitalize shrink-0">{dayDateLabel(scheduledDate, day)}</span>
                       )}
+                      <button
+                        onClick={() => handleRemoveDay(day)}
+                        title="Eliminar este día de la ruta"
+                        className="ml-1 p-0.5 text-purple-300 hover:text-red-500 transition-colors shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                     {/* Fila 2: local de inicio + hora (editable en todos los días, default 09:00) */}
                     <div className="flex items-center gap-2 px-2 py-1 border-t border-purple-100">
@@ -501,9 +519,15 @@ export function RoutePanel({
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1 text-xs h-8" onClick={onReset} disabled={saving}>
-            <RotateCcw className="w-3 h-3 mr-1" />Limpiar
-          </Button>
+          {isEditing ? (
+            <Button variant="outline" size="sm" className="flex-1 text-xs h-8 text-red-600 border-red-200 hover:bg-red-50" onClick={onReset} disabled={saving}>
+              <RotateCcw className="w-3 h-3 mr-1" />Limpiar completa
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="flex-1 text-xs h-8" onClick={onEdit} disabled={saving}>
+              <Pencil className="w-3 h-3 mr-1" />Editar
+            </Button>
+          )}
           <Button size="sm" className="flex-1 text-xs h-8"
             onClick={() => setSaveOpen(true)}
             disabled={saving || stops.length === 0 || !routeName.trim()}>

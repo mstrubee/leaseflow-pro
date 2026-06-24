@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouteBuilder, type MaintenanceLocation } from "@/hooks/useRouteBuilder";
 import { RouteBuilderMap } from "./RouteBuilderMap";
 import { LocationScoreList } from "./LocationScoreList";
@@ -14,8 +14,9 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@
 import { useAuth } from "@/hooks/useAuth";
 import { useAppLogos } from "@/hooks/useAppLogos";
 import { logoUrlForKey, type CompanyLogoKey } from "@/lib/companyLogo";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered, MapPin, Route as RouteIcon } from "lucide-react";
+import { Loader2, Navigation, PanelRightClose, PanelRightOpen, ListOrdered, MapPin, Route as RouteIcon, CalendarDays } from "lucide-react";
 
 // Divisor arrastrable: arrastrar a la izquierda agranda la columna (que está a la derecha)
 function dragHandler(current: number, setW: (n: number) => void, min = 240, max = 760) {
@@ -67,6 +68,32 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
   const [selectedLocation, setSelectedLocation] = useState<MaintenanceLocation | null>(null);
   const [renameTarget, setRenameTarget] = useState<MaintenanceLocation | null>(null);
   const [addPointAt, setAddPointAt] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Route picker (Editar)
+  const [editPickerOpen, setEditPickerOpen] = useState(false);
+  const [editableRoutes, setEditableRoutes] = useState<{ id: string; name: string; scheduled_date: string; supplier_name: string | null }[]>([]);
+  const [editPickerLoading, setEditPickerLoading] = useState(false);
+
+  const openEditPicker = useCallback(async () => {
+    if (rb.loading) { toast.error("Espera a que carguen los locales antes de editar"); return; }
+    setEditPickerLoading(true);
+    setEditPickerOpen(true);
+    const { data } = await (supabase as any)
+      .from("maintenance_routes")
+      .select("id, name, scheduled_date, suppliers(name)")
+      .is("deleted_at", null)
+      .order("scheduled_date", { ascending: false })
+      .limit(200);
+    setEditableRoutes(
+      (data ?? []).map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        name: r.name as string,
+        scheduled_date: r.scheduled_date as string,
+        supplier_name: (r.suppliers as { name: string } | null)?.name ?? null,
+      })),
+    );
+    setEditPickerLoading(false);
+  }, []);
 
   const [listCollapsed, setListCollapsed] = useState(false);
   const [listWidth, setListWidth] = useState(360);
@@ -282,12 +309,63 @@ export function RouteBuilderLayout({ editTourId = null, onExitEdit }: RouteBuild
                   onReset={() => { rb.resetRoute(); onExitEdit?.(); }}
                   isEditing={rb.isEditing}
                   onSelectLocation={(loc) => { setSelectedLocation(loc); setDetailCollapsed(false); }}
+                  onEdit={openEditPicker}
                 />
               </div>
             </div>
           </>
         )}
       </div>
+
+      {/* Selector de ruta para editar */}
+      <Dialog open={editPickerOpen} onOpenChange={(o) => { if (!o) setEditPickerOpen(false); }}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-blue-500" />
+              Seleccionar ruta a editar
+            </DialogTitle>
+            <DialogDescription>
+              Elige la ruta existente que quieres modificar.
+            </DialogDescription>
+          </DialogHeader>
+          {editPickerLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" /> Cargando rutas…
+            </div>
+          ) : (
+            <Command className="border-t">
+              <CommandInput placeholder="Buscar ruta…" />
+              <CommandList className="max-h-80">
+                <CommandEmpty>No se encontraron rutas.</CommandEmpty>
+                {editableRoutes.map((r) => (
+                  <CommandItem
+                    key={r.id}
+                    value={`${r.name} ${r.scheduled_date} ${r.supplier_name ?? ""}`}
+                    className="flex items-center gap-2"
+                    onSelect={async () => {
+                      setEditPickerOpen(false);
+                      try {
+                        await rb.loadTour(r.id);
+                        toast.success(`Ruta "${r.name}" cargada para editar`);
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Error al cargar la ruta");
+                      }
+                    }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{r.name}</div>
+                      <div className="text-xs text-gray-400">
+                        {r.scheduled_date}{r.supplier_name ? ` · ${r.supplier_name}` : ""}
+                      </div>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandList>
+            </Command>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Asignar contrato vigente a un punto (solo admin): renombrar uno existente
           (clic derecho en marcador) o crear uno nuevo (clic derecho en el mapa). */}
