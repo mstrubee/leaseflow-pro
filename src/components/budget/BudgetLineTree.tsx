@@ -287,7 +287,7 @@ export const BudgetLineTree = ({
         onReload={onReload}
         onMoveLine={onMoveLine}
       />)}
-      {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
+      {level === 0 && !readOnly && isAdmin && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
         </Button>}
@@ -1365,9 +1365,11 @@ const BudgetLineItemInner = ({
                   <CornerDownRight className="h-3 w-3" />
                 </Button>
               )}
-              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive" title="Eliminar línea">
-                <Trash2 className="h-3 w-3" />
-              </Button>
+              {(isAdmin || (line.status === "no_autorizado" && line.parent_id !== null)) && (
+                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive" title="Eliminar línea">
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
             </div>}
         </div>
       </div>
