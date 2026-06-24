@@ -112,6 +112,15 @@ Output: `[MIGRATION: ✅ OK]` o `[MIGRATION: ⚠️ ALERTA — descripción]`
 
 ---
 
+## Restricciones conocidas — NO volver a intentar
+
+| Restricción | Detalle |
+|---|---|
+| Supabase de Lovable (`tgxiqvfpirwvhktgqqfa`) | **No accesible.** Lovable no entrega acceso directo a la base de datos ni a las claves de servicio. No intentar pg_dump, CLI link, ni pedir credenciales. |
+| `.env.production` en `main` | **Nunca debe existir.** Está en `.gitignore`. Su presencia causa que Lovable autentique contra el Supabase nuevo (vacío), rompiendo el login de todos los usuarios. |
+
+---
+
 ## Notas para Claude
 
 - Matias es el founder. Es no-técnico, así que explicar las decisiones técnicas en lenguaje simple cuando sea relevante.
