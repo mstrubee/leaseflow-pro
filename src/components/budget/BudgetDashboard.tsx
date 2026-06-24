@@ -831,10 +831,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized))}</p>
-                <p className="text-xs text-muted-foreground">{formatUF(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
+                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized))}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(capexSummary.authorized + capexSummary.unauthorized)}</p>
               </div>
-              <BudgetSemaphore budget={convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)} consumed={capexTotals.ocClp} showLabel={false} size="md" />
+              <BudgetSemaphore budget={convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized)} consumed={capexTotals.ocClp} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
