@@ -353,6 +353,27 @@ export default function BulkOCImport() {
     setEditingSupplierKey(null);
   }
 
+  async function handleAddNewSupplier(orderNumber: string, name: string) {
+    const { data, error } = await (supabase
+      .from("suppliers")
+      .insert({ name } as any)
+      .select("id, name")
+      .single() as any);
+    if (error || !data) { toast.error("Error al crear proveedor"); return; }
+    setSuppliers(prev => [...prev, { id: data.id, name: data.name }]);
+    setGrouped(prev => prev.map(g => {
+      if (g.orderNumber !== orderNumber) return g;
+      return {
+        ...g,
+        supplierId:   data.id,
+        supplierName: data.name,
+        status: recomputeStatus(g.allocations, data.id),
+      };
+    }));
+    setEditingSupplierKey(null);
+    toast.success(`Proveedor "${data.name}" creado y asignado`);
+  }
+
   // ── Duplicate detection ────────────────────────────────────────────────────
 
   async function markDuplicates(groups: GroupedOC[]) {
@@ -851,6 +872,12 @@ export default function BulkOCImport() {
                                     placeholder="Buscar proveedor…"
                                     className="w-[220px]"
                                   />
+                                  <button
+                                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline text-left mt-0.5"
+                                    onClick={() => handleAddNewSupplier(g.orderNumber, g.rawProveedor)}
+                                  >
+                                    + Agregar "{g.rawProveedor}" como nuevo proveedor
+                                  </button>
                                 </div>
                               ) : (
                                 <button

@@ -187,7 +187,7 @@ export function parseOCExcelSheet(workbook: XLSX.WorkBook): ParseSheetResult {
       fechaRaw:    r[colFecha],
       description: String(r[colDesc] ?? "").trim(),
       amountRaw:   r[colMonto],
-      proveedorRaw: String(r[colProv] ?? "").trim(),
+      proveedorRaw: String(r[colProv] ?? "").trim().replace(/^\d+\s*/, ""),
       rowIndex: i + 1,
     });
   }
