@@ -963,6 +963,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const handleConfirmFreeze = async () => {
+    if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     const val = parseFloat(freezeValue.replace(",", "."));
@@ -1004,6 +1005,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const handleUnfreeze = async () => {
+    if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     if (!window.confirm("¿Descongelar el monto aprobado por directorio? Dejará de mostrarse como referencia.")) return;
@@ -1659,7 +1661,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </p>
                       </div>
                     </div>
-                    {!isClosed && !forceReadOnly && canApprove && (
+                    {!isClosed && !forceReadOnly && isAdmin && (
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2">
                           <Snowflake className="h-4 w-4" /> Editar monto
@@ -1673,7 +1675,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 );
               })()
             ) : (
-              !isClosed && !forceReadOnly && canApprove && (
+              !isClosed && !forceReadOnly && isAdmin && (
                 <div className="flex justify-end">
                   <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2"
                     title="Congelar el total actual como monto aprobado por directorio (referencial)">
