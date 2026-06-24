@@ -402,7 +402,7 @@ const PurchaseOrdersDashboard = () => {
     if (user) {
       loadData();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Apply supplier filter from URL params (e.g. navigating from Suppliers page)
   useEffect(() => {

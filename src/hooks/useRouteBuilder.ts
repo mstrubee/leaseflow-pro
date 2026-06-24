@@ -426,7 +426,7 @@ export function useRouteBuilder(editTourId?: string | null) {
       if (catRes.data)  setCriticalities(catRes.data as CriticalityCategory[]);
       setLoading(false);
     });
-  }, [user]);
+  }, [user?.id]);
 
   // Cargar la última selección GLOBAL de velocidades (de cualquier usuario)
   useEffect(() => {
@@ -481,7 +481,7 @@ export function useRouteBuilder(editTourId?: string | null) {
       }
       setCompanyByContract(map);
     })();
-  }, [user]);
+  }, [user?.id]);
 
   // Nombre real de cada contrato (id → name), para emparejar forms por código de local.
   // También se expone la lista de contratos vigentes (firmados) para renombrar locales.
@@ -499,7 +499,7 @@ export function useRouteBuilder(editTourId?: string | null) {
           .sort((a, b) => a.name.localeCompare(b.name)),
       );
     })();
-  }, [user]);
+  }, [user?.id]);
 
   // Renombrar un local del mapa asignándole el nombre de un contrato vigente (solo admin).
   // Setea name/local_name y deriva el código (AP0044, AG0031…) para que matcheen los forms.
@@ -719,7 +719,7 @@ export function useRouteBuilder(editTourId?: string | null) {
     } catch { /* log opcional */ }
 
     setFormsReloadKey((k) => k + 1);
-  }, [user]);
+  }, [user?.id]);
 
   // Deshacer fusión — directo en el cliente.
   const unmergeForms = useCallback(async (groupId: string): Promise<void> => {
@@ -746,7 +746,7 @@ export function useRouteBuilder(editTourId?: string | null) {
     } catch { /* log opcional */ }
 
     setFormsReloadKey((k) => k + 1);
-  }, [user]);
+  }, [user?.id]);
 
   // ---------------------------------------------------------------------------
   // Filtros: ¿un form cumple los filtros activos de tipo y criticidad?

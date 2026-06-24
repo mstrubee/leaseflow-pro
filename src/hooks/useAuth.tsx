@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -30,46 +30,24 @@ function useProvideAuth(): AuthContextValue {
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [roleLoaded, setRoleLoaded] = useState(false);
   const loadingUserDataRef = useRef(false);
+  // Track current user ID to avoid re-triggering effects when only the object reference changes
+  const currentUserIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          setTimeout(() => {
-            loadUserData(session.user.id);
-          }, 0);
-        } else {
-          setIsAdmin(false);
-          setPermissions([]);
-          setRoleLoaded(true);
-          setLoading(false);
-        }
-      }
-    );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadUserData(session.user.id);
-      } else {
-        setRoleLoaded(true);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+  const applySession = useCallback((newSession: typeof session) => {
+    setSession(newSession);
+    const newUserId = newSession?.user?.id ?? null;
+    if (newUserId !== currentUserIdRef.current) {
+      currentUserIdRef.current = newUserId;
+      setUser(newSession?.user ?? null);
+    }
   }, []);
 
-  const loadUserData = async (userId: string) => {
+  const loadUserData = useCallback(async (userId: string) => {
     if (loadingUserDataRef.current) return;
     loadingUserDataRef.current = true;
     try {
       const [roleRes, permRes] = await Promise.all([
-        supabase.from("user_roles").select("role").eq("user_id", userId).single(),
+        supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
         supabase.from("user_permissions").select("resource, permission").eq("user_id", userId)
       ]);
 
@@ -83,7 +61,39 @@ function useProvideAuth(): AuthContextValue {
       setRoleLoaded(true);
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        applySession(session);
+
+        if (session?.user) {
+          setTimeout(() => {
+            loadUserData(session.user.id);
+          }, 0);
+        } else {
+          setIsAdmin(false);
+          setIsOperador(false);
+          setPermissions([]);
+          setRoleLoaded(true);
+          setLoading(false);
+        }
+      }
+    );
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      applySession(session);
+      if (session?.user) {
+        loadUserData(session.user.id);
+      } else {
+        setRoleLoaded(true);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [applySession, loadUserData]);
 
   const hasPermission = (resource: string, requiredPermission: "view" | "edit" | "all"): boolean => {
     if (isAdmin) return true;

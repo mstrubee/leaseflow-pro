@@ -130,7 +130,7 @@ const Welcome = () => {
       supabase.from("profiles").select("full_name").eq("id", user.id).single()
         .then(({ data }) => setFullName(data?.full_name || user.email?.split("@")[0] || ""));
     }
-  }, [user]);
+  }, [user?.id]);
 
   const hours = new Date().getHours();
   const greeting = hours < 12 ? "Buenos días" : hours < 20 ? "Buenas tardes" : "Buenas noches";

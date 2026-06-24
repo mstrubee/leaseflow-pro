@@ -336,7 +336,7 @@ const Contracts = () => {
     if (user) {
       Promise.all([loadCompanies(), loadComiteGPStatuses(), loadCustomFields(), loadContracts()]);
     }
-  }, [user]);
+  }, [user?.id]);
 
   const loadComiteGPStatuses = async () => {
     const { data } = await supabase

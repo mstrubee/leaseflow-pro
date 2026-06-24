@@ -22,7 +22,7 @@ export function useDashboardSections() {
       setSections(DEFAULT_SECTIONS);
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   const loadSections = async () => {
     if (!user) return;
