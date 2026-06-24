@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, Mail } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
@@ -514,32 +514,6 @@ const AdminPanel = () => {
     }
   };
 
-  const handleSendPasswordReset = async (email: string) => {
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth`,
-      });
-      if (error) throw error;
-      toast({ title: "Email enviado", description: `Se envió un enlace de recuperación a ${email}` });
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
-  };
-
-  const handleSendPasswordResetAll = async () => {
-    if (!window.confirm(`¿Enviar email de recuperación de contraseña a los ${profiles.length} usuarios? Cada uno recibirá un enlace para crear su nueva contraseña.`)) return;
-    let sent = 0;
-    for (const profile of profiles) {
-      if (profile.id === user?.id) continue;
-      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
-        redirectTo: `${window.location.origin}/auth`,
-      });
-      if (!error) sent++;
-      await new Promise(r => setTimeout(r, 300));
-    }
-    toast({ title: "Emails enviados", description: `Se enviaron ${sent} emails de recuperación.` });
-  };
-
   const handleDeleteUser = async (userId: string) => {
     if (userId === user?.id) {
       toast({ variant: "destructive", title: "Error", description: "No puedes eliminar tu propia cuenta" });
@@ -921,11 +895,6 @@ const AdminPanel = () => {
           description="Lista de todos los usuarios registrados"
           icon={<Shield className="h-5 w-5 text-indigo-600" />}
           headerActions={
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={handleSendPasswordResetAll}>
-                <Mail className="mr-2 h-4 w-4" />
-                Enviar reset a todos
-              </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
@@ -1106,7 +1075,6 @@ const AdminPanel = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            </div>
           }
         >
             <Table>
@@ -1220,14 +1188,6 @@ const AdminPanel = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSendPasswordReset(profile.email)}
-                          title="Enviar email de recuperación de contraseña"
-                        >
-                          <Mail className="h-4 w-4" />
-                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
