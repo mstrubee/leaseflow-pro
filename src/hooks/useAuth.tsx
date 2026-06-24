@@ -64,15 +64,35 @@ function useProvideAuth(): AuthContextValue {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    // Track which userId we've loaded data for, so we don't re-fetch on
+    // TOKEN_REFRESHED or other non-identity-change events.
+    const loadedForUserId = { current: null as string | null };
+
+    const maybeFetch = (userId: string) => {
+      if (cancelled) return;
+      if (loadedForUserId.current === userId) return; // already loaded
+      if (loadingUserDataRef.current) return;         // fetch in-flight
+      loadedForUserId.current = userId;
+      loadUserData(userId);
+    };
+
+    // 1. Subscribe to auth events first (handles INITIAL_SESSION too in Supabase v2)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        if (cancelled) return;
         applySession(session);
 
         if (session?.user) {
-          setTimeout(() => {
-            loadUserData(session.user.id);
-          }, 0);
+          // Only (re)load role data when the identity changes or on first sign-in.
+          // TOKEN_REFRESHED fires frequently and must NOT reset permissions.
+          if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
+            maybeFetch(session.user.id);
+          }
         } else {
+          // User signed out — clear derived state
+          loadedForUserId.current = null;
           setIsAdmin(false);
           setIsOperador(false);
           setPermissions([]);
@@ -82,17 +102,24 @@ function useProvideAuth(): AuthContextValue {
       }
     );
 
+    // 2. Fallback: if INITIAL_SESSION hasn't fired yet (older Supabase versions),
+    //    getSession() guarantees we always bootstrap auth state.
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
       applySession(session);
       if (session?.user) {
-        loadUserData(session.user.id);
-      } else {
+        maybeFetch(session.user.id);
+      } else if (!loadedForUserId.current) {
+        // No user and nothing loaded → mark as ready
         setRoleLoaded(true);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [applySession, loadUserData]);
 
   const hasPermission = (resource: string, requiredPermission: "view" | "edit" | "all"): boolean => {
