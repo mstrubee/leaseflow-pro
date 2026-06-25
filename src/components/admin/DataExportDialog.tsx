@@ -37,6 +37,7 @@ const EXPORT_MODULES: ExportModule[] = [
       "contract_addresses",
       "contract_companies",
       "contract_contacts",
+      "contract_budgets",
       "companies",
       "rent_escalations",
       "renegotiation_drafts",
