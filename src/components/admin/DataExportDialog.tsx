@@ -183,16 +183,17 @@ async function fetchAllRows(table: string): Promise<Record<string, unknown>[]> {
   let done = false;
 
   while (!done) {
-    const { data, error } = await supabase.from(table).select("*").range(from, to);
+    const { data, error } = await (supabase as any).from(table).select("*").range(from, to);
     if (error) {
       throw new Error(`Error leyendo ${table}: ${error.message}`);
     }
-    if (!data || data.length === 0) {
+    const rows = (data as any[] | null) || [];
+    if (rows.length === 0) {
       done = true;
       break;
     }
-    allRows.push(...data);
-    if (data.length < PAGE_SIZE) {
+    allRows.push(...rows);
+    if (rows.length < PAGE_SIZE) {
       done = true;
     } else {
       from += PAGE_SIZE;
@@ -230,7 +231,7 @@ export function DataExportDialog() {
         try {
           const rows = await fetchAllRows(table);
           const csv = rowsToCsv(rows);
-          zip.file(`${table}.csv`, csv || "\ufeff"); // BOM for Excel compatibility if needed
+          zip.file(`${table}.csv`, csv || "\ufeff");
         } catch (e: any) {
           failed.push(table);
           zip.file(`${table}_ERROR.txt`, e.message || String(e));
