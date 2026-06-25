@@ -205,19 +205,23 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       if (budgetIds.length > 0) {
         const { data: lines } = await supabase
           .from("budget_lines")
-          .select("budget_id, amount_uf, status, parent_id, id")
+          .select("budget_id, amount_uf, unit_price, currency, status, parent_id, id")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
-        
+
         if (lines) {
           const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id));
           const leafLines = lines.filter(l => !parentIds.has(l.id));
-          
+
           leafLines.forEach(l => {
+            // CLP lines store amount in unit_price; convert to UF for uniform totals
+            const lineUF = l.currency === "CLP" && ufValue > 0
+              ? (l.unit_price || 0) / ufValue
+              : (l.amount_uf || 0);
             if (l.status === "autorizado") {
-              authorizedByBudget[l.budget_id] = (authorizedByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+              authorizedByBudget[l.budget_id] = (authorizedByBudget[l.budget_id] || 0) + lineUF;
             } else {
-              unauthorizedByBudget[l.budget_id] = (unauthorizedByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+              unauthorizedByBudget[l.budget_id] = (unauthorizedByBudget[l.budget_id] || 0) + lineUF;
             }
           });
         }
@@ -240,7 +244,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       setCapexByContract(map);
     };
     loadCapex();
-  }, []);
+  }, [ufValue]);
 
   const handleComiteGPChange = async (contractId: string, value: string) => {
     const { error } = await supabase

@@ -43,6 +43,14 @@ const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
 
 const queryClient = new QueryClient();
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
+
 function ConditionalFloatingAlerts() {
   const location = useLocation();
   useEffect(() => { prefetchAllRoutesWhenIdle(); }, []);
@@ -65,6 +73,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <MainLayout>
+              <ScrollToTop />
               <FloatingPermissionSelector />
               <ConditionalFloatingAlerts />
               <ErrorBoundary>
