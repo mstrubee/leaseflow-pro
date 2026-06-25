@@ -497,37 +497,43 @@ export function DataExportDialog() {
     const failed: string[] = [];
 
     try {
-      // Org tables have restrictive RLS — fetch them in one go via the Edge Function.
-      const orgTablesInModule = mod.tables.filter((t) => ORG_EDGE_TABLES.includes(t));
-      let orgData: Record<string, Record<string, unknown>[]> = {};
-      if (orgTablesInModule.length > 0) {
-        try {
-          orgData = await fetchOrgTablesViaEdge();
-        } catch (e: any) {
-          for (const table of orgTablesInModule) {
+      if (selectedModule === GANTT_FULL_LABEL) {
+        // Special module: per-table CSVs + nested cronogramas.json.
+        await buildGanttFullExport(zip, failed);
+      } else {
+        // Org tables have restrictive RLS — fetch them in one go via the Edge Function.
+        const orgTablesInModule = mod.tables.filter((t) => ORG_EDGE_TABLES.includes(t));
+        let orgData: Record<string, Record<string, unknown>[]> = {};
+        if (orgTablesInModule.length > 0) {
+          try {
+            orgData = await fetchOrgTablesViaEdge();
+          } catch (e: any) {
+            for (const table of orgTablesInModule) {
+              failed.push(table);
+              zip.file(`${table}_ERROR.txt`, e.message || String(e));
+            }
+          }
+        }
+
+        for (const table of mod.tables) {
+          if (ORG_EDGE_TABLES.includes(table)) {
+            if (orgData[table]) {
+              const csv = rowsToCsv(orgData[table]);
+              zip.file(`${table}.csv`, csv || "\ufeff");
+            }
+            continue;
+          }
+          try {
+            const rows = await fetchAllRows(table);
+            const csv = rowsToCsv(rows);
+            zip.file(`${table}.csv`, csv || "\ufeff");
+          } catch (e: any) {
             failed.push(table);
             zip.file(`${table}_ERROR.txt`, e.message || String(e));
           }
         }
       }
 
-      for (const table of mod.tables) {
-        if (ORG_EDGE_TABLES.includes(table)) {
-          if (orgData[table]) {
-            const csv = rowsToCsv(orgData[table]);
-            zip.file(`${table}.csv`, csv || "\ufeff");
-          }
-          continue;
-        }
-        try {
-          const rows = await fetchAllRows(table);
-          const csv = rowsToCsv(rows);
-          zip.file(`${table}.csv`, csv || "\ufeff");
-        } catch (e: any) {
-          failed.push(table);
-          zip.file(`${table}_ERROR.txt`, e.message || String(e));
-        }
-      }
 
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
