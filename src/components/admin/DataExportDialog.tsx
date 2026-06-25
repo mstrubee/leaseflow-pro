@@ -266,7 +266,214 @@ async function fetchAllRows(table: string): Promise<Record<string, unknown>[]> {
   return allRows;
 }
 
-export function DataExportDialog() {
+// ---- Cronogramas (Gantt) full export: per-table CSVs + nested JSON ----
+
+interface GanttTaskNode {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  responsible: { id: string; name: string; position: string | null } | null;
+  start_date?: string | null;
+  duration_days?: number | null;
+  duration_type?: string | null;
+  end_date?: string | null;
+  status?: string | null;
+  progress?: number | null;
+  color?: string | null;
+  origin?: string | null;
+  dependencies: {
+    depends_on_task_id: string;
+    depends_on_task_name: string | null;
+    dep_type: string | null;
+    lag_days: number | null;
+    lag_type: string | null;
+  }[];
+  purchase_order_ids?: string[];
+  children: GanttTaskNode[];
+}
+
+function buildTaskTree(
+  rows: Record<string, any>[],
+  toNode: (row: Record<string, any>) => GanttTaskNode,
+): GanttTaskNode[] {
+  const nodes = new Map<string, GanttTaskNode>();
+  rows.forEach((r) => nodes.set(r.id, toNode(r)));
+  const roots: GanttTaskNode[] = [];
+  // Preserve display_order then name for stable ordering.
+  const ordered = [...rows].sort(
+    (a, b) =>
+      (a.display_order ?? 0) - (b.display_order ?? 0) ||
+      String(a.name ?? "").localeCompare(String(b.name ?? "")),
+  );
+  for (const r of ordered) {
+    const node = nodes.get(r.id)!;
+    const parent = r.parent_id ? nodes.get(r.parent_id) : null;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  return roots;
+}
+
+async function buildGanttFullExport(
+  zip: JSZip,
+  failed: string[],
+): Promise<void> {
+  const tables = [
+    "gantt_timelines",
+    "gantt_tasks",
+    "gantt_task_dependencies",
+    "gantt_task_purchase_orders",
+    "gantt_templates",
+    "gantt_template_tasks",
+    "gantt_template_dependencies",
+  ];
+
+  const data: Record<string, Record<string, any>[]> = {};
+  for (const table of tables) {
+    try {
+      const rows = await fetchAllRows(table);
+      data[table] = rows;
+      zip.file(`${table}.csv`, rowsToCsv(rows) || "\ufeff");
+    } catch (e: any) {
+      data[table] = [];
+      failed.push(table);
+      zip.file(`${table}_ERROR.txt`, e.message || String(e));
+    }
+  }
+
+  // Org members (responsible) — basic, no PII, via RPC.
+  let members: Record<string, { id: string; name: string; position: string | null }> = {};
+  try {
+    const { data: orgRows, error } = await (supabase as any).rpc("get_org_members_basic");
+    if (error) throw error;
+    const rows = (orgRows as any[] | null) || [];
+    zip.file("org_members_basic.csv", rowsToCsv(rows) || "\ufeff");
+    members = Object.fromEntries(
+      rows.map((m: any) => [m.id, { id: m.id, name: m.name, position: m.position ?? null }]),
+    );
+  } catch (e: any) {
+    failed.push("org_members_basic");
+    zip.file("org_members_basic_ERROR.txt", e.message || String(e));
+  }
+
+  // Contract names for the JSON (CSV keeps contract_id).
+  const contractNames: Record<string, string> = {};
+  try {
+    const rows = await fetchAllRows("contracts");
+    rows.forEach((c: any) => {
+      contractNames[c.id] = c.name;
+    });
+  } catch {
+    // Non-fatal: JSON will just omit contract_name.
+  }
+
+  // Index dependencies and purchase orders by task.
+  const depsByTask = new Map<string, Record<string, any>[]>();
+  for (const d of data["gantt_task_dependencies"] || []) {
+    const arr = depsByTask.get(d.task_id) || [];
+    arr.push(d);
+    depsByTask.set(d.task_id, arr);
+  }
+  const posByTask = new Map<string, string[]>();
+  for (const p of data["gantt_task_purchase_orders"] || []) {
+    const arr = posByTask.get(p.task_id) || [];
+    arr.push(p.purchase_order_id);
+    posByTask.set(p.task_id, arr);
+  }
+  const taskNames = new Map<string, string>();
+  (data["gantt_tasks"] || []).forEach((t: any) => taskNames.set(t.id, t.name));
+
+  const taskToNode = (t: any): GanttTaskNode => ({
+    id: t.id,
+    name: t.name,
+    parent_id: t.parent_id ?? null,
+    responsible: t.responsible_member_id ? members[t.responsible_member_id] ?? null : null,
+    start_date: t.start_date ?? null,
+    duration_days: t.duration_days ?? null,
+    duration_type: t.duration_type ?? null,
+    end_date: t.end_date ?? null,
+    status: t.status ?? null,
+    progress: t.progress ?? null,
+    color: t.color ?? null,
+    origin: t.origin ?? null,
+    dependencies: (depsByTask.get(t.id) || []).map((d) => ({
+      depends_on_task_id: d.depends_on_task_id,
+      depends_on_task_name: taskNames.get(d.depends_on_task_id) ?? null,
+      dep_type: d.dep_type ?? null,
+      lag_days: d.lag_days ?? null,
+      lag_type: d.lag_type ?? null,
+    })),
+    purchase_order_ids: posByTask.get(t.id) || [],
+    children: [],
+  });
+
+  // Group real tasks by timeline.
+  const tasksByTimeline = new Map<string, Record<string, any>[]>();
+  for (const t of data["gantt_tasks"] || []) {
+    const arr = tasksByTimeline.get(t.timeline_id) || [];
+    arr.push(t);
+    tasksByTimeline.set(t.timeline_id, arr);
+  }
+
+  const cronogramas = (data["gantt_timelines"] || []).map((tl: any) => ({
+    timeline_id: tl.id,
+    contract_id: tl.contract_id ?? null,
+    contract_name: tl.contract_id ? contractNames[tl.contract_id] ?? null : null,
+    name: tl.name,
+    tasks: buildTaskTree(tasksByTimeline.get(tl.id) || [], taskToNode),
+  }));
+
+  // Templates (separate block).
+  const tplDepsByTask = new Map<string, Record<string, any>[]>();
+  for (const d of data["gantt_template_dependencies"] || []) {
+    const arr = tplDepsByTask.get(d.task_id) || [];
+    arr.push(d);
+    tplDepsByTask.set(d.task_id, arr);
+  }
+  const tplTaskNames = new Map<string, string>();
+  (data["gantt_template_tasks"] || []).forEach((t: any) => tplTaskNames.set(t.id, t.name));
+
+  const tplTaskToNode = (t: any): GanttTaskNode => ({
+    id: t.id,
+    name: t.name,
+    parent_id: t.parent_id ?? null,
+    responsible: t.default_responsible_member_id
+      ? members[t.default_responsible_member_id] ?? null
+      : null,
+    duration_days: t.default_duration_days ?? null,
+    duration_type: t.duration_type ?? null,
+    origin: t.default_origin ?? null,
+    dependencies: (tplDepsByTask.get(t.id) || []).map((d) => ({
+      depends_on_task_id: d.depends_on_task_id,
+      depends_on_task_name: tplTaskNames.get(d.depends_on_task_id) ?? null,
+      dep_type: d.dep_type ?? null,
+      lag_days: d.lag_days ?? null,
+      lag_type: d.lag_type ?? null,
+    })),
+    children: [],
+  });
+
+  const tplTasksByTemplate = new Map<string, Record<string, any>[]>();
+  for (const t of data["gantt_template_tasks"] || []) {
+    const arr = tplTasksByTemplate.get(t.template_id) || [];
+    arr.push(t);
+    tplTasksByTemplate.set(t.template_id, arr);
+  }
+
+  const templates = (data["gantt_templates"] || []).map((tpl: any) => ({
+    template_id: tpl.id,
+    name: tpl.name,
+    description: tpl.description ?? null,
+    is_active: tpl.is_active ?? null,
+    tasks: buildTaskTree(tplTasksByTemplate.get(tpl.id) || [], tplTaskToNode),
+  }));
+
+  zip.file(
+    "cronogramas.json",
+    JSON.stringify({ exported_at: new Date().toISOString(), cronogramas, templates }, null, 2),
+  );
+}
+
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [selectedModule, setSelectedModule] = useState<string>("");
