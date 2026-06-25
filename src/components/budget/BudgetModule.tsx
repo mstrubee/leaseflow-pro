@@ -7,7 +7,8 @@ import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
-import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
+import { BudgetLineTree, BudgetLineTreeWithDrag, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
+import { useGantt } from "@/hooks/useGantt";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -52,6 +53,9 @@ interface BudgetModuleProps {
 }
 
 export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
+  // Sync new CAPEX lines to Gantt timelines that were created from CAPEX
+  const { syncNewCapexLine } = useGantt(contractId);
+
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
@@ -515,22 +519,28 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         unit_type: "m2",
         currency: "UF",
         unit_price: 0,
-      } as any).select("id").single() as any);
+      } as any).select("id, parent_id, display_order").single() as any);
 
       if (error) throw error;
       setFocusNewLineId(newLine?.id ?? null);
       await loadLines(budget.id);
+      // Sync to any Gantt timeline that was created from CAPEX (only for capex budgets)
+      if (budgetType === "capex" && newLine) {
+        await syncNewCapexLine({ id: newLine.id, name: "Nueva línea", parent_id: newLine.parent_id ?? null, display_order: newLine.display_order ?? 0 });
+      }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
-  const handleReorderLines = async (reorderedSiblings: BudgetLine[]) => {
+  // Called by BudgetLineTreeWithDrag when drag-to-reorder completes.
+  // siblingIds = ordered array of IDs for siblings at the dragged level.
+  const handleReorderLines = async (lineId: string, siblingIds: string[]) => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     await Promise.all(
-      reorderedSiblings.map((line, index) =>
-        supabase.from("budget_lines").update({ display_order: index } as any).eq("id", line.id)
+      siblingIds.map((id, index) =>
+        supabase.from("budget_lines").update({ display_order: index } as any).eq("id", id)
       )
     );
     loadLines(budget.id);
@@ -1828,7 +1838,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               </div>
             )}
 
-            <BudgetLineTree
+            <BudgetLineTreeWithDrag
               lines={displayLines}
               onAddLine={handleAddLine}
               onUpdateLine={handleUpdateLine}
@@ -1839,7 +1849,6 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed || forceReadOnly}
               compactView={forceReadOnly}
-              
               focusNewLineId={focusNewLineId}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
@@ -1854,6 +1863,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 setSelectedLineIds(new Set([lineId]));
                 setShowMoveDialog(true);
               }}
+              onReorderLine={!(isClosed || forceReadOnly) ? handleReorderLines : undefined}
             />
 
             <MoveLinesDialog

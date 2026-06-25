@@ -19,7 +19,7 @@ import { GanttCompareDialog } from "./GanttCompareDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw,
-  Trash2, ChevronDown, ChevronRight, Star, GitCompare,
+  Trash2, ChevronDown, ChevronRight, Star, GitCompare, Database, Layers, Pencil,
 } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { supabase } from "@/integrations/supabase/client";
@@ -342,6 +342,24 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                 ) : (
                   <Badge variant="secondary" className="text-xs px-1.5 py-0">
                     Estudio
+                  </Badge>
+                )}
+                {tl.source === "capex" && (
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 gap-1 border-blue-300 text-blue-600">
+                    <Database className="h-2.5 w-2.5" />
+                    Desde CAPEX
+                  </Badge>
+                )}
+                {tl.source === "template" && (
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 gap-1 border-violet-300 text-violet-600">
+                    <Layers className="h-2.5 w-2.5" />
+                    Desde plantilla
+                  </Badge>
+                )}
+                {tl.source === "empty" && (
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 gap-1 text-muted-foreground">
+                    <Pencil className="h-2.5 w-2.5" />
+                    Desde cero
                   </Badge>
                 )}
                 <span className="text-xs text-muted-foreground">

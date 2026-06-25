@@ -8,6 +8,7 @@ export interface GanttTask {
   timeline_id: string;
   parent_id: string | null;
   template_task_id: string | null;
+  budget_line_id: string | null;
   name: string;
   start_date: string | null;
   end_date: string | null;
@@ -63,6 +64,7 @@ export interface GanttTimeline {
   contract_id: string;
   name: string;
   template_id: string | null;
+  source: "empty" | "template" | "capex";
   is_priority: boolean;
   created_at: string;
   updated_at: string;
@@ -231,6 +233,7 @@ export function useGantt(contractId: string) {
           contract_id: contractId,
           name,
           template_id: templateId || null,
+          source: templateId ? "template" : "empty",
           created_by: user?.id,
           is_priority: isPriority,
         })
@@ -1127,7 +1130,7 @@ export function useGantt(contractId: string) {
 
       const { data: newTimeline, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .insert({ contract_id: contractId, name, template_id: null, created_by: user?.id, is_priority: isPriority })
+        .insert({ contract_id: contractId, name, template_id: null, source: "capex", created_by: user?.id, is_priority: isPriority })
         .select()
         .single();
       if (tlErr || !newTimeline) throw tlErr || new Error("No se pudo crear la línea de tiempo");
@@ -1136,7 +1139,7 @@ export function useGantt(contractId: string) {
       for (const line of visibleLines) {
         const { data: insertedTask, error: insErr } = await supabase
           .from("gantt_tasks")
-          .insert({ timeline_id: newTimeline.id, parent_id: null, name: line.name, duration_days: 1, duration_type: "calendar", display_order: line.display_order ?? 0, status: "pending" })
+          .insert({ timeline_id: newTimeline.id, parent_id: null, name: line.name, budget_line_id: line.id, duration_days: 1, duration_type: "calendar", display_order: line.display_order ?? 0, status: "pending" })
           .select()
           .single();
         if (insErr || !insertedTask) throw insErr || new Error("No se pudo insertar tarea");
@@ -1251,6 +1254,35 @@ export function useGantt(contractId: string) {
     }
   };
 
+  // Sync a newly added CAPEX budget line to all capex-sourced timelines of this contract.
+  // Called from BudgetModule after handleAddLine succeeds.
+  const syncNewCapexLine = useCallback(
+    async (newLine: { id: string; name: string; parent_id: string | null; display_order: number }) => {
+      const capexTimelines = timelines.filter((tl) => tl.source === "capex");
+      if (capexTimelines.length === 0) return;
+      for (const tl of capexTimelines) {
+        const tlTasks = tasksByTimeline[tl.id] || [];
+        let parentTaskId: string | null = null;
+        if (newLine.parent_id) {
+          const parentTask = tlTasks.find((t) => t.budget_line_id === newLine.parent_id);
+          parentTaskId = parentTask?.id ?? null;
+        }
+        await supabase.from("gantt_tasks").insert({
+          timeline_id: tl.id,
+          parent_id: parentTaskId,
+          name: newLine.name,
+          budget_line_id: newLine.id,
+          duration_days: 1,
+          duration_type: "calendar",
+          display_order: newLine.display_order ?? 0,
+          status: "pending",
+        });
+      }
+      await loadTimelines();
+    },
+    [timelines, tasksByTimeline, loadTimelines]
+  );
+
   return {
     timelines,
     tasksByTimeline,
@@ -1263,6 +1295,7 @@ export function useGantt(contractId: string) {
     saving,
     createTimeline,
     createTimelineFromCapex,
+    syncNewCapexLine,
     deleteTimeline,
     setPriorityTimeline,
     renameTimeline,

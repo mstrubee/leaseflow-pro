@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useContext } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -163,6 +163,43 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
 
 const EMPTY_LINES_MAP = new Map<string, BudgetLine>();
 
+// ── Drag-to-reorder context ────────────────────────────────────────────────
+interface BudgetDragCtxValue {
+  sourceId: string | null;
+  overId: string | null;
+  overPos: "above" | "below" | null;
+  setDragSource: (id: string | null) => void;
+  setDragOver: (id: string | null, pos: "above" | "below" | null) => void;
+  onReorderLine?: (lineId: string, siblingIds: string[]) => Promise<void>;
+}
+const BudgetDragCtx = React.createContext<BudgetDragCtxValue | null>(null);
+
+// Wrapper that provides drag context — use this in BudgetModule instead of BudgetLineTree
+export const BudgetLineTreeWithDrag = ({
+  onReorderLine,
+  ...props
+}: BudgetLineTreeProps & { onReorderLine?: (lineId: string, siblingIds: string[]) => Promise<void> }) => {
+  const [sourceId, setDragSource] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [overPos, setOverPos] = useState<"above" | "below" | null>(null);
+
+  const setDragOver = useCallback((id: string | null, pos: "above" | "below" | null) => {
+    setOverId(id);
+    setOverPos(pos);
+  }, []);
+
+  const ctxValue = useMemo<BudgetDragCtxValue>(
+    () => ({ sourceId, overId, overPos, setDragSource, setDragOver, onReorderLine }),
+    [sourceId, overId, overPos, setDragOver, onReorderLine]
+  );
+
+  return (
+    <BudgetDragCtx.Provider value={ctxValue}>
+      <BudgetLineTree {...props} />
+    </BudgetDragCtx.Provider>
+  );
+};
+
 interface BudgetLineTreeProps {
   lines: BudgetLine[];
   onAddLine: (parentId: string | null) => void;
@@ -262,7 +299,37 @@ export const BudgetLineTree = ({
     });
   }, [lines, compactView]);
 
-  return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
+  const dragCtx = useContext(BudgetDragCtx);
+
+  const handleLevelDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragCtx?.sourceId || !dragCtx?.overId) {
+      dragCtx?.setDragSource(null);
+      dragCtx?.setDragOver(null, null);
+      return;
+    }
+    const sibIds = sortedLines.map((l) => l.id);
+    if (!sibIds.includes(dragCtx.sourceId) || !sibIds.includes(dragCtx.overId)) {
+      dragCtx.setDragSource(null);
+      dragCtx.setDragOver(null, null);
+      return;
+    }
+    const newOrder = [...sibIds];
+    newOrder.splice(sibIds.indexOf(dragCtx.sourceId), 1);
+    let tgtIdx = newOrder.indexOf(dragCtx.overId);
+    if (dragCtx.overPos === "below") tgtIdx++;
+    newOrder.splice(tgtIdx, 0, dragCtx.sourceId);
+    dragCtx.onReorderLine?.(dragCtx.sourceId, newOrder);
+    dragCtx.setDragSource(null);
+    dragCtx.setDragOver(null, null);
+  }, [dragCtx, sortedLines]);
+
+  return <div
+    className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}
+    onDrop={dragCtx ? handleLevelDrop : undefined}
+    onDragOver={dragCtx ? (e) => e.preventDefault() : undefined}
+  >
     {sortedLines.map(line => <BudgetLineItem
         key={line.id} 
         line={line} 
@@ -403,6 +470,11 @@ const BudgetLineItemInner = ({
   const templatePricesMap = externalTemplatePricesMap;
 
   const descendantCount = countDescendants(line);
+
+  // Drag-to-reorder
+  const dragCtx = useContext(BudgetDragCtx);
+  const isDragSource = dragCtx?.sourceId === line.id;
+  const isDragOver = dragCtx?.overId === line.id;
 
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
@@ -829,6 +901,7 @@ const BudgetLineItemInner = ({
   return <div>
       <div
         data-line-id={line.id}
+        draggable={!!dragCtx && !effectiveReadOnly && !selectionMode && !compactView}
         onClick={selectionMode ? (e) => {
           // Ignore clicks on interactive children (inputs, buttons, dropdowns, etc.)
           const target = e.target as HTMLElement;
@@ -836,6 +909,25 @@ const BudgetLineItemInner = ({
           e.preventDefault();
           e.stopPropagation();
           onToggleSelect?.(line.id);
+        } : undefined}
+        onDragStart={dragCtx ? (e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", line.id);
+          dragCtx.setDragSource(line.id);
+        } : undefined}
+        onDragOver={dragCtx ? (e) => {
+          e.preventDefault();
+          if (isDragSource) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const pos = e.clientY - rect.top < rect.height / 2 ? "above" : "below";
+          dragCtx.setDragOver(line.id, pos);
+        } : undefined}
+        onDragLeave={dragCtx ? () => {
+          if (dragCtx.overId === line.id) dragCtx.setDragOver(null, null);
+        } : undefined}
+        onDragEnd={dragCtx ? () => {
+          dragCtx.setDragSource(null);
+          dragCtx.setDragOver(null, null);
         } : undefined}
         className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
@@ -851,7 +943,11 @@ const BudgetLineItemInner = ({
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
         selectionMode && "cursor-pointer select-none",
         // Selection styles last so they win precedence
-        selectionMode && isSelected && "!bg-primary/20 border-l-4 border-primary font-medium shadow-sm ring-1 ring-primary/40"
+        selectionMode && isSelected && "!bg-primary/20 border-l-4 border-primary font-medium shadow-sm ring-1 ring-primary/40",
+        // Drag-to-reorder visual state
+        isDragSource && "opacity-40",
+        isDragOver && dragCtx?.overPos === "above" && "border-t-2 border-primary",
+        isDragOver && dragCtx?.overPos === "below" && "border-b-2 border-primary",
       )}>
         {selectionMode && (
           <div
@@ -865,6 +961,9 @@ const BudgetLineItemInner = ({
           >
             {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
           </div>
+        )}
+        {dragCtx && !effectiveReadOnly && !selectionMode && !compactView && (
+          <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-50 cursor-grab flex-shrink-0 active:cursor-grabbing" />
         )}
         <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
