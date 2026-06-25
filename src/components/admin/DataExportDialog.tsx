@@ -23,6 +23,9 @@ import JSZip from "jszip";
 
 const PAGE_SIZE = 1000;
 
+// Special module that produces both per-table CSVs and a nested JSON for migration.
+const GANTT_FULL_LABEL = "Cronogramas (completo)";
+
 // Tables with restrictive RLS that must be read via the service-role Edge Function.
 const ORG_EDGE_TABLES = ["org_members", "org_member_companies", "org_member_contracts"];
 
