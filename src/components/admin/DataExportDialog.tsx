@@ -142,7 +142,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Usuarios",
-    tables: ["profiles", "user_roles", "user_permissions"],
+    tables: ["profiles", "user_roles", "user_permissions", "org_members"],
   },
   {
     label: "Configuración",
@@ -154,7 +154,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Gantt",
-    tables: ["gantt_tasks", "gantt_timelines", "gantt_templates"],
+    tables: ["gantt_tasks", "gantt_timelines", "gantt_templates", "gantt_template_tasks"],
   },
 ];
 
