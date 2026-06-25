@@ -169,7 +169,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Miembros de organización",
-    tables: ["org_members"],
+    tables: ["org_members", "org_member_companies", "org_member_contracts"],
   },
   {
     label: "Tareas plantilla Gantt",
