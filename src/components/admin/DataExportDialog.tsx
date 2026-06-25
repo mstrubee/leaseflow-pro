@@ -57,6 +57,7 @@ const EXPORT_MODULES: ExportModule[] = [
       "budget_template_lines",
       "budget_carryover",
       "budget_reassignments",
+      "budget_lines_audit",
     ],
   },
   {
