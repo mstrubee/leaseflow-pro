@@ -75,7 +75,11 @@ Deno.serve(async (req) => {
     // Delete from auth.users
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
     if (deleteError) {
-      return new Response(JSON.stringify({ error: deleteError.message }), {
+      const detail = deleteError.message && deleteError.message.trim() && deleteError.message.trim() !== '{}'
+        ? deleteError.message
+        : 'No se pudo eliminar el usuario de autenticación. Puede tener registros asociados que impiden el borrado.'
+      console.error('deleteUser failed:', JSON.stringify(deleteError))
+      return new Response(JSON.stringify({ error: detail }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
