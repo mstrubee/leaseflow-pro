@@ -175,6 +175,18 @@ const EXPORT_MODULES: ExportModule[] = [
     label: "Tareas plantilla Gantt",
     tables: ["gantt_template_tasks"],
   },
+  {
+    label: "Atención Especial",
+    tables: ["special_attention_checklist", "special_attention_meetings"],
+  },
+  {
+    label: "GeoLoc",
+    tables: ["pois", "poi_folders"],
+  },
+  {
+    label: "Repositorio",
+    tables: ["repository_files"],
+  },
 ];
 
 function escapeCsv(value: unknown): string {
