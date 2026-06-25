@@ -888,6 +888,7 @@ const AdminPanel = () => {
               <ExternalLink className="h-4 w-4" />
               Ver Backend
             </Button>
+            <DataExportDialog />
           </div>
         </div>
 
