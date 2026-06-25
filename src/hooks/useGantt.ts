@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, addDays, differenceInDays } from "date-fns";
@@ -63,6 +63,7 @@ export interface GanttTimeline {
   contract_id: string;
   name: string;
   template_id: string | null;
+  is_priority: boolean;
   created_at: string;
   updated_at: string;
   tasks?: GanttTask[];
@@ -99,17 +100,27 @@ export interface Holiday {
 
 export function useGantt(contractId: string) {
   const { toast } = useToast();
-  const [timeline, setTimeline] = useState<GanttTimeline | null>(null);
-  const [tasks, setTasks] = useState<GanttTask[]>([]);
+  const [timelines, setTimelines] = useState<GanttTimeline[]>([]);
+  const [tasksByTimeline, setTasksByTimeline] = useState<Record<string, GanttTask[]>>({});
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const allTasks = useMemo(
+    () => Object.values(tasksByTimeline).flat(),
+    [tasksByTimeline]
+  );
+
   const loadOrgMembers = useCallback(async () => {
     const { data } = await supabase.rpc("get_org_members_basic");
-    if (data) setOrgMembers(data as OrgMember[]);
+    if (data) {
+      const sorted = [...(data as OrgMember[])].sort((a, b) =>
+        a.name.localeCompare(b.name, "es")
+      );
+      setOrgMembers(sorted);
+    }
   }, []);
 
   const loadHolidays = useCallback(async () => {
@@ -122,8 +133,6 @@ export function useGantt(contractId: string) {
   }, []);
 
   const loadTemplates = useCallback(async () => {
-    // Activas = is_active true O null (plantillas antiguas creadas sin el flag).
-    // Solo se excluyen las desactivadas explícitamente (is_active = false).
     const { data } = await supabase
       .from("gantt_templates")
       .select("*")
@@ -132,59 +141,61 @@ export function useGantt(contractId: string) {
     if (data) setTemplates(data);
   }, []);
 
-  const loadTimeline = useCallback(async () => {
+  const loadTimelines = useCallback(async () => {
     setLoading(true);
     try {
-      // Check if timeline exists for this contract
-      const { data: timelineData, error: timelineError } = await supabase
+      const { data: timelinesData, error: timelinesErr } = await supabase
         .from("gantt_timelines")
         .select("*")
         .eq("contract_id", contractId)
-        .maybeSingle();
+        .order("is_priority", { ascending: false })
+        .order("created_at", { ascending: true });
 
-      if (timelineError) throw timelineError;
+      if (timelinesErr) throw timelinesErr;
 
-      if (timelineData) {
-        setTimeline(timelineData);
-
-        // Load tasks
-        const { data: tasksData, error: tasksError } = await supabase
-          .from("gantt_tasks")
-          .select("*")
-          .eq("timeline_id", timelineData.id)
-          .order("display_order");
-
-        if (tasksError) throw tasksError;
-
-        // Load dependencies
-        const { data: depsData } = await supabase
-          .from("gantt_task_dependencies")
-          .select("*");
-
-        // Load purchase order relations
-        const { data: poData } = await supabase
-          .from("gantt_task_purchase_orders")
-          .select(`
-            *,
-            purchase_order:purchase_orders (
-              id, order_number, amount_uf, supplier_name
-            )
-          `);
-
-        // Attach dependencies and POs to tasks
-        const tasksWithRelations = (tasksData || []).map(task => ({
-          ...task,
-          dependencies: depsData?.filter(d => d.task_id === task.id) || [],
-          purchase_orders: poData?.filter(po => po.task_id === task.id) || [],
-        }));
-
-        setTasks(tasksWithRelations as GanttTask[]);
-      } else {
-        setTimeline(null);
-        setTasks([]);
+      if (!timelinesData || timelinesData.length === 0) {
+        setTimelines([]);
+        setTasksByTimeline({});
+        return;
       }
+
+      setTimelines(timelinesData as GanttTimeline[]);
+
+      const timelineIds = timelinesData.map((t) => t.id);
+
+      const { data: tasksData, error: tasksErr } = await supabase
+        .from("gantt_tasks")
+        .select("*")
+        .in("timeline_id", timelineIds)
+        .order("display_order");
+
+      if (tasksErr) throw tasksErr;
+
+      const { data: depsData } = await supabase
+        .from("gantt_task_dependencies")
+        .select("*");
+
+      const { data: poData } = await supabase
+        .from("gantt_task_purchase_orders")
+        .select(`
+          *,
+          purchase_order:purchase_orders (
+            id, order_number, amount_uf, supplier_name
+          )
+        `);
+
+      const byTimeline: Record<string, GanttTask[]> = {};
+      for (const tl of timelinesData) {
+        const tlTasks = (tasksData || []).filter((t) => t.timeline_id === tl.id);
+        byTimeline[tl.id] = tlTasks.map((task) => ({
+          ...task,
+          dependencies: depsData?.filter((d) => d.task_id === task.id) || [],
+          purchase_orders: poData?.filter((po) => po.task_id === task.id) || [],
+        })) as GanttTask[];
+      }
+      setTasksByTimeline(byTimeline);
     } catch (error: any) {
-      console.error("Error loading timeline:", error);
+      console.error("Error loading timelines:", error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -196,17 +207,22 @@ export function useGantt(contractId: string) {
   }, [contractId, toast]);
 
   useEffect(() => {
-    loadTimeline();
+    loadTimelines();
     loadHolidays();
     loadTemplates();
     loadOrgMembers();
-  }, [loadTimeline, loadHolidays, loadTemplates, loadOrgMembers]);
+  }, [loadTimelines, loadHolidays, loadTemplates, loadOrgMembers]);
 
   const createTimeline = async (name: string, templateId?: string) => {
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      // First timeline per contract is always priority
+      const isPriority = timelines.length === 0;
+
       const { data: newTimeline, error } = await supabase
         .from("gantt_timelines")
         .insert({
@@ -214,13 +230,13 @@ export function useGantt(contractId: string) {
           name,
           template_id: templateId || null,
           created_by: user?.id,
+          is_priority: isPriority,
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      // If template selected, copy tasks from template
       if (templateId) {
         await copyTasksFromTemplate(newTimeline.id, templateId);
       }
@@ -230,7 +246,7 @@ export function useGantt(contractId: string) {
         description: "La línea de tiempo ha sido creada exitosamente",
       });
 
-      await loadTimeline();
+      await loadTimelines();
       return newTimeline;
     } catch (error: any) {
       toast({
@@ -245,7 +261,6 @@ export function useGantt(contractId: string) {
   };
 
   const copyTasksFromTemplate = async (timelineId: string, templateId: string) => {
-    // Load template tasks
     const { data: templateTasks } = await supabase
       .from("gantt_template_tasks")
       .select("*")
@@ -259,21 +274,18 @@ export function useGantt(contractId: string) {
       default_origin?: string | null;
     };
 
-    // Load template dependencies
     const { data: templateDeps } = await supabase
       .from("gantt_template_dependencies")
       .select("*");
 
-    // Map to track template_task_id -> new_task_id
     const taskIdMap = new Map<string, string>();
 
-    // First pass: create all tasks without parent_id
     const PARENT_COLORS = [
       "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6",
       "#ec4899", "#eab308", "#06b6d4", "#64748b",
     ];
     let colorIdx = 0;
-    const tasksToInsert = (templateTasks as TemplateTaskRow[]).map(tt => ({
+    const tasksToInsert = (templateTasks as TemplateTaskRow[]).map((tt) => ({
       timeline_id: timelineId,
       template_task_id: tt.id,
       name: tt.name,
@@ -283,8 +295,6 @@ export function useGantt(contractId: string) {
       parent_id: null as string | null,
       responsible_member_id: tt.default_responsible_member_id ?? null,
       origin: (tt.default_origin ?? null) as "nuevo" | "traslado" | null,
-      // Assign a color only to root (template) tasks. Since parent_id is set in a 2nd pass,
-      // tasks that will become children get color=null and inherit from their parent.
       color: tt.parent_id ? null : PARENT_COLORS[(colorIdx++) % PARENT_COLORS.length],
     }));
 
@@ -295,14 +305,12 @@ export function useGantt(contractId: string) {
 
     if (error || !insertedTasks) return;
 
-    // Build mapping
-    insertedTasks.forEach(task => {
+    insertedTasks.forEach((task) => {
       if (task.template_task_id) {
         taskIdMap.set(task.template_task_id, task.id);
       }
     });
 
-    // Second pass: update parent_id
     for (const tt of templateTasks) {
       if (tt.parent_id) {
         const newTaskId = taskIdMap.get(tt.id);
@@ -316,10 +324,9 @@ export function useGantt(contractId: string) {
       }
     }
 
-    // Third pass: create dependencies
     if (templateDeps) {
       const depsToInsert = templateDeps
-        .map(dep => {
+        .map((dep) => {
           const newTaskId = taskIdMap.get(dep.task_id);
           const newDependsOnId = taskIdMap.get(dep.depends_on_task_id);
           if (newTaskId && newDependsOnId) {
@@ -336,30 +343,25 @@ export function useGantt(contractId: string) {
         .filter(Boolean);
 
       if (depsToInsert.length > 0) {
-        await supabase
-          .from("gantt_task_dependencies")
-          .insert(depsToInsert as any);
+        await supabase.from("gantt_task_dependencies").insert(depsToInsert as any);
       }
     }
   };
 
   const addTask = async (
+    timelineId: string,
     name: string,
     parentId: string | null = null,
     options: Partial<GanttTask> = {}
   ) => {
-    if (!timeline) return null;
-
     setSaving(true);
     try {
-      // Get max display_order for siblings
-      const siblings = tasks.filter(t => t.parent_id === parentId);
+      const tlTasks = tasksByTimeline[timelineId] || [];
+      const siblings = tlTasks.filter((t) => t.parent_id === parentId);
       const maxOrder = siblings.length > 0
-        ? Math.max(...siblings.map(t => t.display_order))
+        ? Math.max(...siblings.map((t) => t.display_order))
         : -1;
 
-      // Auto-assign a color to root (parent) tasks if none provided.
-      // Children leave color null → they inherit the parent color via getEffectiveColor.
       const PARENT_COLORS = [
         "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6",
         "#ec4899", "#eab308", "#06b6d4", "#64748b",
@@ -367,7 +369,7 @@ export function useGantt(contractId: string) {
       let assignedColor: string | null = (options as any).color ?? null;
       if (parentId === null && !assignedColor) {
         const usedColors = new Set(
-          tasks.filter((t) => t.parent_id === null && t.color).map((t) => t.color as string)
+          tlTasks.filter((t) => t.parent_id === null && t.color).map((t) => t.color as string)
         );
         const available = PARENT_COLORS.find((c) => !usedColors.has(c));
         assignedColor =
@@ -377,7 +379,7 @@ export function useGantt(contractId: string) {
       const { data, error } = await supabase
         .from("gantt_tasks")
         .insert({
-          timeline_id: timeline.id,
+          timeline_id: timelineId,
           parent_id: parentId,
           name,
           display_order: maxOrder + 1,
@@ -393,11 +395,13 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      // Optimistic local insert — avoids full reload that collapses rows / loses scroll
-      setTasks((prev) => [
+      setTasksByTimeline((prev) => ({
         ...prev,
-        { ...(data as any), dependencies: [], purchase_orders: [] } as GanttTask,
-      ]);
+        [timelineId]: [
+          ...(prev[timelineId] || []),
+          { ...(data as any), dependencies: [], purchase_orders: [] } as GanttTask,
+        ],
+      }));
       return data;
     } catch (error: any) {
       toast({
@@ -405,30 +409,24 @@ export function useGantt(contractId: string) {
         title: "Error",
         description: "No se pudo agregar la tarea",
       });
-      // Resync from DB on error
-      await loadTimeline();
+      await loadTimelines();
       return null;
     } finally {
       setSaving(false);
     }
   };
 
-  // Computes, IN MEMORY, the date changes to cascade to all dependent tasks.
-  // Uses the dependencies already attached to each in-memory task (t.dependencies),
-  // so no DB round-trips are needed — the cascade is instant.
-  // Returns a map of taskId -> partial updates.
   const computeDateCascade = (
-    allTasks: GanttTask[],
+    flatTasks: GanttTask[],
     taskId: string,
     newStartDate: string,
     newEndDate: string,
   ): Map<string, Partial<GanttTask>> => {
     const result = new Map<string, Partial<GanttTask>>();
-    const taskById = new Map(allTasks.map((t) => [t.id, t]));
+    const taskById = new Map(flatTasks.map((t) => [t.id, t]));
 
-    // Reverse adjacency: predecessorId -> [successorTaskId]
     const successorsOf = new Map<string, string[]>();
-    for (const t of allTasks) {
+    for (const t of flatTasks) {
       for (const dep of t.dependencies || []) {
         const arr = successorsOf.get(dep.depends_on_task_id) || [];
         arr.push(t.id);
@@ -436,18 +434,15 @@ export function useGantt(contractId: string) {
       }
     }
 
-    // Effective start/end dates for every task. Seed with current values, then
-    // override the edited task with its new dates.
     const effStart = new Map<string, string>();
     const effEnd = new Map<string, string>();
-    for (const t of allTasks) {
+    for (const t of flatTasks) {
       if (t.start_date) effStart.set(t.id, t.start_date);
       if (t.end_date) effEnd.set(t.id, t.end_date);
     }
     effStart.set(taskId, newStartDate);
     effEnd.set(taskId, newEndDate);
 
-    // All tasks reachable downstream from the edited task.
     const reachable = new Set<string>();
     const stack = [taskId];
     while (stack.length) {
@@ -460,9 +455,6 @@ export function useGantt(contractId: string) {
       }
     }
 
-    // In-degree within the reachable subgraph (predecessors that are the origin
-    // or are themselves reachable). Kahn's algorithm guarantees a successor is
-    // only computed once ALL its relevant predecessors have been resolved.
     const inDegree = new Map<string, number>();
     for (const sid of reachable) {
       const deps = taskById.get(sid)?.dependencies || [];
@@ -488,7 +480,6 @@ export function useGantt(contractId: string) {
       const t = taskById.get(id);
       if (!t) continue;
 
-      // Start at the LATEST date implied across ALL of this task's dependencies.
       let latest: Date | null = null;
       for (const dep of t.dependencies || []) {
         const anchorStr =
@@ -518,34 +509,36 @@ export function useGantt(contractId: string) {
     return result;
   };
 
-
   const updateTask = async (
     taskId: string,
     updates: Partial<GanttTask>,
     options?: { skipPropagation?: boolean; breakDependencies?: boolean }
   ) => {
-    // 1) Compute the dependent cascade synchronously from in-memory state (instant).
+    const targetTask = allTasks.find((t) => t.id === taskId);
+    const timelineId = targetTask?.timeline_id;
+
     let cascade = new Map<string, Partial<GanttTask>>();
-    if ((updates.end_date || updates.start_date) && !options?.skipPropagation) {
-      const current = tasks.find((t) => t.id === taskId);
+    if ((updates.end_date || updates.start_date) && !options?.skipPropagation && timelineId) {
+      const current = targetTask;
       const startStr = updates.start_date || current?.start_date || updates.end_date!;
       const endStr = updates.end_date || current?.end_date || updates.start_date!;
-      cascade = computeDateCascade(tasks, taskId, startStr, endStr);
+      const tlTasks = tasksByTimeline[timelineId] || [];
+      cascade = computeDateCascade(tlTasks, taskId, startStr, endStr);
     }
 
-    // 2) Optimistic local update FIRST — edited task + all dependents at once.
-    //    The UI reflects the change immediately; DB writes happen afterwards.
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id === taskId) {
-          return { ...t, ...updates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
-        }
-        if (cascade.has(t.id)) return { ...t, ...cascade.get(t.id)! };
-        return t;
-      })
-    );
+    if (timelineId) {
+      setTasksByTimeline((prev) => ({
+        ...prev,
+        [timelineId]: (prev[timelineId] || []).map((t) => {
+          if (t.id === taskId) {
+            return { ...t, ...updates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
+          }
+          if (cascade.has(t.id)) return { ...t, ...cascade.get(t.id)! };
+          return t;
+        }),
+      }));
+    }
 
-    // 3) Persist in the background (the edited task + dependents in parallel).
     setSaving(true);
     try {
       const { error } = await supabase
@@ -576,15 +569,13 @@ export function useGantt(contractId: string) {
         title: "Error",
         description: "No se pudo actualizar la tarea",
       });
-      // Resync from DB on error
-      await loadTimeline();
+      await loadTimelines();
     } finally {
       setSaving(false);
     }
   };
 
-  // Snapshot de la última eliminación para poder deshacer (Ctrl/Cmd+Z)
-  const lastDeletedRef = useRef<{ tasks: any[]; deps: any[] } | null>(null);
+  const lastDeletedRef = useRef<{ tasks: any[]; deps: any[]; timelineId: string } | null>(null);
 
   const pickTaskCols = (t: GanttTask) => ({
     id: t.id, timeline_id: t.timeline_id, parent_id: t.parent_id, template_task_id: t.template_task_id,
@@ -595,16 +586,18 @@ export function useGantt(contractId: string) {
   });
 
   const deleteTask = async (taskId: string) => {
-    // ids a eliminar: la tarea + sus descendientes (la BD cascada; lo replicamos local)
+    const timelineId = allTasks.find((t) => t.id === taskId)?.timeline_id;
+    if (!timelineId) return;
+
+    const tlTasks = tasksByTimeline[timelineId] || [];
     const collectIds = (id: string): string[] => {
-      const kids = tasks.filter((t) => t.parent_id === id);
+      const kids = tlTasks.filter((t) => t.parent_id === id);
       return [id, ...kids.flatMap((k) => collectIds(k.id))];
     };
     const ids = collectIds(taskId);
     const idsToRemove = new Set(ids);
 
-    // Snapshot para deshacer: filas de tareas + sus dependencias (cascada de la BD)
-    const snapTasks = tasks.filter((t) => idsToRemove.has(t.id)).map(pickTaskCols);
+    const snapTasks = tlTasks.filter((t) => idsToRemove.has(t.id)).map(pickTaskCols);
     let snapDeps: any[] = [];
     try {
       const list = ids.join(",");
@@ -614,10 +607,12 @@ export function useGantt(contractId: string) {
         .or(`task_id.in.(${list}),depends_on_task_id.in.(${list})`);
       snapDeps = data ?? [];
     } catch { /* sin deps */ }
-    lastDeletedRef.current = { tasks: snapTasks, deps: snapDeps };
+    lastDeletedRef.current = { tasks: snapTasks, deps: snapDeps, timelineId };
 
-    // Actualización local optimista (instantánea, sin recargar la sección)
-    setTasks((prev) => prev.filter((t) => !idsToRemove.has(t.id)));
+    setTasksByTimeline((prev) => ({
+      ...prev,
+      [timelineId]: (prev[timelineId] || []).filter((t) => !idsToRemove.has(t.id)),
+    }));
 
     setSaving(true);
     try {
@@ -633,7 +628,7 @@ export function useGantt(contractId: string) {
         title: "Error",
         description: "No se pudo eliminar la tarea",
       });
-      await loadTimeline(); // resync solo si falló
+      await loadTimelines();
     } finally {
       setSaving(false);
     }
@@ -644,7 +639,6 @@ export function useGantt(contractId: string) {
     if (!snap || snap.tasks.length === 0) return;
     lastDeletedRef.current = null;
 
-    // 1) Restaurar en el estado local de inmediato (sin recargar la sección)
     const nowIso = new Date().toISOString();
     const restored = snap.tasks.map((t) => ({
       ...t,
@@ -654,28 +648,32 @@ export function useGantt(contractId: string) {
       created_at: nowIso,
       updated_at: nowIso,
     })) as unknown as GanttTask[];
-    setTasks((prev) => {
-      const all = [...prev, ...restored];
-      if (snap.deps.length === 0) return all;
+
+    setTasksByTimeline((prev) => {
+      const prevTl = prev[snap.timelineId] || [];
+      const all = [...prevTl, ...restored];
+      if (snap.deps.length === 0) return { ...prev, [snap.timelineId]: all };
+
       const depsByOwner = new Map<string, any[]>();
       for (const d of snap.deps) {
         const arr = depsByOwner.get(d.task_id) || [];
         arr.push(d);
         depsByOwner.set(d.task_id, arr);
       }
-      return all.map((t) => {
-        const add = depsByOwner.get(t.id);
-        if (!add) return t;
-        const merged = [...(t.dependencies || [])];
-        for (const d of add) if (!merged.some((x) => x.id === d.id)) merged.push(d as any);
-        return { ...t, dependencies: merged };
-      });
+      return {
+        ...prev,
+        [snap.timelineId]: all.map((t) => {
+          const add = depsByOwner.get(t.id);
+          if (!add) return t;
+          const merged = [...(t.dependencies || [])];
+          for (const d of add) if (!merged.some((x) => x.id === d.id)) merged.push(d as any);
+          return { ...t, dependencies: merged };
+        }),
+      };
     });
 
-    // 2) Persistir en segundo plano
     setSaving(true);
     try {
-      // Re-insertar tareas SIN parent_id (preservando ids; evita conflictos de FK)
       const noParent = snap.tasks.map((t) => ({ ...t, parent_id: null }));
       const { error: insErr } = await supabase.from("gantt_tasks").insert(noParent as any);
       if (insErr) throw insErr;
@@ -690,7 +688,7 @@ export function useGantt(contractId: string) {
       toast({ title: "Eliminación deshecha" });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo deshacer la eliminación" });
-      await loadTimeline(); // resync solo si falló
+      await loadTimelines();
     } finally {
       setSaving(false);
     }
@@ -703,12 +701,10 @@ export function useGantt(contractId: string) {
   ) => {
     setSaving(true);
     try {
-      const dependentTask = tasks.find(t => t.id === taskId);
-      const parentTask = tasks.find(t => t.id === dependsOnTaskId);
+      const dependentTask = allTasks.find((t) => t.id === taskId);
+      const parentTask = allTasks.find((t) => t.id === dependsOnTaskId);
 
-      if (!dependentTask || !parentTask) {
-        throw new Error("Tarea no encontrada");
-      }
+      if (!dependentTask || !parentTask) throw new Error("Tarea no encontrada");
 
       const dep_type = options?.dep_type ?? "end";
       const lag_days = options?.lag_days ?? 0;
@@ -716,26 +712,19 @@ export function useGantt(contractId: string) {
 
       const { data: inserted, error } = await supabase
         .from("gantt_task_dependencies")
-        .insert({
-          task_id: taskId,
-          depends_on_task_id: dependsOnTaskId,
-          dep_type,
-          lag_days,
-          lag_type,
-        } as any)
+        .insert({ task_id: taskId, depends_on_task_id: dependsOnTaskId, dep_type, lag_days, lag_type } as any)
         .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type")
         .single();
 
       if (error) throw error;
 
-      // Compute new start date considering ALL dependencies (including the new one).
       const allDepsWithNew: GanttTaskDependency[] = [
         ...(dependentTask.dependencies || []),
         inserted as GanttTaskDependency,
       ];
       let latestStart: Date | null = null;
       for (const d of allDepsWithNew) {
-        const pt = tasks.find(t => t.id === d.depends_on_task_id);
+        const pt = allTasks.find((t) => t.id === d.depends_on_task_id);
         const anchorStr = d.dep_type === "start" ? pt?.start_date : pt?.end_date;
         if (!anchorStr) continue;
         const anchorDate = parseISO(anchorStr);
@@ -756,15 +745,18 @@ export function useGantt(contractId: string) {
           .eq("id", taskId);
       }
 
-      // Optimistic local update — no loadTimeline needed.
-      setTasks(prev => prev.map(t => {
-        if (t.id !== taskId) return t;
-        return {
-          ...t,
-          start_date: newStartStr,
-          end_date: newEndStr,
-          dependencies: [...(t.dependencies || []), inserted as GanttTaskDependency],
-        };
+      const timelineId = dependentTask.timeline_id;
+      setTasksByTimeline((prev) => ({
+        ...prev,
+        [timelineId]: (prev[timelineId] || []).map((t) => {
+          if (t.id !== taskId) return t;
+          return {
+            ...t,
+            start_date: newStartStr,
+            end_date: newEndStr,
+            dependencies: [...(t.dependencies || []), inserted as GanttTaskDependency],
+          };
+        }),
       }));
 
       toast({
@@ -772,11 +764,7 @@ export function useGantt(contractId: string) {
         description: `"${dependentTask.name}" ahora depende de "${parentTask.name}"`,
       });
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo agregar la dependencia",
-      });
+      toast({ variant: "destructive", title: "Error", description: "No se pudo agregar la dependencia" });
     } finally {
       setSaving(false);
     }
@@ -789,20 +777,20 @@ export function useGantt(contractId: string) {
         .from("gantt_task_dependencies")
         .delete()
         .eq("id", dependencyId);
-
       if (error) throw error;
 
-      // Optimistic local update — remove dep from state without reloading.
-      setTasks(prev => prev.map(t => ({
-        ...t,
-        dependencies: t.dependencies?.filter(d => d.id !== dependencyId),
-      })));
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo eliminar la dependencia",
+      setTasksByTimeline((prev) => {
+        const result = { ...prev };
+        for (const tlId of Object.keys(result)) {
+          result[tlId] = result[tlId].map((t) => ({
+            ...t,
+            dependencies: t.dependencies?.filter((d) => d.id !== dependencyId),
+          }));
+        }
+        return result;
       });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar la dependencia" });
     } finally {
       setSaving(false);
     }
@@ -814,23 +802,20 @@ export function useGantt(contractId: string) {
   ) => {
     setSaving(true);
     try {
-      // Find the dependency to know which dependent task to recalc
-      const dependentTask = tasks.find(t => t.dependencies?.some(d => d.id === dependencyId));
-      const dep = dependentTask?.dependencies?.find(d => d.id === dependencyId);
+      const dependentTask = allTasks.find((t) => t.dependencies?.some((d) => d.id === dependencyId));
+      const dep = dependentTask?.dependencies?.find((d) => d.id === dependencyId);
 
       const { error } = await supabase
         .from("gantt_task_dependencies")
         .update(updates as any)
         .eq("id", dependencyId);
-
       if (error) throw error;
 
       if (dep && dependentTask) {
-        // Recompute start date using ALL dependencies (take the latest anchor).
         const allDeps = dependentTask.dependencies || [];
         let latestStart: Date | null = null;
         for (const d of allDeps) {
-          const parentTask = tasks.find(t => t.id === d.depends_on_task_id);
+          const parentTask = allTasks.find((t) => t.id === d.depends_on_task_id);
           const dep_type = d.id === dep.id ? (updates.dep_type ?? d.dep_type ?? "end") : (d.dep_type ?? "end");
           const lag_days = d.id === dep.id ? (updates.lag_days ?? d.lag_days ?? 0) : (d.lag_days ?? 0);
           const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
@@ -840,39 +825,43 @@ export function useGantt(contractId: string) {
           const candidateStart = addDays(anchorDate, baseOffset + lag_days);
           if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
         }
+
+        const timelineId = dependentTask.timeline_id;
         if (latestStart) {
           const duration = dependentTask.duration_days || 1;
-          const newEndDate = addDays(latestStart, duration - 1);
           const newStartStr = format(latestStart, "yyyy-MM-dd");
-          const newEndStr = format(newEndDate, "yyyy-MM-dd");
+          const newEndStr = format(addDays(latestStart, duration - 1), "yyyy-MM-dd");
           await supabase
             .from("gantt_tasks")
             .update({ start_date: newStartStr, end_date: newEndStr })
             .eq("id", dependentTask.id);
 
-          // Optimistic local update — reflect dep changes + new dates without reloading.
-          setTasks(prev => prev.map(t => {
-            if (t.id !== dependentTask.id) return t;
-            return {
-              ...t,
-              start_date: newStartStr,
-              end_date: newEndStr,
-              dependencies: t.dependencies?.map(d =>
-                d.id === dependencyId ? { ...d, ...updates } : d
-              ),
-            };
+          setTasksByTimeline((prev) => ({
+            ...prev,
+            [timelineId]: (prev[timelineId] || []).map((t) => {
+              if (t.id !== dependentTask.id) return t;
+              return {
+                ...t,
+                start_date: newStartStr,
+                end_date: newEndStr,
+                dependencies: t.dependencies?.map((d) =>
+                  d.id === dependencyId ? { ...d, ...updates } : d
+                ),
+              };
+            }),
           }));
         } else {
-          // No date change needed, just update the dep metadata in state.
-          setTasks(prev => prev.map(t => ({
-            ...t,
-            dependencies: t.dependencies?.map(d =>
-              d.id === dependencyId ? { ...d, ...updates } : d
-            ),
-          })));
+          setTasksByTimeline((prev) => ({
+            ...prev,
+            [timelineId]: (prev[timelineId] || []).map((t) => ({
+              ...t,
+              dependencies: t.dependencies?.map((d) =>
+                d.id === dependencyId ? { ...d, ...updates } : d
+              ),
+            })),
+          }));
         }
       }
-
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la dependencia" });
     } finally {
@@ -885,25 +874,12 @@ export function useGantt(contractId: string) {
     try {
       const { error } = await supabase
         .from("gantt_task_purchase_orders")
-        .insert({
-          task_id: taskId,
-          purchase_order_id: purchaseOrderId,
-        });
-
+        .insert({ task_id: taskId, purchase_order_id: purchaseOrderId });
       if (error) throw error;
-
-      toast({
-        title: "OC vinculada",
-        description: "La orden de compra ha sido vinculada a la tarea",
-      });
-
-      await loadTimeline();
+      toast({ title: "OC vinculada", description: "La orden de compra ha sido vinculada a la tarea" });
+      await loadTimelines();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo vincular la orden de compra",
-      });
+      toast({ variant: "destructive", title: "Error", description: "No se pudo vincular la orden de compra" });
     } finally {
       setSaving(false);
     }
@@ -916,30 +892,23 @@ export function useGantt(contractId: string) {
         .from("gantt_task_purchase_orders")
         .delete()
         .eq("id", linkId);
-
       if (error) throw error;
-
-      await loadTimeline();
+      await loadTimelines();
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo desvincular la orden de compra",
-      });
+      toast({ variant: "destructive", title: "Error", description: "No se pudo desvincular la orden de compra" });
     } finally {
       setSaving(false);
     }
   };
 
-  // Build tree structure from flat tasks
   const buildTaskTree = useCallback((flatTasks: GanttTask[]): GanttTask[] => {
     const taskMap = new Map<string, GanttTask>();
-    flatTasks.forEach(task => {
+    flatTasks.forEach((task) => {
       taskMap.set(task.id, { ...task, children: [] });
     });
 
     const rootTasks: GanttTask[] = [];
-    taskMap.forEach(task => {
+    taskMap.forEach((task) => {
       if (task.parent_id && taskMap.has(task.parent_id)) {
         const parent = taskMap.get(task.parent_id)!;
         parent.children = parent.children || [];
@@ -949,13 +918,10 @@ export function useGantt(contractId: string) {
       }
     });
 
-    // Sort children by display_order
     const sortChildren = (tasks: GanttTask[]) => {
       tasks.sort((a, b) => a.display_order - b.display_order);
-      tasks.forEach(task => {
-        if (task.children && task.children.length > 0) {
-          sortChildren(task.children);
-        }
+      tasks.forEach((task) => {
+        if (task.children && task.children.length > 0) sortChildren(task.children);
       });
     };
     sortChildren(rootTasks);
@@ -963,41 +929,36 @@ export function useGantt(contractId: string) {
     return rootTasks;
   }, []);
 
-  const taskTree = buildTaskTree(tasks);
-
   const reorderTask = async (taskId: string, newIndex: number, siblingIds: string[]) => {
-    // 1) Actualización local optimista (instantánea, sin recargar toda la sección)
-    const orderMap = new Map(siblingIds.map((id, idx) => [id, idx]));
-    setTasks((prev) =>
-      prev.map((t) => (orderMap.has(t.id) ? { ...t, display_order: orderMap.get(t.id)! } : t)),
-    );
+    const timelineId = allTasks.find((t) => t.id === taskId)?.timeline_id;
+    if (!timelineId) return;
 
-    // 2) Persistir en segundo plano, en paralelo
+    const orderMap = new Map(siblingIds.map((id, idx) => [id, idx]));
+    setTasksByTimeline((prev) => ({
+      ...prev,
+      [timelineId]: (prev[timelineId] || []).map((t) =>
+        orderMap.has(t.id) ? { ...t, display_order: orderMap.get(t.id)! } : t
+      ),
+    }));
+
     setSaving(true);
     try {
       const results = await Promise.all(
         siblingIds.map((id, idx) =>
-          supabase.from("gantt_tasks").update({ display_order: idx }).eq("id", id),
-        ),
+          supabase.from("gantt_tasks").update({ display_order: idx }).eq("id", id)
+        )
       );
       const failed = results.find((r) => r.error);
       if (failed?.error) throw failed.error;
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo reordenar la tarea",
-      });
-      await loadTimeline(); // resync solo si falló
+      toast({ variant: "destructive", title: "Error", description: "No se pudo reordenar la tarea" });
+      await loadTimelines();
     } finally {
       setSaving(false);
     }
   };
 
-  // Snapshot the current timeline tasks into template tasks (rows in gantt_template_tasks + dependencies)
-  const writeTasksToTemplate = async (templateId: string) => {
-    // Explicitly delete dependencies first (defensive: in case CASCADE is bypassed by RLS chain)
-    // Find all template task ids first, then delete deps referencing them, then delete tasks.
+  const writeTasksToTemplate = async (templateId: string, tasks: GanttTask[]) => {
     const { data: existingTaskIds, error: listErr } = await supabase
       .from("gantt_template_tasks")
       .select("id")
@@ -1018,7 +979,6 @@ export function useGantt(contractId: string) {
         .in("id", ids);
       if (taskDelErr) throw taskDelErr;
 
-      // Verify the delete actually removed everything (RLS could silently no-op)
       const { count: remaining, error: countErr } = await supabase
         .from("gantt_template_tasks")
         .select("id", { count: "exact", head: true })
@@ -1031,10 +991,8 @@ export function useGantt(contractId: string) {
 
     if (tasks.length === 0) return;
 
-    // Build mapping current task id -> new template task id
     const idMap = new Map<string, string>();
 
-    // Insert tasks one by one to guarantee a reliable id mapping (avoids relying on insert(...).select() order)
     for (const t of tasks) {
       const { data: insertedRow, error: insErr } = await supabase
         .from("gantt_template_tasks")
@@ -1045,7 +1003,6 @@ export function useGantt(contractId: string) {
           default_duration_days: t.duration_days || 1,
           duration_type: t.duration_type,
           display_order: t.display_order,
-          // Guardar responsable y origen en la plantilla (editables luego)
           default_responsible_member_id: (t as any).responsible_member_id ?? null,
           default_origin: (t as any).origin ?? null,
         } as any)
@@ -1055,7 +1012,6 @@ export function useGantt(contractId: string) {
       idMap.set(t.id, insertedRow.id);
     }
 
-    // Second pass: update parent_id
     for (const t of tasks) {
       if (t.parent_id) {
         const newId = idMap.get(t.id);
@@ -1069,19 +1025,12 @@ export function useGantt(contractId: string) {
       }
     }
 
-    // Third pass: dependencies
     const deps: { task_id: string; depends_on_task_id: string; dep_type: string; lag_days: number; lag_type: string }[] = [];
     tasks.forEach((t) => {
       (t.dependencies || []).forEach((d) => {
         const a = idMap.get(d.task_id);
         const b = idMap.get(d.depends_on_task_id);
-        if (a && b) deps.push({
-          task_id: a,
-          depends_on_task_id: b,
-          dep_type: d.dep_type ?? "end",
-          lag_days: d.lag_days ?? 0,
-          lag_type: d.lag_type ?? "calendar",
-        });
+        if (a && b) deps.push({ task_id: a, depends_on_task_id: b, dep_type: d.dep_type ?? "end", lag_days: d.lag_days ?? 0, lag_type: d.lag_type ?? "calendar" });
       });
     });
     if (deps.length > 0) {
@@ -1089,17 +1038,20 @@ export function useGantt(contractId: string) {
     }
   };
 
-  const saveAsNewTemplate = async (name: string, description?: string) => {
+  const saveAsNewTemplate = async (timelineId: string, name: string, description?: string) => {
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const { data: tpl, error } = await supabase
         .from("gantt_templates")
         .insert({ name, description: description || null, created_by: user?.id, is_active: true })
         .select()
         .single();
       if (error || !tpl) throw error;
-      await writeTasksToTemplate(tpl.id);
+      const timelineTasks = tasksByTimeline[timelineId] || [];
+      await writeTasksToTemplate(tpl.id, timelineTasks);
       toast({ title: "Plantilla creada", description: `Se creó la plantilla "${name}" con el cronograma actual` });
       await loadTemplates();
       return tpl;
@@ -1111,15 +1063,17 @@ export function useGantt(contractId: string) {
     }
   };
 
-  const updateBaseTemplate = async () => {
-    if (!timeline?.template_id) {
+  const updateBaseTemplate = async (timelineId: string) => {
+    const tl = timelines.find((t) => t.id === timelineId);
+    if (!tl?.template_id) {
       toast({ variant: "destructive", title: "Sin plantilla base", description: "Este cronograma no fue creado a partir de una plantilla" });
       return false;
     }
     setSaving(true);
     try {
-      await writeTasksToTemplate(timeline.template_id);
-      await supabase.from("gantt_templates").update({ updated_at: new Date().toISOString() }).eq("id", timeline.template_id);
+      const timelineTasks = tasksByTimeline[timelineId] || [];
+      await writeTasksToTemplate(tl.template_id, timelineTasks);
+      await supabase.from("gantt_templates").update({ updated_at: new Date().toISOString() }).eq("id", tl.template_id);
       toast({ title: "Plantilla actualizada", description: "La plantilla base se actualizó con esta versión" });
       await loadTemplates();
       return true;
@@ -1134,9 +1088,10 @@ export function useGantt(contractId: string) {
   const createTimelineFromCapex = async (name: string) => {
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      // 1. Find CAPEX budgets for this contract
       const { data: capexBudgets, error: budgetsErr } = await supabase
         .from("contract_budgets")
         .select("id")
@@ -1145,17 +1100,12 @@ export function useGantt(contractId: string) {
       if (budgetsErr) throw budgetsErr;
 
       if (!capexBudgets || capexBudgets.length === 0) {
-        toast({
-          variant: "destructive",
-          title: "Sin presupuesto CAPEX",
-          description: "Este contrato no tiene un presupuesto CAPEX para importar",
-        });
+        toast({ variant: "destructive", title: "Sin presupuesto CAPEX", description: "Este contrato no tiene un presupuesto CAPEX para importar" });
         return null;
       }
 
       const budgetIds = capexBudgets.map((b) => b.id);
 
-      // 2. Fetch all active CAPEX budget lines preserving hierarchy
       const { data: lines, error: linesErr } = await supabase
         .from("budget_lines")
         .select("id, parent_id, name, display_order, is_ghost")
@@ -1167,92 +1117,84 @@ export function useGantt(contractId: string) {
       const visibleLines = (lines || []).filter((l) => !l.is_ghost);
 
       if (visibleLines.length === 0) {
-        toast({
-          variant: "destructive",
-          title: "Sin líneas",
-          description: "El presupuesto CAPEX no tiene líneas para importar",
-        });
+        toast({ variant: "destructive", title: "Sin líneas", description: "El presupuesto CAPEX no tiene líneas para importar" });
         return null;
       }
 
-      // 3. Create the timeline
+      const isPriority = timelines.length === 0;
+
       const { data: newTimeline, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .insert({
-          contract_id: contractId,
-          name,
-          template_id: null,
-          created_by: user?.id,
-        })
+        .insert({ contract_id: contractId, name, template_id: null, created_by: user?.id, is_priority: isPriority })
         .select()
         .single();
       if (tlErr || !newTimeline) throw tlErr || new Error("No se pudo crear la línea de tiempo");
 
-      // 4. Insert all tasks first without parent_id, build id mapping
       const idMap = new Map<string, string>();
       for (const line of visibleLines) {
         const { data: insertedTask, error: insErr } = await supabase
           .from("gantt_tasks")
-          .insert({
-            timeline_id: newTimeline.id,
-            parent_id: null,
-            name: line.name,
-            duration_days: 1,
-            duration_type: "calendar",
-            display_order: line.display_order ?? 0,
-            status: "pending",
-          })
+          .insert({ timeline_id: newTimeline.id, parent_id: null, name: line.name, duration_days: 1, duration_type: "calendar", display_order: line.display_order ?? 0, status: "pending" })
           .select()
           .single();
         if (insErr || !insertedTask) throw insErr || new Error("No se pudo insertar tarea");
         idMap.set(line.id, insertedTask.id);
       }
 
-      // 5. Second pass: set parent_id (only when parent was also imported)
       for (const line of visibleLines) {
         if (line.parent_id && idMap.has(line.parent_id)) {
           const newId = idMap.get(line.id)!;
           const newParentId = idMap.get(line.parent_id)!;
-          await supabase
-            .from("gantt_tasks")
-            .update({ parent_id: newParentId })
-            .eq("id", newId);
+          await supabase.from("gantt_tasks").update({ parent_id: newParentId }).eq("id", newId);
         }
       }
 
-      toast({
-        title: "Línea de tiempo creada",
-        description: `Se importaron ${visibleLines.length} líneas del presupuesto CAPEX`,
-      });
-
-      await loadTimeline();
+      toast({ title: "Línea de tiempo creada", description: `Se importaron ${visibleLines.length} líneas del presupuesto CAPEX` });
+      await loadTimelines();
       return newTimeline;
     } catch (error: any) {
       console.error("Error creating timeline from CAPEX:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo crear la línea de tiempo desde CAPEX",
-      });
+      toast({ variant: "destructive", title: "Error", description: "No se pudo crear la línea de tiempo desde CAPEX" });
       return null;
     } finally {
       setSaving(false);
     }
   };
 
-  const deleteTimeline = async () => {
-    if (!timeline) return false;
+  const deleteTimeline = async (timelineId: string) => {
     setSaving(true);
     try {
+      const tl = timelines.find((t) => t.id === timelineId);
       const { error } = await supabase
         .from("gantt_timelines")
         .delete()
-        .eq("id", timeline.id);
+        .eq("id", timelineId);
       if (error) throw error;
+
       toast({ title: "Carta Gantt eliminada", description: "La línea de tiempo y sus tareas fueron eliminadas." });
-      setTimeline(null);
-      setTasks([]);
-      await loadTimeline();
+
+      const remaining = timelines.filter((t) => t.id !== timelineId);
+      setTimelines(remaining);
+      setTasksByTimeline((prev) => {
+        const next = { ...prev };
+        delete next[timelineId];
+        return next;
+      });
+
+      // If deleted timeline was priority and others remain, promote oldest
+      if (tl?.is_priority && remaining.length > 0) {
+        const oldest = remaining[remaining.length - 1]; // last = oldest after removing priority
+        const { error: upErr } = await supabase
+          .from("gantt_timelines")
+          .update({ is_priority: true })
+          .eq("id", oldest.id);
+        if (!upErr) {
+          setTimelines((prev) =>
+            prev.map((t) => (t.id === oldest.id ? { ...t, is_priority: true } : t))
+          );
+        }
+      }
+
       return true;
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar la Carta Gantt" });
@@ -1262,10 +1204,56 @@ export function useGantt(contractId: string) {
     }
   };
 
+  const setPriorityTimeline = async (timelineId: string) => {
+    setSaving(true);
+    try {
+      // Unset priority for all timelines of this contract
+      await supabase
+        .from("gantt_timelines")
+        .update({ is_priority: false })
+        .eq("contract_id", contractId);
+      // Set priority for chosen timeline
+      await supabase
+        .from("gantt_timelines")
+        .update({ is_priority: true })
+        .eq("id", timelineId);
+
+      setTimelines((prev) =>
+        prev.map((t) => ({ ...t, is_priority: t.id === timelineId }))
+      );
+      toast({ title: "Cronograma prioritario actualizado" });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cambiar el cronograma prioritario" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renameTimeline = async (timelineId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("gantt_timelines")
+        .update({ name: trimmed })
+        .eq("id", timelineId);
+      if (error) throw error;
+      setTimelines((prev) =>
+        prev.map((t) => (t.id === timelineId ? { ...t, name: trimmed } : t))
+      );
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo renombrar el cronograma" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
-    timeline,
-    tasks,
-    taskTree,
+    timelines,
+    tasksByTimeline,
+    allTasks,
+    buildTaskTree,
     holidays,
     templates,
     orgMembers,
@@ -1274,6 +1262,8 @@ export function useGantt(contractId: string) {
     createTimeline,
     createTimelineFromCapex,
     deleteTimeline,
+    setPriorityTimeline,
+    renameTimeline,
     addTask,
     updateTask,
     deleteTask,
@@ -1286,6 +1276,6 @@ export function useGantt(contractId: string) {
     reorderTask,
     saveAsNewTemplate,
     updateBaseTemplate,
-    reload: loadTimeline,
+    reload: loadTimelines,
   };
 }

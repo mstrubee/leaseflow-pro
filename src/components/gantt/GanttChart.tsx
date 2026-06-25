@@ -282,6 +282,7 @@ interface GanttChartProps {
   isAdmin?: boolean;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
   rentStartDate?: string | null;
+  compareMode?: boolean;
 }
 
 const BASE_DAY_WIDTH = 30;
@@ -406,6 +407,7 @@ export function GanttChart({
   isAdmin = false,
   onExportPDF,
   rentStartDate,
+  compareMode = false,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const didInitExpandRef = useRef(false);
@@ -415,7 +417,9 @@ export function GanttChart({
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [colSelectMode, setColSelectMode] = useState(false);
   const [colPending, setColPending] = useState<Set<string>>(new Set());
-  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(
+    () => compareMode ? new Set(["origin", "reprog", "progress"]) : new Set()
+  );
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
   const [reprogDeltas, setReprogDeltas] = useState<Map<string, number>>(new Map());
@@ -1529,7 +1533,7 @@ export function GanttChart({
         .gantt-scroll::-webkit-scrollbar-corner { background: hsl(var(--muted)); }
         .gantt-scroll { scrollbar-width: auto; scrollbar-color: hsl(var(--muted-foreground)) hsl(var(--muted)); }
       `}</style>
-      <div className="gantt-scroll w-full h-[75vh] overflow-auto">
+      <div className={`gantt-scroll w-full ${compareMode ? "max-h-[45vh]" : "h-[75vh]"} overflow-auto`}>
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
@@ -1677,18 +1681,20 @@ export function GanttChart({
               </div>
             </div>
             {/* Month groups */}
-            <div className="flex">
-              {monthGroups.map((group, idx) => (
-                <div
-                  key={idx}
-                  className="flex-shrink-0 border-r text-center text-xs font-semibold py-1 bg-muted/50"
-                  style={{ width: group.days * DAY_WIDTH }}
-                >
-                  <span className="capitalize">{group.month}</span>
-                  <span className="text-muted-foreground ml-1">{group.year}</span>
-                </div>
-              ))}
-            </div>
+            {!compareMode && (
+              <div className="flex">
+                {monthGroups.map((group, idx) => (
+                  <div
+                    key={idx}
+                    className="flex-shrink-0 border-r text-center text-xs font-semibold py-1 bg-muted/50"
+                    style={{ width: group.days * DAY_WIDTH }}
+                  >
+                    <span className="capitalize">{group.month}</span>
+                    <span className="text-muted-foreground ml-1">{group.year}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
@@ -1862,7 +1868,7 @@ export function GanttChart({
             </div>
 
             {/* Days header */}
-            <div className="flex">
+            {!compareMode && <div className="flex">
               {days.map((day, idx) => {
                 const isWeekendDay = isWeekend(day);
                 const isHoliday = isHolidayDate(day);
@@ -1901,11 +1907,12 @@ export function GanttChart({
                   </TooltipProvider>
                 );
               })}
-            </div>
+            </div>}
           </div>
 
           {/* Task rows with dependency arrows overlay */}
           <div className="relative">
+            {!compareMode && (<>
             {/* Today vertical highlight - overlays bar area only */}
             {(() => {
               const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -2119,6 +2126,7 @@ export function GanttChart({
                 })}
               </svg>
             )}
+            </>)}
 
             {/* Task rows */}
             {visibleTasks.map((entry, rowIdx) => {
@@ -2659,7 +2667,7 @@ export function GanttChart({
                   </div>
 
                   {/* Gantt bar area */}
-                  <div
+                  {!compareMode && <div
                     className={cn(
                       "relative flex-1",
                       isDraggingBar && dragTarget === task.id && "bg-primary/20"
@@ -2791,7 +2799,7 @@ export function GanttChart({
                         </Tooltip>
                       </TooltipProvider>
                     )}
-                  </div>
+                  </div>}
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-48 bg-popover z-50">
