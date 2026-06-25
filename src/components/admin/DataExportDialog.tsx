@@ -23,6 +23,21 @@ import JSZip from "jszip";
 
 const PAGE_SIZE = 1000;
 
+// Tables with restrictive RLS that must be read via the service-role Edge Function.
+const ORG_EDGE_TABLES = ["org_members", "org_member_companies", "org_member_contracts"];
+
+async function fetchOrgTablesViaEdge(): Promise<Record<string, Record<string, unknown>[]>> {
+  const { data, error } = await supabase.functions.invoke("admin-export-org-members");
+  if (error) {
+    throw new Error(`Error consultando miembros de organización: ${error.message}`);
+  }
+  const tables = (data as { tables?: Record<string, Record<string, unknown>[]> })?.tables;
+  if (!tables) {
+    throw new Error("Respuesta inválida del servidor para miembros de organización.");
+  }
+  return tables;
+}
+
 interface ExportModule {
   label: string;
   tables: string[];
@@ -169,7 +184,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Miembros de organización",
-    tables: ["org_members"],
+    tables: ["org_members", "org_member_companies", "org_member_contracts"],
   },
   {
     label: "Tareas plantilla Gantt",
@@ -259,7 +274,28 @@ export function DataExportDialog() {
     const failed: string[] = [];
 
     try {
+      // Org tables have restrictive RLS — fetch them in one go via the Edge Function.
+      const orgTablesInModule = mod.tables.filter((t) => ORG_EDGE_TABLES.includes(t));
+      let orgData: Record<string, Record<string, unknown>[]> = {};
+      if (orgTablesInModule.length > 0) {
+        try {
+          orgData = await fetchOrgTablesViaEdge();
+        } catch (e: any) {
+          for (const table of orgTablesInModule) {
+            failed.push(table);
+            zip.file(`${table}_ERROR.txt`, e.message || String(e));
+          }
+        }
+      }
+
       for (const table of mod.tables) {
+        if (ORG_EDGE_TABLES.includes(table)) {
+          if (orgData[table]) {
+            const csv = rowsToCsv(orgData[table]);
+            zip.file(`${table}.csv`, csv || "\ufeff");
+          }
+          continue;
+        }
         try {
           const rows = await fetchAllRows(table);
           const csv = rowsToCsv(rows);
