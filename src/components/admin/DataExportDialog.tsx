@@ -200,7 +200,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Repositorio",
-    tables: ["repository_files"],
+    tables: ["repository_files", "repository_folders"],
   },
 ];
 
