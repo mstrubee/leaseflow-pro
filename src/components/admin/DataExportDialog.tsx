@@ -156,6 +156,18 @@ const EXPORT_MODULES: ExportModule[] = [
     label: "Gantt",
     tables: ["gantt_tasks", "gantt_timelines", "gantt_templates", "gantt_template_tasks"],
   },
+  {
+    label: "Presupuestos de contrato",
+    tables: ["contract_budgets"],
+  },
+  {
+    label: "Miembros de organización",
+    tables: ["org_members"],
+  },
+  {
+    label: "Tareas plantilla Gantt",
+    tables: ["gantt_template_tasks"],
+  },
 ];
 
 function escapeCsv(value: unknown): string {
