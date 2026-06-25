@@ -38,6 +38,12 @@ const EXPORT_MODULES: ExportModule[] = [
       "contract_companies",
       "contract_contacts",
       "contract_budgets",
+      "contract_documents",
+      "notice_ranges",
+      "termination_notices",
+      "finalized_contracts",
+      "contract_custom_fields",
+      "contract_custom_field_values",
       "companies",
       "rent_escalations",
       "renegotiation_drafts",
@@ -51,6 +57,7 @@ const EXPORT_MODULES: ExportModule[] = [
       "budget_template_lines",
       "budget_carryover",
       "budget_reassignments",
+      "budget_lines_audit",
     ],
   },
   {
@@ -142,7 +149,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Usuarios",
-    tables: ["profiles", "user_roles", "user_permissions", "org_members"],
+    tables: ["profiles", "user_roles", "user_permissions", "org_members", "user_preferences", "user_settings"],
   },
   {
     label: "Configuración",
@@ -167,6 +174,18 @@ const EXPORT_MODULES: ExportModule[] = [
   {
     label: "Tareas plantilla Gantt",
     tables: ["gantt_template_tasks"],
+  },
+  {
+    label: "Atención Especial",
+    tables: ["special_attention_checklist", "special_attention_meetings"],
+  },
+  {
+    label: "GeoLoc",
+    tables: ["pois", "poi_folders"],
+  },
+  {
+    label: "Repositorio",
+    tables: ["repository_files"],
   },
 ];
 
