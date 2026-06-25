@@ -148,7 +148,6 @@ export function useGantt(contractId: string) {
         .from("gantt_timelines")
         .select("*")
         .eq("contract_id", contractId)
-        .order("is_priority", { ascending: false })
         .order("created_at", { ascending: true });
 
       if (timelinesErr) throw timelinesErr;
@@ -159,7 +158,10 @@ export function useGantt(contractId: string) {
         return;
       }
 
-      setTimelines(timelinesData as GanttTimeline[]);
+      const sorted = [...timelinesData].sort((a, b) =>
+        (b.is_priority ? 1 : 0) - (a.is_priority ? 1 : 0)
+      );
+      setTimelines(sorted as GanttTimeline[]);
 
       const timelineIds = timelinesData.map((t) => t.id);
 
