@@ -349,7 +349,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                 </span>
               </div>
 
-              {/* Admin actions */}
+              {/* Admin-only: Marcar prioritario + Plantilla */}
               {isAdmin && (
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {!tl.is_priority && timelines.length > 1 && (
@@ -396,19 +396,21 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
-
-                  {/* Eliminar */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive"
-                    disabled={saving}
-                    onClick={() => setConfirmDeleteId(tl.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Eliminar
-                  </Button>
                 </div>
+              )}
+
+              {/* Eliminar: Estudio → cualquier editor; Prioritario → solo admin */}
+              {canEdit && (!tl.is_priority || isAdmin) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive flex-shrink-0"
+                  disabled={saving}
+                  onClick={() => setConfirmDeleteId(tl.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar
+                </Button>
               )}
             </div>
 
@@ -556,8 +558,21 @@ export function GanttModule({ contractId }: GanttModuleProps) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar Carta Gantt</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción eliminará permanentemente el cronograma <span className="font-medium">"{confirmDeleteTl?.name}"</span> junto con todas sus tareas, dependencias y vínculos a órdenes de compra. Esta acción no se puede deshacer.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Esta acción eliminará permanentemente el cronograma{" "}
+                  <span className="font-medium text-foreground">"{confirmDeleteTl?.name}"</span>{" "}
+                  junto con todas sus tareas, dependencias y vínculos a órdenes de compra.
+                  Esta acción no se puede deshacer.
+                </p>
+                {confirmDeleteTl?.is_priority && timelines.length > 1 && (
+                  <p className="text-amber-600 font-medium">
+                    Este es el cronograma Prioritario. Al eliminarlo, el cronograma más antiguo
+                    restante pasará a ser el nuevo Prioritario automáticamente.
+                  </p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
