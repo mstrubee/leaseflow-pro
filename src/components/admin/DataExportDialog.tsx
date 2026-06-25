@@ -202,6 +202,18 @@ const EXPORT_MODULES: ExportModule[] = [
     label: "Repositorio",
     tables: ["repository_files", "repository_folders"],
   },
+  {
+    label: GANTT_FULL_LABEL,
+    tables: [
+      "gantt_timelines",
+      "gantt_tasks",
+      "gantt_task_dependencies",
+      "gantt_task_purchase_orders",
+      "gantt_templates",
+      "gantt_template_tasks",
+      "gantt_template_dependencies",
+    ],
+  },
 ];
 
 function escapeCsv(value: unknown): string {
