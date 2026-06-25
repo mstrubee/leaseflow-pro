@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
 import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
@@ -58,6 +58,13 @@ function ConditionalFloatingAlerts() {
   return <TodayAlertsFloating />;
 }
 
+// Resets the ErrorBoundary on every pathname change so a render error on one
+// page doesn't prevent the next page from loading.
+function RouteErrorBoundary({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  return <ErrorBoundary key={pathname}>{children}</ErrorBoundary>;
+}
+
 const RouteFallback = () => (
   <div className="flex items-center justify-center min-h-screen">
     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -76,7 +83,7 @@ const App = () => (
               <ScrollToTop />
               <FloatingPermissionSelector />
               <ConditionalFloatingAlerts />
-              <ErrorBoundary>
+              <RouteErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   {/* Public routes */}
@@ -113,7 +120,7 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
-              </ErrorBoundary>
+              </RouteErrorBoundary>
             </MainLayout>
           </BrowserRouter>
         </PermissionSelectionProvider>
