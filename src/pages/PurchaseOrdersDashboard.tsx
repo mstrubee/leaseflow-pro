@@ -477,7 +477,7 @@ const PurchaseOrdersDashboard = () => {
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
-          invoices(id, invoice_number, invoice_date, amount_uf, reception_status, deleted_at, attachment_url)
+          invoices(id, invoice_number, invoice_date, amount_uf, amount_clp, uf_value_at_entry, reception_status, deleted_at, attachment_url)
         `)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
