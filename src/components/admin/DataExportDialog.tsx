@@ -474,6 +474,7 @@ async function buildGanttFullExport(
   );
 }
 
+export function DataExportDialog() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [selectedModule, setSelectedModule] = useState<string>("");
