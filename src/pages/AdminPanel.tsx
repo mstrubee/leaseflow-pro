@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, Download } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
@@ -31,6 +31,7 @@ import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCri
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
 import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
+import { DataExportDialog } from "@/components/admin/DataExportDialog";
 interface Profile {
   id: string;
   email: string;
