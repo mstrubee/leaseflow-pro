@@ -737,9 +737,9 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               </div>
               <div className="text-right">
                 {(() => {
-                  const capexAuthorizedClp = convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized);
+                  const capexAuthorizedClp = convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized);
                   const totalPresupuesto = capexAuthorizedClp + opexTotals.ocClp;
-                  const capexAuthorizedUf = capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized;
+                  const capexAuthorizedUf = capexSummary.authorized + capexSummary.unauthorized;
                   const totalPresupuestoUf = capexAuthorizedUf + opexTotals.ocUf;
                   return (
                     <>
@@ -831,10 +831,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized))}</p>
-                <p className="text-xs text-muted-foreground">{formatUF(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
+                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized))}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(capexSummary.authorized + capexSummary.unauthorized)}</p>
               </div>
-              <BudgetSemaphore budget={convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)} consumed={capexTotals.ocClp} showLabel={false} size="md" />
+              <BudgetSemaphore budget={convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized)} consumed={capexTotals.ocClp} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
@@ -859,8 +859,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Disponible:</span>
               </div>
-              <span className={`font-medium text-right ${capexTotals.ocClp > convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) ? "text-destructive" : "text-green-600"}`}>
-                {formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.ocClp)}
+              <span className={`font-medium text-right ${capexTotals.ocClp > convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized) ? "text-destructive" : "text-green-600"}`}>
+                {formatCLP(convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized) - capexTotals.ocClp)}
               </span>
               
               {capexSummary.unauthorized > 0 && (
