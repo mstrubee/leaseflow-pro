@@ -23,6 +23,21 @@ import JSZip from "jszip";
 
 const PAGE_SIZE = 1000;
 
+// Tables with restrictive RLS that must be read via the service-role Edge Function.
+const ORG_EDGE_TABLES = ["org_members", "org_member_companies", "org_member_contracts"];
+
+async function fetchOrgTablesViaEdge(): Promise<Record<string, Record<string, unknown>[]>> {
+  const { data, error } = await supabase.functions.invoke("admin-export-org-members");
+  if (error) {
+    throw new Error(`Error consultando miembros de organización: ${error.message}`);
+  }
+  const tables = (data as { tables?: Record<string, Record<string, unknown>[]> })?.tables;
+  if (!tables) {
+    throw new Error("Respuesta inválida del servidor para miembros de organización.");
+  }
+  return tables;
+}
+
 interface ExportModule {
   label: string;
   tables: string[];
