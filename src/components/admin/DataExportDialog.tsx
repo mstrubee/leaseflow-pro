@@ -149,7 +149,7 @@ const EXPORT_MODULES: ExportModule[] = [
   },
   {
     label: "Usuarios",
-    tables: ["profiles", "user_roles", "user_permissions", "org_members"],
+    tables: ["profiles", "user_roles", "user_permissions", "org_members", "user_preferences", "user_settings"],
   },
   {
     label: "Configuración",
