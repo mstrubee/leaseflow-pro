@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, addDays, differenceInDays } from "date-fns";
+import { calculateEndDate, applyLag, addBusinessDays } from "@/lib/ganttDateUtils";
 
 export interface GanttTask {
   id: string;
