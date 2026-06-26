@@ -1219,7 +1219,10 @@ export function GanttChart({
 
     await onUpdateTask(taskId, updates, options);
 
-    if (task.parent_id) {
+    // When dependencies are broken (skipPropagation), the engine does NOT roll up
+    // ancestors, so do it here. Otherwise onUpdateTask already rolls up parents
+    // and cascades dependents (including tasks that depend on parent tasks).
+    if (task.parent_id && options?.skipPropagation) {
       await syncAncestorsDates(
         task.parent_id,
         new Map([
