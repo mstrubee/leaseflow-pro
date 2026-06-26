@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, addDays, differenceInDays } from "date-fns";
+import { calculateEndDate, applyLag, addBusinessDays } from "@/lib/ganttDateUtils";
 
 export interface GanttTask {
   id: string;
@@ -413,10 +414,15 @@ export function useGantt(contractId: string) {
     }
   };
 
-  // Computes, IN MEMORY, the date changes to cascade to all dependent tasks.
-  // Uses the dependencies already attached to each in-memory task (t.dependencies),
-  // so no DB round-trips are needed — the cascade is instant.
-  // Returns a map of taskId -> partial updates.
+  // Recomputes, IN MEMORY, the full schedule so that ALL dependencies are
+  // respected and parent (rolled-up) dates stay consistent — instantly, with no
+  // DB round-trips. The edited task is "pinned" to its new dates; every leaf with
+  // dependencies snaps to the LATEST date implied by its predecessors (forcing the
+  // dependency to be respected), and every parent re-derives its dates from the
+  // span of its children. Crucially, when a parent's rolled-up dates change, any
+  // task that depends on that parent is moved too (handled by the fixpoint loop).
+  // Returns a map of taskId -> partial updates for every task that must change
+  // (excluding the edited task itself, which the caller persists separately).
   const computeDateCascade = (
     allTasks: GanttTask[],
     taskId: string,
@@ -424,20 +430,19 @@ export function useGantt(contractId: string) {
     newEndDate: string,
   ): Map<string, Partial<GanttTask>> => {
     const result = new Map<string, Partial<GanttTask>>();
-    const taskById = new Map(allTasks.map((t) => [t.id, t]));
 
-    // Reverse adjacency: predecessorId -> [successorTaskId]
-    const successorsOf = new Map<string, string[]>();
+    // parent -> children
+    const childrenOf = new Map<string, GanttTask[]>();
     for (const t of allTasks) {
-      for (const dep of t.dependencies || []) {
-        const arr = successorsOf.get(dep.depends_on_task_id) || [];
-        arr.push(t.id);
-        successorsOf.set(dep.depends_on_task_id, arr);
+      if (t.parent_id) {
+        const arr = childrenOf.get(t.parent_id) || [];
+        arr.push(t);
+        childrenOf.set(t.parent_id, arr);
       }
     }
+    const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
 
-    // Effective start/end dates for every task. Seed with current values, then
-    // override the edited task with its new dates.
+    // Effective dates: seed with stored values, then pin the edited task.
     const effStart = new Map<string, string>();
     const effEnd = new Map<string, string>();
     for (const t of allTasks) {
@@ -447,72 +452,100 @@ export function useGantt(contractId: string) {
     effStart.set(taskId, newStartDate);
     effEnd.set(taskId, newEndDate);
 
-    // All tasks reachable downstream from the edited task.
-    const reachable = new Set<string>();
-    const stack = [taskId];
-    while (stack.length) {
-      const id = stack.pop()!;
-      for (const sid of successorsOf.get(id) || []) {
-        if (!reachable.has(sid)) {
-          reachable.add(sid);
-          stack.push(sid);
+    // Iterate to a fixpoint: dependency cascade (leaves) + parent roll-ups.
+    const maxIter = allTasks.length + 5;
+    for (let iter = 0; iter < maxIter; iter++) {
+      let changed = false;
+
+      // 1) Leaf tasks WITH dependencies snap to the LATEST date implied across ALL
+      //    of their predecessors. The pinned/edited task is never moved.
+      for (const t of allTasks) {
+        if (t.id === taskId) continue;
+        if (hasChildren(t.id)) continue;
+        const deps = t.dependencies || [];
+        if (deps.length === 0) continue;
+
+        let latest: Date | null = null;
+        for (const dep of deps) {
+          const anchorStr =
+            dep.dep_type === "start"
+              ? effStart.get(dep.depends_on_task_id)
+              : effEnd.get(dep.depends_on_task_id);
+          if (!anchorStr) continue;
+          const lag = dep.lag_days ?? 0;
+          const lagType = dep.lag_type === "business" ? "business" : "calendar";
+          let candidate: Date;
+          if (dep.dep_type === "start") {
+            candidate =
+              lag === 0
+                ? parseISO(anchorStr)
+                : lagType === "business"
+                ? addBusinessDays(parseISO(anchorStr), lag, holidays)
+                : addDays(parseISO(anchorStr), lag);
+          } else {
+            candidate = applyLag(anchorStr, lag, lagType, holidays);
+          }
+          if (!latest || candidate > latest) latest = candidate;
         }
-      }
-    }
 
-    // In-degree within the reachable subgraph (predecessors that are the origin
-    // or are themselves reachable). Kahn's algorithm guarantees a successor is
-    // only computed once ALL its relevant predecessors have been resolved.
-    const inDegree = new Map<string, number>();
-    for (const sid of reachable) {
-      const deps = taskById.get(sid)?.dependencies || [];
-      const count = deps.filter(
-        (d) => d.depends_on_task_id === taskId || reachable.has(d.depends_on_task_id),
-      ).length;
-      inDegree.set(sid, count);
-    }
-
-    const queue: string[] = [];
-    const resolveAndPush = (id: string) => {
-      for (const sid of successorsOf.get(id) || []) {
-        if (!reachable.has(sid)) continue;
-        const rem = (inDegree.get(sid) ?? 1) - 1;
-        inDegree.set(sid, rem);
-        if (rem <= 0) queue.push(sid);
-      }
-    };
-    resolveAndPush(taskId);
-
-    while (queue.length) {
-      const id = queue.shift()!;
-      const t = taskById.get(id);
-      if (!t) continue;
-
-      // Start at the LATEST date implied across ALL of this task's dependencies.
-      let latest: Date | null = null;
-      for (const dep of t.dependencies || []) {
-        const anchorStr =
-          dep.dep_type === "start"
-            ? effStart.get(dep.depends_on_task_id)
-            : effEnd.get(dep.depends_on_task_id);
-        if (!anchorStr) continue;
-        const baseOffset = dep.dep_type === "start" ? 0 : 1;
-        const candidate = addDays(parseISO(anchorStr), baseOffset + (dep.lag_days ?? 0));
-        if (!latest || candidate > latest) latest = candidate;
-      }
-
-      if (latest) {
-        const duration = t.duration_days || 1;
-        const startStr = format(latest, "yyyy-MM-dd");
-        const endStr = format(addDays(latest, duration - 1), "yyyy-MM-dd");
-        effStart.set(id, startStr);
-        effEnd.set(id, endStr);
-        if (startStr !== t.start_date || endStr !== t.end_date) {
-          result.set(id, { start_date: startStr, end_date: endStr });
+        if (latest) {
+          const duration = t.duration_days || 1;
+          const startStr = format(latest, "yyyy-MM-dd");
+          const endStr = format(
+            calculateEndDate(
+              startStr,
+              duration,
+              (t.duration_type as "calendar" | "business") || "calendar",
+              holidays,
+            ),
+            "yyyy-MM-dd",
+          );
+          if (effStart.get(t.id) !== startStr || effEnd.get(t.id) !== endStr) {
+            effStart.set(t.id, startStr);
+            effEnd.set(t.id, endStr);
+            changed = true;
+          }
         }
       }
 
-      resolveAndPush(id);
+      // 2) Parent tasks re-derive their dates from the span of their children.
+      for (const t of allTasks) {
+        const kids = childrenOf.get(t.id);
+        if (!kids || kids.length === 0) continue;
+        let minStart: string | null = null;
+        let maxEnd: string | null = null;
+        for (const c of kids) {
+          const s = effStart.get(c.id);
+          const e = effEnd.get(c.id);
+          if (s && (!minStart || s < minStart)) minStart = s;
+          if (e && (!maxEnd || e > maxEnd)) maxEnd = e;
+        }
+        if (minStart && maxEnd) {
+          if (effStart.get(t.id) !== minStart || effEnd.get(t.id) !== maxEnd) {
+            effStart.set(t.id, minStart);
+            effEnd.set(t.id, maxEnd);
+            changed = true;
+          }
+        }
+      }
+
+      if (!changed) break;
+    }
+
+    // Build diffs vs stored values (excluding the edited task itself).
+    for (const t of allTasks) {
+      if (t.id === taskId) continue;
+      const s = effStart.get(t.id);
+      const e = effEnd.get(t.id);
+      if (!s || !e) continue;
+      const upd: Partial<GanttTask> = {};
+      if (s !== t.start_date) upd.start_date = s;
+      if (e !== t.end_date) upd.end_date = e;
+      if (hasChildren(t.id)) {
+        const dur = differenceInDays(parseISO(e), parseISO(s)) + 1;
+        if (dur !== t.duration_days) (upd as Partial<GanttTask>).duration_days = dur;
+      }
+      if (Object.keys(upd).length > 0) result.set(t.id, upd);
     }
 
     return result;
