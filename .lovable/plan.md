@@ -1,46 +1,43 @@
-## Qué está pasando (en simple)
+## Qué pasó (en simple)
 
-Al entrar al contrato **Antofagasta**, el cronograma se congela y cae a pantalla gris. La causa NO es pérdida de datos: es un **bucle de cálculo**.
+Las **fechas** del cronograma Antofagasta ya están correctas en la base de datos: todo el proyecto vive entre **dic-2025 y nov-2026** (lo verifiqué tarea por tarea).
 
-El cronograma tiene **3 dependencias circulares** (una tarea que, siguiendo la cadena, termina dependiendo de sí misma):
+El problema que ves en pantalla viene de otro campo: el **Plazo** (días de duración). En la época del bug, el plazo de las **tareas madre y de algunos grupos** quedó guardado con valores absurdos (4.911, 35.902, 8.817… días). Mi recuperación anterior corrigió inicio y término, pero **no reescribió esos plazos**.
 
-```
-1. "Corte de Cinta"  ↔  su tarea madre "Coordinación Corte de Cinta"
-2. Grupo Marketing/Logística: "Branding Ventanales", "Imagen", "Recepción Productos"... (20 tareas enlazadas en círculo)
-3. Grupo Compras: "Compra Productos", "Aprobación de Comité", "Materialización"... (11 tareas en círculo)
-```
+La pantalla dibuja cada barra calculando `inicio = término − plazo`. Con un plazo de 35.000 días, el inicio se va a **2013** y el término aparente a **2050**, aunque la fecha real guardada sea 2026. Por eso los plazos se ven "cambiados arbitrariamente".
 
-Cuando el motor calcula fechas y encuentra un círculo, **nunca termina**: empuja las fechas cada vez más al futuro (llegaron al año 2124 / 2557). Eso genera decenas de miles de columnas de días y el navegador se queda sin memoria → freeze → pantalla gris. Además, la versión anterior **guardaba** esas fechas erradas en cada apertura, empeorándolo cada vez.
+## Alcance exacto (medido en la base)
 
-**Lo que NO se perdió:** las duraciones (plazos), los tipos de duración, todas las dependencias y sus lags están intactos en la base de datos. Hay tareas ancla intactas en enero 2026 ("Negociación" 10-01-2026). Por eso el cronograma **se puede reconstruir**.
+- **148 tareas** en total, todas en modo *calendario*.
+- **28 tareas** tienen el plazo descuadrado respecto de sus fechas reales (7 tareas madre + 21 entre grupos, hitos y hojas).
+- Las otras **120 tareas hoja están perfectas** y no se tocan.
+- La convención correcta, confirmada en las tareas sanas, es: **Plazo = (Término − Inicio) + 1 día** (ej. del 26-abr al 15-may = 20 días).
 
-## Plan
+## Corrección
 
-### 1. Anti-congelamiento (que nunca más se trabe)
-- `GanttChart.tsx`: limitar el rango de fechas que se dibuja. Si los datos contienen fechas absurdas, la interfaz acota el rango a un horizonte máximo (~5–6 años) en vez de intentar pintar 100+ años. Garantiza que el contrato siempre abra, aunque haya datos malos.
+### 1. Reparar los plazos (una sola vez, datos)
+Recalcular `duration_days` de las **28 tareas inconsistentes** para que sea igual al lapso real entre su inicio y su término ya recuperados (`(término − inicio) + 1`). Las 120 tareas que ya están bien quedan intactas.
 
-### 2. Frenar la corrupción (motor de fechas)
-- `useGantt.ts` → quitar la **persistencia automática al cargar** (`loadTimeline`). Cargar las fechas tal como están guardadas; nunca recalcular-y-guardar en silencio al abrir.
-- `useGantt.ts` → `computeScheduleDiff`: hacerlo **a prueba de ciclos**. Se reemplaza el bucle de punto-fijo (que puede no converger) por un cálculo en **orden topológico de una sola pasada** que:
-  - detecta ciclos y los rompe (ignora la arista que cierra el círculo) en vez de iterar al infinito;
-  - aplica un **tope de horizonte**: ninguna fecha puede saltar más allá de un límite razonable;
-  - elimina el "parent-block-shift" recursivo, que era la fuente del arrastre infinito.
-- El recálculo en cascada sigue ocurriendo **solo ante ediciones explícitas** del usuario (cambiar fecha/plazo/dependencia), nunca al abrir.
+Resultado: Inicio, Plazo y Término quedan coherentes; las barras vuelven a su lugar (dic-2025 → nov-2026) y desaparecen los 2013/2050.
 
-### 3. Recuperar las fechas de Antofagasta (una sola vez)
-- Eliminar las **3 dependencias circulares** (son inválidas: por ejemplo, una tarea madre no puede depender de su propia hija). Se documentará cuáles se quitaron para que las revises.
-- Reconstruir todas las fechas con una migración puntual:
-  - anclar en las tareas intactas de enero 2026;
-  - recorrer la red de dependencias (ya sin ciclos) respetando cada **plazo**, lag y días hábiles/feriados;
-  - calcular inicio = fecha más tardía de sus precedentes (la regla que ya pediste);
-  - subir las fechas de las tareas madre desde sus hijas.
-- Resultado esperado: cronograma coherente en **2026–2027**, con todos los plazos y dependencias válidas respetados.
+### 2. Blindar la vista (código, anti-recaída)
+En el Gantt, hacer que las **tareas madre/grupo muestren su inicio y término a partir del rango real de sus hijas** (no del plazo guardado), y acotar cualquier plazo fuera de rango. Así, aunque algún plazo quedara mal en el futuro, la vista nunca más se irá a 2013/2050.
 
-### Nota honesta sobre exactitud
-Las **duraciones y dependencias se recuperan al 100%**. Las **fechas absolutas** se reconstruyen desde las anclas de 2026; un puñado de tareas que quedaron sueltas (sin una dependencia válida que las ate a las anclas, por los ciclos eliminados) podrían necesitar que confirmes su fecha de inicio manualmente. Te entregaré la lista exacta de esas tareas (estimo unas 3–6) tras la reconstrucción para que las ajustes en segundos. No es posible adivinar con certeza la posición absoluta original de esas pocas tareas porque la lógica anterior sobreescribió su fecha; todo lo demás queda exacto.
+## Nota honesta
+No estoy "inventando" plazos: los derivo de las fechas que ya recuperamos y validamos. Como esos plazos madre/grupo son **calculados** (la suma de sus hijas), el valor reconstruido es el correcto por definición. Las duraciones de las tareas hoja reales no se alteran.
 
-## Detalles técnicos
-- Archivos: `src/components/gantt/GanttChart.tsx` (guarda de rango), `src/hooks/useGantt.ts` (motor topológico cycle-safe, sin auto-persist en load).
-- Datos: migración SQL que (a) borra las 3 filas inválidas de `gantt_task_dependencies` y (b) hace `UPDATE` de `start_date`/`end_date` en `gantt_tasks` del timeline de Antofagasta con las fechas reconstruidas. Se calcula primero en seco y se te muestra el antes/después antes de aplicar.
-- Se valida que el resto de los cronogramas (que están sanos) no se vean afectados: el cambio de motor es global pero solo recalcula ante edición; la migración de datos afecta únicamente al timeline de Antofagasta.
-- Guardar en memoria del proyecto la regla: **prohibidas las dependencias que formen ciclos** (incluida tarea madre ↔ hija), y el motor del Gantt debe ser topológico con tope de horizonte y sin persistencia automática en la carga.
+## Detalle técnico
+
+- **DB (cronograma `ec5721cf-…`, Antofagasta):**
+  ```sql
+  UPDATE gantt_tasks
+  SET duration_days = (end_date - start_date) + 1
+  WHERE timeline_id = 'ec5721cf-9d6d-4684-8f39-d9053ba89ba0'
+    AND duration_type = 'calendar'
+    AND duration_days <> (end_date - start_date) + 1;
+  ```
+  Afecta exactamente 28 filas; las consistentes quedan sin cambios.
+
+- **`src/components/gantt/GanttChart.tsx`:** al renderizar filas con hijos, derivar `start/end` mostrados del span de descendientes (mín. inicio / máx. término) en vez de `término − duration_days`; clamp del plazo al horizonte ya existente. Sin tocar el motor de cálculo (`useGantt.ts`), que ya quedó a prueba de ciclos.
+
+- **Verificación:** tras el UPDATE, re-consultar que no queden filas con `duration_days <> (end_date - start_date) + 1`, y abrir el contrato en preview para confirmar que Inicio/Plazo/Término de las 7 madres se ven en 2026.
