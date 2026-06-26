@@ -179,67 +179,20 @@ export function useGantt(contractId: string) {
           purchase_orders: poData?.filter(po => po.task_id === task.id) || [],
         }));
 
-        // Backfill: leaf tasks that HAVE dependencies but are missing a start_date
-        // (e.g. dependency was created against a parent with no stored dates).
-        // Compute the implied start from predecessors' effective dates and persist.
+        // Normalize loaded schedules: every dependent task must respect the
+        // latest date implied by its predecessors, including parent roll-ups.
         const allLoaded = tasksWithRelations as GanttTask[];
-        const isParent = (id: string) => allLoaded.some((t) => t.parent_id === id);
-        const effStart = new Map<string, string>();
-        const effEnd = new Map<string, string>();
-        for (const t of allLoaded) {
-          if (t.start_date) effStart.set(t.id, t.start_date);
-          if (t.end_date) effEnd.set(t.id, t.end_date);
-        }
-        // Seed parent effective spans from children (roll-up).
-        for (const t of allLoaded) {
-          if (isParent(t.id)) {
-            const { start, end } = getEffectiveTaskDates(t, allLoaded);
-            if (start) effStart.set(t.id, start);
-            if (end) effEnd.set(t.id, end);
-          }
-        }
-        const backfill = new Map<string, { start_date: string; end_date: string }>();
-        const maxIter = allLoaded.length + 5;
-        for (let iter = 0; iter < maxIter; iter++) {
-          let changed = false;
-          for (const t of allLoaded) {
-            if (isParent(t.id)) continue;
-            if (effStart.get(t.id)) continue; // already has a start
-            const deps = t.dependencies || [];
-            if (deps.length === 0) continue;
-            let latestStart: Date | null = null;
-            for (const d of deps) {
-              const anchorStr =
-                d.dep_type === "start" ? effStart.get(d.depends_on_task_id) : effEnd.get(d.depends_on_task_id);
-              if (!anchorStr) continue;
-              const baseOffset = d.dep_type === "start" ? 0 : 1;
-              const candidateStart = addDays(parseISO(anchorStr), baseOffset + (d.lag_days ?? 0));
-              if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
-            }
-            if (latestStart) {
-              const duration = t.duration_days || 1;
-              const startStr = format(latestStart, "yyyy-MM-dd");
-              const endStr = format(addDays(latestStart, duration - 1), "yyyy-MM-dd");
-              effStart.set(t.id, startStr);
-              effEnd.set(t.id, endStr);
-              backfill.set(t.id, { start_date: startStr, end_date: endStr });
-              changed = true;
-            }
-          }
-          if (!changed) break;
-        }
-
-        if (backfill.size > 0) {
+        const scheduleDiff = computeScheduleDiff(allLoaded);
+        if (scheduleDiff.size > 0) {
           const patched = allLoaded.map((t) =>
-            backfill.has(t.id) ? { ...t, ...backfill.get(t.id)! } : t,
+            scheduleDiff.has(t.id) ? { ...t, ...scheduleDiff.get(t.id)! } : t,
           );
           setTasks(patched);
-          // Persist in the background.
           Promise.all(
-            Array.from(backfill.entries()).map(([id, u]) =>
+            Array.from(scheduleDiff.entries()).map(([id, u]) =>
               supabase.from("gantt_tasks").update(u as any).eq("id", id),
             ),
-          ).catch((e) => console.error("Backfill persist error:", e));
+          ).catch((e) => console.error("Gantt schedule normalize error:", e));
         } else {
           setTasks(allLoaded);
         }
@@ -501,26 +454,25 @@ export function useGantt(contractId: string) {
 
 
 
-  // Recomputes, IN MEMORY, the full schedule so that ALL dependencies are
-  // respected and parent (rolled-up) dates stay consistent — instantly, with no
-  // DB round-trips. The edited task is "pinned" to its new dates; every leaf with
-  // dependencies snaps to the LATEST date implied by its predecessors (forcing the
-  // dependency to be respected), and every parent re-derives its dates from the
-  // span of its children. Crucially, when a parent's rolled-up dates change, any
-  // task that depends on that parent is moved too (handled by the fixpoint loop).
-  // Returns a map of taskId -> partial updates for every task that must change
-  // (excluding the edited task itself, which the caller persists separately).
-  const computeDateCascade = (
-    allTasks: GanttTask[],
-    taskId: string,
-    newStartDate: string,
-    newEndDate: string,
+  // Recomputes, in memory, the full schedule until it reaches a stable state:
+  // - leaf tasks with predecessors snap to the latest valid dependency date;
+  // - parent tasks roll up from their children;
+  // - tasks depending on parents move when those parent roll-ups change.
+  const computeScheduleDiff = (
+    sourceTasks: GanttTask[],
+    seedUpdates: Map<string, Partial<GanttTask>> = new Map(),
+    compareTasks: GanttTask[] = sourceTasks,
   ): Map<string, Partial<GanttTask>> => {
     const result = new Map<string, Partial<GanttTask>>();
+    const workingTasks = sourceTasks.map((t) => ({
+      ...t,
+      ...(seedUpdates.get(t.id) || {}),
+    }));
+    const originalById = new Map(compareTasks.map((t) => [t.id, t]));
 
     // parent -> children
     const childrenOf = new Map<string, GanttTask[]>();
-    for (const t of allTasks) {
+    for (const t of workingTasks) {
       if (t.parent_id) {
         const arr = childrenOf.get(t.parent_id) || [];
         arr.push(t);
@@ -528,54 +480,114 @@ export function useGantt(contractId: string) {
       }
     }
     const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
+    const collectLeafDescendants = (id: string): GanttTask[] => {
+      const kids = childrenOf.get(id) || [];
+      if (kids.length === 0) return [];
+      return kids.flatMap((child) =>
+        hasChildren(child.id) ? collectLeafDescendants(child.id) : [child],
+      );
+    };
 
-    // Effective dates: seed with stored values, then pin the edited task.
+    // Effective dates: seed with current/seeded values.
     const effStart = new Map<string, string>();
     const effEnd = new Map<string, string>();
-    for (const t of allTasks) {
+    for (const t of workingTasks) {
       if (t.start_date) effStart.set(t.id, t.start_date);
       if (t.end_date) effEnd.set(t.id, t.end_date);
     }
-    effStart.set(taskId, newStartDate);
-    effEnd.set(taskId, newEndDate);
+
+    const dependencyStart = (dep: GanttTaskDependency): Date | null => {
+      const depType = dep.dep_type ?? "end";
+      const lag = dep.lag_days ?? 0;
+      const lagType = dep.lag_type === "business" ? "business" : "calendar";
+      const anchorStr = depType === "start"
+        ? effStart.get(dep.depends_on_task_id)
+        : effEnd.get(dep.depends_on_task_id);
+      if (!anchorStr) return null;
+      if (depType === "start") {
+        if (lag === 0) return parseISO(anchorStr);
+        return lagType === "business"
+          ? addBusinessDays(parseISO(anchorStr), lag, holidays)
+          : addDays(parseISO(anchorStr), lag);
+      }
+      return applyLag(anchorStr, lag, lagType, holidays);
+    };
+
+    const rollUpParents = () => {
+      let changed = false;
+      for (const t of workingTasks) {
+        const kids = childrenOf.get(t.id);
+        if (!kids || kids.length === 0) continue;
+        let minStart: string | null = null;
+        let maxEnd: string | null = null;
+        for (const c of kids) {
+          const s = effStart.get(c.id);
+          const e = effEnd.get(c.id);
+          if (s && (!minStart || s < minStart)) minStart = s;
+          if (e && (!maxEnd || e > maxEnd)) maxEnd = e;
+        }
+        if (minStart && maxEnd) {
+          if (effStart.get(t.id) !== minStart || effEnd.get(t.id) !== maxEnd) {
+            effStart.set(t.id, minStart);
+            effEnd.set(t.id, maxEnd);
+            changed = true;
+          }
+        }
+      }
+      return changed;
+    };
 
     // Iterate to a fixpoint: dependency cascade (leaves) + parent roll-ups.
-    const maxIter = allTasks.length + 5;
+    const maxIter = workingTasks.length * 3 + 10;
     for (let iter = 0; iter < maxIter; iter++) {
-      let changed = false;
+      let changed = rollUpParents();
 
-      // 1) Leaf tasks WITH dependencies snap to the LATEST date implied across ALL
-      //    of their predecessors. The pinned/edited task is never moved.
-      for (const t of allTasks) {
-        if (t.id === taskId) continue;
-        if (hasChildren(t.id)) continue;
+      // Tasks with dependencies must respect the latest date implied across ALL
+      // predecessors. Leaves snap directly; parents shift their dated leaves as
+      // a block when their rolled-up start would otherwise violate the link.
+      for (const t of workingTasks) {
         const deps = t.dependencies || [];
         if (deps.length === 0) continue;
 
         let latest: Date | null = null;
         for (const dep of deps) {
-          const anchorStr =
-            dep.dep_type === "start"
-              ? effStart.get(dep.depends_on_task_id)
-              : effEnd.get(dep.depends_on_task_id);
-          if (!anchorStr) continue;
-          const lag = dep.lag_days ?? 0;
-          const lagType = dep.lag_type === "business" ? "business" : "calendar";
-          let candidate: Date;
-          if (dep.dep_type === "start") {
-            candidate =
-              lag === 0
-                ? parseISO(anchorStr)
-                : lagType === "business"
-                ? addBusinessDays(parseISO(anchorStr), lag, holidays)
-                : addDays(parseISO(anchorStr), lag);
-          } else {
-            candidate = applyLag(anchorStr, lag, lagType, holidays);
-          }
+          const candidate = dependencyStart(dep);
+          if (!candidate) continue;
           if (!latest || candidate > latest) latest = candidate;
         }
 
-        if (latest) {
+        if (!latest) continue;
+
+        if (hasChildren(t.id)) {
+          const currentStartStr = effStart.get(t.id);
+          if (!currentStartStr) continue;
+          // Parent dependencies are constraints: never allow the parent roll-up
+          // to start before its predecessor allows. If it is already later, keep
+          // the current child layout instead of oscillating against child deps.
+          if (parseISO(currentStartStr) < latest) {
+            const delta = differenceInDays(latest, parseISO(currentStartStr));
+            for (const leaf of collectLeafDescendants(t.id)) {
+              const leafStart = effStart.get(leaf.id);
+              if (!leafStart) continue;
+              const duration = leaf.duration_days || 1;
+              const startStr = format(addDays(parseISO(leafStart), delta), "yyyy-MM-dd");
+              const endStr = format(
+                calculateEndDate(
+                  startStr,
+                  duration,
+                  (leaf.duration_type as "calendar" | "business") || "calendar",
+                  holidays,
+                ),
+                "yyyy-MM-dd",
+              );
+              if (effStart.get(leaf.id) !== startStr || effEnd.get(leaf.id) !== endStr) {
+                effStart.set(leaf.id, startStr);
+                effEnd.set(leaf.id, endStr);
+                changed = true;
+              }
+            }
+          }
+        } else {
           const duration = t.duration_days || 1;
           const startStr = format(latest, "yyyy-MM-dd");
           const endStr = format(
@@ -595,42 +607,24 @@ export function useGantt(contractId: string) {
         }
       }
 
-      // 2) Parent tasks re-derive their dates from the span of their children.
-      for (const t of allTasks) {
-        const kids = childrenOf.get(t.id);
-        if (!kids || kids.length === 0) continue;
-        let minStart: string | null = null;
-        let maxEnd: string | null = null;
-        for (const c of kids) {
-          const s = effStart.get(c.id);
-          const e = effEnd.get(c.id);
-          if (s && (!minStart || s < minStart)) minStart = s;
-          if (e && (!maxEnd || e > maxEnd)) maxEnd = e;
-        }
-        if (minStart && maxEnd) {
-          if (effStart.get(t.id) !== minStart || effEnd.get(t.id) !== maxEnd) {
-            effStart.set(t.id, minStart);
-            effEnd.set(t.id, maxEnd);
-            changed = true;
-          }
-        }
-      }
+      changed = rollUpParents() || changed;
 
       if (!changed) break;
     }
 
-    // Build diffs vs stored values (excluding the edited task itself).
-    for (const t of allTasks) {
-      if (t.id === taskId) continue;
+    // Build date diffs vs the comparison snapshot.
+    for (const t of workingTasks) {
+      const original = originalById.get(t.id);
+      if (!original) continue;
       const s = effStart.get(t.id);
       const e = effEnd.get(t.id);
       if (!s || !e) continue;
       const upd: Partial<GanttTask> = {};
-      if (s !== t.start_date) upd.start_date = s;
-      if (e !== t.end_date) upd.end_date = e;
+      if (s !== original.start_date) upd.start_date = s;
+      if (e !== original.end_date) upd.end_date = e;
       if (hasChildren(t.id)) {
         const dur = differenceInDays(parseISO(e), parseISO(s)) + 1;
-        if (dur !== t.duration_days) (upd as Partial<GanttTask>).duration_days = dur;
+        if (dur !== original.duration_days) (upd as Partial<GanttTask>).duration_days = dur;
       }
       if (Object.keys(upd).length > 0) result.set(t.id, upd);
     }
@@ -644,21 +638,28 @@ export function useGantt(contractId: string) {
     updates: Partial<GanttTask>,
     options?: { skipPropagation?: boolean; breakDependencies?: boolean }
   ) => {
-    // 1) Compute the dependent cascade synchronously from in-memory state (instant).
+    const scheduleRelevant =
+      updates.start_date !== undefined ||
+      updates.end_date !== undefined ||
+      updates.duration_days !== undefined ||
+      updates.duration_type !== undefined ||
+      updates.parent_id !== undefined;
+
+    // 1) Compute the full schedule synchronously from in-memory state (instant).
     let cascade = new Map<string, Partial<GanttTask>>();
-    if ((updates.end_date || updates.start_date) && !options?.skipPropagation) {
-      const current = tasks.find((t) => t.id === taskId);
-      const startStr = updates.start_date || current?.start_date || updates.end_date!;
-      const endStr = updates.end_date || current?.end_date || updates.start_date!;
-      cascade = computeDateCascade(tasks, taskId, startStr, endStr);
+    if (scheduleRelevant && !options?.skipPropagation) {
+      const seed = new Map<string, Partial<GanttTask>>([[taskId, updates]]);
+      cascade = computeScheduleDiff(tasks, seed);
     }
+
+    const persistedTaskUpdates = { ...updates, ...(cascade.get(taskId) || {}) } as Partial<GanttTask>;
 
     // 2) Optimistic local update FIRST — edited task + all dependents at once.
     //    The UI reflects the change immediately; DB writes happen afterwards.
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id === taskId) {
-          return { ...t, ...updates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
+          return { ...t, ...persistedTaskUpdates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
         }
         if (cascade.has(t.id)) return { ...t, ...cascade.get(t.id)! };
         return t;
@@ -670,7 +671,7 @@ export function useGantt(contractId: string) {
     try {
       const { error } = await supabase
         .from("gantt_tasks")
-        .update(updates as any)
+        .update(persistedTaskUpdates as any)
         .eq("id", taskId);
       if (error) throw error;
 
@@ -683,7 +684,7 @@ export function useGantt(contractId: string) {
 
       if (cascade.size > 0) {
         const results = await Promise.all(
-          Array.from(cascade.entries()).map(([id, u]) =>
+          Array.from(cascade.entries()).filter(([id]) => id !== taskId).map(([id, u]) =>
             supabase.from("gantt_tasks").update(u as any).eq("id", id)
           )
         );
@@ -848,46 +849,30 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      // Compute new start date considering ALL dependencies (including the new one).
-      const allDepsWithNew: GanttTaskDependency[] = [
-        ...(dependentTask.dependencies || []),
-        inserted as GanttTaskDependency,
-      ];
-      let latestStart: Date | null = null;
-      for (const d of allDepsWithNew) {
-        const pt = tasks.find(t => t.id === d.depends_on_task_id);
-        if (!pt) continue;
-        const eff = getEffectiveTaskDates(pt, tasks);
-        const anchorStr = d.dep_type === "start" ? eff.start : eff.end;
-        if (!anchorStr) continue;
-        const anchorDate = parseISO(anchorStr);
-        const baseOffset = d.dep_type === "start" ? 0 : 1;
-        const candidateStart = addDays(anchorDate, baseOffset + (d.lag_days ?? 0));
-        if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
-      }
-
-      let newStartStr = dependentTask.start_date;
-      let newEndStr = dependentTask.end_date;
-      if (latestStart) {
-        const duration = dependentTask.duration_days || 1;
-        newStartStr = format(latestStart, "yyyy-MM-dd");
-        newEndStr = format(addDays(latestStart, duration - 1), "yyyy-MM-dd");
-        await supabase
-          .from("gantt_tasks")
-          .update({ start_date: newStartStr, end_date: newEndStr })
-          .eq("id", taskId);
-      }
+      const insertedDep = inserted as GanttTaskDependency;
+      const tasksWithNewDependency = tasks.map((t) =>
+        t.id === taskId
+          ? { ...t, dependencies: [...(t.dependencies || []), insertedDep] }
+          : t,
+      );
+      const scheduleDiff = computeScheduleDiff(tasksWithNewDependency, new Map(), tasks);
 
       // Optimistic local update — no loadTimeline needed.
       setTasks(prev => prev.map(t => {
-        if (t.id !== taskId) return t;
-        return {
-          ...t,
-          start_date: newStartStr,
-          end_date: newEndStr,
-          dependencies: [...(t.dependencies || []), inserted as GanttTaskDependency],
-        };
+        const dateUpdates = scheduleDiff.get(t.id) || {};
+        if (t.id !== taskId) return Object.keys(dateUpdates).length > 0 ? { ...t, ...dateUpdates } : t;
+        return { ...t, ...dateUpdates, dependencies: [...(t.dependencies || []), insertedDep] };
       }));
+
+      if (scheduleDiff.size > 0) {
+        const results = await Promise.all(
+          Array.from(scheduleDiff.entries()).map(([id, u]) =>
+            supabase.from("gantt_tasks").update(u as any).eq("id", id),
+          ),
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
+      }
 
       toast({
         title: "Dependencia creada",
@@ -948,52 +933,33 @@ export function useGantt(contractId: string) {
       if (error) throw error;
 
       if (dep && dependentTask) {
-        // Recompute start date using ALL dependencies (take the latest anchor).
-        const allDeps = dependentTask.dependencies || [];
-        let latestStart: Date | null = null;
-        for (const d of allDeps) {
-          const parentTask = tasks.find(t => t.id === d.depends_on_task_id);
-          if (!parentTask) continue;
-          const dep_type = d.id === dep.id ? (updates.dep_type ?? d.dep_type ?? "end") : (d.dep_type ?? "end");
-          const lag_days = d.id === dep.id ? (updates.lag_days ?? d.lag_days ?? 0) : (d.lag_days ?? 0);
-          const eff = getEffectiveTaskDates(parentTask, tasks);
-          const anchorStr = dep_type === "start" ? eff.start : eff.end;
-          if (!anchorStr) continue;
-          const anchorDate = parseISO(anchorStr);
-          const baseOffset = dep_type === "start" ? 0 : 1;
-          const candidateStart = addDays(anchorDate, baseOffset + lag_days);
-          if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
-        }
-        if (latestStart) {
-          const duration = dependentTask.duration_days || 1;
-          const newEndDate = addDays(latestStart, duration - 1);
-          const newStartStr = format(latestStart, "yyyy-MM-dd");
-          const newEndStr = format(newEndDate, "yyyy-MM-dd");
-          await supabase
-            .from("gantt_tasks")
-            .update({ start_date: newStartStr, end_date: newEndStr })
-            .eq("id", dependentTask.id);
+        const tasksWithUpdatedDependency = tasks.map((t) => ({
+          ...t,
+          dependencies: t.dependencies?.map((d) =>
+            d.id === dependencyId ? { ...d, ...updates } : d,
+          ),
+        }));
+        const scheduleDiff = computeScheduleDiff(tasksWithUpdatedDependency, new Map(), tasks);
 
-          // Optimistic local update — reflect dep changes + new dates without reloading.
-          setTasks(prev => prev.map(t => {
-            if (t.id !== dependentTask.id) return t;
-            return {
-              ...t,
-              start_date: newStartStr,
-              end_date: newEndStr,
-              dependencies: t.dependencies?.map(d =>
-                d.id === dependencyId ? { ...d, ...updates } : d
-              ),
-            };
-          }));
-        } else {
-          // No date change needed, just update the dep metadata in state.
-          setTasks(prev => prev.map(t => ({
+        setTasks(prev => prev.map(t => {
+          const dateUpdates = scheduleDiff.get(t.id) || {};
+          return {
             ...t,
+            ...dateUpdates,
             dependencies: t.dependencies?.map(d =>
               d.id === dependencyId ? { ...d, ...updates } : d
             ),
-          })));
+          };
+        }));
+
+        if (scheduleDiff.size > 0) {
+          const results = await Promise.all(
+            Array.from(scheduleDiff.entries()).map(([id, u]) =>
+              supabase.from("gantt_tasks").update(u as any).eq("id", id),
+            ),
+          );
+          const failed = results.find((r) => r.error);
+          if (failed?.error) throw failed.error;
         }
       }
 
