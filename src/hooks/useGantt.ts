@@ -179,23 +179,12 @@ export function useGantt(contractId: string) {
           purchase_orders: poData?.filter(po => po.task_id === task.id) || [],
         }));
 
-        // Normalize loaded schedules: every dependent task must respect the
-        // latest date implied by its predecessors, including parent roll-ups.
-        const allLoaded = tasksWithRelations as GanttTask[];
-        const scheduleDiff = computeScheduleDiff(allLoaded);
-        if (scheduleDiff.size > 0) {
-          const patched = allLoaded.map((t) =>
-            scheduleDiff.has(t.id) ? { ...t, ...scheduleDiff.get(t.id)! } : t,
-          );
-          setTasks(patched);
-          Promise.all(
-            Array.from(scheduleDiff.entries()).map(([id, u]) =>
-              supabase.from("gantt_tasks").update(u as any).eq("id", id),
-            ),
-          ).catch((e) => console.error("Gantt schedule normalize error:", e));
-        } else {
-          setTasks(allLoaded);
-        }
+        // Load tasks exactly as stored. We must NOT recalculate-and-persist the
+        // schedule on load: doing so previously ratcheted dates further into the
+        // future on every open (circular dependencies never converged), which
+        // corrupted the data and froze the browser. The schedule is only
+        // recalculated in response to an explicit user edit.
+        setTasks(tasksWithRelations as GanttTask[]);
       } else {
         setTimeline(null);
         setTasks([]);
@@ -480,23 +469,26 @@ export function useGantt(contractId: string) {
       }
     }
     const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
-    const collectLeafDescendants = (id: string): GanttTask[] => {
-      const kids = childrenOf.get(id) || [];
-      if (kids.length === 0) return [];
-      return kids.flatMap((child) =>
-        hasChildren(child.id) ? collectLeafDescendants(child.id) : [child],
-      );
-    };
+    const taskById = new Map(workingTasks.map((t) => [t.id, t]));
 
-    // Effective dates: seed with current/seeded values.
+    // Effective dates, resolved via a single-pass topological evaluation.
     const effStart = new Map<string, string>();
     const effEnd = new Map<string, string>();
-    for (const t of workingTasks) {
-      if (t.start_date) effStart.set(t.id, t.start_date);
-      if (t.end_date) effEnd.set(t.id, t.end_date);
-    }
 
-    const dependencyStart = (dep: GanttTaskDependency): Date | null => {
+    // Horizon safety net: a schedule must never drift far beyond its own start.
+    // Even if the data contains an impossible link, dates are clamped so the UI
+    // can never blow up trying to render hundreds of years of columns.
+    let minAnchor: Date | null = null;
+    for (const t of workingTasks) {
+      if (t.start_date) {
+        const d = parseISO(t.start_date);
+        if (!minAnchor || d < minAnchor) minAnchor = d;
+      }
+    }
+    const horizon = minAnchor ? addDays(minAnchor, 365 * 10) : null;
+    const clamp = (d: Date): Date => (horizon && d > horizon ? horizon : d);
+
+    const dependencyDate = (dep: GanttTaskDependency): Date | null => {
       const depType = dep.dep_type ?? "end";
       const lag = dep.lag_days ?? 0;
       const lagType = dep.lag_type === "business" ? "business" : "calendar";
@@ -513,104 +505,79 @@ export function useGantt(contractId: string) {
       return applyLag(anchorStr, lag, lagType, holidays);
     };
 
-    const rollUpParents = () => {
-      let changed = false;
-      for (const t of workingTasks) {
-        const kids = childrenOf.get(t.id);
-        if (!kids || kids.length === 0) continue;
+    // Topological, cycle-safe resolution. Each task is computed once; predecessors
+    // and children are resolved on demand. A node already being visited (a cycle)
+    // is broken by returning its current stored value instead of recursing,
+    // which guarantees termination even with circular dependencies.
+    const resolved = new Set<string>();
+    const visiting = new Set<string>();
+
+    const compute = (id: string): { start: string | null; end: string | null } => {
+      if (resolved.has(id)) {
+        return { start: effStart.get(id) ?? null, end: effEnd.get(id) ?? null };
+      }
+      const t = taskById.get(id);
+      if (visiting.has(id)) {
+        // Cycle break: do not recurse further; use whatever is known so far.
+        return {
+          start: effStart.get(id) ?? t?.start_date ?? null,
+          end: effEnd.get(id) ?? t?.end_date ?? null,
+        };
+      }
+      if (!t) return { start: null, end: null };
+
+      visiting.add(id);
+      let start: string | null = null;
+      let end: string | null = null;
+
+      if (hasChildren(id)) {
+        // Parent: roll up from children.
         let minStart: string | null = null;
         let maxEnd: string | null = null;
-        for (const c of kids) {
-          const s = effStart.get(c.id);
-          const e = effEnd.get(c.id);
-          if (s && (!minStart || s < minStart)) minStart = s;
-          if (e && (!maxEnd || e > maxEnd)) maxEnd = e;
+        for (const c of childrenOf.get(id) || []) {
+          const r = compute(c.id);
+          if (r.start && (!minStart || r.start < minStart)) minStart = r.start;
+          if (r.end && (!maxEnd || r.end > maxEnd)) maxEnd = r.end;
         }
-        if (minStart && maxEnd) {
-          if (effStart.get(t.id) !== minStart || effEnd.get(t.id) !== maxEnd) {
-            effStart.set(t.id, minStart);
-            effEnd.set(t.id, maxEnd);
-            changed = true;
-          }
-        }
-      }
-      return changed;
-    };
-
-    // Iterate to a fixpoint: dependency cascade (leaves) + parent roll-ups.
-    const maxIter = workingTasks.length * 3 + 10;
-    for (let iter = 0; iter < maxIter; iter++) {
-      let changed = rollUpParents();
-
-      // Tasks with dependencies must respect the latest date implied across ALL
-      // predecessors. Leaves snap directly; parents shift their dated leaves as
-      // a block when their rolled-up start would otherwise violate the link.
-      for (const t of workingTasks) {
+        start = minStart;
+        end = maxEnd;
+      } else {
+        // Leaf: snap to the latest date implied by all predecessors.
         const deps = t.dependencies || [];
-        if (deps.length === 0) continue;
-
         let latest: Date | null = null;
         for (const dep of deps) {
-          const candidate = dependencyStart(dep);
+          compute(dep.depends_on_task_id);
+          const candidate = dependencyDate(dep);
           if (!candidate) continue;
           if (!latest || candidate > latest) latest = candidate;
         }
-
-        if (!latest) continue;
-
-        if (hasChildren(t.id)) {
-          const currentStartStr = effStart.get(t.id);
-          if (!currentStartStr) continue;
-          // Parent dependencies are constraints: never allow the parent roll-up
-          // to start before its predecessor allows. If it is already later, keep
-          // the current child layout instead of oscillating against child deps.
-          if (parseISO(currentStartStr) < latest) {
-            const delta = differenceInDays(latest, parseISO(currentStartStr));
-            for (const leaf of collectLeafDescendants(t.id)) {
-              const leafStart = effStart.get(leaf.id);
-              if (!leafStart) continue;
-              const duration = leaf.duration_days || 1;
-              const startStr = format(addDays(parseISO(leafStart), delta), "yyyy-MM-dd");
-              const endStr = format(
-                calculateEndDate(
-                  startStr,
-                  duration,
-                  (leaf.duration_type as "calendar" | "business") || "calendar",
-                  holidays,
-                ),
-                "yyyy-MM-dd",
-              );
-              if (effStart.get(leaf.id) !== startStr || effEnd.get(leaf.id) !== endStr) {
-                effStart.set(leaf.id, startStr);
-                effEnd.set(leaf.id, endStr);
-                changed = true;
-              }
-            }
-          }
-        } else {
-          const duration = t.duration_days || 1;
-          const startStr = format(latest, "yyyy-MM-dd");
-          const endStr = format(
+        if (latest) {
+          latest = clamp(latest);
+          start = format(latest, "yyyy-MM-dd");
+          end = format(
             calculateEndDate(
-              startStr,
-              duration,
+              start,
+              t.duration_days || 1,
               (t.duration_type as "calendar" | "business") || "calendar",
               holidays,
             ),
             "yyyy-MM-dd",
           );
-          if (effStart.get(t.id) !== startStr || effEnd.get(t.id) !== endStr) {
-            effStart.set(t.id, startStr);
-            effEnd.set(t.id, endStr);
-            changed = true;
-          }
+        } else {
+          // No resolvable predecessor: keep the stored anchor date.
+          start = t.start_date;
+          end = t.end_date;
         }
       }
 
-      changed = rollUpParents() || changed;
+      if (start) effStart.set(id, start);
+      if (end) effEnd.set(id, end);
+      visiting.delete(id);
+      resolved.add(id);
+      return { start, end };
+    };
 
-      if (!changed) break;
-    }
+    for (const t of workingTasks) compute(t.id);
 
     // Build date diffs vs the comparison snapshot.
     for (const t of workingTasks) {

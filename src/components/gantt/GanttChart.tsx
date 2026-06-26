@@ -468,7 +468,13 @@ export function GanttChart({
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
   const allDays = useMemo(() => {
-    return eachDayOfInterval({ start: minDate, end: maxDate });
+    // Safety guard: never try to render an unbounded number of day columns.
+    // If the data ever contains corrupted/impossible dates, cap the rendered
+    // window so the browser can't run out of memory and freeze (gray screen).
+    const MAX_SPAN_DAYS = 365 * 8; // ~8 years is far beyond any real schedule
+    const span = differenceInDays(maxDate, minDate);
+    const safeMax = span > MAX_SPAN_DAYS ? addDays(minDate, MAX_SPAN_DAYS) : maxDate;
+    return eachDayOfInterval({ start: minDate, end: safeMax });
   }, [minDate, maxDate]);
 
   const days = useMemo(() => {

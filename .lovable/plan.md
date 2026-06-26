@@ -1,74 +1,46 @@
-# Exportar cronogramas para la migración
+## Qué está pasando (en simple)
 
-## Objetivo
-Permitir exportar todos los cronogramas (Gantt) con su estructura jerárquica, responsable, dependencias (precedentes/dependientes), fecha de inicio, plazo y fecha de término, en un formato que la migración pueda leer y re-importar sin perder relaciones. La descarga se hace desde el botón **"Exportar datos"** del panel Admin.
+Al entrar al contrato **Antofagasta**, el cronograma se congela y cae a pantalla gris. La causa NO es pérdida de datos: es un **bucle de cálculo**.
 
-## Qué falta hoy
-El módulo **Gantt** actual del exportador solo saca `gantt_tasks`, `gantt_timelines`, `gantt_templates` y `gantt_template_tasks`. **No incluye** las dependencias ni los vínculos a OC, por lo que la migración no puede reconstruir precedencias ni plazos:
-- `gantt_task_dependencies` (`task_id`, `depends_on_task_id`, `dep_type`, `lag_days`, `lag_type`)
-- `gantt_task_purchase_orders` (vínculo tarea ↔ orden de compra)
-- `gantt_template_dependencies` (precedencias de plantilla)
+El cronograma tiene **3 dependencias circulares** (una tarea que, siguiendo la cadena, termina dependiendo de sí misma):
 
-## Solución
-Agregar un nuevo módulo en el selector del diálogo `DataExportDialog.tsx`: **"Cronogramas (completo)"**. A diferencia de los módulos normales (solo CSV), este genera un ZIP con dos formatos.
-
-### Contenido del ZIP
-
-**1. CSV por tabla** (IDs/UUID y claves foráneas intactas, para re-import directo en el Supabase de destino):
-- `gantt_timelines.csv`
-- `gantt_tasks.csv`
-- `gantt_task_dependencies.csv`
-- `gantt_task_purchase_orders.csv`
-- `gantt_templates.csv`
-- `gantt_template_tasks.csv`
-- `gantt_template_dependencies.csv`
-- `org_members_basic.csv` (solo `id`, `name`, `position` vía RPC `get_org_members_basic` — sin email/teléfono, respetando la restricción de PII)
-
-**2. JSON anidado** (`cronogramas.json`), autocontenido y legible:
-```text
-{
-  cronogramas: [
-    {
-      timeline_id, contract_id, contract_name, name,
-      tasks: [   // jerárquico por parent_id + display_order
-        {
-          id, name, parent_id,
-          responsible: { id, name, position } | null,
-          start_date, duration_days, duration_type, end_date,
-          status, progress, color, origin,
-          dependencies: [   // precedentes de esta tarea
-            { depends_on_task_id, depends_on_task_name, dep_type, lag_days, lag_type }
-          ],
-          purchase_order_ids: [ ... ],
-          children: [ ... ]   // recursivo
-        }
-      ]
-    }
-  ],
-  templates: [   // plantillas en bloque aparte
-    {
-      template_id, name, description, is_active,
-      tasks: [ { id, name, parent_id, default_duration_days, duration_type,
-                 responsible, default_origin, dependencies: [...], children: [...] } ]
-    }
-  ]
-}
+```
+1. "Corte de Cinta"  ↔  su tarea madre "Coordinación Corte de Cinta"
+2. Grupo Marketing/Logística: "Branding Ventanales", "Imagen", "Recepción Productos"... (20 tareas enlazadas en círculo)
+3. Grupo Compras: "Compra Productos", "Aprobación de Comité", "Materialización"... (11 tareas en círculo)
 ```
 
-### Detalles técnicos
-- **Datos**: leer con el cliente Supabase ya existente (`from(...).select("*")` paginado con el helper `fetchAllRows` que ya está en el archivo). Las tablas Gantt tienen RLS por `can_access_gantt`; un admin pasa sin problema.
-- **Nombre de contrato**: join en memoria con `contracts` (id → name) para enriquecer el JSON. El CSV conserva `contract_id`.
-- **Responsable**: resolver `responsible_member_id` / `default_responsible_member_id` contra `get_org_members_basic()` (RPC ya existente, sin PII). El CSV mantiene el UUID; el JSON muestra `{ name, position }`.
-- **Jerarquía**: construir el árbol desde `parent_id` ordenando por `display_order` (tanto tareas reales como de plantilla).
-- **Dependencias**: por cada tarea, listar las filas donde `task_id = tarea` (precedentes), resolviendo `depends_on_task_id` al nombre de la tarea predecesora. Esto cubre "precedentes y dependientes" porque la relación queda completa y reconstruible en ambos sentidos.
-- **Manejo de errores**: mismo patrón actual (si una tabla falla, se agrega `<tabla>_ERROR.txt` al ZIP y se reporta en el toast).
-- **Solo cambia un archivo de frontend**: `src/components/admin/DataExportDialog.tsx`. Sin migraciones, sin cambios de backend ni de esquema.
+Cuando el motor calcula fechas y encuentra un círculo, **nunca termina**: empuja las fechas cada vez más al futuro (llegaron al año 2124 / 2557). Eso genera decenas de miles de columnas de días y el navegador se queda sin memoria → freeze → pantalla gris. Además, la versión anterior **guardaba** esas fechas erradas en cada apertura, empeorándolo cada vez.
 
-### Cómo la migración lo lee (recomendación)
-- Para re-importar en el Supabase nuevo: cargar los CSV en orden de dependencias FK → `gantt_timelines` → `gantt_tasks` → `gantt_task_dependencies` / `gantt_task_purchase_orders`; plantillas → `gantt_templates` → `gantt_template_tasks` → `gantt_template_dependencies`. Los UUID se conservan, así que las FK calzan tal cual.
-- El `cronogramas.json` sirve para validar visualmente y/o para un script de migración que prefiera leer la estructura anidada en vez de re-armar los joins.
+**Lo que NO se perdió:** las duraciones (plazos), los tipos de duración, todas las dependencias y sus lags están intactos en la base de datos. Hay tareas ancla intactas en enero 2026 ("Negociación" 10-01-2026). Por eso el cronograma **se puede reconstruir**.
 
-## Revisión
-- `[SECURITY: ✅ OK]` Solo admins (el diálogo ya valida `isAdmin`); `org_members` se exporta sin email/teléfono vía RPC básica.
-- `[QUALITY: ✅ OK]` Reutiliza helpers existentes (`fetchAllRows`, `rowsToCsv`, JSZip); el caso especial se aísla en una rama del handler.
-- `[MIGRATION: ✅ OK]` CSV con UUID/FK intactos = re-import directo al Supabase de destino; cambio aditivo y reversible, sin tocar `main`/config.
+## Plan
+
+### 1. Anti-congelamiento (que nunca más se trabe)
+- `GanttChart.tsx`: limitar el rango de fechas que se dibuja. Si los datos contienen fechas absurdas, la interfaz acota el rango a un horizonte máximo (~5–6 años) en vez de intentar pintar 100+ años. Garantiza que el contrato siempre abra, aunque haya datos malos.
+
+### 2. Frenar la corrupción (motor de fechas)
+- `useGantt.ts` → quitar la **persistencia automática al cargar** (`loadTimeline`). Cargar las fechas tal como están guardadas; nunca recalcular-y-guardar en silencio al abrir.
+- `useGantt.ts` → `computeScheduleDiff`: hacerlo **a prueba de ciclos**. Se reemplaza el bucle de punto-fijo (que puede no converger) por un cálculo en **orden topológico de una sola pasada** que:
+  - detecta ciclos y los rompe (ignora la arista que cierra el círculo) en vez de iterar al infinito;
+  - aplica un **tope de horizonte**: ninguna fecha puede saltar más allá de un límite razonable;
+  - elimina el "parent-block-shift" recursivo, que era la fuente del arrastre infinito.
+- El recálculo en cascada sigue ocurriendo **solo ante ediciones explícitas** del usuario (cambiar fecha/plazo/dependencia), nunca al abrir.
+
+### 3. Recuperar las fechas de Antofagasta (una sola vez)
+- Eliminar las **3 dependencias circulares** (son inválidas: por ejemplo, una tarea madre no puede depender de su propia hija). Se documentará cuáles se quitaron para que las revises.
+- Reconstruir todas las fechas con una migración puntual:
+  - anclar en las tareas intactas de enero 2026;
+  - recorrer la red de dependencias (ya sin ciclos) respetando cada **plazo**, lag y días hábiles/feriados;
+  - calcular inicio = fecha más tardía de sus precedentes (la regla que ya pediste);
+  - subir las fechas de las tareas madre desde sus hijas.
+- Resultado esperado: cronograma coherente en **2026–2027**, con todos los plazos y dependencias válidas respetados.
+
+### Nota honesta sobre exactitud
+Las **duraciones y dependencias se recuperan al 100%**. Las **fechas absolutas** se reconstruyen desde las anclas de 2026; un puñado de tareas que quedaron sueltas (sin una dependencia válida que las ate a las anclas, por los ciclos eliminados) podrían necesitar que confirmes su fecha de inicio manualmente. Te entregaré la lista exacta de esas tareas (estimo unas 3–6) tras la reconstrucción para que las ajustes en segundos. No es posible adivinar con certeza la posición absoluta original de esas pocas tareas porque la lógica anterior sobreescribió su fecha; todo lo demás queda exacto.
+
+## Detalles técnicos
+- Archivos: `src/components/gantt/GanttChart.tsx` (guarda de rango), `src/hooks/useGantt.ts` (motor topológico cycle-safe, sin auto-persist en load).
+- Datos: migración SQL que (a) borra las 3 filas inválidas de `gantt_task_dependencies` y (b) hace `UPDATE` de `start_date`/`end_date` en `gantt_tasks` del timeline de Antofagasta con las fechas reconstruidas. Se calcula primero en seco y se te muestra el antes/después antes de aplicar.
+- Se valida que el resto de los cronogramas (que están sanos) no se vean afectados: el cambio de motor es global pero solo recalcula ante edición; la migración de datos afecta únicamente al timeline de Antofagasta.
+- Guardar en memoria del proyecto la regla: **prohibidas las dependencias que formen ciclos** (incluida tarea madre ↔ hija), y el motor del Gantt debe ser topológico con tope de horizonte y sin persistencia automática en la carga.
