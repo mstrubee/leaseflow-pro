@@ -859,6 +859,11 @@ export function useGantt(contractId: string) {
   const removeDependency = async (dependencyId: string) => {
     setSaving(true);
     try {
+      // Identify which task owns this dependency before deleting it.
+      const ownerTask = tasks.find((t) =>
+        t.dependencies?.some((d) => d.id === dependencyId),
+      );
+
       const { error } = await supabase
         .from("gantt_task_dependencies")
         .delete()
@@ -866,21 +871,69 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      // Optimistic local update — remove dep from state without reloading.
-      setTasks(prev => prev.map(t => ({
+      // Build the post-deletion state: only the targeted relationship is removed,
+      // every other dependency stays intact.
+      const tasksAfter = tasks.map((t) => ({
         ...t,
-        dependencies: t.dependencies?.filter(d => d.id !== dependencyId),
-      })));
+        dependencies: t.dependencies?.filter((d) => d.id !== dependencyId),
+      }));
+
+      // When a leaf task loses ALL of its dependencies it must fall back to
+      // "no automatic scheduling": clear its computed start/end so the user can
+      // assign a new dependency or a manual start date. computeScheduleDiff keeps
+      // stored anchors for depless leaves, so we clear them explicitly here.
+      const seed = new Map<string, Partial<GanttTask>>();
+      const forcedClears = new Map<string, Partial<GanttTask>>();
+      if (ownerTask) {
+        const remaining =
+          tasksAfter.find((t) => t.id === ownerTask.id)?.dependencies || [];
+        const isLeaf = !tasksAfter.some((t) => t.parent_id === ownerTask.id);
+        if (remaining.length === 0 && isLeaf) {
+          seed.set(ownerTask.id, { start_date: null, end_date: null });
+          forcedClears.set(ownerTask.id, { start_date: null, end_date: null });
+        }
+      }
+
+      // Recalculate the whole schedule from the remaining dependencies.
+      const scheduleDiff = computeScheduleDiff(tasksAfter, seed, tasks);
+      // computeScheduleDiff never emits null clears, so merge them in by hand.
+      for (const [id, upd] of forcedClears) {
+        scheduleDiff.set(id, { ...(scheduleDiff.get(id) || {}), ...upd });
+      }
+
+      // Optimistic local update — remove dep and apply recomputed dates.
+      setTasks((prev) =>
+        prev.map((t) => {
+          const dateUpdates = scheduleDiff.get(t.id) || {};
+          return {
+            ...t,
+            ...dateUpdates,
+            dependencies: t.dependencies?.filter((d) => d.id !== dependencyId),
+          };
+        }),
+      );
+
+      if (scheduleDiff.size > 0) {
+        const results = await Promise.all(
+          Array.from(scheduleDiff.entries()).map(([id, u]) =>
+            supabase.from("gantt_tasks").update(u as any).eq("id", id),
+          ),
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "No se pudo eliminar la dependencia",
       });
+      await loadTimeline(); // resync solo si falló
     } finally {
       setSaving(false);
     }
   };
+
 
   const updateDependency = async (
     dependencyId: string,
