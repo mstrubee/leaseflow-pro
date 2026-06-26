@@ -592,6 +592,13 @@ export function GanttChart({
     return ids;
   }, [taskTree]);
 
+  // Set robusto de IDs que son "madre" derivado del arreglo plano (no del árbol anidado),
+  // para que una tarea con hijas siempre se trate como madre aunque task.children esté stale.
+  const parentTaskIds = useMemo(
+    () => new Set(tasks.map((t) => t.parent_id).filter(Boolean) as string[]),
+    [tasks]
+  );
+
   // Default view: collapsed — mark as initialized once tasks arrive so subsequent
   // updates (date edits, completion toggles, etc.) preserve the user's state.
   useEffect(() => {
