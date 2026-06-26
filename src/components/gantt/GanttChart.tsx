@@ -2144,7 +2144,11 @@ export function GanttChart({
                 );
               }
               const { task, level } = entry;
-              const hasChildren = task.children && task.children.length > 0;
+              // Robusto: una tarea es "madre" si CUALQUIER tarea la referencia como padre
+              // en el arreglo plano, aunque el árbol anidado (task.children) esté desactualizado.
+              // Así su inicio/plazo/término siempre se derivan de las hijas y un duration_days
+              // corrupto nunca vuelve a dibujarla como hoja (2013/2050).
+              const hasChildren = parentTaskIds.has(task.id) || !!(task.children && task.children.length > 0);
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
