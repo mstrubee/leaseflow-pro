@@ -414,6 +414,30 @@ export function useGantt(contractId: string) {
     }
   };
 
+  // Effective (rolled-up) dates for a task: a parent spans from its earliest child
+  // to its latest child (recursive); a leaf uses its own stored dates. Ensures a
+  // predecessor that is a parent always exposes real dates even if its stored
+  // start/end are stale or empty.
+  const getEffectiveTaskDates = (
+    task: GanttTask,
+    allTasks: GanttTask[],
+  ): { start: string | null; end: string | null } => {
+    const children = allTasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return { start: task.start_date, end: task.end_date };
+    }
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of children) {
+      const { start, end } = getEffectiveTaskDates(c, allTasks);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    return { start: minStart, end: maxEnd };
+  };
+
+
+
   // Recomputes, IN MEMORY, the full schedule so that ALL dependencies are
   // respected and parent (rolled-up) dates stay consistent — instantly, with no
   // DB round-trips. The edited task is "pinned" to its new dates; every leaf with
@@ -769,7 +793,9 @@ export function useGantt(contractId: string) {
       let latestStart: Date | null = null;
       for (const d of allDepsWithNew) {
         const pt = tasks.find(t => t.id === d.depends_on_task_id);
-        const anchorStr = d.dep_type === "start" ? pt?.start_date : pt?.end_date;
+        if (!pt) continue;
+        const eff = getEffectiveTaskDates(pt, tasks);
+        const anchorStr = d.dep_type === "start" ? eff.start : eff.end;
         if (!anchorStr) continue;
         const anchorDate = parseISO(anchorStr);
         const baseOffset = d.dep_type === "start" ? 0 : 1;
@@ -864,9 +890,11 @@ export function useGantt(contractId: string) {
         let latestStart: Date | null = null;
         for (const d of allDeps) {
           const parentTask = tasks.find(t => t.id === d.depends_on_task_id);
+          if (!parentTask) continue;
           const dep_type = d.id === dep.id ? (updates.dep_type ?? d.dep_type ?? "end") : (d.dep_type ?? "end");
           const lag_days = d.id === dep.id ? (updates.lag_days ?? d.lag_days ?? 0) : (d.lag_days ?? 0);
-          const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
+          const eff = getEffectiveTaskDates(parentTask, tasks);
+          const anchorStr = dep_type === "start" ? eff.start : eff.end;
           if (!anchorStr) continue;
           const anchorDate = parseISO(anchorStr);
           const baseOffset = dep_type === "start" ? 0 : 1;
