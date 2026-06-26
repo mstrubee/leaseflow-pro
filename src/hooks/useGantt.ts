@@ -179,23 +179,12 @@ export function useGantt(contractId: string) {
           purchase_orders: poData?.filter(po => po.task_id === task.id) || [],
         }));
 
-        // Normalize loaded schedules: every dependent task must respect the
-        // latest date implied by its predecessors, including parent roll-ups.
-        const allLoaded = tasksWithRelations as GanttTask[];
-        const scheduleDiff = computeScheduleDiff(allLoaded);
-        if (scheduleDiff.size > 0) {
-          const patched = allLoaded.map((t) =>
-            scheduleDiff.has(t.id) ? { ...t, ...scheduleDiff.get(t.id)! } : t,
-          );
-          setTasks(patched);
-          Promise.all(
-            Array.from(scheduleDiff.entries()).map(([id, u]) =>
-              supabase.from("gantt_tasks").update(u as any).eq("id", id),
-            ),
-          ).catch((e) => console.error("Gantt schedule normalize error:", e));
-        } else {
-          setTasks(allLoaded);
-        }
+        // Load tasks exactly as stored. We must NOT recalculate-and-persist the
+        // schedule on load: doing so previously ratcheted dates further into the
+        // future on every open (circular dependencies never converged), which
+        // corrupted the data and froze the browser. The schedule is only
+        // recalculated in response to an explicit user edit.
+        setTasks(tasksWithRelations as GanttTask[]);
       } else {
         setTimeline(null);
         setTasks([]);
