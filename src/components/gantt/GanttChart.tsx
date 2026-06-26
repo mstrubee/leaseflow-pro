@@ -1107,9 +1107,6 @@ export function GanttChart({
   const handleBarMouseUp = useCallback(async () => {
     // Persist to database ONLY on mouseup
     if (barDragTaskId && dragPreview) {
-      const draggedTask = tasks.find((t) => t.id === barDragTaskId);
-      const originalStart = draggedTask?.start_date ?? null;
-      const originalEnd = draggedTask?.end_date ?? null;
       const newStart = dragPreview.start;
       const newEnd = dragPreview.end;
 
@@ -1118,54 +1115,6 @@ export function GanttChart({
         end_date: newEnd,
         duration_days: dragPreview.duration,
       });
-
-      // 1) Cascade DOWN to children sharing the dragged edge (only on resize, not move)
-      if (draggedTask && (barDragMode === "resize-left" || barDragMode === "resize-right")) {
-        const children = tasks.filter((t) => t.parent_id === barDragTaskId);
-        for (const child of children) {
-          const updates: Partial<GanttTask> = {};
-          if (barDragMode === "resize-left" && originalStart && child.start_date === originalStart && newStart !== originalStart) {
-            updates.start_date = newStart;
-            if (child.end_date) {
-              updates.duration_days = differenceInDays(parseISO(child.end_date), parseISO(newStart)) + 1;
-            }
-          }
-          if (barDragMode === "resize-right" && originalEnd && child.end_date === originalEnd && newEnd !== originalEnd) {
-            updates.end_date = newEnd;
-            if (child.start_date) {
-              updates.duration_days = differenceInDays(parseISO(newEnd), parseISO(child.start_date)) + 1;
-            }
-          }
-          if (Object.keys(updates).length > 0) {
-            await onUpdateTask(child.id, updates, { skipPropagation: true });
-          }
-        }
-      }
-
-      // 2) Cascade UP: sync ancestors to min(start)/max(end) of their children
-      let currentParentId = draggedTask?.parent_id ?? null;
-      while (currentParentId) {
-        const parent = tasks.find((t) => t.id === currentParentId);
-        if (!parent) break;
-        const siblings = tasks.filter((t) => t.parent_id === currentParentId);
-        // Use the just-updated values for the dragged task
-        const effectiveSiblings = siblings.map((s) =>
-          s.id === barDragTaskId ? { ...s, start_date: newStart, end_date: newEnd } : s
-        );
-        const starts = effectiveSiblings.map((s) => s.start_date).filter(Boolean) as string[];
-        const ends = effectiveSiblings.map((s) => s.end_date).filter(Boolean) as string[];
-        if (starts.length === 0 || ends.length === 0) break;
-        const minStart = starts.sort()[0];
-        const maxEnd = ends.sort()[ends.length - 1];
-        const updates: Partial<GanttTask> = {};
-        if (parent.start_date !== minStart) updates.start_date = minStart;
-        if (parent.end_date !== maxEnd) updates.end_date = maxEnd;
-        if (Object.keys(updates).length > 0) {
-          updates.duration_days = differenceInDays(parseISO(maxEnd), parseISO(minStart)) + 1;
-          await onUpdateTask(parent.id, updates, { skipPropagation: true });
-        }
-        currentParentId = parent.parent_id;
-      }
     }
     
     // Reset all drag state
@@ -1175,7 +1124,7 @@ export function GanttChart({
     setBarDragOriginalStart("");
     setBarDragOriginalEnd("");
     setDragPreview(null);
-  }, [barDragTaskId, barDragMode, dragPreview, onUpdateTask, tasks]);
+  }, [barDragTaskId, dragPreview, onUpdateTask]);
 
   // Add global mouse listeners for bar drag
   useEffect(() => {
