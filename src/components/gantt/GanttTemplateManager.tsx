@@ -297,13 +297,31 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     if (!selectedTemplate) return;
     setSaving(true);
     try {
-      await supabase.from("gantt_templates").delete().eq("id", selectedTemplate.id);
+      // Los cronogramas creados desde esta plantilla la referencian (FK RESTRICT).
+      // Desvinculamos esa referencia (los cronogramas ya tienen sus tareas copiadas)
+      // antes de borrar, para que la eliminación no falle silenciosamente.
+      const { error: unlinkError } = await supabase
+        .from("gantt_timelines")
+        .update({ template_id: null })
+        .eq("template_id", selectedTemplate.id);
+      if (unlinkError) throw unlinkError;
+
+      const { error: deleteError } = await supabase
+        .from("gantt_templates")
+        .delete()
+        .eq("id", selectedTemplate.id);
+      if (deleteError) throw deleteError;
+
       toast({ title: "Plantilla eliminada" });
       setSelectedTemplate(null);
       setDeleteDialogOpen(false);
       loadTemplates();
     } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar la plantilla" });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo eliminar la plantilla",
+      });
     } finally {
       setSaving(false);
     }
