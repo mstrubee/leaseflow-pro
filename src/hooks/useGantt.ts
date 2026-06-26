@@ -414,6 +414,30 @@ export function useGantt(contractId: string) {
     }
   };
 
+  // Effective (rolled-up) dates for a task: a parent spans from its earliest child
+  // to its latest child (recursive); a leaf uses its own stored dates. Ensures a
+  // predecessor that is a parent always exposes real dates even if its stored
+  // start/end are stale or empty.
+  const getEffectiveTaskDates = (
+    task: GanttTask,
+    allTasks: GanttTask[],
+  ): { start: string | null; end: string | null } => {
+    const children = allTasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return { start: task.start_date, end: task.end_date };
+    }
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of children) {
+      const { start, end } = getEffectiveTaskDates(c, allTasks);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    return { start: minStart, end: maxEnd };
+  };
+
+
+
   // Recomputes, IN MEMORY, the full schedule so that ALL dependencies are
   // respected and parent (rolled-up) dates stay consistent — instantly, with no
   // DB round-trips. The edited task is "pinned" to its new dates; every leaf with
