@@ -592,6 +592,13 @@ export function GanttChart({
     return ids;
   }, [taskTree]);
 
+  // Set robusto de IDs que son "madre" derivado del arreglo plano (no del árbol anidado),
+  // para que una tarea con hijas siempre se trate como madre aunque task.children esté stale.
+  const parentTaskIds = useMemo(
+    () => new Set(tasks.map((t) => t.parent_id).filter(Boolean) as string[]),
+    [tasks]
+  );
+
   // Default view: collapsed — mark as initialized once tasks arrive so subsequent
   // updates (date edits, completion toggles, etc.) preserve the user's state.
   useEffect(() => {
@@ -2144,7 +2151,11 @@ export function GanttChart({
                 );
               }
               const { task, level } = entry;
-              const hasChildren = task.children && task.children.length > 0;
+              // Robusto: una tarea es "madre" si CUALQUIER tarea la referencia como padre
+              // en el arreglo plano, aunque el árbol anidado (task.children) esté desactualizado.
+              // Así su inicio/plazo/término siempre se derivan de las hijas y un duration_days
+              // corrupto nunca vuelve a dibujarla como hoja (2013/2050).
+              const hasChildren = parentTaskIds.has(task.id) || !!(task.children && task.children.length > 0);
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
