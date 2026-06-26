@@ -1299,23 +1299,9 @@ export function GanttChart({
       }
     }
 
-    if (
-      task.parent_id &&
-      ["start_date", "end_date", "duration_days", "duration_type"].includes(field)
-    ) {
-      await syncAncestorsDates(
-        task.parent_id,
-        new Map([
-          [
-            taskId,
-            {
-              start_date: updates.start_date ?? task.start_date,
-              end_date: updates.end_date ?? task.end_date,
-            },
-          ],
-        ])
-      );
-    }
+    // onUpdateTask now rolls up ancestor (parent) dates and cascades any task that
+    // depends on those parents, so an explicit syncAncestorsDates call here would
+    // be redundant and could clobber the engine's result with stale data.
   };
 
   const toggleTaskCompleted = async (task: GanttTask) => {
