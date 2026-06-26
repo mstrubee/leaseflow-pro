@@ -480,6 +480,13 @@ export function useGantt(contractId: string) {
       }
     }
     const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
+    const collectLeafDescendants = (id: string): GanttTask[] => {
+      const kids = childrenOf.get(id) || [];
+      if (kids.length === 0) return [];
+      return kids.flatMap((child) =>
+        hasChildren(child.id) ? collectLeafDescendants(child.id) : [child],
+      );
+    };
 
     // Effective dates: seed with current/seeded values.
     const effStart = new Map<string, string>();
@@ -535,11 +542,10 @@ export function useGantt(contractId: string) {
     for (let iter = 0; iter < maxIter; iter++) {
       let changed = rollUpParents();
 
-      // Leaf tasks with dependencies snap to the latest date implied across ALL
-      // predecessors. This includes the edited task unless dependencies are
-      // explicitly broken by the caller.
+      // Tasks with dependencies must respect the latest date implied across ALL
+      // predecessors. Leaves snap directly; parents shift their dated leaves as
+      // a block when their rolled-up start would otherwise violate the link.
       for (const t of workingTasks) {
-        if (hasChildren(t.id)) continue;
         const deps = t.dependencies || [];
         if (deps.length === 0) continue;
 
@@ -550,7 +556,38 @@ export function useGantt(contractId: string) {
           if (!latest || candidate > latest) latest = candidate;
         }
 
-        if (latest) {
+        if (!latest) continue;
+
+        if (hasChildren(t.id)) {
+          const currentStartStr = effStart.get(t.id);
+          if (!currentStartStr) continue;
+          // Parent dependencies are constraints: never allow the parent roll-up
+          // to start before its predecessor allows. If it is already later, keep
+          // the current child layout instead of oscillating against child deps.
+          if (parseISO(currentStartStr) < latest) {
+            const delta = differenceInDays(latest, parseISO(currentStartStr));
+            for (const leaf of collectLeafDescendants(t.id)) {
+              const leafStart = effStart.get(leaf.id);
+              if (!leafStart) continue;
+              const duration = leaf.duration_days || 1;
+              const startStr = format(addDays(parseISO(leafStart), delta), "yyyy-MM-dd");
+              const endStr = format(
+                calculateEndDate(
+                  startStr,
+                  duration,
+                  (leaf.duration_type as "calendar" | "business") || "calendar",
+                  holidays,
+                ),
+                "yyyy-MM-dd",
+              );
+              if (effStart.get(leaf.id) !== startStr || effEnd.get(leaf.id) !== endStr) {
+                effStart.set(leaf.id, startStr);
+                effEnd.set(leaf.id, endStr);
+                changed = true;
+              }
+            }
+          }
+        } else {
           const duration = t.duration_days || 1;
           const startStr = format(latest, "yyyy-MM-dd");
           const endStr = format(
