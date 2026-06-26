@@ -179,7 +179,70 @@ export function useGantt(contractId: string) {
           purchase_orders: poData?.filter(po => po.task_id === task.id) || [],
         }));
 
-        setTasks(tasksWithRelations as GanttTask[]);
+        // Backfill: leaf tasks that HAVE dependencies but are missing a start_date
+        // (e.g. dependency was created against a parent with no stored dates).
+        // Compute the implied start from predecessors' effective dates and persist.
+        const allLoaded = tasksWithRelations as GanttTask[];
+        const isParent = (id: string) => allLoaded.some((t) => t.parent_id === id);
+        const effStart = new Map<string, string>();
+        const effEnd = new Map<string, string>();
+        for (const t of allLoaded) {
+          if (t.start_date) effStart.set(t.id, t.start_date);
+          if (t.end_date) effEnd.set(t.id, t.end_date);
+        }
+        // Seed parent effective spans from children (roll-up).
+        for (const t of allLoaded) {
+          if (isParent(t.id)) {
+            const { start, end } = getEffectiveTaskDates(t, allLoaded);
+            if (start) effStart.set(t.id, start);
+            if (end) effEnd.set(t.id, end);
+          }
+        }
+        const backfill = new Map<string, { start_date: string; end_date: string }>();
+        const maxIter = allLoaded.length + 5;
+        for (let iter = 0; iter < maxIter; iter++) {
+          let changed = false;
+          for (const t of allLoaded) {
+            if (isParent(t.id)) continue;
+            if (effStart.get(t.id)) continue; // already has a start
+            const deps = t.dependencies || [];
+            if (deps.length === 0) continue;
+            let latestStart: Date | null = null;
+            for (const d of deps) {
+              const anchorStr =
+                d.dep_type === "start" ? effStart.get(d.depends_on_task_id) : effEnd.get(d.depends_on_task_id);
+              if (!anchorStr) continue;
+              const baseOffset = d.dep_type === "start" ? 0 : 1;
+              const candidateStart = addDays(parseISO(anchorStr), baseOffset + (d.lag_days ?? 0));
+              if (!latestStart || candidateStart > latestStart) latestStart = candidateStart;
+            }
+            if (latestStart) {
+              const duration = t.duration_days || 1;
+              const startStr = format(latestStart, "yyyy-MM-dd");
+              const endStr = format(addDays(latestStart, duration - 1), "yyyy-MM-dd");
+              effStart.set(t.id, startStr);
+              effEnd.set(t.id, endStr);
+              backfill.set(t.id, { start_date: startStr, end_date: endStr });
+              changed = true;
+            }
+          }
+          if (!changed) break;
+        }
+
+        if (backfill.size > 0) {
+          const patched = allLoaded.map((t) =>
+            backfill.has(t.id) ? { ...t, ...backfill.get(t.id)! } : t,
+          );
+          setTasks(patched);
+          // Persist in the background.
+          Promise.all(
+            Array.from(backfill.entries()).map(([id, u]) =>
+              supabase.from("gantt_tasks").update(u as any).eq("id", id),
+            ),
+          ).catch((e) => console.error("Backfill persist error:", e));
+        } else {
+          setTasks(allLoaded);
+        }
       } else {
         setTimeline(null);
         setTasks([]);
