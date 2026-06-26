@@ -890,9 +890,11 @@ export function useGantt(contractId: string) {
         let latestStart: Date | null = null;
         for (const d of allDeps) {
           const parentTask = tasks.find(t => t.id === d.depends_on_task_id);
+          if (!parentTask) continue;
           const dep_type = d.id === dep.id ? (updates.dep_type ?? d.dep_type ?? "end") : (d.dep_type ?? "end");
           const lag_days = d.id === dep.id ? (updates.lag_days ?? d.lag_days ?? 0) : (d.lag_days ?? 0);
-          const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
+          const eff = getEffectiveTaskDates(parentTask, tasks);
+          const anchorStr = dep_type === "start" ? eff.start : eff.end;
           if (!anchorStr) continue;
           const anchorDate = parseISO(anchorStr);
           const baseOffset = dep_type === "start" ? 0 : 1;
