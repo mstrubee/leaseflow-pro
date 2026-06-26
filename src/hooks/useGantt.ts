@@ -550,7 +550,6 @@ export function useGantt(contractId: string) {
 
     return result;
   };
-  };
 
 
   const updateTask = async (
