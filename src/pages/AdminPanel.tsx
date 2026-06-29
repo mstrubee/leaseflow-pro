@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Eye, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, ShieldCheck, UserCog } from "lucide-react";
-import { ProfileManager } from "@/components/admin/ProfileManager";
+import { RoleManager } from "@/components/admin/RoleManager";
 import { UserFormDialog, UserFormData } from "@/components/admin/UserFormDialog";
 import { PermissionTreeEditor, PermissionsMap, getAllResources } from "@/components/admin/PermissionTreeEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -677,13 +677,13 @@ const AdminPanel = () => {
           </div>
         </div>
 
-        {/* ── Perfiles ── */}
+        {/* ── Roles ── */}
         <CollapsibleCard
-          title="Perfiles de Acceso"
+          title="Roles"
           description="Define conjuntos de permisos reutilizables para asignar a usuarios"
           icon={<ShieldCheck className="h-5 w-5 text-violet-600" />}
         >
-          <ProfileManager />
+          <RoleManager />
         </CollapsibleCard>
 
         {/* ── Usuarios ── */}

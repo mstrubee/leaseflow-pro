@@ -45,7 +45,7 @@ function initAllNone(): PermissionsMap {
   return m;
 }
 
-export function ProfileManager() {
+export function RoleManager() {
   const { toast } = useToast();
   const [profiles, setProfiles] = useState<ProfileTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +74,7 @@ export function ProfileManager() {
       return;
     }
 
-    // Count users per profile
+    // Count users per role
     const { data: profilesWithCount } = await supabase
       .from("profiles")
       .select("profile_template_id")
@@ -133,7 +133,7 @@ export function ProfileManager() {
 
   async function handleSave() {
     if (!form.name.trim()) {
-      toast({ variant: "destructive", title: "Error", description: "El nombre del perfil es requerido" });
+      toast({ variant: "destructive", title: "Error", description: "El nombre del rol es requerido" });
       return;
     }
 
@@ -169,7 +169,7 @@ export function ProfileManager() {
         if (error) throw error;
       }
 
-      toast({ title: editingId ? "Perfil actualizado" : "Perfil creado" });
+      toast({ title: editingId ? "Rol actualizado" : "Rol creado" });
       setFormOpen(false);
       setEditingId(null);
       setForm(EMPTY_FORM);
@@ -189,7 +189,7 @@ export function ProfileManager() {
         .delete()
         .eq("id", deleteTarget.id);
       if (error) throw error;
-      toast({ title: "Perfil eliminado" });
+      toast({ title: "Rol eliminado" });
       setDeleteTarget(null);
       loadProfiles();
     } catch (err: any) {
@@ -209,25 +209,25 @@ export function ProfileManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Los perfiles definen conjuntos de permisos reutilizables. Al asignar un perfil a un usuario, sus permisos se copian automáticamente.
+          Los roles definen conjuntos de permisos reutilizables. Al asignar un rol a un usuario, sus permisos se copian automáticamente.
         </p>
         <Button size="sm" onClick={openCreate} className="gap-2 shrink-0">
           <Plus className="h-4 w-4" />
-          Nuevo Perfil
+          Nuevo Rol
         </Button>
       </div>
 
       {profiles.length === 0 ? (
         <div className="text-center py-12 border rounded-lg text-muted-foreground">
           <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p>No hay perfiles creados.</p>
-          <p className="text-sm mt-1">Crea un perfil para agrupar permisos y asignarlos rápidamente a usuarios.</p>
+          <p>No hay roles creados.</p>
+          <p className="text-sm mt-1">Crea un rol para agrupar permisos y asignarlos rápidamente a usuarios.</p>
         </div>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Perfil</TableHead>
+              <TableHead>Rol</TableHead>
               <TableHead>Descripción</TableHead>
               <TableHead className="text-center">Usuarios</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
@@ -246,10 +246,10 @@ export function ProfileManager() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(profile)} title="Editar perfil">
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(profile)} title="Editar rol">
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => openDuplicate(profile)} title="Duplicar perfil">
+                    <Button variant="ghost" size="sm" onClick={() => openDuplicate(profile)} title="Duplicar rol">
                       <Copy className="h-4 w-4" />
                     </Button>
                     <Button
@@ -261,13 +261,13 @@ export function ProfileManager() {
                           toast({
                             variant: "destructive",
                             title: "No se puede eliminar",
-                            description: `El perfil "${profile.name}" tiene ${profile.user_count} usuario(s) asociado(s). Reasigna los usuarios antes de eliminar.`,
+                            description: `El rol "${profile.name}" tiene ${profile.user_count} usuario(s) asociado(s). Reasigna los usuarios antes de eliminar.`,
                           });
                           return;
                         }
                         setDeleteTarget(profile);
                       }}
-                      title="Eliminar perfil"
+                      title="Eliminar rol"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -283,16 +283,16 @@ export function ProfileManager() {
       <Dialog open={formOpen} onOpenChange={open => { if (!saving) { setFormOpen(open); if (!open) { setEditingId(null); setForm(EMPTY_FORM); } } }}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            <DialogTitle>{editingId ? "Editar Perfil" : "Nuevo Perfil"}</DialogTitle>
+            <DialogTitle>{editingId ? "Editar Rol" : "Nuevo Rol"}</DialogTitle>
             <DialogDescription>
-              Define el nombre, descripción y permisos de este perfil.
+              Define el nombre, descripción y permisos de este rol.
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="profile-name">Nombre del Perfil <span className="text-destructive">*</span></Label>
+                <Label htmlFor="profile-name">Nombre del Rol <span className="text-destructive">*</span></Label>
                 <Input
                   id="profile-name"
                   value={form.name}
@@ -312,7 +312,7 @@ export function ProfileManager() {
             </div>
 
             <div className="space-y-2">
-              <Label>Permisos del Perfil</Label>
+              <Label>Permisos del Rol</Label>
               <PermissionTreeEditor
                 permissions={form.permissions}
                 onChange={perms => setForm(p => ({ ...p, permissions: perms }))}
@@ -326,7 +326,7 @@ export function ProfileManager() {
             </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingId ? "Guardar cambios" : "Crear Perfil"}
+              {editingId ? "Guardar cambios" : "Crear Rol"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -336,9 +336,9 @@ export function ProfileManager() {
       <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar perfil "{deleteTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar rol "{deleteTarget?.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. El perfil y sus permisos configurados serán eliminados permanentemente.
+              Esta acción no se puede deshacer. El rol y sus permisos configurados serán eliminados permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

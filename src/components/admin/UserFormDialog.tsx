@@ -396,9 +396,9 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
             <div className="space-y-3 border rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Perfil de Permisos</Label>
+                  <Label>Rol</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Selecciona un perfil base para cargar permisos, luego personaliza si lo deseas.
+                    Selecciona un rol para cargar permisos, luego personaliza si lo deseas.
                   </p>
                 </div>
               </div>
@@ -408,10 +408,10 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
                 onValueChange={v => applyProfileTemplate(v === "none" ? "" : v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sin perfil base (configurar manualmente)" />
+                  <SelectValue placeholder="Sin rol asignado (configurar manualmente)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Sin perfil base</SelectItem>
+                  <SelectItem value="none">Sin rol asignado</SelectItem>
                   {profileTemplates.map(pt => (
                     <SelectItem key={pt.id} value={pt.id}>{pt.name}</SelectItem>
                   ))}
