@@ -4,7 +4,6 @@
  import { ArrowLeft } from "lucide-react";
  import { useAuth } from "@/hooks/useAuth";
  import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
- import { SelectableElement } from "@/components/admin/SelectableElement";
  
  const SuppliersDashboard = () => {
    const navigate = useNavigate();
@@ -26,8 +25,7 @@
  
    return (
      <div className="min-h-screen bg-background">
-       <SelectableElement elementId="suppliers" label="Proveedores">
-         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
            <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
              <div className="flex items-center gap-4">
                <Button variant="ghost" size="icon" onClick={() => navigate("/purchase-orders")}>
@@ -46,7 +44,6 @@
          <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
            <SuppliersModule />
          </main>
-       </SelectableElement>
      </div>
    );
  };

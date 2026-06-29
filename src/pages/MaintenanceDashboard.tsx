@@ -1,5 +1,4 @@
 import { MaintenanceModule } from "@/components/maintenance/MaintenanceModule";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { Wrench, Navigation } from "lucide-react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -14,8 +13,7 @@ const MaintenanceDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <SelectableElement elementId="maintenance" label="Mantenciones">
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
           <div className="max-w-[2112px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center gap-3">
               <Wrench className="h-6 w-6 text-primary" />
@@ -40,7 +38,6 @@ const MaintenanceDashboard = () => {
         <main className="max-w-[2112px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <MaintenanceModule />
         </main>
-      </SelectableElement>
     </div>
   );
 };

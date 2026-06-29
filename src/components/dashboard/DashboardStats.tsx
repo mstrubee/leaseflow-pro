@@ -16,7 +16,6 @@ import {
 import { FileText, CheckCircle, Clock, AlertTriangle, Shield, ArrowRight } from "lucide-react";
 import { usePatents } from "@/hooks/usePatents";
 import { EconomicIndicators } from "./EconomicIndicators";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { CommuneContractsDialog } from "./CommuneContractsDialog";
 import * as XLSX from "xlsx";
@@ -405,15 +404,12 @@ export const DashboardStats = () => {
     <div className="space-y-6">
       {/* Economic Indicators */}
       {!isHidden("dashboard_economic") && (
-        <SelectableElement elementId="dashboard_economic" label="Indicadores Económicos">
-          <EconomicIndicators />
-        </SelectableElement>
+        <EconomicIndicators />
       )}
 
       {/* Summary Cards - Stats */}
       {!isHidden("dashboard_stats") && (
-        <SelectableElement elementId="dashboard_stats" label="Estadísticas de Contratos">
-          <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-4">
             <Card 
               className="cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => handleCardClick()}
@@ -498,13 +494,11 @@ export const DashboardStats = () => {
               </CardContent>
             </Card>
           </div>
-        </SelectableElement>
       )}
 
       {/* Regional Breakdown Table - part of map section */}
       {!isHidden("dashboard_map") && (
-        <SelectableElement elementId="dashboard_map" label="Mapa / Contratos por Región">
-          <Collapsible defaultOpen={false}>
+        <Collapsible defaultOpen={false}>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between py-3">
                 <CollapsibleTrigger asChild>
@@ -663,14 +657,11 @@ export const DashboardStats = () => {
               </CollapsibleContent>
             </Card>
           </Collapsible>
-        </SelectableElement>
       )}
 
       {/* Patents Summary Cards - Mirror */}
       {!isHidden("dashboard_patents") && (
-        <SelectableElement elementId="dashboard_patents" label="Resumen de Patentes">
-          <PatentsMirrorCards />
-        </SelectableElement>
+        <PatentsMirrorCards />
       )}
 
       {/* Commune Contracts Dialog */}

@@ -8,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2, Filter, Tag, Search, ArrowUpDown } from "lucide-react";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useAlertCategories } from "@/hooks/useAlertCategories";
@@ -256,7 +255,6 @@ export default function AlertsDashboard() {
   }
 
   return (
-    <SelectableElement elementId="alerts" label="Alertas">
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -579,6 +577,5 @@ export default function AlertsDashboard() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-    </SelectableElement>
   );
 }

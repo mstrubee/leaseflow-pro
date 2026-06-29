@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
-import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -74,8 +73,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <TooltipProvider>
-        <PermissionSelectionProvider>
-          <Toaster />
+        <Toaster />
           <Sonner />
           <BrowserRouter>
             <MainLayout>
@@ -121,7 +119,6 @@ const App = () => (
               </RouteErrorBoundary>
             </MainLayout>
           </BrowserRouter>
-        </PermissionSelectionProvider>
       </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
