@@ -27,6 +27,7 @@ interface GanttModuleProps {
 
 export function GanttModule({ contractId }: GanttModuleProps) {
   const { isAdmin } = useAuth();
+  const { toast } = useToast();
   const { permissions } = useUserPermissions();
   // Mirror the can_access_gantt DB rule: admins, users with an explicit
   // contract_gantt permission, or fully unconfigured users can edit.
