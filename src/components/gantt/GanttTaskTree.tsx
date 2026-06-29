@@ -105,6 +105,10 @@ interface GanttTaskTreeProps {
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
+  canAdd?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canManageDeps?: boolean;
 }
 
 export function GanttTaskTree({
@@ -121,6 +125,10 @@ export function GanttTaskTree({
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
   onExportPDF,
+  canAdd = true,
+  canEdit = true,
+  canDelete = true,
+  canManageDeps = true,
 }: GanttTaskTreeProps) {
   const [hideCompleted, setHideCompleted] = useState(false);
 
@@ -355,42 +363,50 @@ export function GanttTaskTree({
             </div>
 
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => toggleCompleted(task)}
-                title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
-              >
-                <CheckCircle2 className={cn("h-4 w-4", isCompleted ? "text-primary" : "text-muted-foreground")} />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleAddTaskClick(task.id)}
-                title="Agregar subtarea"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleEditClick(task)}
-                title="Editar"
-              >
-                <Edit className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleDependencyClick(task)}
-                title="Dependencias"
-              >
-                <Link className="h-4 w-4" />
-              </Button>
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => toggleCompleted(task)}
+                  title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
+                >
+                  <CheckCircle2 className={cn("h-4 w-4", isCompleted ? "text-primary" : "text-muted-foreground")} />
+                </Button>
+              )}
+              {canAdd && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleAddTaskClick(task.id)}
+                  title="Agregar subtarea"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleEditClick(task)}
+                  title="Editar"
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+              )}
+              {canManageDeps && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleDependencyClick(task)}
+                  title="Dependencias"
+                >
+                  <Link className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -400,15 +416,17 @@ export function GanttTaskTree({
               >
                 <ShoppingCart className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => onDeleteTask(task.id)}
-                title="Eliminar"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {canDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive hover:text-destructive"
+                  onClick={() => onDeleteTask(task.id)}
+                  title="Eliminar"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -464,10 +482,12 @@ export function GanttTaskTree({
               Exportar PDF
             </Button>
           )}
-          <Button onClick={() => handleAddTaskClick(null)} size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar Tarea Madre
-          </Button>
+          {canAdd && (
+            <Button onClick={() => handleAddTaskClick(null)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar Tarea Madre
+            </Button>
+          )}
         </div>
       </div>
 

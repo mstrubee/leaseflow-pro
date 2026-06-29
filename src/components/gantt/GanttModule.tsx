@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { addMonths, format } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
-import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,12 +28,16 @@ interface GanttModuleProps {
 }
 
 export function GanttModule({ contractId }: GanttModuleProps) {
-  const { isAdmin } = useAuth();
-  const { permissions } = useUserPermissions();
-  const canEdit =
-    isAdmin ||
-    permissions.length === 0 ||
-    permissions.some((p) => p.resource === "contract_gantt");
+  const { isAdmin, hasPermission } = useAuth();
+
+  // Gantt permission: parent grant (contract_gantt:edit) covers all sub-actions for backward compat
+  const parentEdit = isAdmin || hasPermission("contract_gantt", "edit");
+  const canViewGantt   = isAdmin || hasPermission("contract_gantt", "view");
+  const canEditTasks   = parentEdit || hasPermission("gantt_editar_tareas",  "edit");
+  const canAddTasks    = parentEdit || hasPermission("gantt_agregar_tareas", "edit");
+  const canDeleteTasks = parentEdit || hasPermission("gantt_eliminar_tareas","edit");
+  const canManageDeps  = parentEdit || hasPermission("gantt_dependencias",   "edit");
+  const canEdit = canEditTasks || canAddTasks || canDeleteTasks || canManageDeps;
 
   const {
     timelines,
@@ -461,7 +464,9 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                       onRemoveDependency={removeDependency}
                       onUpdateDependency={updateDependency}
                       onReorderTask={reorderTask}
-                      isAdmin={canEdit}
+                      isAdmin={canEditTasks}
+                      canAddTasks={canAddTasks}
+                      canDeleteTasks={canDeleteTasks}
                       rentStartDate={rentStartDate}
                       onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                         let contractName = "Contrato";
@@ -497,6 +502,10 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                       onUpdateDependency={updateDependency}
                       onLinkPurchaseOrder={linkPurchaseOrder}
                       onUnlinkPurchaseOrder={unlinkPurchaseOrder}
+                      canAdd={canAddTasks}
+                      canEdit={canEditTasks}
+                      canDelete={canDeleteTasks}
+                      canManageDeps={canManageDeps}
                       onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                         let contractName = "Contrato";
                         try {
@@ -624,7 +633,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
         onRemoveDependency={removeDependency}
         onUpdateDependency={updateDependency}
         onReorderTask={reorderTask}
-        isAdmin={canEdit}
+        isAdmin={canEditTasks}
       />
     </div>
   );

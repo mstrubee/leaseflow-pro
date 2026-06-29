@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -907,6 +908,12 @@ function CardSkeleton({ title, subtitle }: { title: string; subtitle: string }) 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function TeamKPIDashboard() {
+  const { isAdmin, hasPermission } = useAuth();
+
+  const showBeatriz = isAdmin || hasPermission("kpi_cobertura_proveedores", "view") || hasPermission("kpi", "view");
+  const showFranco  = isAdmin || hasPermission("kpi_resolucion_forms",      "view") || hasPermission("kpi", "view");
+  const showEvelyn  = isAdmin || hasPermission("kpi_oc_facturas",           "view") || hasPermission("kpi", "view");
+
   const [francoData,   setFrancoData]   = useState<FrancoData | null>(null);
   const [evelynData,   setEvelynData]   = useState<EvelynData | null>(null);
   const [beatrizData,  setBeatrizData]  = useState<BeatrizData | null>(null);
@@ -1160,9 +1167,9 @@ export function TeamKPIDashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <BeatrizCard data={beatrizData} loading={loadingBeatriz} />
-        <FrancoCard  data={francoData}  loading={loadingFranco}  />
-        <EvelynCard  data={evelynData}  loading={loadingEvelyn}  francoData={francoData} />
+        {showBeatriz && <BeatrizCard data={beatrizData} loading={loadingBeatriz} />}
+        {showFranco  && <FrancoCard  data={francoData}  loading={loadingFranco}  />}
+        {showEvelyn  && <EvelynCard  data={evelynData}  loading={loadingEvelyn}  francoData={francoData} />}
       </div>
 
       <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">

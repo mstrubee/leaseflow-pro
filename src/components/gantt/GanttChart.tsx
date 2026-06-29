@@ -280,6 +280,8 @@ interface GanttChartProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
+  canAddTasks?: boolean;
+  canDeleteTasks?: boolean;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
   rentStartDate?: string | null;
   compareMode?: boolean;
@@ -405,6 +407,8 @@ export function GanttChart({
   onUpdateDependency,
   onReorderTask,
   isAdmin = false,
+  canAddTasks = isAdmin,
+  canDeleteTasks = isAdmin,
   onExportPDF,
   rentStartDate,
   compareMode = false,
@@ -2463,7 +2467,7 @@ export function GanttChart({
                         <CornerLeftUp className="h-3 w-3 text-primary" />
                       </Button>
                     )}
-                    <Button
+                    {canDeleteTasks && <Button
                       variant="ghost"
                       size="sm"
                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
@@ -2488,7 +2492,7 @@ export function GanttChart({
                       }}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
+                    </Button>}
                   </div>
 
                   {/* Responsable */}
@@ -2596,7 +2600,7 @@ export function GanttChart({
 
                   {/* Reprog */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("reprog", REPROG_COL_WIDTH) }}>
-                    {!hasChildren && isAdmin && (
+                    {!hasChildren && isAdmin && canAddTasks && (
                       <input
                         type="number"
                         value={reprogValues.get(task.id) ?? "0"}
@@ -2656,7 +2660,7 @@ export function GanttChart({
                         else if (task.status === "completed") updates.status = "in_progress";
                         onUpdateTask(task.id, updates, { skipPropagation: true });
                       }}
-                      disabled={!isAdmin || hasChildren}
+                      disabled={!isAdmin || !canAddTasks || hasChildren}
                       className="h-7 text-xs w-16 text-center px-1"
                       title={hasChildren
                         ? "Progreso agregado de las líneas hijas (no editable)."

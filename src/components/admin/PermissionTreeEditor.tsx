@@ -38,8 +38,30 @@ export const PERMISSION_TREE: TreeNode[] = [
       { id: "contract_surfaces", label: "Superficies y Datos", resource: "contract_surfaces" },
       { id: "contract_documents", label: "Contrato de Arriendo", resource: "contract_documents" },
       { id: "contract_repository", label: "Repositorio de Documentos", resource: "contract_repository" },
-      { id: "contract_budget", label: "Control Presupuestario", resource: "contract_budget" },
-      { id: "contract_gantt", label: "Cronogramas", resource: "contract_gantt" },
+      {
+        id: "contract_budget",
+        label: "Control Presupuestario",
+        resource: "contract_budget",
+        children: [
+          { id: "budget_ver_resumen",    label: "Ver resumen ejecutivo",           resource: "budget_ver_resumen" },
+          { id: "budget_editar_lineas",  label: "Editar líneas de presupuesto",    resource: "budget_editar_lineas" },
+          { id: "budget_aprobar_gastos", label: "Aprobar / autorizar gastos",      resource: "budget_aprobar_gastos" },
+          { id: "budget_ordenes_compra", label: "Gestionar órdenes de compra",     resource: "budget_ordenes_compra" },
+          { id: "budget_exportar",       label: "Exportar reportes",               resource: "budget_exportar" },
+        ],
+      },
+      {
+        id: "contract_gantt",
+        label: "Cronogramas",
+        resource: "contract_gantt",
+        children: [
+          { id: "gantt_ver_linea",      label: "Ver línea de tiempo",         resource: "gantt_ver_linea" },
+          { id: "gantt_editar_tareas",  label: "Editar tareas existentes",    resource: "gantt_editar_tareas" },
+          { id: "gantt_agregar_tareas", label: "Agregar nuevas tareas",       resource: "gantt_agregar_tareas" },
+          { id: "gantt_eliminar_tareas",label: "Eliminar tareas",             resource: "gantt_eliminar_tareas" },
+          { id: "gantt_dependencias",   label: "Gestionar dependencias",      resource: "gantt_dependencias" },
+        ],
+      },
       { id: "contract_alerts", label: "Alertas y Recordatorios", resource: "contract_alerts" },
       { id: "contract_patents", label: "Patentes", resource: "contract_patents" },
     ],
@@ -52,7 +74,16 @@ export const PERMISSION_TREE: TreeNode[] = [
   { id: "repository", label: "Repositorio General", resource: "repository" },
   { id: "alerts", label: "Alertas", resource: "alerts" },
   { id: "reports", label: "Informes", resource: "reports" },
-  { id: "kpi", label: "KPIs", resource: "kpi" },
+  {
+    id: "kpi",
+    label: "KPIs",
+    resource: "kpi",
+    children: [
+      { id: "kpi_cobertura_proveedores", label: "Cobertura de Proveedores", resource: "kpi_cobertura_proveedores" },
+      { id: "kpi_resolucion_forms",      label: "Resolución de Forms",      resource: "kpi_resolucion_forms" },
+      { id: "kpi_oc_facturas",           label: "OC y Facturas al Día",     resource: "kpi_oc_facturas" },
+    ],
+  },
   { id: "patents", label: "Patentes", resource: "patents" },
   { id: "special_attention", label: "Atención Especial", resource: "special_attention" },
   { id: "geoloc", label: "Geolocalización", resource: "geoloc" },
@@ -82,19 +113,23 @@ const PERM_CONFIG: Record<PermLevel, { bg: string; border: string; dot: string; 
   edit: { bg: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-800", dot: "bg-green-500", label: "Editar" },
 };
 
+function collectAllResources(node: TreeNode): string[] {
+  const result = [node.resource];
+  for (const child of node.children ?? []) result.push(...collectAllResources(child));
+  return result;
+}
+
 function deriveGroupPerm(node: TreeNode, perms: PermissionsMap): PermLevel | "mixed" {
-  if (!node.children?.length) return perms[node.resource] ?? "none";
-  const childLevels = [perms[node.resource] ?? "none", ...node.children.map(c => perms[c.resource] ?? "none")];
-  const unique = new Set(childLevels);
+  const all = collectAllResources(node);
+  const levels = all.map(r => perms[r] ?? "none");
+  const unique = new Set(levels);
   if (unique.size === 1) return [...unique][0] as PermLevel;
   return "mixed";
 }
 
 function setGroupPerms(node: TreeNode, level: PermLevel, perms: PermissionsMap): PermissionsMap {
-  const next = { ...perms, [node.resource]: level };
-  for (const child of node.children ?? []) {
-    next[child.resource] = level;
-  }
+  const next = { ...perms };
+  for (const r of collectAllResources(node)) next[r] = level;
   return next;
 }
 

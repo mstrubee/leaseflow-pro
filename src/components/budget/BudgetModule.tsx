@@ -403,7 +403,16 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
+
+  // Budget granular permissions — parent grant (contract_budget:edit) covers all sub-actions
+  const parentBudgetEdit = isAdmin || hasPermission("contract_budget", "edit");
+  const canEditLines   = parentBudgetEdit || hasPermission("budget_editar_lineas",  "edit");
+  const canApprove     = parentBudgetEdit || hasPermission("budget_aprobar_gastos", "edit");
+  const canManageOC    = parentBudgetEdit || hasPermission("budget_ordenes_compra", "edit");
+  const canExport      = isAdmin || hasPermission("budget_exportar", "view")
+    || hasPermission("contract_budget", "view");
+
   const [focusNewLineId, setFocusNewLineId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1650,7 +1659,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </p>
                       </div>
                     </div>
-                    {!isClosed && !forceReadOnly && (
+                    {!isClosed && !forceReadOnly && canApprove && (
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2">
                           <Snowflake className="h-4 w-4" /> Editar monto
@@ -1664,7 +1673,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 );
               })()
             ) : (
-              !isClosed && !forceReadOnly && (
+              !isClosed && !forceReadOnly && canApprove && (
                 <div className="flex justify-end">
                   <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2"
                     title="Congelar el total actual como monto aprobado por directorio (referencial)">
@@ -1715,7 +1724,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   )}
                 </div>
 
-                {!isClosed && !forceReadOnly && (
+                {!isClosed && !forceReadOnly && canEditLines && (
                   <>
                     <Button
                       variant="outline"
@@ -1733,9 +1742,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                       {collapsedIds.size === 0 ? <ChevronsDownUp className="h-4 w-4" /> : <ChevronsUpDown className="h-4 w-4" />}
                       {collapsedIds.size === 0 ? "Colapsar" : "Expandir"}
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={async () => {
                         const currentTemplateIdLoaded = await getCurrentTemplateId(currentBudget.id);
                         setUpdateTemplateId(currentTemplateIdLoaded || "");
@@ -1748,15 +1757,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     </Button>
                   </>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportExcel}
-                  className="gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  Descargar Excel
-                </Button>
+                {canExport && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportExcel}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar Excel
+                  </Button>
+                )}
                 <Button
                   variant={hideZeroLines ? "default" : "outline"}
                   size="sm"
@@ -1767,7 +1778,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   {hideZeroLines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   {hideZeroLines ? "Mostrar 0" : "Ocultar 0"}
                 </Button>
-                {budgetType === "capex" && (
+                {budgetType === "capex" && canExport && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1778,7 +1789,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     Descargar Proveedores
                   </Button>
                 )}
-                {!isClosed && !forceReadOnly && (
+                {!isClosed && !forceReadOnly && canEditLines && (
                   selectionMode ? (
                     <>
                       <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
@@ -1840,15 +1851,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
             <BudgetLineTreeWithDrag
               lines={displayLines}
-              onAddLine={handleAddLine}
-              onUpdateLine={handleUpdateLine}
-              onDeleteLine={handleDeleteLine}
-              onCreateOC={handleCreateOCFromLine}
-              onCreateOCRequest={handleCreateOCRequestFromLine}
-              onCreateInvoice={handleCreateInvoiceFromLine}
+              onAddLine={canEditLines ? handleAddLine : undefined}
+              onUpdateLine={canEditLines ? handleUpdateLine : undefined}
+              onDeleteLine={canEditLines ? handleDeleteLine : undefined}
+              onCreateOC={canManageOC ? handleCreateOCFromLine : undefined}
+              onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
+              onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
               onViewLineDetails={handleViewLineDetails}
-              readOnly={isClosed || forceReadOnly}
-              compactView={forceReadOnly}
+              readOnly={isClosed || forceReadOnly || !canEditLines}
+              compactView={forceReadOnly || !canEditLines}
               focusNewLineId={focusNewLineId}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
@@ -1863,7 +1874,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 setSelectedLineIds(new Set([lineId]));
                 setShowMoveDialog(true);
               }}
-              onReorderLine={!(isClosed || forceReadOnly) ? handleReorderLines : undefined}
+              onReorderLine={!(isClosed || forceReadOnly) && canEditLines ? handleReorderLines : undefined}
             />
 
             <MoveLinesDialog
