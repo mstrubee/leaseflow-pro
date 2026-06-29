@@ -3,8 +3,6 @@ const FALLBACK_GOOGLE_DRIVE_ORIGIN = "https://gplanet.vercel.app";
 
 const ALLOWED_OAUTH_ORIGINS = new Set([
   "https://gplanet.vercel.app",
-  "https://gplanet.lovable.app",
-  "https://73a8d508-7010-4c00-aa8e-6eb117cc7286.lovableproject.com",
 ]);
 
 export function getGoogleDriveRedirectUri(): string {

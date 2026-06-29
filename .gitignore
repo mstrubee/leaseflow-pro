@@ -25,3 +25,8 @@ dist-ssr
 
 # Supabase CLI temp files
 supabase/.temp/
+
+# Environment files (never commit credentials)
+.env
+.env.*
+!.env.example
