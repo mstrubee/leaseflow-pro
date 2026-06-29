@@ -287,6 +287,17 @@ export function GanttModule({ contractId }: GanttModuleProps) {
           </div>
           {isAdmin && (
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={saving || exportingFull}
+                onClick={handleExportFull}
+                title="Exporta todos los cronogramas y plantillas en un único JSON para migración"
+              >
+                {exportingFull ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                Exportar JSON
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
