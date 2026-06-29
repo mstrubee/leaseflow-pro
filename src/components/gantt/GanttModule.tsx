@@ -72,6 +72,19 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [rentStartDate, setRentStartDate] = useState<string | null>(null);
+  const [exportingFull, setExportingFull] = useState(false);
+
+  const handleExportFull = async () => {
+    setExportingFull(true);
+    try {
+      await downloadGanttFullExport();
+      toast({ title: "Exportación completa", description: "Se descargó el JSON unificado de cronogramas." });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error de exportación", description: e?.message || String(e) });
+    } finally {
+      setExportingFull(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
