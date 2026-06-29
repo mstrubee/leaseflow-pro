@@ -1066,22 +1066,22 @@ export function MaintenanceModule() {
             </div>
           )}
         </TableCell>
-        <TableCell className="text-xs">
-          <div className="flex items-center gap-1.5">
+        <TableCell className="text-xs overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
             {f.contract_id && contractCompanyMap[f.contract_id] && (
               <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
             )}
             <span className="truncate">{f.contract_name || "-"}</span>
           </div>
         </TableCell>
-        <TableCell className="text-xs truncate max-w-36">
-          {f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}
+        <TableCell className="text-xs overflow-hidden">
+          <span className="truncate block">{f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}</span>
         </TableCell>
-        <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
-        <TableCell className="text-xs max-w-48">
+        <TableCell><Badge variant="outline" className="text-xs whitespace-nowrap">{detectMaintenanceType(f)}</Badge></TableCell>
+        <TableCell className="text-xs overflow-hidden">
           <Popover>
             <PopoverTrigger asChild>
-              <button className="truncate block max-w-48 text-left hover:text-primary transition-colors cursor-pointer">
+              <button className="truncate block w-full text-left hover:text-primary transition-colors cursor-pointer">
                 {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
               </button>
             </PopoverTrigger>
@@ -1101,20 +1101,20 @@ export function MaintenanceModule() {
             </PopoverContent>
           </Popover>
         </TableCell>
-        <TableCell className="text-xs max-w-32">
+        <TableCell className="text-xs overflow-hidden">
           <CommentCell form={f} onSave={saveComment} />
         </TableCell>
-        <TableCell className="text-xs">
+        <TableCell className="text-xs overflow-hidden">
           {f.supplier_name ? (
-            <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+            <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 w-full min-w-0">
               <span className="truncate">{f.supplier_name}</span>
               <ExternalLink className="h-3 w-3 shrink-0" />
             </button>
           ) : <span className="text-muted-foreground">-</span>}
         </TableCell>
-        <TableCell className="text-xs">
+        <TableCell className="text-xs overflow-hidden">
           {f.purchase_order_number ? (
-            <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+            <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 w-full min-w-0">
               <span className="truncate">{f.purchase_order_number}</span>
               <ExternalLink className="h-3 w-3 shrink-0" />
             </button>
@@ -1613,25 +1613,25 @@ export function MaintenanceModule() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-auto">
+          <div className="w-full">
             <TooltipProvider delayDuration={100}>
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
-                    <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
-                    <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                    <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
-                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-[8.4rem]" />
-                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="max-w-[10rem]" />
-                    <SortableTableHead label="Gerente Zonal" sortKey="zonalName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
-                    <TableHead className="w-28">Tipo</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Comentarios / Observaciones</TableHead>
-                    <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                    <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                    <TableHead className="w-28">Evidencia</TableHead>
-                    <TableHead className="w-32 text-center">Acciones</TableHead>
+                    <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-20" />
+                    <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Gerente Zonal" sortKey="zonalName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <TableHead className="w-20">Tipo</TableHead>
+                    <TableHead className="w-36">Descripción</TableHead>
+                    <TableHead className="w-32">Comentarios / Obs.</TableHead>
+                    <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-20" />
+                    <TableHead className="w-20">Evidencia</TableHead>
+                    <TableHead className="w-24 text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
