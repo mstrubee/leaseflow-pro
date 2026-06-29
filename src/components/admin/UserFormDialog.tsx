@@ -322,33 +322,18 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
             </p>
           )}
 
-          {/* Role + Status */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Rol</Label>
-              <Select value={role} onValueChange={v => setRole(v as any)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">Usuario</SelectItem>
-                  <SelectItem value="operador_terreno">Operador de Terreno</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Estado</Label>
-              <div className="flex items-center gap-3 h-10 px-3 border rounded-md bg-background">
-                <Switch
-                  checked={isActive}
-                  onCheckedChange={setIsActive}
-                  id="is-active"
-                />
-                <label htmlFor="is-active" className={`text-sm cursor-pointer ${isActive ? "text-green-600 font-medium" : "text-muted-foreground"}`}>
-                  {isActive ? "Activo" : "Inactivo"}
-                </label>
-              </div>
+          {/* Status */}
+          <div className="space-y-1.5">
+            <Label>Estado</Label>
+            <div className="flex items-center gap-3 h-10 px-3 border rounded-md bg-background w-fit">
+              <Switch
+                checked={isActive}
+                onCheckedChange={setIsActive}
+                id="is-active"
+              />
+              <label htmlFor="is-active" className={`text-sm cursor-pointer ${isActive ? "text-green-600 font-medium" : "text-muted-foreground"}`}>
+                {isActive ? "Activo" : "Inactivo"}
+              </label>
             </div>
           </div>
 

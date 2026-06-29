@@ -773,25 +773,13 @@ const AdminPanel = () => {
                     </TableCell>
                     <TableCell>
                       {(() => {
-                        const appRole = getUserRole(profile.id);
-                        const roleStyles: Record<string, { bg: string; label: string }> = {
-                          admin: { bg: "bg-primary/20 text-primary", label: "Administrador" },
-                          operador_terreno: { bg: "bg-orange-100 text-orange-700", label: "Operador de Terreno" },
-                          user: { bg: "bg-muted text-muted-foreground", label: "Usuario" },
-                        };
-                        const { bg, label } = roleStyles[appRole] ?? roleStyles.user;
                         const templateId = (profile as any).profile_template_id;
                         const templateName = templateId
                           ? roleTemplates.find(t => t.id === templateId)?.name
                           : null;
-                        return (
-                          <div className="flex flex-col gap-0.5">
-                            <span className={`px-2 py-1 rounded text-xs w-fit ${bg}`}>{label}</span>
-                            {templateName && (
-                              <span className="text-[10px] text-muted-foreground pl-0.5">{templateName}</span>
-                            )}
-                          </div>
-                        );
+                        return templateName
+                          ? <span className="px-2 py-1 rounded text-xs bg-violet-100 text-violet-700">{templateName}</span>
+                          : <span className="text-xs text-muted-foreground">—</span>;
                       })()}
                     </TableCell>
                     <TableCell>
