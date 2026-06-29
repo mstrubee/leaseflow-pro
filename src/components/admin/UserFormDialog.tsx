@@ -376,9 +376,8 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
             </div>
           )}
 
-          {/* Profile template + Permissions — only for non-admin */}
-          {role !== "admin" && (
-            <div className="space-y-3 border rounded-lg p-4">
+          {/* Profile template + Permissions */}
+          <div className="space-y-3 border rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <Label>Rol</Label>
@@ -419,8 +418,7 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
                   onChange={setPermissions}
                 />
               )}
-            </div>
-          )}
+          </div>
 
           {/* Password visibility notice */}
           <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3 flex gap-2.5 text-xs text-amber-800 dark:text-amber-300">
