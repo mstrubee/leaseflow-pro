@@ -280,11 +280,8 @@ interface GanttChartProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
-  canAddTasks?: boolean;
-  canDeleteTasks?: boolean;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
   rentStartDate?: string | null;
-  compareMode?: boolean;
 }
 
 const BASE_DAY_WIDTH = 30;
@@ -407,11 +404,8 @@ export function GanttChart({
   onUpdateDependency,
   onReorderTask,
   isAdmin = false,
-  canAddTasks = isAdmin,
-  canDeleteTasks = isAdmin,
   onExportPDF,
   rentStartDate,
-  compareMode = false,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const didInitExpandRef = useRef(false);
@@ -421,9 +415,7 @@ export function GanttChart({
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [colSelectMode, setColSelectMode] = useState(false);
   const [colPending, setColPending] = useState<Set<string>>(new Set());
-  const [hiddenCols, setHiddenCols] = useState<Set<string>>(
-    () => compareMode ? new Set(["origin", "reprog", "progress"]) : new Set()
-  );
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
   const [reprogDeltas, setReprogDeltas] = useState<Map<string, number>>(new Map());
@@ -476,7 +468,13 @@ export function GanttChart({
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
   const allDays = useMemo(() => {
-    return eachDayOfInterval({ start: minDate, end: maxDate });
+    // Safety guard: never try to render an unbounded number of day columns.
+    // If the data ever contains corrupted/impossible dates, cap the rendered
+    // window so the browser can't run out of memory and freeze (gray screen).
+    const MAX_SPAN_DAYS = 365 * 8; // ~8 years is far beyond any real schedule
+    const span = differenceInDays(maxDate, minDate);
+    const safeMax = span > MAX_SPAN_DAYS ? addDays(minDate, MAX_SPAN_DAYS) : maxDate;
+    return eachDayOfInterval({ start: minDate, end: safeMax });
   }, [minDate, maxDate]);
 
   const days = useMemo(() => {
@@ -593,6 +591,13 @@ export function GanttChart({
     collect(taskTree);
     return ids;
   }, [taskTree]);
+
+  // Set robusto de IDs que son "madre" derivado del arreglo plano (no del árbol anidado),
+  // para que una tarea con hijas siempre se trate como madre aunque task.children esté stale.
+  const parentTaskIds = useMemo(
+    () => new Set(tasks.map((t) => t.parent_id).filter(Boolean) as string[]),
+    [tasks]
+  );
 
   // Default view: collapsed — mark as initialized once tasks arrive so subsequent
   // updates (date edits, completion toggles, etc.) preserve the user's state.
@@ -1115,9 +1120,6 @@ export function GanttChart({
   const handleBarMouseUp = useCallback(async () => {
     // Persist to database ONLY on mouseup
     if (barDragTaskId && dragPreview) {
-      const draggedTask = tasks.find((t) => t.id === barDragTaskId);
-      const originalStart = draggedTask?.start_date ?? null;
-      const originalEnd = draggedTask?.end_date ?? null;
       const newStart = dragPreview.start;
       const newEnd = dragPreview.end;
 
@@ -1126,54 +1128,6 @@ export function GanttChart({
         end_date: newEnd,
         duration_days: dragPreview.duration,
       });
-
-      // 1) Cascade DOWN to children sharing the dragged edge (only on resize, not move)
-      if (draggedTask && (barDragMode === "resize-left" || barDragMode === "resize-right")) {
-        const children = tasks.filter((t) => t.parent_id === barDragTaskId);
-        for (const child of children) {
-          const updates: Partial<GanttTask> = {};
-          if (barDragMode === "resize-left" && originalStart && child.start_date === originalStart && newStart !== originalStart) {
-            updates.start_date = newStart;
-            if (child.end_date) {
-              updates.duration_days = differenceInDays(parseISO(child.end_date), parseISO(newStart)) + 1;
-            }
-          }
-          if (barDragMode === "resize-right" && originalEnd && child.end_date === originalEnd && newEnd !== originalEnd) {
-            updates.end_date = newEnd;
-            if (child.start_date) {
-              updates.duration_days = differenceInDays(parseISO(newEnd), parseISO(child.start_date)) + 1;
-            }
-          }
-          if (Object.keys(updates).length > 0) {
-            await onUpdateTask(child.id, updates, { skipPropagation: true });
-          }
-        }
-      }
-
-      // 2) Cascade UP: sync ancestors to min(start)/max(end) of their children
-      let currentParentId = draggedTask?.parent_id ?? null;
-      while (currentParentId) {
-        const parent = tasks.find((t) => t.id === currentParentId);
-        if (!parent) break;
-        const siblings = tasks.filter((t) => t.parent_id === currentParentId);
-        // Use the just-updated values for the dragged task
-        const effectiveSiblings = siblings.map((s) =>
-          s.id === barDragTaskId ? { ...s, start_date: newStart, end_date: newEnd } : s
-        );
-        const starts = effectiveSiblings.map((s) => s.start_date).filter(Boolean) as string[];
-        const ends = effectiveSiblings.map((s) => s.end_date).filter(Boolean) as string[];
-        if (starts.length === 0 || ends.length === 0) break;
-        const minStart = starts.sort()[0];
-        const maxEnd = ends.sort()[ends.length - 1];
-        const updates: Partial<GanttTask> = {};
-        if (parent.start_date !== minStart) updates.start_date = minStart;
-        if (parent.end_date !== maxEnd) updates.end_date = maxEnd;
-        if (Object.keys(updates).length > 0) {
-          updates.duration_days = differenceInDays(parseISO(maxEnd), parseISO(minStart)) + 1;
-          await onUpdateTask(parent.id, updates, { skipPropagation: true });
-        }
-        currentParentId = parent.parent_id;
-      }
     }
     
     // Reset all drag state
@@ -1183,7 +1137,7 @@ export function GanttChart({
     setBarDragOriginalStart("");
     setBarDragOriginalEnd("");
     setDragPreview(null);
-  }, [barDragTaskId, barDragMode, dragPreview, onUpdateTask, tasks]);
+  }, [barDragTaskId, dragPreview, onUpdateTask]);
 
   // Add global mouse listeners for bar drag
   useEffect(() => {
@@ -1227,7 +1181,10 @@ export function GanttChart({
 
     await onUpdateTask(taskId, updates, options);
 
-    if (task.parent_id) {
+    // When dependencies are broken (skipPropagation), the engine does NOT roll up
+    // ancestors, so do it here. Otherwise onUpdateTask already rolls up parents
+    // and cascades dependents (including tasks that depend on parent tasks).
+    if (task.parent_id && options?.skipPropagation) {
       await syncAncestorsDates(
         task.parent_id,
         new Map([
@@ -1304,23 +1261,9 @@ export function GanttChart({
       }
     }
 
-    if (
-      task.parent_id &&
-      ["start_date", "end_date", "duration_days", "duration_type"].includes(field)
-    ) {
-      await syncAncestorsDates(
-        task.parent_id,
-        new Map([
-          [
-            taskId,
-            {
-              start_date: updates.start_date ?? task.start_date,
-              end_date: updates.end_date ?? task.end_date,
-            },
-          ],
-        ])
-      );
-    }
+    // onUpdateTask now rolls up ancestor (parent) dates and cascades any task that
+    // depends on those parents, so an explicit syncAncestorsDates call here would
+    // be redundant and could clobber the engine's result with stale data.
   };
 
   const toggleTaskCompleted = async (task: GanttTask) => {
@@ -1537,7 +1480,7 @@ export function GanttChart({
         .gantt-scroll::-webkit-scrollbar-corner { background: hsl(var(--muted)); }
         .gantt-scroll { scrollbar-width: auto; scrollbar-color: hsl(var(--muted-foreground)) hsl(var(--muted)); }
       `}</style>
-      <div className={`gantt-scroll w-full ${compareMode ? "max-h-[45vh]" : "h-[75vh]"} overflow-auto`}>
+      <div className="gantt-scroll w-full h-[75vh] overflow-auto">
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
@@ -1685,20 +1628,18 @@ export function GanttChart({
               </div>
             </div>
             {/* Month groups */}
-            {!compareMode && (
-              <div className="flex">
-                {monthGroups.map((group, idx) => (
-                  <div
-                    key={idx}
-                    className="flex-shrink-0 border-r text-center text-xs font-semibold py-1 bg-muted/50"
-                    style={{ width: group.days * DAY_WIDTH }}
-                  >
-                    <span className="capitalize">{group.month}</span>
-                    <span className="text-muted-foreground ml-1">{group.year}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="flex">
+              {monthGroups.map((group, idx) => (
+                <div
+                  key={idx}
+                  className="flex-shrink-0 border-r text-center text-xs font-semibold py-1 bg-muted/50"
+                  style={{ width: group.days * DAY_WIDTH }}
+                >
+                  <span className="capitalize">{group.month}</span>
+                  <span className="text-muted-foreground ml-1">{group.year}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
@@ -1872,7 +1813,7 @@ export function GanttChart({
             </div>
 
             {/* Days header */}
-            {!compareMode && <div className="flex">
+            <div className="flex">
               {days.map((day, idx) => {
                 const isWeekendDay = isWeekend(day);
                 const isHoliday = isHolidayDate(day);
@@ -1911,12 +1852,11 @@ export function GanttChart({
                   </TooltipProvider>
                 );
               })}
-            </div>}
+            </div>
           </div>
 
           {/* Task rows with dependency arrows overlay */}
           <div className="relative">
-            {!compareMode && (<>
             {/* Today vertical highlight - overlays bar area only */}
             {(() => {
               const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -2130,7 +2070,6 @@ export function GanttChart({
                 })}
               </svg>
             )}
-            </>)}
 
             {/* Task rows */}
             {visibleTasks.map((entry, rowIdx) => {
@@ -2212,7 +2151,11 @@ export function GanttChart({
                 );
               }
               const { task, level } = entry;
-              const hasChildren = task.children && task.children.length > 0;
+              // Robusto: una tarea es "madre" si CUALQUIER tarea la referencia como padre
+              // en el arreglo plano, aunque el árbol anidado (task.children) esté desactualizado.
+              // Así su inicio/plazo/término siempre se derivan de las hijas y un duration_days
+              // corrupto nunca vuelve a dibujarla como hoja (2013/2050).
+              const hasChildren = parentTaskIds.has(task.id) || !!(task.children && task.children.length > 0);
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
@@ -2467,7 +2410,7 @@ export function GanttChart({
                         <CornerLeftUp className="h-3 w-3 text-primary" />
                       </Button>
                     )}
-                    {canDeleteTasks && <Button
+                    <Button
                       variant="ghost"
                       size="sm"
                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
@@ -2492,7 +2435,7 @@ export function GanttChart({
                       }}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>}
+                    </Button>
                   </div>
 
                   {/* Responsable */}
@@ -2600,7 +2543,7 @@ export function GanttChart({
 
                   {/* Reprog */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("reprog", REPROG_COL_WIDTH) }}>
-                    {!hasChildren && isAdmin && canAddTasks && (
+                    {!hasChildren && isAdmin && (
                       <input
                         type="number"
                         value={reprogValues.get(task.id) ?? "0"}
@@ -2660,7 +2603,7 @@ export function GanttChart({
                         else if (task.status === "completed") updates.status = "in_progress";
                         onUpdateTask(task.id, updates, { skipPropagation: true });
                       }}
-                      disabled={!isAdmin || !canAddTasks || hasChildren}
+                      disabled={!isAdmin || hasChildren}
                       className="h-7 text-xs w-16 text-center px-1"
                       title={hasChildren
                         ? "Progreso agregado de las líneas hijas (no editable)."
@@ -2671,7 +2614,7 @@ export function GanttChart({
                   </div>
 
                   {/* Gantt bar area */}
-                  {!compareMode && <div
+                  <div
                     className={cn(
                       "relative flex-1",
                       isDraggingBar && dragTarget === task.id && "bg-primary/20"
@@ -2803,7 +2746,7 @@ export function GanttChart({
                         </Tooltip>
                       </TooltipProvider>
                     )}
-                  </div>}
+                  </div>
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-48 bg-popover z-50">

@@ -33,6 +33,7 @@ import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCri
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
 import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
+import { DataExportDialog } from "@/components/admin/DataExportDialog";
 interface Profile {
   id: string;
   email: string;
@@ -672,6 +673,7 @@ const AdminPanel = () => {
               <Trash2 className="h-4 w-4" />
               Eliminados
             </Button>
+            <DataExportDialog />
           </div>
         </div>
 

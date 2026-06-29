@@ -737,10 +737,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               </div>
               <div className="text-right">
                 {(() => {
-                  const capexAuthorizedClp = convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized);
+                  const capexTotalUf = capexSummary.authorized + capexSummary.unauthorized;
+                  const capexAuthorizedClp = convertUFToPesos(capexTotalUf);
                   const totalPresupuesto = capexAuthorizedClp + opexTotals.ocClp;
-                  const capexAuthorizedUf = capexSummary.authorized + capexSummary.unauthorized;
-                  const totalPresupuestoUf = capexAuthorizedUf + opexTotals.ocUf;
+                  const totalPresupuestoUf = capexTotalUf + opexTotals.ocUf;
                   return (
                     <>
                       <span className="font-medium">{formatCLP(totalPresupuesto)}</span>
@@ -859,8 +859,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Disponible:</span>
               </div>
-              <span className={`font-medium text-right ${capexTotals.ocClp > convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized) ? "text-destructive" : "text-green-600"}`}>
-                {formatCLP(convertUFToPesos(capexSummary.authorized + capexSummary.unauthorized) - capexTotals.ocClp)}
+              <span className={`font-medium text-right ${capexTotals.ocClp > convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) ? "text-destructive" : "text-green-600"}`}>
+                {formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.ocClp)}
               </span>
               
               {capexSummary.unauthorized > 0 && (

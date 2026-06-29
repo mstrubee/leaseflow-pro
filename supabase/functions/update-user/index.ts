@@ -100,7 +100,11 @@ Deno.serve(async (req) => {
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData)
       if (updateError) {
         console.error(`[${operationId}] Auth user update failed:`, updateError.message);
-        return new Response(JSON.stringify({ error: updateError.message }), {
+        const raw = updateError.message || '';
+        const friendly = /weak|known to be|pwned|compromis/i.test(raw)
+          ? 'La contraseña es demasiado débil o ha aparecido en filtraciones conocidas. Elige una más segura.'
+          : raw || 'No se pudo actualizar el usuario.';
+        return new Response(JSON.stringify({ error: friendly }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
