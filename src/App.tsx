@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
-import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -81,7 +80,6 @@ const App = () => (
           <BrowserRouter>
             <MainLayout>
               <ScrollToTop />
-              <FloatingPermissionSelector />
               <ConditionalFloatingAlerts />
               <RouteErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
