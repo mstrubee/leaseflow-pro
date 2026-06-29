@@ -586,6 +586,7 @@ export function useGantt(contractId: string) {
 
   const pickTaskCols = (t: GanttTask) => ({
     id: t.id, timeline_id: t.timeline_id, parent_id: t.parent_id, template_task_id: t.template_task_id,
+    budget_line_id: t.budget_line_id,
     name: t.name, start_date: t.start_date, end_date: t.end_date, duration_days: t.duration_days,
     duration_type: t.duration_type, progress: t.progress, status: t.status, has_lag: t.has_lag,
     lag_days: t.lag_days, lag_type: t.lag_type, notes: t.notes, color: t.color, display_order: t.display_order,

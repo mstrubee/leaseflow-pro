@@ -2075,6 +2075,7 @@ export type Database = {
       }
       gantt_tasks: {
         Row: {
+          budget_line_id: string | null
           color: string | null
           created_at: string
           display_order: number | null
@@ -2098,6 +2099,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          budget_line_id?: string | null
           color?: string | null
           created_at?: string
           display_order?: number | null
@@ -2121,6 +2123,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          budget_line_id?: string | null
           color?: string | null
           created_at?: string
           display_order?: number | null
@@ -2144,6 +2147,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "gantt_tasks_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "gantt_tasks_parent_id_fkey"
             columns: ["parent_id"]
@@ -2316,7 +2326,9 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_priority: boolean
           name: string
+          source: string
           template_id: string | null
           updated_at: string
         }
@@ -2325,7 +2337,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_priority?: boolean
           name?: string
+          source?: string
           template_id?: string | null
           updated_at?: string
         }
@@ -2334,7 +2348,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_priority?: boolean
           name?: string
+          source?: string
           template_id?: string | null
           updated_at?: string
         }
