@@ -45,7 +45,11 @@ function initAllNone(): PermissionsMap {
   return m;
 }
 
-export function RoleManager() {
+interface RoleManagerProps {
+  refreshKey?: number;
+}
+
+export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
   const { toast } = useToast();
   const [profiles, setProfiles] = useState<ProfileTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +63,7 @@ export function RoleManager() {
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<ProfileTemplate | null>(null);
 
-  useEffect(() => { loadProfiles(); }, []);
+  useEffect(() => { loadProfiles(); }, [refreshKey]);
 
   async function loadProfiles() {
     setLoading(true);

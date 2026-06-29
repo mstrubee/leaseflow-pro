@@ -237,6 +237,9 @@ const AdminPanel = () => {
   const [userFormOpen, setUserFormOpen] = useState(false);
   const [userFormInitialData, setUserFormInitialData] = useState<Partial<UserFormData> | undefined>(undefined);
 
+  // Role manager refresh key — increments after each user save to force reload
+  const [roleManagerKey, setRoleManagerKey] = useState(0);
+
   // "Ver credenciales" modal
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [credentialsUser, setCredentialsUser] = useState<{ name: string; perms: PermissionsMap } | null>(null);
@@ -340,16 +343,19 @@ const AdminPanel = () => {
     setCredentialsOpen(true);
   }
 
+  const [roleTemplates, setRoleTemplates] = useState<{ id: string; name: string }[]>([]);
+
   const loadData = async () => {
     setLoading(true);
-    
-    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes] = await Promise.all([
+
+    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes, roleTemplatesRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
       supabase.from("user_permissions").select("*"),
       supabase.from("folder_templates").select("*").order("display_order", { ascending: true }),
       supabase.from("user_activity_thresholds").select("*" as any),
       supabase.from("suppliers").select("id,name").order("name"),
+      supabase.from("user_profile_templates" as any).select("id, name").order("name"),
     ]);
 
     setProfiles(profilesRes.data || []);
@@ -358,6 +364,7 @@ const AdminPanel = () => {
     setFolderTemplates(templatesRes.data || []);
     setActivityThresholds((thresholdsRes.data as any) || []);
     setAllSuppliers(suppliersRes.data || []);
+    setRoleTemplates((roleTemplatesRes.data as any) || []);
     setLoading(false);
   };
 
@@ -683,7 +690,7 @@ const AdminPanel = () => {
           description="Define conjuntos de permisos reutilizables para asignar a usuarios"
           icon={<ShieldCheck className="h-5 w-5 text-violet-600" />}
         >
-          <RoleManager />
+          <RoleManager refreshKey={roleManagerKey} />
         </CollapsibleCard>
 
         {/* ── Usuarios ── */}
@@ -766,14 +773,25 @@ const AdminPanel = () => {
                     </TableCell>
                     <TableCell>
                       {(() => {
-                        const role = getUserRole(profile.id);
+                        const appRole = getUserRole(profile.id);
                         const roleStyles: Record<string, { bg: string; label: string }> = {
                           admin: { bg: "bg-primary/20 text-primary", label: "Administrador" },
                           operador_terreno: { bg: "bg-orange-100 text-orange-700", label: "Operador de Terreno" },
                           user: { bg: "bg-muted text-muted-foreground", label: "Usuario" },
                         };
-                        const { bg, label } = roleStyles[role] ?? roleStyles.user;
-                        return <span className={`px-2 py-1 rounded text-xs ${bg}`}>{label}</span>;
+                        const { bg, label } = roleStyles[appRole] ?? roleStyles.user;
+                        const templateId = (profile as any).profile_template_id;
+                        const templateName = templateId
+                          ? roleTemplates.find(t => t.id === templateId)?.name
+                          : null;
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`px-2 py-1 rounded text-xs w-fit ${bg}`}>{label}</span>
+                            {templateName && (
+                              <span className="text-[10px] text-muted-foreground pl-0.5">{templateName}</span>
+                            )}
+                          </div>
+                        );
                       })()}
                     </TableCell>
                     <TableCell>
@@ -801,7 +819,7 @@ const AdminPanel = () => {
               open={userFormOpen}
               onOpenChange={setUserFormOpen}
               initialData={userFormInitialData}
-              onSaved={loadData}
+              onSaved={() => { loadData(); setRoleManagerKey(k => k + 1); }}
               suppliers={allSuppliers}
             />
 
