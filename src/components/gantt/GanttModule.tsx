@@ -15,8 +15,10 @@ import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2 } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
+import { downloadGanttFullExport } from "@/lib/ganttFullExport";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 interface GanttModuleProps {
