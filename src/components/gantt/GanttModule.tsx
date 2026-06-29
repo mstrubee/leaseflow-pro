@@ -15,8 +15,10 @@ import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2 } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
+import { downloadGanttFullExport } from "@/lib/ganttFullExport";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 interface GanttModuleProps {
@@ -25,6 +27,7 @@ interface GanttModuleProps {
 
 export function GanttModule({ contractId }: GanttModuleProps) {
   const { isAdmin } = useAuth();
+  const { toast } = useToast();
   const { permissions } = useUserPermissions();
   // Mirror the can_access_gantt DB rule: admins, users with an explicit
   // contract_gantt permission, or fully unconfigured users can edit.
@@ -69,6 +72,19 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [rentStartDate, setRentStartDate] = useState<string | null>(null);
+  const [exportingFull, setExportingFull] = useState(false);
+
+  const handleExportFull = async () => {
+    setExportingFull(true);
+    try {
+      await downloadGanttFullExport();
+      toast({ title: "Exportación completa", description: "Se descargó el JSON unificado de cronogramas." });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error de exportación", description: e?.message || String(e) });
+    } finally {
+      setExportingFull(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -271,6 +287,17 @@ export function GanttModule({ contractId }: GanttModuleProps) {
           </div>
           {isAdmin && (
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={saving || exportingFull}
+                onClick={handleExportFull}
+                title="Exporta todos los cronogramas y plantillas en un único JSON para migración"
+              >
+                {exportingFull ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                Exportar JSON
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
