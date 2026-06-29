@@ -1,10 +1,8 @@
-import { useState } from "react";
-import { Clock, Hexagon, FileUp, LogIn, LogOut, RefreshCw, User as UserIcon } from "lucide-react";
+import { Clock, Hexagon, FileUp, LogIn, LogOut, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { GeoLocSyncDialog } from "@/geoloc/components/panels/GeoLocSyncDialog";
 
 interface HeaderProps {
   mode: "none" | "isochrone" | "microzone";
@@ -13,8 +11,7 @@ interface HeaderProps {
 }
 
 export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderProps) => {
-  const { user, isAdmin } = useAuth();
-  const [syncOpen, setSyncOpen] = useState(false);
+  const { user } = useAuth();
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -72,17 +69,7 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
         <FileUp className="mr-1 inline h-3 w-3" /> Archivo
       </button>
 
-      {isAdmin && (
-        <button
-          onClick={() => setSyncOpen(true)}
-          className="whitespace-nowrap rounded-full border border-border/60 bg-surface-2/60 px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-surface-3 hover:text-foreground"
-          title="Sincronizar GeoLoc desde el proyecto original"
-        >
-          <RefreshCw className="mr-1 inline h-3 w-3" /> Sync
-        </button>
-      )}
-
-      {user ? (
+{user ? (
         <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-2/60 px-2.5 py-1 text-[11px] text-muted-foreground">
           <UserIcon className="h-3 w-3" />
           <span className="max-w-[160px] truncate" title={user.email ?? ""}>
@@ -105,7 +92,6 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
         </Link>
       )}
     </header>
-    <GeoLocSyncDialog open={syncOpen} onOpenChange={setSyncOpen} />
     </>
   );
 };
