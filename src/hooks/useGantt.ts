@@ -279,9 +279,11 @@ export function useGantt(contractId: string) {
       default_origin?: string | null;
     };
 
+    const templateTaskIds = templateTasks.map((tt) => tt.id);
     const { data: templateDeps } = await supabase
       .from("gantt_template_dependencies")
-      .select("*");
+      .select("*")
+      .in("task_id", templateTaskIds);
 
     const taskIdMap = new Map<string, string>();
 
@@ -1039,7 +1041,10 @@ export function useGantt(contractId: string) {
       });
     });
     if (deps.length > 0) {
-      await supabase.from("gantt_template_dependencies").insert(deps as any);
+      const { error: depInsErr } = await supabase
+        .from("gantt_template_dependencies")
+        .insert(deps as any);
+      if (depInsErr) throw depInsErr;
     }
   };
 
