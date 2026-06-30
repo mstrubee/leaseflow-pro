@@ -258,11 +258,6 @@ const Contracts = () => {
 
   // Helper to update a single filter in URL
   const updateFilter = (key: string, value: string) => {
-    // Guard: skip if we've already navigated away from the contracts list.
-    // React Router v7 uses startTransition, so this component may still be
-    // "alive" (old tree displayed) while navigation to /contracts/:id is pending.
-    // Calling setSearchParams during that window can cancel the transition.
-    if (window.location.pathname !== "/contracts") return;
     const newParams = getFreshParams();
     if (value === "todos" || value === "" || (value as any) === null) {
       newParams.delete(key);

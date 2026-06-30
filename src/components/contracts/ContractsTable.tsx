@@ -782,11 +782,11 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onMouseEnter={() => prefetchRoute("ContractDetail")}
                 onTouchStart={() => prefetchRoute("ContractDetail")}
-                onClick={() =>
+                onClick={() => {
                   navigate(`/contracts/${contract.id}`, {
                     state: { backTo: `${location.pathname}${location.search}` },
-                  })
-                }
+                  });
+                }}
               >
                 <TableCell>
                   <div className="flex items-center gap-2">

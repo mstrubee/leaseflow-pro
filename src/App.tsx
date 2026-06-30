@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect, type ReactNode } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
@@ -56,14 +56,6 @@ function ConditionalFloatingAlerts() {
   return <TodayAlertsFloating />;
 }
 
-// Resets the ErrorBoundary only when the top-level module changes
-// (e.g. /contracts → /maintenance), not on sub-path navigation
-// (e.g. /contracts → /contracts/:id).
-function RouteErrorBoundary({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
-  const topLevelKey = "/" + pathname.split("/")[1];
-  return <ErrorBoundary key={topLevelKey}>{children}</ErrorBoundary>;
-}
 
 const RouteFallback = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -77,11 +69,11 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
           <Sonner />
-          <BrowserRouter unstable_useTransitions={false}>
+          <BrowserRouter>
             <MainLayout>
               <ScrollToTop />
               <ConditionalFloatingAlerts />
-              <RouteErrorBoundary>
+              <ErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   {/* Public routes */}
@@ -118,7 +110,7 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
-              </RouteErrorBoundary>
+              </ErrorBoundary>
             </MainLayout>
           </BrowserRouter>
       </TooltipProvider>
