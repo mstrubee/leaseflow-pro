@@ -11,24 +11,26 @@ import { useAuth } from "@/hooks/useAuth";
 type Tab = "builder" | "calendar" | "stats";
 
 export default function MaintenanceRoutesPage() {
-  const { isOperador } = useAuth();
+  const { hasPermission } = useAuth();
   const navigate = useNavigate();
-  // Operadores de terreno van directo al calendario
-  const [tab, setTab] = useState<Tab>(isOperador ? "calendar" : "builder");
-  // Ruta que se está editando (id de ruta o de gira) — null = armar una nueva
+  const canArmar       = hasPermission("maintenance_armar_rutas",    "view");
+  const canCumplimiento = hasPermission("maintenance_cumplimiento",   "view");
+  const canFormularios  = hasPermission("maintenance_formularios",    "view");
+
+  const [tab, setTab] = useState<Tab>(canArmar ? "builder" : "calendar");
   const [editRouteId, setEditRouteId] = useState<string | null>(null);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; hide?: boolean }[] = [
-    { id: "builder",  label: "Armar Ruta",    icon: <Navigation className="w-4 h-4" />,   hide: isOperador },
+    { id: "builder",  label: "Armar Ruta",    icon: <Navigation className="w-4 h-4" />,   hide: !canArmar },
     { id: "calendar", label: "Calendario",    icon: <CalendarDays className="w-4 h-4" /> },
-    { id: "stats",    label: "Cumplimiento",  icon: <BarChart2 className="w-4 h-4" />,     hide: isOperador },
+    { id: "stats",    label: "Cumplimiento",  icon: <BarChart2 className="w-4 h-4" />,     hide: !canCumplimiento },
   ];
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
       {/* Top bar */}
       <div className="flex items-center gap-2 px-4 pt-3 pb-0 shrink-0">
-        {!isOperador && (
+        {canFormularios && (
           <Button variant="ghost" size="sm" className="h-8 px-2 gap-1 text-xs"
             onClick={() => navigate("/maintenance")}>
             <ArrowLeft className="w-3.5 h-3.5" /> Mantenciones
@@ -53,7 +55,7 @@ export default function MaintenanceRoutesPage() {
           ))}
         </div>
 
-        {!isOperador && (
+        {canArmar && (
           <div className="ml-auto">
             <UnscheduledRoutesButton
               onEdit={(routeId) => { setEditRouteId(routeId); setTab("builder"); }}
@@ -72,7 +74,7 @@ export default function MaintenanceRoutesPage() {
         )}
         {tab === "calendar" && (
           <RouteCalendar
-            onEditRoute={isOperador ? undefined : (routeId) => { setEditRouteId(routeId); setTab("builder"); }}
+            onEditRoute={canArmar ? (routeId) => { setEditRouteId(routeId); setTab("builder"); } : undefined}
           />
         )}
         {tab === "stats"    && <RouteComplianceStats />}

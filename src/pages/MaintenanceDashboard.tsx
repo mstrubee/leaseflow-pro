@@ -6,10 +6,11 @@ import { useAuth } from "@/hooks/useAuth";
 
 const MaintenanceDashboard = () => {
   const navigate = useNavigate();
-  const { isOperador, roleLoaded } = useAuth();
+  const { hasPermission, roleLoaded } = useAuth();
 
-  // El operador de terreno no accede al módulo completo de mantenciones, solo rutas
-  if (roleLoaded && isOperador) return <Navigate to="/maintenance/routes" replace />;
+  // Si el usuario puede ver rutas pero no formularios → solo accede a /maintenance/routes
+  const soloRutas = roleLoaded && hasPermission("maintenance_rutas", "view") && !hasPermission("maintenance_formularios", "view");
+  if (soloRutas) return <Navigate to="/maintenance/routes" replace />;
 
   return (
     <div className="min-h-screen bg-background">
