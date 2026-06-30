@@ -63,14 +63,7 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<ProfileTemplate | null>(null);
 
-  // Propagation confirm
   const [propagating, setPropagating] = useState(false);
-  const [propagateTarget, setPropagateTarget] = useState<{
-    profileId: string;
-    roleName: string;
-    userCount: number;
-    permissions: { resource: string; permission: string }[];
-  } | null>(null);
 
   useEffect(() => { loadProfiles(); }, [refreshKey]);
 
@@ -182,28 +175,33 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
         if (error) throw error;
       }
 
-      toast({ title: editingId ? "Rol actualizado" : "Rol creado" });
-      setFormOpen(false);
-
-      // Si es edición, verificar si hay usuarios con este rol para propagar
+      // Auto-propagar permisos a todos los usuarios que tienen este rol asignado
+      let propagatedCount = 0;
       if (editingId) {
+        setPropagating(true);
         const { data: usersWithRole } = await supabase
           .from("profiles")
           .select("id")
           .eq("profile_template_id", profileId!);
-
-        const userCount = usersWithRole?.length ?? 0;
-        if (userCount > 0) {
-          const finalPerms = toInsert.map(p => ({ resource: p.resource, permission: p.permission as string }));
-          setPropagateTarget({
-            profileId: profileId!,
-            roleName: form.name.trim(),
-            userCount,
-            permissions: finalPerms,
-          });
+        propagatedCount = usersWithRole?.length ?? 0;
+        for (const user of usersWithRole ?? []) {
+          await supabase.from("user_permissions").delete().eq("user_id", (user as any).id);
+          if (toInsert.length > 0) {
+            await supabase.from("user_permissions").insert(
+              toInsert.map(p => ({ user_id: (user as any).id, resource: p.resource, permission: p.permission }))
+            );
+          }
         }
+        setPropagating(false);
       }
 
+      toast({
+        title: editingId ? "Rol actualizado" : "Rol creado",
+        description: propagatedCount > 0
+          ? `Permisos aplicados a ${propagatedCount} usuario(s)`
+          : undefined,
+      });
+      setFormOpen(false);
       setEditingId(null);
       setForm(EMPTY_FORM);
       loadProfiles();
@@ -211,33 +209,6 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handlePropagate() {
-    if (!propagateTarget) return;
-    setPropagating(true);
-    try {
-      const { data: users } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("profile_template_id", propagateTarget.profileId);
-
-      for (const user of users ?? []) {
-        await supabase.from("user_permissions").delete().eq("user_id", user.id);
-        if (propagateTarget.permissions.length > 0) {
-          await supabase.from("user_permissions").insert(
-            propagateTarget.permissions.map(p => ({ user_id: user.id, resource: p.resource, permission: p.permission }))
-          );
-        }
-      }
-
-      toast({ title: "Permisos propagados", description: `${propagateTarget.userCount} usuario(s) actualizado(s)` });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error al propagar", description: err.message });
-    } finally {
-      setPropagating(false);
-      setPropagateTarget(null);
     }
   }
 
@@ -413,25 +384,6 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Propagate confirm */}
-      <AlertDialog open={!!propagateTarget} onOpenChange={open => { if (!open) setPropagateTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Actualizar permisos de los usuarios?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El rol <strong>"{propagateTarget?.roleName}"</strong> tiene {propagateTarget?.userCount} usuario(s) asignado(s).
-              ¿Deseas actualizar sus permisos con los cambios que acabas de guardar?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={propagating}>No, solo guardar el rol</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePropagate} disabled={propagating}>
-              {propagating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sí, actualizar {propagateTarget?.userCount} usuario(s)
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

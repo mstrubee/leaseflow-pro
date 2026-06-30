@@ -83,8 +83,14 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
       setRole(initialData.role ?? "user");
       setIsActive(initialData.isActive ?? true);
       setProfileTemplateId(initialData.profileTemplateId ?? null);
-      setPermissions(initialData.permissions ?? initAllNone());
       setSupplierIds(initialData.supplierIds ?? []);
+      // Si hay un rol asignado, cargamos los permisos ACTUALES de la plantilla
+      // (no los permisos individuales del usuario, que pueden estar desactualizados)
+      if (initialData.profileTemplateId) {
+        applyProfileTemplate(initialData.profileTemplateId);
+      } else {
+        setPermissions(initialData.permissions ?? initAllNone());
+      }
     }
   }, [open, initialData]);
 
@@ -191,20 +197,6 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
           .update({ is_active: isActive, profile_template_id: profileTemplateId } as any)
           .eq("id", initialData.userId);
 
-        // Sync template permissions → user_permissions
-        if (profileTemplateId) {
-          const { data: templatePerms } = await supabase
-            .from("profile_template_permissions" as any)
-            .select("resource, permission")
-            .eq("profile_id", profileTemplateId);
-          if (templatePerms && templatePerms.length > 0) {
-            await supabase.from("user_permissions").delete().eq("user_id", initialData.userId);
-            await supabase.from("user_permissions").insert(
-              (templatePerms as any[]).map(p => ({ user_id: initialData.userId, resource: p.resource, permission: p.permission }))
-            );
-          }
-        }
-
         // Sync operator suppliers
         await supabase.from("operator_suppliers").delete().eq("user_id", initialData.userId);
         if (role === "operador_terreno" && supplierIds.length > 0) {
@@ -244,20 +236,6 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
             .from("profiles")
             .update({ is_active: isActive, profile_template_id: profileTemplateId } as any)
             .eq("id", newUserId);
-
-          // Sync template permissions → user_permissions
-          if (profileTemplateId) {
-            const { data: templatePerms } = await supabase
-              .from("profile_template_permissions" as any)
-              .select("resource, permission")
-              .eq("profile_id", profileTemplateId);
-            if (templatePerms && templatePerms.length > 0) {
-              await supabase.from("user_permissions").delete().eq("user_id", newUserId);
-              await supabase.from("user_permissions").insert(
-                (templatePerms as any[]).map(p => ({ user_id: newUserId, resource: p.resource, permission: p.permission }))
-              );
-            }
-          }
         }
 
         toast({ title: "Usuario creado", description: `${email} creado exitosamente` });
