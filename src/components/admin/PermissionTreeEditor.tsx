@@ -193,8 +193,8 @@ function TreeNodeRow({ node, perms, onChange, depth, readOnly, searchActive, mat
   const hasChildren = !!node.children?.length;
   const [open, setOpen] = useState(false);
 
-  const isMatch = !searchActive || matchedResources.has(node.resource) ||
-    node.children?.some(c => matchedResources.has(c.resource));
+  const isMatch = !searchActive ||
+    collectAllResources(node).some(r => matchedResources.has(r));
 
   if (searchActive && !isMatch) return null;
 
