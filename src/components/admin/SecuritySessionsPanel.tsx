@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,7 +7,6 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, ShieldAlert, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
-import { useAuth } from "@/hooks/useAuth";
 
 interface LoginEntry {
   user_id: string;
@@ -18,10 +17,10 @@ interface LoginEntry {
 
 export function SecuritySessionsPanel() {
   const { toast } = useToast();
-  const { isAdmin, loading: authLoading } = useAuth();
   const [logins, setLogins] = useState<LoginEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [forcing, setForcing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const loadLogins = async () => {
     setLoading(true);
@@ -36,12 +35,14 @@ export function SecuritySessionsPanel() {
     }
   };
 
-  // Esperar a que la sesión esté restaurada antes de llamar a la Edge Function.
-  // Sin este guard, en page-reload el JWT no está disponible todavía y la
-  // función devuelve 401/403 → "Edge Function returned a non-2xx status code".
-  useEffect(() => {
-    if (!authLoading && isAdmin) loadLogins();
-  }, [authLoading, isAdmin]);
+  // Carga lazy: solo cuando el usuario abre la card por primera vez.
+  // Evita llamar a la Edge Function en cada page-reload si la card está colapsada.
+  const handleToggle = (isOpen: boolean) => {
+    if (isOpen && !hasLoaded) {
+      setHasLoaded(true);
+      loadLogins();
+    }
+  };
 
   const handleForceLogoutAll = async () => {
     setForcing(true);
@@ -64,6 +65,7 @@ export function SecuritySessionsPanel() {
       title="Seguridad y Sesiones"
       description="Auditoría de inicios de sesión y control de sesiones activas"
       defaultOpen={false}
+      onToggle={handleToggle}
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
