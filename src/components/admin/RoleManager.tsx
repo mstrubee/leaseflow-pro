@@ -53,6 +53,7 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
   const { toast } = useToast();
   const [profiles, setProfiles] = useState<ProfileTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Form dialog
@@ -69,34 +70,41 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
 
   async function loadProfiles() {
     setLoading(true);
-    const { data: profileData, error } = await supabase
-      .from("user_profile_templates" as any)
-      .select("*")
-      .order("name");
+    setLoadError(false);
+    try {
+      const { data: profileData, error } = await supabase
+        .from("user_profile_templates" as any)
+        .select("*")
+        .order("name");
 
-    if (error) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-      setLoading(false);
-      return;
-    }
-
-    // Count users per role
-    const { data: profilesWithCount } = await supabase
-      .from("profiles")
-      .select("profile_template_id")
-      .not("profile_template_id", "is", null);
-
-    const countMap: Record<string, number> = {};
-    (profilesWithCount ?? []).forEach((p: any) => {
-      if (p.profile_template_id) {
-        countMap[p.profile_template_id] = (countMap[p.profile_template_id] ?? 0) + 1;
+      if (error) {
+        toast({ variant: "destructive", title: "Error cargando roles", description: error.message });
+        setLoadError(true);
+        return;
       }
-    });
 
-    setProfiles(
-      ((profileData ?? []) as any[]).map(p => ({ ...p, user_count: countMap[p.id] ?? 0 }))
-    );
-    setLoading(false);
+      // Count users per role (error ignored — counts default to 0)
+      const { data: profilesWithCount } = await supabase
+        .from("profiles")
+        .select("profile_template_id")
+        .not("profile_template_id", "is", null);
+
+      const countMap: Record<string, number> = {};
+      (profilesWithCount ?? []).forEach((p: any) => {
+        if (p.profile_template_id) {
+          countMap[p.profile_template_id] = (countMap[p.profile_template_id] ?? 0) + 1;
+        }
+      });
+
+      setProfiles(
+        ((profileData ?? []) as any[]).map(p => ({ ...p, user_count: countMap[p.id] ?? 0 }))
+      );
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error cargando roles", description: err.message ?? "Error inesperado" });
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function openCreate() {
@@ -232,6 +240,17 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 gap-3 text-muted-foreground">
+        <p className="text-sm">No se pudieron cargar los roles.</p>
+        <Button variant="outline" size="sm" onClick={loadProfiles}>
+          Reintentar
+        </Button>
       </div>
     );
   }
