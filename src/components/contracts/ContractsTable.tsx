@@ -18,6 +18,7 @@ import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { SortableTableHead, SortOrder } from "./SortableTableHead";
 import { CompanyLogo, getCompanyNames } from "./CompanyLogo";
+import { prefetchRoute } from "@/lib/routePrefetch";
 
 interface ContractAlert {
   id: string;
@@ -779,6 +780,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               <TableRow
                 key={contract.id}
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onMouseEnter={() => prefetchRoute("ContractDetail")}
+                onTouchStart={() => prefetchRoute("ContractDetail")}
                 onClick={() =>
                   navigate(`/contracts/${contract.id}`, {
                     state: { backTo: `${location.pathname}${location.search}` },

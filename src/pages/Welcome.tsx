@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppLogos } from "@/hooks/useAppLogos";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
@@ -68,65 +69,76 @@ const Welcome = () => {
     [hasPermission],
   );
 
-  if (loading || !user) return null;
+  if (loading || !roleLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="border-b bg-card px-6 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {logos?.header ? (
-            <img src={logos.header} alt="Logo" className="h-8 object-contain" />
-          ) : (
-            <span className="font-semibold text-lg">LeaseFlow Pro</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setPwdOpen(true)}>
-            <KeyRound className="h-4 w-4 mr-1.5" />
-            Contraseña
-          </Button>
-          <Button variant="ghost" size="sm" onClick={signOut}>
-            <LogOut className="h-4 w-4 mr-1.5" />
-            Salir
-          </Button>
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <img
+              src={logos.dashboard_header}
+              alt="Logo"
+              className="h-[50px] object-contain"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setPwdOpen(true)}>
+              <KeyRound className="h-4 w-4 mr-1.5" />
+              Contraseña
+            </Button>
+            <Button variant="ghost" size="sm" onClick={signOut}>
+              <LogOut className="h-4 w-4 mr-1.5" />
+              Salir
+            </Button>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 space-y-8">
         {/* Greeting */}
         <div>
-          <h1 className="text-2xl font-semibold">{greeting}{fullName ? `, ${fullName}` : ""}.</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Selecciona un módulo para continuar.</p>
+          <h1 className="text-3xl font-bold text-foreground">
+            {greeting}{fullName ? `, ${fullName}` : ""}.
+          </h1>
+          <p className="text-muted-foreground mt-1">¿En qué te gustaría trabajar hoy?</p>
         </div>
 
         {/* Alerts */}
         <WelcomeAlertsBar />
 
         {/* Module grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleModules.map(mod => {
             const Icon = mod.icon;
             const isUnconfigured = mod.external && !mod.path;
             return (
-              <button
+              <Card
                 key={mod.id}
-                disabled={isUnconfigured}
+                className={`transition-shadow ${isUnconfigured ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:shadow-md hover:border-primary/40"}`}
                 onClick={() => {
                   if (isUnconfigured) return;
                   if (mod.external) window.open(mod.path, "_blank", "noopener,noreferrer");
                   else navigate(mod.path);
                 }}
-                className="flex flex-col items-start gap-3 rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <span className={`inline-flex items-center justify-center h-10 w-10 rounded-lg ${mod.color}`}>
-                  <Icon className="h-5 w-5" />
-                </span>
-                <div>
-                  <p className="font-medium text-sm leading-snug">{mod.label}</p>
-                  <p className="text-xs text-muted-foreground leading-snug mt-0.5">{mod.desc}</p>
-                </div>
-              </button>
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className={`rounded-lg p-2.5 ${mod.color}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">{mod.label}</p>
+                    <p className="text-sm text-muted-foreground">{mod.desc}</p>
+                  </div>
+                </CardContent>
+              </Card>
             );
           })}
         </div>

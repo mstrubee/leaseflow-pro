@@ -56,11 +56,15 @@ function ConditionalFloatingAlerts() {
   return <TodayAlertsFloating />;
 }
 
-// Resets the ErrorBoundary on every pathname change so a render error on one
-// page doesn't prevent the next page from loading.
+// Resets the ErrorBoundary when the top-level module changes (e.g. /contracts →
+// /maintenance) but NOT on sub-path navigation (e.g. /contracts → /contracts/:id).
+// Using the full pathname as key caused React 18's startTransition to keep
+// showing the contracts list while ContractDetail (lazy) was loading — the new
+// Suspense boundary would suspend and concurrent mode kept the old UI indefinitely.
 function RouteErrorBoundary({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  return <ErrorBoundary key={pathname}>{children}</ErrorBoundary>;
+  const topLevelKey = "/" + pathname.split("/")[1];
+  return <ErrorBoundary key={topLevelKey}>{children}</ErrorBoundary>;
 }
 
 const RouteFallback = () => (
