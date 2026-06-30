@@ -41,7 +41,7 @@ const ALL_MODULES: ModuleItem[] = [
 
 const Welcome = () => {
   const navigate = useNavigate();
-  const { user, loading, isOperador, roleLoaded, hasPermission, signOut } = useAuth();
+  const { user, loading, isAdmin, isOperador, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -141,6 +141,23 @@ const Welcome = () => {
               </Card>
             );
           })}
+
+          {isAdmin && (
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+              onClick={() => navigate("/admin")}
+            >
+              <CardContent className="p-5 flex items-start gap-4">
+                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Admin</p>
+                  <p className="text-sm text-muted-foreground">Panel de administración</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
 
