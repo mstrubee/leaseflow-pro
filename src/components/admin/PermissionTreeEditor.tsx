@@ -191,7 +191,7 @@ interface TreeNodeRowProps {
 
 function TreeNodeRow({ node, perms, onChange, depth, readOnly, searchActive, matchedResources }: TreeNodeRowProps) {
   const hasChildren = !!node.children?.length;
-  const [open, setOpen] = useState(depth === 0);
+  const [open, setOpen] = useState(false);
 
   const isMatch = !searchActive || matchedResources.has(node.resource) ||
     node.children?.some(c => matchedResources.has(c.resource));
