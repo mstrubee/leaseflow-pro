@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, ShieldAlert, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
 
 interface LoginEntry {
   user_id: string;
@@ -17,6 +18,7 @@ interface LoginEntry {
 
 export function SecuritySessionsPanel() {
   const { toast } = useToast();
+  const { isAdmin, loading: authLoading } = useAuth();
   const [logins, setLogins] = useState<LoginEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [forcing, setForcing] = useState(false);
@@ -34,9 +36,12 @@ export function SecuritySessionsPanel() {
     }
   };
 
+  // Esperar a que la sesión esté restaurada antes de llamar a la Edge Function.
+  // Sin este guard, en page-reload el JWT no está disponible todavía y la
+  // función devuelve 401/403 → "Edge Function returned a non-2xx status code".
   useEffect(() => {
-    loadLogins();
-  }, []);
+    if (!authLoading && isAdmin) loadLogins();
+  }, [authLoading, isAdmin]);
 
   const handleForceLogoutAll = async () => {
     setForcing(true);

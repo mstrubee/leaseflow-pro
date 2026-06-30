@@ -138,10 +138,12 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
   };
 
   const badge = (
-    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap cursor-pointer", getProgressColorClass(current?.color))}>
+    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", readOnly ? "cursor-default" : "cursor-pointer", getProgressColorClass(current?.color))}>
       {current?.name || "Sin estado"}
     </Badge>
   );
+
+  if (readOnly) return badge;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -259,7 +261,7 @@ export const BudgetLineTree = ({
   onReload,
   onMoveLine,
 }: BudgetLineTreeProps) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
     if (level > 0) return null; // Don't compute for nested trees
@@ -357,7 +359,7 @@ export const BudgetLineTree = ({
         onReload={onReload}
         onMoveLine={onMoveLine}
       />)}
-      {level === 0 && !readOnly && isAdmin && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
+      {level === 0 && !readOnly && (isAdmin || hasPermission("budget_editar_lineas", "edit")) && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
         </Button>}
@@ -423,7 +425,12 @@ const BudgetLineItemInner = ({
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
+  const canEditCantidades = isAdmin || hasPermission("budget_editar_cantidades", "edit");
+  const canEditMontos     = isAdmin || hasPermission("budget_editar_montos", "edit");
+  const canEditEstado     = isAdmin || hasPermission("budget_editar_estado", "edit");
+  const canAutorizar      = isAdmin || hasPermission("budget_autorizar", "edit");
+  const canEditLineas     = isAdmin || hasPermission("budget_editar_lineas", "edit");
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
   const isExpanded = collapsedIds ? !collapsedIds.has(line.id) : localExpanded;
@@ -482,7 +489,7 @@ const BudgetLineItemInner = ({
   const isSurchargeRow = !!line.is_surcharge;
   // Authorized lines are locked for non-admins. They can still request adicionales/descuentos
   // via the dedicated surcharge "+" button (kept accessible via originalReadOnly below).
-  const isAuthorizedLockedForUser = line.status === "autorizado" && !isAdmin && !isSurchargeRow;
+  const isAuthorizedLockedForUser = line.status === "autorizado" && !canAutorizar && !isSurchargeRow;
   const effectiveReadOnly = readOnly || isAuthorizedLockedForUser;
 
   // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
@@ -842,7 +849,7 @@ const BudgetLineItemInner = ({
   };
 
   const toggleStatus = () => {
-    if (readOnly || !isAdmin) return;
+    if (readOnly || !canAutorizar) return;
     onUpdateLine(line.id, {
       status: line.status === "autorizado" ? "no_autorizado" : "autorizado"
     });
@@ -1097,8 +1104,8 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[50px] text-right cursor-text hover:bg-accent/50"
-                onDoubleClick={() => !effectiveReadOnly && setIsEditingQuantity(true)}
-                title="Doble clic para editar"
+                onDoubleClick={() => !effectiveReadOnly && canEditCantidades && setIsEditingQuantity(true)}
+                title={canEditCantidades ? "Doble clic para editar" : "Sin permiso para editar cantidades"}
               >
                 {line.quantity || 0}
               </span>
@@ -1119,8 +1126,8 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs text-muted-foreground min-w-[24px] cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
-                onDoubleClick={() => !effectiveReadOnly && setIsEditingUnit(true)}
-                title="Doble clic para editar"
+                onDoubleClick={() => !effectiveReadOnly && canEditCantidades && setIsEditingUnit(true)}
+                title={canEditCantidades ? "Doble clic para editar" : "Sin permiso para editar cantidades"}
               >
                 {line.unit_type === "m2" ? "m²" : line.unit_type || "m²"}
               </span>
@@ -1146,7 +1153,7 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs text-muted-foreground cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
-                onDoubleClick={() => !effectiveReadOnly && setIsEditingCurrency(true)}
+                onDoubleClick={() => !effectiveReadOnly && canEditMontos && setIsEditingCurrency(true)}
                 title="Doble clic para editar"
               >
                 {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
@@ -1174,7 +1181,7 @@ const BudgetLineItemInner = ({
                     templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
                   )}
                   onDoubleClick={() => {
-                    if (effectiveReadOnly) return;
+                    if (effectiveReadOnly || !canEditMontos) return;
                     const localP = line.unit_price || 0;
                     const dp = localP > 0 ? localP : (templateUnitPrice ?? 0);
                     setEditUnitPrice(dp.toString());
@@ -1387,7 +1394,7 @@ const BudgetLineItemInner = ({
             <ProgressStatusBadge
               lineId={line.id}
               currentStatusId={line.progress_status_id}
-              readOnly={effectiveReadOnly}
+              readOnly={effectiveReadOnly || !canEditEstado}
               isParent={isParent}
             />
           )}
@@ -1467,7 +1474,7 @@ const BudgetLineItemInner = ({
                   <CornerDownRight className="h-3 w-3" />
                 </Button>
               )}
-              {(isAdmin || (line.status === "no_autorizado" && line.parent_id !== null)) && (
+              {(canEditLineas || (line.status === "no_autorizado" && line.parent_id !== null)) && (
                 <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive" title="Eliminar línea">
                   <Trash2 className="h-3 w-3" />
                 </Button>
