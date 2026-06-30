@@ -258,6 +258,11 @@ const ContractDetail = () => {
   // Dynamic superficie for real-time recalculation
   const [superficieEdificada, setSuperficieEdificada] = useState<number | null>(null);
   useEffect(() => {
+    console.log("[CD] ContractDetail MOUNTED id=", id);
+    return () => console.log("[CD] ContractDetail UNMOUNTED id=", id);
+  }, []);
+
+  useEffect(() => {
     if (id) {
       loadContract();
       loadCustomFields();

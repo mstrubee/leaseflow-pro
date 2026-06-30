@@ -8,7 +8,14 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, resource }: ProtectedRouteProps) {
-  const { user, loading, roleLoaded, hasPermission } = useAuth();
+  const { user, loading, roleLoaded, hasPermission, isAdmin } = useAuth();
+
+  const decision =
+    loading || !roleLoaded ? "SPINNER" :
+    !user ? "→/auth" :
+    resource && !hasPermission(resource, "view") ? "→/" :
+    "ALLOW";
+  console.log(`[PR] resource=${resource ?? "-"} decision=${decision} loading=${loading} roleLoaded=${roleLoaded} user=${!!user} isAdmin=${isAdmin} path=${window.location.pathname}`);
 
   // Show loading spinner while checking authentication
   if (loading || !roleLoaded) {

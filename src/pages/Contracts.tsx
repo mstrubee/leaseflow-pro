@@ -222,6 +222,11 @@ const Contracts = () => {
   const { columnWidths, normalizedWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
 
   useEffect(() => {
+    console.log("[CL] Contracts MOUNTED");
+    return () => console.log("[CL] Contracts UNMOUNTED");
+  }, []);
+
+  useEffect(() => {
     // Remember last contracts list URL so the detail "Volver" can restore filters even after refresh
     sessionStorage.setItem("contracts:lastListUrl", `${location.pathname}${location.search}`);
   }, [location.pathname, location.search]);
