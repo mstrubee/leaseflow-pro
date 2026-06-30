@@ -21,6 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
 import { CapexCloseYearDialog } from "./CapexCloseYearDialog";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+import { useAuth } from "@/hooks/useAuth";
 
 interface BudgetSummary {
   budget: number;
@@ -57,6 +58,7 @@ interface YearBudgetInfo {
 const STORAGE_KEY_PREFIX = "budget_selected_year_";
 
 const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps) => {
+  const { isAdmin, hasPermission } = useAuth();
   const [loading, setLoading] = useState(true);
   const [contractName, setContractName] = useState("");
   const [contractCebe, setContractCebe] = useState<string | null>(null);
@@ -979,8 +981,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 formatUF={formatUF}
                 formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
                 onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
-                isAdmin={true}
-                allowCreate={true}
+                isAdmin={isAdmin}
+                allowCreate={isAdmin || hasPermission("budget_ordenes_compra", "edit")}
               />
             </CardContent>
           </Card>

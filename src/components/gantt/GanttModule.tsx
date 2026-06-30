@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { addMonths, format } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
-import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,15 +25,9 @@ interface GanttModuleProps {
 }
 
 export function GanttModule({ contractId }: GanttModuleProps) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   const { toast } = useToast();
-  const { permissions } = useUserPermissions();
-  // Mirror the can_access_gantt DB rule: admins, users with an explicit
-  // contract_gantt permission, or fully unconfigured users can edit.
-  const canEdit =
-    isAdmin ||
-    permissions.length === 0 ||
-    permissions.some((p) => p.resource === "contract_gantt");
+  const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
   const {
     timeline,
     tasks,

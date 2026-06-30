@@ -15,14 +15,18 @@ export const useUserPermissions = () => {
   const canView = (elementId: string): boolean => {
     if (isAdmin) return true;
     const perm = permissions.find((p) => p.resource === elementId);
-    if (!perm) return true;
+    // No record = "none" (the DB only stores view/edit; none is not stored).
+    // A user with no permissions at all (empty array) also gets denied here,
+    // which is correct: they would have been blocked by ProtectedRoute before
+    // reaching any page that calls canView.
+    if (!perm) return false;
     return perm.permission === "view" || perm.permission === "edit" || perm.permission === "all";
   };
 
   const canEdit = (elementId: string): boolean => {
     if (isAdmin) return true;
     const perm = permissions.find((p) => p.resource === elementId);
-    if (!perm) return true;
+    if (!perm) return false;
     return perm.permission === "edit" || perm.permission === "all";
   };
 

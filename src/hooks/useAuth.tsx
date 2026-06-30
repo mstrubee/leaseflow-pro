@@ -63,6 +63,18 @@ function useProvideAuth(): AuthContextValue {
     }
   }, []);
 
+  // Lightweight refresh: only re-fetches user_permissions without touching
+  // role or loading state. Called by the realtime subscription when an admin
+  // propagates a role change so logged-in users pick up new permissions
+  // immediately without having to log out and back in.
+  const refreshPermissions = useCallback(async (userId: string) => {
+    const { data } = await supabase
+      .from("user_permissions")
+      .select("resource, permission")
+      .eq("user_id", userId);
+    setPermissions(data || []);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -121,6 +133,24 @@ function useProvideAuth(): AuthContextValue {
       subscription.unsubscribe();
     };
   }, [applySession, loadUserData]);
+
+  // Realtime subscription: picks up permission changes pushed by an admin
+  // (e.g. role propagation) so the current session reflects them immediately.
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
+
+    const channel = supabase
+      .channel(`user_permissions_${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_permissions", filter: `user_id=eq.${userId}` },
+        () => { refreshPermissions(userId); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, refreshPermissions]);
 
   const hasPermission = (resource: string, requiredPermission: "view" | "edit" | "all"): boolean => {
     if (isAdmin) return true;

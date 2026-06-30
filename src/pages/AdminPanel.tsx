@@ -683,7 +683,10 @@ const AdminPanel = () => {
           description="Define conjuntos de permisos reutilizables para asignar a usuarios"
           icon={<ShieldCheck className="h-5 w-5 text-violet-600" />}
         >
-          <RoleManager refreshKey={roleManagerKey} />
+          <RoleManager
+            refreshKey={roleManagerKey}
+            onSaved={() => { loadData(); setRoleManagerKey(k => k + 1); }}
+          />
         </CollapsibleCard>
 
         {/* ── Usuarios ── */}

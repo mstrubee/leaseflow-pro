@@ -47,9 +47,10 @@ function initAllNone(): PermissionsMap {
 
 interface RoleManagerProps {
   refreshKey?: number;
+  onSaved?: () => void;
 }
 
-export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
+export function RoleManager({ refreshKey = 0, onSaved }: RoleManagerProps) {
   const { toast } = useToast();
   const [profiles, setProfiles] = useState<ProfileTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,21 +115,20 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
   }
 
   async function openEdit(profile: ProfileTemplate) {
-    setEditingId(profile.id);
-    setForm({ name: profile.name, description: profile.description ?? "", permissions: initAllNone() });
-    setFormOpen(true);
-
-    // Load permissions
+    // Load permissions BEFORE opening the dialog to avoid a "all none" flash
+    // and to prevent a race condition where a cancelled async could overwrite
+    // a subsequent openEdit call's state.
     const { data } = await supabase
       .from("profile_template_permissions" as any)
       .select("resource, permission")
       .eq("profile_id", profile.id);
 
-    if (data) {
-      const perms: PermissionsMap = initAllNone();
-      (data as any[]).forEach(p => { perms[p.resource] = p.permission; });
-      setForm(prev => ({ ...prev, permissions: perms }));
-    }
+    const perms: PermissionsMap = initAllNone();
+    ((data ?? []) as any[]).forEach(p => { perms[p.resource] = p.permission; });
+
+    setEditingId(profile.id);
+    setForm({ name: profile.name, description: profile.description ?? "", permissions: perms });
+    setFormOpen(true);
   }
 
   async function openDuplicate(profile: ProfileTemplate) {
@@ -213,6 +213,7 @@ export function RoleManager({ refreshKey = 0 }: RoleManagerProps) {
       setEditingId(null);
       setForm(EMPTY_FORM);
       loadProfiles();
+      onSaved?.();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
