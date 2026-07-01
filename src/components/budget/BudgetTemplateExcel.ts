@@ -51,6 +51,9 @@ const COL = {
 // Absolute reference to the cell holding the UF rate (CLP per UF).
 const UF_RATE_CELL = "$P$1";
 
+// Allowed unit options for column F (dropdown on export; only values imported).
+const UNIT_OPTIONS = ["un", "m2", "mL"] as const;
+
 export interface ParsedTemplateLine {
   parent_index: number | null; // index into the returned array
   name: string;
@@ -183,7 +186,18 @@ export async function exportTemplateToExcel(
 
     excelRow.getCell(3).value = line.description || "";           // C Descripción
     excelRow.getCell(5).value = line.quantity ?? null;            // E Cantidad
-    excelRow.getCell(6).value = line.unit_type ?? null;           // F Unidad
+    // F Unidad — lista desplegable restringida (un, m2, mL)
+    const unitCell = excelRow.getCell(6);
+    unitCell.value = line.unit_type ?? null;
+    unitCell.dataValidation = {
+      type: "list",
+      allowBlank: true,
+      formulae: [`"${UNIT_OPTIONS.join(",")}"`],
+      showErrorMessage: true,
+      errorStyle: "error",
+      errorTitle: "Unidad inválida",
+      error: `Selecciona una opción: ${UNIT_OPTIONS.join(", ")}`,
+    };
     excelRow.getCell(7).value = line.currency ?? null;            // G Moneda
     excelRow.getCell(8).value = line.supplier_name ?? null;       // H Proveedor
     excelRow.getCell(9).value = r.code;                           // I N°
@@ -279,6 +293,20 @@ export async function exportTemplateToExcel(
     { width: 12 }, // N UF base (hidden)
   ];
   ws.getColumn(14).hidden = true; // N UF base
+
+  // Extend the unit dropdown to spare rows so new lines added by the user in
+  // Excel also get the restricted list.
+  for (let rn = totalRowNumber + 1; rn <= totalRowNumber + 50; rn++) {
+    ws.getCell(`F${rn}`).dataValidation = {
+      type: "list",
+      allowBlank: true,
+      formulae: [`"${UNIT_OPTIONS.join(",")}"`],
+      showErrorMessage: true,
+      errorStyle: "error",
+      errorTitle: "Unidad inválida",
+      error: `Selecciona una opción: ${UNIT_OPTIONS.join(", ")}`,
+    };
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
