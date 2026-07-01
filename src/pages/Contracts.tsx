@@ -222,11 +222,6 @@ const Contracts = () => {
   const { columnWidths, normalizedWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
 
   useEffect(() => {
-    console.log("[CL] Contracts MOUNTED");
-    return () => console.log("[CL] Contracts UNMOUNTED");
-  }, []);
-
-  useEffect(() => {
     // Remember last contracts list URL so the detail "Volver" can restore filters even after refresh
     sessionStorage.setItem("contracts:lastListUrl", `${location.pathname}${location.search}`);
   }, [location.pathname, location.search]);
@@ -263,6 +258,7 @@ const Contracts = () => {
 
   // Helper to update a single filter in URL
   const updateFilter = (key: string, value: string) => {
+    if (window.location.pathname !== "/contracts") return;
     const newParams = getFreshParams();
     if (value === "todos" || value === "" || (value as any) === null) {
       newParams.delete(key);

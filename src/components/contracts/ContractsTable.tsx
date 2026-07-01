@@ -783,11 +783,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 onMouseEnter={() => prefetchRoute("ContractDetail")}
                 onTouchStart={() => prefetchRoute("ContractDetail")}
                 onClick={() => {
-                  console.log("[NAV] navigate called, id=", contract.id);
                   navigate(`/contracts/${contract.id}`, {
                     state: { backTo: `${location.pathname}${location.search}` },
                   });
-                  console.log("[NAV] navigate returned");
                 }}
               >
                 <TableCell>

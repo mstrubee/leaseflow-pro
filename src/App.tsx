@@ -51,7 +51,6 @@ function ScrollToTop() {
 
 function ConditionalFloatingAlerts() {
   const location = useLocation();
-  console.log("[CF] render path=", location.pathname);
   useEffect(() => { prefetchAllRoutesWhenIdle(); }, []);
   if (location.pathname === "/" || location.pathname === "/auth") return null;
   return <TodayAlertsFloating />;
