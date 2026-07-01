@@ -288,7 +288,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       if (error) throw error;
       const tree = buildTree((data || []) as TemplateLine[]);
-      exportTemplateToExcel(template.name, template.budget_type, tree);
+      await exportTemplateToExcel(template.name, template.budget_type, tree);
       toast({ title: "Excel descargado", description: `"${template.name}"` });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
