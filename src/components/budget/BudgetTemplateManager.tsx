@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { Plus, Trash2, Edit2, Loader2, FileText, Copy, Download, Upload } from "lucide-react";
 import { BudgetTemplateLineTree, TemplateLine } from "./BudgetTemplateLineTree";
 import {
@@ -58,6 +59,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { toast } = useToast();
+  const { ufValue } = useEconomicIndicators();
 
   useEffect(() => {
     loadTemplates();
@@ -288,7 +290,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       if (error) throw error;
       const tree = buildTree((data || []) as TemplateLine[]);
-      await exportTemplateToExcel(template.name, template.budget_type, tree);
+      await exportTemplateToExcel(template.name, template.budget_type, tree, ufValue);
       toast({ title: "Excel descargado", description: `"${template.name}"` });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });

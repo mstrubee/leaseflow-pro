@@ -31,10 +31,25 @@ const INPUT_HEADERS = [
 
 // Helper (calculated) columns — ignored on import.
 const CALC_HEADERS = [
-  "N°",          // I  numeración jerárquica
-  "Total UF",    // J  rollup con fórmulas
-  "% del total", // K
+  "N°",              // I  numeración jerárquica
+  "Total UF",        // J  rollup en UF (fórmula)
+  "% del total",     // K
+  "Valor unit. CLP", // L  ENTRADA manual (precio unitario en pesos)
+  "Total CLP",       // M  = L × E (cantidad), fórmula
 ] as const;
+
+// Column letters used in formulas.
+const COL = {
+  MONTO_UF: "D",
+  CANTIDAD: "E",
+  TOTAL_UF: "J",
+  VALOR_CLP: "L",
+  TOTAL_CLP: "M",
+  UF_BASE: "N", // hidden helper: UF amount stored in the template
+} as const;
+
+// Absolute reference to the cell holding the UF rate (CLP per UF).
+const UF_RATE_CELL = "$P$1";
 
 export interface ParsedTemplateLine {
   parent_index: number | null; // index into the returned array
@@ -87,20 +102,49 @@ function buildFlat(lines: TemplateLine[]): { rows: FlatRow[]; rootRows: number[]
 }
 
 /**
+ * Compute the rolled-up UF total for each node, mirroring the app: a leaf total
+ * is cantidad × precio-unitario (0 if either is missing); a parent total is the
+ * sum of its children. Used to seed formula cached results so re-import works
+ * even if the file was never opened in Excel.
+ */
+function computeUfTotals(rows: FlatRow[]): Map<number, number> {
+  const totals = new Map<number, number>();
+  const byDepth = [...rows].sort((a, b) => b.level - a.level);
+  for (const r of byDepth) {
+    if (r.hasChildren && r.childRows.length > 0) {
+      totals.set(r.row, r.childRows.reduce((s, rn) => s + (totals.get(rn) || 0), 0));
+    } else {
+      const unit = Number(r.line.default_amount_uf) || 0;
+      const qty = Number(r.line.quantity) || 0;
+      totals.set(r.row, qty > 0 && unit > 0 ? qty * unit : 0);
+    }
+  }
+  return totals;
+}
+
+/**
  * Export a template's line tree to a richly-formatted .xlsx and download it.
- * Hierarchy is expressed via numbering (col I), indentation, bold parents and
- * collapsible outline groups. Totals (col J) and % (col K) are live formulas.
+ *
+ * Hierarchy: numbering (col I), indentation, bold parents, collapsible groups.
+ * Amounts: enter the unit price in CLP in col L; col M = L × cantidad (E);
+ * col D (Monto UF) and col J (Total UF) are computed — leaves convert CLP→UF
+ * using the UF rate (or fall back to the stored UF amount when L is empty),
+ * and parents roll up the sum of their children.
  */
 export async function exportTemplateToExcel(
   templateName: string,
   budgetType: "capex" | "opex",
   lines: TemplateLine[],
+  ufRate = 0,
 ) {
   const { rows, rootRows } = buildFlat(lines);
+  const ufTotals = computeUfTotals(rows);
+  const grandTotalUf = rootRows.reduce((s, rn) => s + (ufTotals.get(rn) || 0), 0);
+  // Rate used in formulas; avoid division by zero (fallback keeps stored UF).
+  const rate = ufRate && ufRate > 0 ? ufRate : 0;
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(budgetType.toUpperCase().slice(0, 31), {
-    // Parent (summary) rows sit ABOVE their children, so the summary is not below.
     properties: { outlineLevelRow: 0 },
     views: [{ state: "frozen", ySplit: 1 }],
   });
@@ -113,66 +157,115 @@ export async function exportTemplateToExcel(
     cell.value = h;
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF334155" } };
-    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   });
-  headerRow.height = 20;
+  // UF rate cell (referenced by formulas as $P$1).
+  ws.getCell("O1").value = "Valor UF (CLP):";
+  ws.getCell("O1").font = { bold: true };
+  ws.getCell("O1").alignment = { horizontal: "right" };
+  ws.getCell("P1").value = rate;
+  ws.getCell("P1").numFmt = "#,##0.00";
+  headerRow.height = 26;
 
-  const totalRowNumber = rows.length + 2; // first empty row after data
+  const totalRowNumber = rows.length + 2;
 
   for (const r of rows) {
     const excelRow = ws.getRow(r.row);
     const line = r.line;
+    const unitUf = Number(line.default_amount_uf) || 0; // precio unitario UF
+    const rollupUf = ufTotals.get(r.row) || 0;          // total UF (qty × unit, o suma)
 
     excelRow.getCell(1).value = r.level;                          // A Nivel
-    // B Nombre — indented; bold for parents
-    const nameCell = excelRow.getCell(2);
+    const nameCell = excelRow.getCell(2);                         // B Nombre
     nameCell.value = line.name || "";
     nameCell.alignment = { indent: Math.max(0, r.level - 1) };
     if (r.hasChildren) nameCell.font = { bold: true };
 
     excelRow.getCell(3).value = line.description || "";           // C Descripción
-    excelRow.getCell(4).value = Number(line.default_amount_uf) || 0; // D Monto UF (raw)
     excelRow.getCell(5).value = line.quantity ?? null;            // E Cantidad
     excelRow.getCell(6).value = line.unit_type ?? null;           // F Unidad
     excelRow.getCell(7).value = line.currency ?? null;            // G Moneda
     excelRow.getCell(8).value = line.supplier_name ?? null;       // H Proveedor
-
     excelRow.getCell(9).value = r.code;                           // I N°
+    excelRow.getCell(14).value = unitUf;                          // N UF base unit (hidden)
 
-    // J Total UF — leaf = its Monto UF; parent = sum of DIRECT children totals.
-    const totalCell = excelRow.getCell(10);
+    // D Monto UF (unitario) — leaf = CLP unit ÷ valor UF, o UF base si L vacío.
+    //   Parent = total roll-up (suma de los totales de las hijas) para que la
+    //   madre muestre su monto y no quede en 0.
+    const dCell = excelRow.getCell(4);
     if (r.hasChildren && r.childRows.length > 0) {
-      const refs = r.childRows.map((rn) => `J${rn}`).join(",");
-      totalCell.value = { formula: `SUM(${refs})` } as any;
-      totalCell.font = { bold: true };
+      const refs = r.childRows.map((rn) => `${COL.TOTAL_UF}${rn}`).join(",");
+      dCell.value = { formula: `SUM(${refs})`, result: rollupUf } as any;
+      dCell.font = { bold: true };
     } else {
-      totalCell.value = { formula: `D${r.row}` } as any;
+      const rateExpr = rate > 0 ? `${COL.VALOR_CLP}${r.row}/${UF_RATE_CELL}` : `${COL.UF_BASE}${r.row}`;
+      dCell.value = {
+        formula: `IF(${COL.VALOR_CLP}${r.row}="",${COL.UF_BASE}${r.row},${rateExpr})`,
+        result: unitUf,
+      } as any;
     }
-    totalCell.numFmt = "#,##0.00";
-    excelRow.getCell(4).numFmt = "#,##0.00";
+    dCell.numFmt = "#,##0.00";
 
-    // K % del total (relative to grand total)
-    const pctCell = excelRow.getCell(11);
-    pctCell.value = { formula: `IF($J$${totalRowNumber}=0,0,J${r.row}/$J$${totalRowNumber})` } as any;
-    pctCell.numFmt = "0.0%";
+    // J Total UF — leaf = precio unitario (D) × cantidad (E); parent = suma hijas.
+    const jCell = excelRow.getCell(10);
+    if (r.hasChildren && r.childRows.length > 0) {
+      const refs = r.childRows.map((rn) => `${COL.TOTAL_UF}${rn}`).join(",");
+      jCell.value = { formula: `SUM(${refs})`, result: rollupUf } as any;
+      jCell.font = { bold: true };
+    } else {
+      jCell.value = {
+        formula: `IF(${COL.CANTIDAD}${r.row}="",0,${COL.MONTO_UF}${r.row}*${COL.CANTIDAD}${r.row})`,
+        result: rollupUf,
+      } as any;
+    }
+    jCell.numFmt = "#,##0.00";
+
+    // K % del total
+    const kCell = excelRow.getCell(11);
+    kCell.value = {
+      formula: `IF($J$${totalRowNumber}=0,0,${COL.TOTAL_UF}${r.row}/$J$${totalRowNumber})`,
+      result: grandTotalUf > 0 ? rollupUf / grandTotalUf : 0,
+    } as any;
+    kCell.numFmt = "0.0%";
+
+    // L Valor unitario CLP — manual entry (blank on export).
+    excelRow.getCell(12).numFmt = "#,##0";
+
+    // M Total CLP — parent = SUM(children M); leaf = L × cantidad (E).
+    const mCell = excelRow.getCell(13);
+    if (r.hasChildren && r.childRows.length > 0) {
+      const refs = r.childRows.map((rn) => `${COL.TOTAL_CLP}${rn}`).join(",");
+      mCell.value = { formula: `SUM(${refs})` } as any;
+      mCell.font = { bold: true };
+    } else {
+      mCell.value = {
+        formula: `IF(OR(${COL.VALOR_CLP}${r.row}="",${COL.CANTIDAD}${r.row}=""),"",${COL.VALOR_CLP}${r.row}*${COL.CANTIDAD}${r.row})`,
+      } as any;
+    }
+    mCell.numFmt = "#,##0";
 
     if (r.level > 1) excelRow.outlineLevel = r.level - 1;
   }
 
-  // Grand total row
+  // Grand total row (UF and CLP)
   const totalRow = ws.getRow(totalRowNumber);
   totalRow.getCell(2).value = "TOTAL";
   totalRow.getCell(2).font = { bold: true };
-  const grandRefs = rootRows.map((rn) => `J${rn}`).join(",");
-  const grandCell = totalRow.getCell(10);
-  grandCell.value = grandRefs ? ({ formula: `SUM(${grandRefs})` } as any) : 0;
-  grandCell.numFmt = "#,##0.00";
-  grandCell.font = { bold: true };
+  const grandRefsUf = rootRows.map((rn) => `${COL.TOTAL_UF}${rn}`).join(",");
+  const gUf = totalRow.getCell(10);
+  gUf.value = grandRefsUf ? ({ formula: `SUM(${grandRefsUf})`, result: grandTotalUf } as any) : 0;
+  gUf.numFmt = "#,##0.00";
+  gUf.font = { bold: true };
+  const grandRefsClp = rootRows.map((rn) => `${COL.TOTAL_CLP}${rn}`).join(",");
+  const gClp = totalRow.getCell(13);
+  gClp.value = grandRefsClp ? ({ formula: `SUM(${grandRefsClp})` } as any) : 0;
+  gClp.numFmt = "#,##0";
+  gClp.font = { bold: true };
 
   ws.columns = [
     { width: 6 },  // A Nivel
     { width: 42 }, // B Nombre
-    { width: 38 }, // C Descripción
+    { width: 34 }, // C Descripción
     { width: 13 }, // D Monto UF
     { width: 10 }, // E Cantidad
     { width: 10 }, // F Unidad
@@ -181,7 +274,11 @@ export async function exportTemplateToExcel(
     { width: 10 }, // I N°
     { width: 13 }, // J Total UF
     { width: 11 }, // K % del total
+    { width: 15 }, // L Valor unit. CLP
+    { width: 15 }, // M Total CLP
+    { width: 12 }, // N UF base (hidden)
   ];
+  ws.getColumn(14).hidden = true; // N UF base
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
@@ -310,5 +407,12 @@ export async function parseExcelToTemplateLines(file: File): Promise<ParsedTempl
   }
 
   if (parsed.length === 0) throw new Error("No se encontraron líneas válidas en el archivo.");
+
+  // Parent lines carry a rolled-up total in their Monto UF cell; the app derives
+  // parent totals from children, so store 0 to match the template convention.
+  const hasChildren = new Set<number>();
+  parsed.forEach((p) => { if (p.parent_index !== null) hasChildren.add(p.parent_index); });
+  parsed.forEach((p, i) => { if (hasChildren.has(i)) p.default_amount_uf = 0; });
+
   return parsed;
 }
