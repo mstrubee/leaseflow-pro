@@ -324,9 +324,9 @@ export async function exportTemplateToExcel(
   await ws.protect("", {
     selectLockedCells: true,
     selectUnlockedCells: true,
-    formatCells: false,
-    formatColumns: false,
-    formatRows: false,
+    formatCells: true,      // permitir formato de celdas
+    formatColumns: true,    // permitir redimensionar columnas
+    formatRows: true,       // permitir redimensionar filas
     insertRows: true,
     deleteRows: true,
     insertColumns: false,
