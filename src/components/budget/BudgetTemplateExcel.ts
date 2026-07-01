@@ -54,6 +54,11 @@ const UF_RATE_CELL = "$P$1";
 // Allowed unit options for column F (dropdown on export; only values imported).
 const UNIT_OPTIONS = ["un", "m2", "mL"] as const;
 
+// Columns the user may edit (1-based): A–H (import range) + L (unit price CLP).
+// Everything else (I N°, J Total UF, K %, M Total CLP, N base, P1 rate) stays
+// locked so formulas can't be broken by accident.
+const EDITABLE_COLS = [1, 2, 3, 4, 5, 6, 7, 8, 12] as const;
+
 export interface ParsedTemplateLine {
   parent_index: number | null; // index into the returned array
   name: string;
@@ -258,6 +263,9 @@ export async function exportTemplateToExcel(
     }
     mCell.numFmt = "#,##0";
 
+    // Unlock editable input cells (A–H + L); the rest stay locked (formulas).
+    EDITABLE_COLS.forEach((c) => { excelRow.getCell(c).protection = { locked: false }; });
+
     if (r.level > 1) excelRow.outlineLevel = r.level - 1;
   }
 
@@ -294,10 +302,11 @@ export async function exportTemplateToExcel(
   ];
   ws.getColumn(14).hidden = true; // N UF base
 
-  // Extend the unit dropdown to spare rows so new lines added by the user in
-  // Excel also get the restricted list.
+  // Prepare spare rows below the data: keep the unit dropdown and leave the
+  // input columns unlocked so new lines added by the user are editable.
   for (let rn = totalRowNumber + 1; rn <= totalRowNumber + 50; rn++) {
-    ws.getCell(`F${rn}`).dataValidation = {
+    const spare = ws.getRow(rn);
+    spare.getCell(6).dataValidation = {
       type: "list",
       allowBlank: true,
       formulae: [`"${UNIT_OPTIONS.join(",")}"`],
@@ -306,7 +315,25 @@ export async function exportTemplateToExcel(
       errorTitle: "Unidad inválida",
       error: `Selecciona una opción: ${UNIT_OPTIONS.join(", ")}`,
     };
+    EDITABLE_COLS.forEach((c) => { spare.getCell(c).protection = { locked: false }; });
   }
+
+  // Protect the sheet: formulas locked, inputs editable, and the user can still
+  // insert or delete rows. No password (protection is against accidental edits,
+  // not a security boundary).
+  await ws.protect("", {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertRows: true,
+    deleteRows: true,
+    insertColumns: false,
+    deleteColumns: false,
+    sort: false,
+    autoFilter: false,
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
