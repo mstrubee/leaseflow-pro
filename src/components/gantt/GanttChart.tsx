@@ -2262,7 +2262,10 @@ export function GanttChart({
               // Filas con dependencias: fondo del color de la línea al 70% de
               // transparencia (equivale a mezclar con blanco → lightenHex 0.7)
               // y texto en negrita, desde la columna "#" hasta "% Avance".
-              const hasDeps = !!(task.dependencies && task.dependencies.length > 0);
+              // Solo dependencias reales (cuyo destino aún existe): evita colorear
+              // tareas "puras" que quedaron con dependencias huérfanas de una
+              // predecesora eliminada.
+              const hasDeps = !!task.dependencies?.some((d) => taskById.has(d.depends_on_task_id));
               const depBg = hasDeps && effective.color ? lightenHex(effective.color, 0.7) : null;
 
               return (
