@@ -2252,6 +2252,11 @@ export function GanttChart({
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
               const rowNumber = rowIdx + 1;
+              // Filas con dependencias: fondo del color de la línea al 70% de
+              // transparencia (equivale a mezclar con blanco → lightenHex 0.7)
+              // y texto en negrita, desde la columna "#" hasta "% Avance".
+              const hasDeps = !!(task.dependencies && task.dependencies.length > 0);
+              const depBg = hasDeps && effective.color ? lightenHex(effective.color, 0.7) : null;
 
               return (
                 <ContextMenu key={task.id}>
@@ -2269,12 +2274,16 @@ export function GanttChart({
                         rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
                         rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
                         rowDragOverId === task.id && dropPosition === "into" && "ring-2 ring-inset ring-primary bg-primary/10",
-                        task.status === "completed" && "bg-muted/30"
+                        task.status === "completed" && "bg-muted/30",
+                        hasDeps && "font-bold"
                       )}
                       style={{ height: ROW_HEIGHT }}
                     >
                   {/* Columnas fijas congeladas en el scroll horizontal */}
-                  <div className="flex sticky left-0 z-[15] flex-shrink-0 bg-background">
+                  <div
+                    className="flex sticky left-0 z-[15] flex-shrink-0 bg-background"
+                    style={depBg ? { backgroundColor: depBg } : undefined}
+                  >
                   {/* Drag handle */}
                   <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
