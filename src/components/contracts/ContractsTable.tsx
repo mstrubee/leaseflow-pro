@@ -855,13 +855,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 {isNegociacionView && (
                   contract.status === 'en_negociacion' ? (
                   <>
-                    <TableCell className="min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="min-w-[210px]" onClick={(e) => e.stopPropagation()}>
                       <Select
                         value={contract.comite_gp_status || ''}
                         onValueChange={(value) => handleComiteGPChange(contract.id, value)}
                       >
                         <SelectTrigger
-                          className={`h-7 text-xs w-full font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
+                          className={`h-7 text-xs w-full font-medium px-2 [&>span]:line-clamp-none [&>span]:whitespace-nowrap ${getComiteGPColor(contract.comite_gp_status || null)}`}
                         >
                           <SelectValue placeholder="Seleccionar" />
                         </SelectTrigger>
