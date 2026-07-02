@@ -532,13 +532,14 @@ export function GanttReportsSection() {
       // 2) Datos del contrato (nombre, superficie, verificar no eliminado)
       const { data: contractRows, error: cErr } = await supabase
         .from("contracts")
-        .select("id, name, deleted_at, superficie_edificada_local")
+        .select("id, name, deleted_at, comite_gp_status, superficie_edificada_local")
         .in("id", contractIds);
       if (cErr) throw cErr;
 
       const contractMap = new Map<string, any>();
       (contractRows || [])
-        .filter((c: any) => !c.deleted_at)
+        // Excluir eliminados y contratos rechazados en Comité GP
+        .filter((c: any) => !c.deleted_at && c.comite_gp_status !== "Rechazada")
         .forEach((c: any) => contractMap.set(c.id, c));
 
       // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
