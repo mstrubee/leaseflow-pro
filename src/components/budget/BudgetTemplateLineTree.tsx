@@ -234,11 +234,14 @@ export const BudgetTemplateLineTree = ({
       
       if (oldIndex !== -1 && newIndex !== -1) {
         const newOrder = arrayMove(siblings, oldIndex, newIndex);
-        newOrder.forEach((line, index) => {
-          onUpdateLine(line.id, { display_order: index });
-        });
         if (onReorder) {
+          // Reorden atómico (estado local + persistencia) en el contenedor.
           onReorder(newOrder);
+        } else {
+          // Fallback: persistir cada hermano individualmente.
+          newOrder.forEach((line, index) => {
+            onUpdateLine(line.id, { display_order: index });
+          });
         }
       }
     } else if (onReparent) {

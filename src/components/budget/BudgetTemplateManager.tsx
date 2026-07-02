@@ -127,6 +127,14 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
       }
     });
 
+    // Ordenar por display_order en cada nivel para que el reordenamiento
+    // (arrastrar) se refleje visualmente y no dependa del orden de inserción.
+    const sortByOrder = (nodes: TemplateLine[]) => {
+      nodes.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+      nodes.forEach((n) => { if (n.children && n.children.length) sortByOrder(n.children); });
+    };
+    sortByOrder(roots);
+
     return roots;
   };
 
@@ -446,6 +454,29 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
     }
   };
 
+  // Reordenar hermanos: actualiza display_order de forma atómica en el estado
+  // local (evita el clobber del loop) y persiste cada línea en la BD.
+  const handleReorderLines = async (newOrder: TemplateLine[]) => {
+    const orderMap = new Map(newOrder.map((l, i) => [l.id, i]));
+    const updatedFlat = flatLines.map(l =>
+      orderMap.has(l.id) ? { ...l, display_order: orderMap.get(l.id)! } : l
+    );
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
+    try {
+      await Promise.all(
+        newOrder.map((l, i) =>
+          supabase.from("budget_template_lines").update({ display_order: i }).eq("id", l.id)
+        )
+      );
+    } catch (error: any) {
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const handleReparent = async (lineId: string, newParentId: string | null) => {
     const updatedFlat = flatLines.map(l => l.id === lineId ? { ...l, parent_id: newParentId } : l);
     setFlatLines(updatedFlat);
@@ -638,6 +669,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
                         onAddLine={handleAddLine}
                         onUpdateLine={handleUpdateLine}
                         onDeleteLine={handleDeleteLine}
+                        onReorder={handleReorderLines}
                         onReparent={handleReparent}
                       />
                     )}
