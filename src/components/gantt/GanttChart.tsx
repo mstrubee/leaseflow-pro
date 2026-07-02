@@ -48,15 +48,22 @@ import { Label } from "@/components/ui/label";
 function DurationInput({
   value,
   onCommit,
+  editable = true,
 }: {
   value: number;
   onCommit: (n: number) => void;
+  editable?: boolean;
 }) {
   const [local, setLocal] = useState<string>(String(value ?? 1));
   const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (!focused) setLocal(String(value ?? 1));
   }, [value, focused]);
+
+  if (!editable) {
+    return <span className="text-xs px-1 text-center w-14 truncate">{value ?? 1}</span>;
+  }
+
   const commit = () => {
     const n = parseInt(local);
     if (isNaN(n) || n < 1) {
@@ -934,6 +941,7 @@ export function GanttChart({
 
   // Row drag handlers for reordering
   const handleRowDragStart = (e: React.DragEvent, taskId: string) => {
+    if (!isAdmin) { e.preventDefault(); return; } // solo editores reordenan tareas
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", taskId);
     setRowDragSource(taskId);
@@ -1074,7 +1082,8 @@ export function GanttChart({
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
+    if (!isAdmin) return; // solo editores pueden mover/redimensionar plazos
     if (!task.start_date || !task.end_date) return;
     
     setBarDragMode(mode);
@@ -2547,6 +2556,7 @@ export function GanttChart({
                       <DurationInput
                         value={task.duration_days || 1}
                         onCommit={(n) => handleUpdateTaskField(task.id, "duration_days", n)}
+                        editable={isAdmin}
                       />
                     )}
                     <span className="text-[10px] text-muted-foreground">
