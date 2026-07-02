@@ -477,6 +477,39 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
     }
   };
 
+  // Mover una línea a otro nivel (padre) y posición entre hermanos, de forma
+  // atómica: cambia parent_id de la línea movida y reindexa display_order de
+  // todo el grupo destino. Cubre "reordenar entre madres" y sacar hijas a raíz.
+  const handleMoveLine = async (
+    activeId: string,
+    newParentId: string | null,
+    orderedSiblingIds: string[],
+  ) => {
+    const orderMap = new Map(orderedSiblingIds.map((id, i) => [id, i]));
+    const updatedFlat = flatLines.map((l) => {
+      if (l.id === activeId) {
+        return { ...l, parent_id: newParentId, display_order: orderMap.get(activeId) ?? 0 };
+      }
+      if (orderMap.has(l.id)) return { ...l, display_order: orderMap.get(l.id)! };
+      return l;
+    });
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
+    try {
+      await Promise.all(
+        orderedSiblingIds.map((id, i) => {
+          const patch = id === activeId ? { parent_id: newParentId, display_order: i } : { display_order: i };
+          return supabase.from("budget_template_lines").update(patch).eq("id", id);
+        }),
+      );
+    } catch (error: any) {
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const handleReparent = async (lineId: string, newParentId: string | null) => {
     const updatedFlat = flatLines.map(l => l.id === lineId ? { ...l, parent_id: newParentId } : l);
     setFlatLines(updatedFlat);
@@ -670,6 +703,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
                         onUpdateLine={handleUpdateLine}
                         onDeleteLine={handleDeleteLine}
                         onReorder={handleReorderLines}
+                        onMoveLine={handleMoveLine}
                         onReparent={handleReparent}
                       />
                     )}

@@ -73,6 +73,8 @@ interface BudgetTemplateLineTreeProps {
   onDeleteLine: (id: string) => void;
   onReorder?: (lines: TemplateLine[]) => void;
   onReparent?: (lineId: string, newParentId: string | null) => void;
+  /** Mueve una línea a un nivel (padre) y posición concretos entre sus hermanos. */
+  onMoveLine?: (activeId: string, newParentId: string | null, orderedSiblingIds: string[]) => void;
   level?: number;
   allLines?: TemplateLine[];
   isRoot?: boolean;
@@ -84,6 +86,7 @@ interface DragContextType {
   overId: string | null;
   activeLevel: number | null;
   overLevel: number | null;
+  dropPosition: "before" | "into" | "after" | null;
 }
 
 const DragStateContext = createContext<DragContextType>({
@@ -91,6 +94,7 @@ const DragStateContext = createContext<DragContextType>({
   overId: null,
   activeLevel: null,
   overLevel: null,
+  dropPosition: null,
 });
 
 // Helper to get all descendant IDs of a line
@@ -169,12 +173,14 @@ export const BudgetTemplateLineTree = ({
   onDeleteLine,
   onReorder,
   onReparent,
+  onMoveLine,
   level = 0,
   allLines,
   isRoot = true,
 }: BudgetTemplateLineTreeProps) => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"before" | "into" | "after" | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -197,79 +203,98 @@ export const BudgetTemplateLineTree = ({
     setActiveId(event.active.id as string);
   };
 
+  // Zona de drop según la posición vertical del cursor/arrastre sobre la fila
+  // destino: tercio superior → "before" (reordenar antes), tercio inferior →
+  // "after" (reordenar después), centro → "into" (mover dentro / reparentar).
+  const resolveDropPosition = (event: DragOverEvent | DragEndEvent): "before" | "into" | "after" => {
+    const activeRect = event.active.rect.current.translated;
+    const overRect = event.over?.rect;
+    if (!activeRect || !overRect) return "into";
+    const activeCenter = activeRect.top + activeRect.height / 2;
+    const rel = (activeCenter - overRect.top) / overRect.height;
+    if (rel < 0.3) return "before";
+    if (rel > 0.7) return "after";
+    return "into";
+  };
+
   const handleDragOver = (event: DragOverEvent) => {
     const { over } = event;
     setOverId(over ? (over.id as string) : null);
+    setDropPosition(over ? resolveDropPosition(event) : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const position = over ? resolveDropPosition(event) : "into";
     setActiveId(null);
     setOverId(null);
+    setDropPosition(null);
 
     if (!over || active.id === over.id) return;
 
     const activeLineId = active.id as string;
     const overLineId = over.id as string;
 
-    // Find the dragged line and target line
     const activeLine = findLineById(rootLines, activeLineId);
     const overLine = findLineById(rootLines, overLineId);
-
     if (!activeLine || !overLine) return;
 
-    // Prevent dropping a parent onto its own descendant
+    // Prevenir ciclos: no soltar una línea dentro/como hermana bajo su propio subárbol
     const descendantIds = getDescendantIds(activeLine);
     if (descendantIds.includes(overLineId)) return;
 
-    // Check if they're siblings (same parent)
-    const areSiblings = activeLine.parent_id === overLine.parent_id;
+    if (position === "into") {
+      // Mover DENTRO de la línea destino (reparentar como hija)
+      if (onReparent) onReparent(activeLineId, overLineId);
+      return;
+    }
 
-    if (areSiblings) {
-      // Reorder within the same level - find the correct sibling list
-      const siblings = getSiblings(rootLines, activeLineId, activeLine.parent_id);
-      const oldIndex = siblings.findIndex((item) => item.id === activeLineId);
-      const newIndex = siblings.findIndex((item) => item.id === overLineId);
-      
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const newOrder = arrayMove(siblings, oldIndex, newIndex);
-        if (onReorder) {
-          // Reorden atómico (estado local + persistencia) en el contenedor.
-          onReorder(newOrder);
-        } else {
-          // Fallback: persistir cada hermano individualmente.
-          newOrder.forEach((line, index) => {
-            onUpdateLine(line.id, { display_order: index });
-          });
-        }
-      }
+    // before / after → reordenar como HERMANA de la línea destino, en su nivel.
+    const newParentId = overLine.parent_id;
+    // Evitar ciclo si el nuevo padre es la propia línea o un descendiente suyo
+    if (newParentId === activeLineId || descendantIds.includes(newParentId ?? "")) return;
+
+    const siblings = getSiblings(rootLines, overLineId, newParentId)
+      .map((s) => s.id)
+      .filter((id) => id !== activeLineId);
+    const overIdx = siblings.indexOf(overLineId);
+    if (overIdx === -1) return;
+    const insertIdx = position === "before" ? overIdx : overIdx + 1;
+    const orderedSiblingIds = [...siblings];
+    orderedSiblingIds.splice(insertIdx, 0, activeLineId);
+
+    const sameParent = activeLine.parent_id === newParentId;
+    if (sameParent && onReorder) {
+      // Reorden dentro del mismo nivel (usa el handler atómico existente)
+      const orderedLines = orderedSiblingIds
+        .map((id) => findLineById(rootLines, id))
+        .filter((l): l is TemplateLine => !!l);
+      onReorder(orderedLines);
+    } else if (onMoveLine) {
+      // Cambio de nivel (p. ej. reordenar entre madres, sacar una hija a raíz)
+      onMoveLine(activeLineId, newParentId, orderedSiblingIds);
     } else if (onReparent) {
-      // Reparent: make the dragged line a child of the target line
-      onReparent(activeLineId, overLineId);
+      onReparent(activeLineId, newParentId);
     }
   };
 
   const handleDragCancel = () => {
     setActiveId(null);
     setOverId(null);
+    setDropPosition(null);
   };
 
   const activeLine = activeId ? findLineById(rootLines, activeId) : null;
   const overLine = overId ? findLineById(rootLines, overId) : null;
 
-  // Determine action type for overlay
-  const getActionType = (): "reorder" | "reparent" | null => {
-    if (!activeLine || !overLine) return null;
-    if (activeLine.parent_id === overLine.parent_id) return "reorder";
-    return "reparent";
-  };
-
-  const actionType = getActionType();
+  // Tipo de acción para el cartelito, según la zona de drop (antes/dentro/después)
+  const actionType: "reorder" | "reparent" | null =
+    !activeLine || !overLine ? null : dropPosition === "into" ? "reparent" : "reorder";
 
   // Only render the DndContext at the root level
   if (isRoot) {
     return (
-      <DragStateContext.Provider value={{ activeId, overId, activeLevel, overLevel }}>
+      <DragStateContext.Provider value={{ activeId, overId, activeLevel, overLevel, dropPosition }}>
         <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
           <DndContext
             sensors={sensors}
@@ -289,6 +314,8 @@ export const BudgetTemplateLineTree = ({
                   onUpdateLine={onUpdateLine}
                   onDeleteLine={onDeleteLine}
                   onReorder={onReorder}
+
+                  onMoveLine={onMoveLine}
                   onReparent={onReparent}
                   allLines={rootLines}
                 />
@@ -369,6 +396,8 @@ export const BudgetTemplateLineTree = ({
           onUpdateLine={onUpdateLine}
           onDeleteLine={onDeleteLine}
           onReorder={onReorder}
+
+          onMoveLine={onMoveLine}
           onReparent={onReparent}
           allLines={rootLines}
         />
@@ -385,6 +414,7 @@ interface SortableTemplateLineItemProps {
   onDeleteLine: (id: string) => void;
   onReorder?: (lines: TemplateLine[]) => void;
   onReparent?: (lineId: string, newParentId: string | null) => void;
+  onMoveLine?: (activeId: string, newParentId: string | null, orderedSiblingIds: string[]) => void;
   allLines: TemplateLine[];
 }
 
@@ -396,9 +426,10 @@ const SortableTemplateLineItem = ({
   onDeleteLine,
   onReorder,
   onReparent,
+  onMoveLine,
   allLines,
 }: SortableTemplateLineItemProps) => {
-  const { activeId, overId } = useContext(DragStateContext);
+  const { activeId, overId, dropPosition } = useContext(DragStateContext);
   const { ufValue } = useEconomicIndicators();
   
   const {
@@ -406,7 +437,6 @@ const SortableTemplateLineItem = ({
     listeners,
     setNodeRef,
     isDragging,
-    isOver,
   } = useSortable({ id: line.id });
 
   // Con DragOverlay activo (la línea arrastrada se muestra siguiendo el cursor),
@@ -451,11 +481,11 @@ const SortableTemplateLineItem = ({
   const multiplier = line.quantity ?? 1;
   const parentTotal = childrenSubtotal * multiplier;
 
-  // Determine if this is a drop target for reparenting
+  // Determine if this is a drop target and which action per zone (before/into/after)
   const isDropTarget = overId === line.id && activeId !== line.id;
-  const activeLine = activeId ? findLineById(allLines, activeId) : null;
-  const isReparentTarget = isDropTarget && activeLine?.parent_id !== line.parent_id;
-  const isReorderTarget = isDropTarget && activeLine?.parent_id === line.parent_id;
+  const isReparentTarget = isDropTarget && dropPosition === "into";
+  const isReorderBefore = isDropTarget && dropPosition === "before";
+  const isReorderAfter = isDropTarget && dropPosition === "after";
 
   const handleSaveQuantity = () => {
     const newQty = parseFloat(editQuantity) || 0;
@@ -579,7 +609,8 @@ const SortableTemplateLineItem = ({
           level >= 3 && hasChildren && "bg-muted/35",
           level >= 3 && !hasChildren && "bg-muted/5",
           isReparentTarget && "ring-2 ring-primary ring-offset-2 bg-primary/10 scale-[1.02]",
-          isReorderTarget && "border-t-2 border-primary"
+          isReorderBefore && "border-t-2 border-primary",
+          isReorderAfter && "border-b-2 border-primary"
         )}
       >
         {/* Col 1: Drag handle */}
@@ -1028,6 +1059,8 @@ const SortableTemplateLineItem = ({
             onUpdateLine={onUpdateLine}
             onDeleteLine={onDeleteLine}
             onReorder={onReorder}
+
+            onMoveLine={onMoveLine}
             onReparent={onReparent}
             allLines={allLines}
             isRoot={false}
