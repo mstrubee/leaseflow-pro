@@ -795,7 +795,14 @@ const ContractDetail = () => {
 
   // Version to display in commercial conditions: last signed version if there's active renegotiation
   const lastSignedVersion = allVersions.find(v => !v.is_renegotiation);
-  const displayVersion = hasActiveRenegotiation ? lastSignedVersion : currentVersion;
+  // Fallback robusto: si ninguna versión quedó marcada como is_current (p. ej.
+  // contratos cargados masivamente o con el flag sin setear), mostrar la última
+  // versión no-renegociación o, en su defecto, la de mayor version_number, para
+  // NO ocultar las condiciones comerciales. No altera el caso normal (is_current).
+  const fallbackVersion = lastSignedVersion || allVersions[0];
+  const displayVersion = hasActiveRenegotiation
+    ? (lastSignedVersion || fallbackVersion)
+    : (currentVersion || fallbackVersion);
 
   // Filter documents: show signed docs always, drafts for renegotiation, and regular drafts for signed contracts
   const documents = isSigned ? allDocuments.filter(d => d.document_type === "firmado" || d.document_type === "firmado_r" || d.document_type === "borrador" || d.document_type === "borrador_final" || hasActiveRenegotiation && (d.document_type === "borrador_r" || d.document_type === "borrador_final_r")) : allDocuments;
