@@ -579,18 +579,6 @@ export function GanttChart({
     return () => window.removeEventListener("keydown", onKey);
   }, [onUndoDelete, isAdmin]);
 
-  const toggleExpand = (taskId: string) => {
-    setExpandedTasks((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
-        next.delete(taskId);
-      } else {
-        next.add(taskId);
-      }
-      return next;
-    });
-  };
-
   const allParentTaskIds = useMemo(() => {
     const ids: string[] = [];
     const collect = (list: GanttTask[]) => {
@@ -622,13 +610,102 @@ export function GanttChart({
 
   const allExpanded = allParentTaskIds.length > 0 && allParentTaskIds.every((id) => expandedTasks.has(id));
 
-  const toggleExpandAll = () => {
-    if (allExpanded) {
-      setExpandedTasks(new Set());
-    } else {
-      setExpandedTasks(new Set(allParentTaskIds));
-    }
-  };
+  // ── Expansión progresiva (un nivel por clic, con rebote en los extremos) ──
+  // Memoria de dirección por clave (id de la línea madre, o "__all__" para el botón global).
+  const expandDirRef = useRef<Map<string, "expand" | "collapse">>(new Map());
+
+  // Parents (líneas madre) que son hijas directas de `id`.
+  const childParentsOf = useCallback(
+    (id: string) => tasks.filter((t) => t.parent_id === id && parentTaskIds.has(t.id)).map((t) => t.id),
+    [tasks, parentTaskIds]
+  );
+
+  // Todas las madres del subárbol de `rootId` (incluye rootId si es madre).
+  const subtreeParents = useCallback(
+    (rootId: string): string[] => {
+      const res: string[] = [];
+      const rec = (id: string) => {
+        if (!parentTaskIds.has(id)) return;
+        res.push(id);
+        childParentsOf(id).forEach(rec);
+      };
+      rec(rootId);
+      return res;
+    },
+    [parentTaskIds, childParentsOf]
+  );
+
+  // Frontera de expansión: madres visibles (ancestros expandidos) que aún están colapsadas.
+  const computeFrontier = useCallback(
+    (set: Set<string>, roots: string[]): string[] => {
+      const frontier: string[] = [];
+      const rec = (id: string) => {
+        if (!parentTaskIds.has(id)) return;
+        if (!set.has(id)) { frontier.push(id); return; } // colapsada → frontera, no seguir
+        childParentsOf(id).forEach(rec);
+      };
+      roots.forEach(rec);
+      return frontier;
+    },
+    [parentTaskIds, childParentsOf]
+  );
+
+  // Nivel más profundo actualmente expandido: madres expandidas sin descendiente-madre expandida.
+  const computeDeepestExpanded = useCallback(
+    (set: Set<string>, roots: string[]): string[] => {
+      const deepest: string[] = [];
+      const seen = new Set<string>();
+      roots.forEach((r) => subtreeParents(r).forEach((id) => {
+        if (seen.has(id) || !set.has(id)) return;
+        seen.add(id);
+        const hasExpandedDesc = subtreeParents(id).some((d) => d !== id && set.has(d));
+        if (!hasExpandedDesc) deepest.push(id);
+      }));
+      return deepest;
+    },
+    [subtreeParents]
+  );
+
+  const progressiveToggle = useCallback(
+    (roots: string[], key: string) => {
+      setExpandedTasks((prev) => {
+        const next = new Set(prev);
+        const frontier = computeFrontier(next, roots);
+        const anyExpanded = roots.some((r) => subtreeParents(r).some((id) => next.has(id)));
+        const fullyExpanded = frontier.length === 0;
+        const fullyCollapsed = !anyExpanded;
+
+        let dir = expandDirRef.current.get(key) ?? "expand";
+        if (fullyCollapsed) dir = "expand";
+        else if (fullyExpanded) dir = "collapse";
+
+        if (dir === "expand") {
+          frontier.forEach((id) => next.add(id));
+        } else {
+          computeDeepestExpanded(next, roots).forEach((id) => next.delete(id));
+        }
+
+        // Fijar dirección para el próximo clic (rebote en extremos).
+        const frontierAfter = computeFrontier(next, roots);
+        const anyExpandedAfter = roots.some((r) => subtreeParents(r).some((id) => next.has(id)));
+        if (frontierAfter.length === 0) expandDirRef.current.set(key, "collapse");
+        else if (!anyExpandedAfter) expandDirRef.current.set(key, "expand");
+        else expandDirRef.current.set(key, dir);
+
+        return next;
+      });
+    },
+    [computeFrontier, computeDeepestExpanded, subtreeParents]
+  );
+
+  const toggleExpand = (taskId: string) => progressiveToggle([taskId], taskId);
+
+  const rootParentIds = useMemo(
+    () => taskTree.filter((t) => t.children && t.children.length > 0).map((t) => t.id),
+    [taskTree]
+  );
+
+  const toggleExpandAll = () => progressiveToggle(rootParentIds, "__all__");
 
   // Bulk toggle: convert ALL task durations to business or calendar days, recalculating end_date.
   const tasksWithDuration = tasks.filter((t) => t.start_date && (t.duration_days ?? 0) > 0);
