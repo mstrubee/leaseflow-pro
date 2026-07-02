@@ -280,6 +280,10 @@ interface GanttChartProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
+  /** Usuarios con permiso de ver: pueden reprogramar (columna Reprog.) */
+  canReprogram?: boolean;
+  /** Usuarios con permiso de ver: pueden marcar tareas como completadas */
+  canComplete?: boolean;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
   rentStartDate?: string | null;
 }
@@ -404,6 +408,8 @@ export function GanttChart({
   onUpdateDependency,
   onReorderTask,
   isAdmin = false,
+  canReprogram = false,
+  canComplete = false,
   onExportPDF,
   rentStartDate,
 }: GanttChartProps) {
@@ -1785,10 +1791,10 @@ export function GanttChart({
                     onClick={() => setColPending(prev => { const n = new Set(prev); n.has("reprog") ? n.delete("reprog") : n.add("reprog"); return n; })}
                   >
                     <Checkbox checked={colPending.has("reprog")} className="h-3 w-3 pointer-events-none" />
-                    <span>Reprog</span>
+                    <span title="Reprogramación">Reprog.</span>
                   </div>
                 ) : (
-                  <div className="text-center px-2 py-2">Reprog</div>
+                  <div className="text-center px-2 py-2" title="Reprogramación">Reprog.</div>
                 )
               )}
             </div>
@@ -2224,12 +2230,24 @@ export function GanttChart({
                     ) : (
                       <span className="w-4 flex-shrink-0" />
                     )}
-                    <TaskNameInput
-                      taskId={task.id}
-                      value={task.name}
-                      completed={task.status === "completed"}
-                      onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
-                    />
+                    {isAdmin ? (
+                      <TaskNameInput
+                        taskId={task.id}
+                        value={task.name}
+                        completed={task.status === "completed"}
+                        onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          "flex-1 h-7 text-xs px-1 flex items-center truncate",
+                          task.status === "completed" && "line-through text-muted-foreground"
+                        )}
+                        title={task.name}
+                      >
+                        {task.name}
+                      </span>
+                    )}
                     {/* Red: predecessor indicator */}
                     {!hasChildren && task.dependencies && task.dependencies.length > 0 && (
                       <button
@@ -2365,20 +2383,23 @@ export function GanttChart({
                         <ArrowRight className="h-3 w-3 text-green-500" />
                       </button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 flex-shrink-0"
-                      onClick={() => toggleTaskCompleted(task)}
-                      title={task.status === "completed" ? "Marcar como pendiente" : "Marcar como completada"}
-                    >
-                      <CheckCircle2
-                        className={cn(
-                          "h-3.5 w-3.5",
-                          task.status === "completed" ? "text-primary" : "text-muted-foreground"
-                        )}
-                      />
-                    </Button>
+                    {(isAdmin || canComplete) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 flex-shrink-0"
+                        onClick={() => toggleTaskCompleted(task)}
+                        title={task.status === "completed" ? "Marcar como pendiente" : "Marcar como completada"}
+                      >
+                        <CheckCircle2
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            task.status === "completed" ? "text-primary" : "text-muted-foreground"
+                          )}
+                        />
+                      </Button>
+                    )}
+                    {isAdmin && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -2388,7 +2409,8 @@ export function GanttChart({
                     >
                       <Plus className="h-3 w-3 text-primary" />
                     </Button>
-                    {task.parent_id && (
+                    )}
+                    {isAdmin && task.parent_id && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -2410,6 +2432,7 @@ export function GanttChart({
                         <CornerLeftUp className="h-3 w-3 text-primary" />
                       </Button>
                     )}
+                    {isAdmin && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -2436,6 +2459,7 @@ export function GanttChart({
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
+                    )}
                   </div>
 
                   {/* Responsable */}
@@ -2543,7 +2567,7 @@ export function GanttChart({
 
                   {/* Reprog */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("reprog", REPROG_COL_WIDTH) }}>
-                    {!hasChildren && isAdmin && (
+                    {!hasChildren && (isAdmin || canReprogram) && (
                       <input
                         type="number"
                         value={reprogValues.get(task.id) ?? "0"}

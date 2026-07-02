@@ -28,6 +28,9 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const { isAdmin, hasPermission } = useAuth();
   const { toast } = useToast();
   const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
+  // Usuarios que solo pueden VER: pueden reprogramar y marcar completado,
+  // pero no editar plazos ni estructura de tareas.
+  const canInteract = canEdit || hasPermission("contract_gantt", "view");
   const {
     timeline,
     tasks,
@@ -433,6 +436,8 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onUpdateDependency={updateDependency}
               onReorderTask={reorderTask}
               isAdmin={canEdit}
+              canReprogram={canInteract}
+              canComplete={canInteract}
               rentStartDate={rentStartDate}
               onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
