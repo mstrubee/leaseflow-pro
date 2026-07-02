@@ -33,12 +33,14 @@ import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getLogoUrls } from "@/hooks/useAppLogos";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
 
 type FilterGantt = "all" | "con" | "sin";
 type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
+type SortBy2 = "none" | "empresa" | "name" | "capex_desc";
 
 interface Disbursement {
   startDate: string;   // start_date of "Obras Civiles"
@@ -52,6 +54,7 @@ interface Disbursement {
 interface GanttContractData {
   contractId: string;
   contractName: string;
+  companyNames: string[];
   timelineName: string;
   tasks: GanttTask[];
   taskTree: GanttTask[];
@@ -422,30 +425,51 @@ export function GanttReportsSection() {
   // Filtro, orden y selección para exportar
   const [filterGantt, setFilterGantt] = useState<FilterGantt>("all");
   const [sortBy, setSortBy] = useState<SortBy>("name");
+  const [sortBy2, setSortBy2] = useState<SortBy2>("none");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  /** Datos visibles tras aplicar filtro y orden */
+  /** Datos visibles tras aplicar filtro y orden (primario + secundario) */
   const displayData = useMemo(() => {
     let filtered = data;
     if (filterGantt === "con") filtered = data.filter((d) => d.tasks.length > 0);
     if (filterGantt === "sin") filtered = data.filter((d) => d.tasks.length === 0);
+
+    // Clave de empresa: nombres ordenados y unidos; vacío se ordena al final.
+    const companyKey = (d: GanttContractData) =>
+      d.companyNames.length > 0
+        ? d.companyNames.slice().sort().join(" · ").toLowerCase()
+        : "￿";
+
+    // Comparador por un criterio; 0 = empate (sin desempate por nombre).
+    const compareBy = (a: GanttContractData, b: GanttContractData, crit: SortBy | SortBy2) => {
+      switch (crit) {
+        case "capex_desc":
+          return b.capexUF - a.capexUF;
+        case "gantt_first": {
+          const aHas = a.tasks.length > 0, bHas = b.tasks.length > 0;
+          return aHas === bHas ? 0 : aHas ? -1 : 1;
+        }
+        case "no_gantt_first": {
+          const aNo = a.tasks.length === 0, bNo = b.tasks.length === 0;
+          return aNo === bNo ? 0 : aNo ? -1 : 1;
+        }
+        case "empresa":
+          return companyKey(a).localeCompare(companyKey(b));
+        case "name":
+          return a.contractName.localeCompare(b.contractName);
+        default:
+          return 0;
+      }
+    };
+
     return [...filtered].sort((a, b) => {
-      if (sortBy === "capex_desc") return b.capexUF - a.capexUF;
-      if (sortBy === "gantt_first") {
-        const aHas = a.tasks.length > 0;
-        const bHas = b.tasks.length > 0;
-        if (aHas !== bHas) return aHas ? -1 : 1;
-        return a.contractName.localeCompare(b.contractName);
-      }
-      if (sortBy === "no_gantt_first") {
-        const aNo = a.tasks.length === 0;
-        const bNo = b.tasks.length === 0;
-        if (aNo !== bNo) return aNo ? -1 : 1;
-        return a.contractName.localeCompare(b.contractName);
-      }
+      const primary = compareBy(a, b, sortBy);
+      if (primary !== 0) return primary;
+      const secondary = compareBy(a, b, sortBy2);
+      if (secondary !== 0) return secondary;
       return a.contractName.localeCompare(b.contractName);
     });
-  }, [data, filterGantt, sortBy]);
+  }, [data, filterGantt, sortBy, sortBy2]);
 
   // Helpers de selección para exportar
   const toggleSelected = (id: string) =>
@@ -541,6 +565,20 @@ export function GanttReportsSection() {
         // Excluir eliminados y contratos rechazados en Comité GP
         .filter((c: any) => !c.deleted_at && c.comite_gp_status !== "Rechazada")
         .forEach((c: any) => contractMap.set(c.id, c));
+
+      // 2b) Empresas asociadas a cada contrato (para mostrar su logo/logos)
+      const { data: companyRows } = await supabase
+        .from("contract_companies")
+        .select("contract_id, companies (name)")
+        .in("contract_id", contractIds);
+      const companiesByContract = new Map<string, string[]>();
+      (companyRows || []).forEach((cc: any) => {
+        const name = cc.companies?.name;
+        if (!name) return;
+        const list = companiesByContract.get(cc.contract_id) || [];
+        list.push(name);
+        companiesByContract.set(cc.contract_id, list);
+      });
 
       // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
       const { data: timelines, error: tlErr } = await supabase
@@ -648,6 +686,7 @@ export function GanttReportsSection() {
         result.push({
           contractId,
           contractName: contract.name,
+          companyNames: companiesByContract.get(contractId) || [],
           timelineName: timeline?.name ?? "",
           tasks,
           taskTree,
@@ -1114,6 +1153,22 @@ export function GanttReportsSection() {
                     </Select>
                   </div>
 
+                  {/* Orden secundario (acumulativo) */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground font-medium">luego:</span>
+                    <Select value={sortBy2} onValueChange={(v) => setSortBy2(v as SortBy2)}>
+                      <SelectTrigger className="h-7 w-40 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin orden secundario</SelectItem>
+                        <SelectItem value="empresa">Empresa (A→Z)</SelectItem>
+                        <SelectItem value="name">Nombre (A→Z)</SelectItem>
+                        <SelectItem value="capex_desc">CAPEX (mayor a menor)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="w-px h-5 bg-border mx-1" />
 
                   {/* Selección para exportar */}
@@ -1201,6 +1256,13 @@ export function GanttReportsSection() {
                                 <ChevronUp className="h-4 w-4 flex-shrink-0" />
                               ) : (
                                 <ChevronDown className="h-4 w-4 flex-shrink-0 rotate-[-90deg]" />
+                              )}
+                              {item.companyNames.length > 0 && (
+                                <CompanyLogo
+                                  companyNames={item.companyNames}
+                                  size="sm"
+                                  className="flex-shrink-0"
+                                />
                               )}
                               <div className="min-w-0">
                                 <div className="font-semibold text-sm truncate">
