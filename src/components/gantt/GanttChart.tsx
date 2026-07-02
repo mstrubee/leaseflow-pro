@@ -5,7 +5,7 @@ import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ga
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronsDownUp, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -705,6 +705,12 @@ export function GanttChart({
     [taskTree]
   );
 
+  // Botón "Expandir/Contraer Todo": expande o colapsa TODO de una sola vez.
+  const toggleExpandAllFull = () => {
+    setExpandedTasks(allExpanded ? new Set() : new Set(allParentTaskIds));
+  };
+
+  // Botón "Expandir/Comprimir Niveles": progresivo, un nivel por clic (con rebote).
   const toggleExpandAll = () => progressiveToggle(rootParentIds, "__all__");
 
   // Bulk toggle: convert ALL task durations to business or calendar days, recalculating end_date.
@@ -1581,18 +1587,33 @@ export function GanttChart({
                 <div className="flex items-center gap-2">
                   <span>Cronograma</span>
                   {allParentTaskIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={toggleExpandAll}
-                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
-                    >
-                      {allExpanded ? (
-                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
-                      ) : (
-                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
-                      )}
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                        onClick={toggleExpandAllFull}
+                        title={allExpanded ? "Contraer todo (todos los niveles)" : "Expandir todo (todos los niveles)"}
+                      >
+                        {allExpanded ? (
+                          <><ChevronsDownUp className="h-3 w-3 mr-1" />Contraer Todo</>
+                        ) : (
+                          <><ChevronsUpDown className="h-3 w-3 mr-1" />Expandir Todo</>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs"
+                        onClick={toggleExpandAll}
+                        title={allExpanded ? "Comprimir un nivel por clic" : "Expandir un nivel por clic"}
+                      >
+                        {allExpanded ? (
+                          <><ChevronDown className="h-3 w-3 mr-1" />Comprimir Niveles</>
+                        ) : (
+                          <><ChevronRight className="h-3 w-3 mr-1" />Expandir Niveles</>
+                        )}
+                      </Button>
+                    </>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
@@ -1682,20 +1703,6 @@ export function GanttChart({
                       <ZoomIn className="h-3 w-3" />
                     </button>
                   </div>
-                  {allParentTaskIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={toggleExpandAll}
-                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
-                    >
-                      {allExpanded ? (
-                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
-                      ) : (
-                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
-                      )}
-                    </Button>
-                  )}
                   <Button
                     variant="outline"
                     size="sm"
