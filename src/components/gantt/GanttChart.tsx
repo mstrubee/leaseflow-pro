@@ -2259,14 +2259,11 @@ export function GanttChart({
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
               const rowNumber = rowIdx + 1;
-              // Filas con dependencias: fondo del color de la línea al 70% de
-              // transparencia (equivale a mezclar con blanco → lightenHex 0.7)
-              // y texto en negrita, desde la columna "#" hasta "% Avance".
-              // Solo dependencias reales (cuyo destino aún existe): evita colorear
-              // tareas "puras" que quedaron con dependencias huérfanas de una
-              // predecesora eliminada.
-              const hasDeps = !!task.dependencies?.some((d) => taskById.has(d.depends_on_task_id));
-              const depBg = hasDeps && effective.color ? lightenHex(effective.color, 0.7) : null;
+              // Solo las líneas madre (las que muestran chevron, es decir, con hijas)
+              // se colorean: fondo con SU color al 70% de transparencia (equivale a
+              // mezclar con blanco → lightenHex 0.7) y texto en negrita, desde la
+              // columna "#" hasta "% Avance". Las tareas hoja NO se colorean.
+              const depBg = hasChildren && effective.color ? lightenHex(effective.color, 0.7) : null;
 
               return (
                 <ContextMenu key={task.id}>
@@ -2285,7 +2282,7 @@ export function GanttChart({
                         rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
                         rowDragOverId === task.id && dropPosition === "into" && "ring-2 ring-inset ring-primary bg-primary/10",
                         task.status === "completed" && "bg-muted/30",
-                        hasDeps && "font-bold"
+                        hasChildren && "font-bold"
                       )}
                       style={{ height: ROW_HEIGHT }}
                     >
