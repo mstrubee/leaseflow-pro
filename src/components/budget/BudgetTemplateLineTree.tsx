@@ -40,7 +40,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
 export interface TemplateLine {
   id: string;
@@ -406,16 +405,16 @@ const SortableTemplateLineItem = ({
     attributes,
     listeners,
     setNodeRef,
-    transform,
-    transition,
     isDragging,
     isOver,
   } = useSortable({ id: line.id });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  // Con DragOverlay activo (la línea arrastrada se muestra siguiendo el cursor),
+  // NO aplicamos el transform de "sorting": si lo hiciéramos, todas las líneas
+  // se deslizarían para hacer espacio, lo que resulta confuso en un árbol.
+  // Las filas quedan quietas y el destino se indica con el resaltado
+  // (isReorderTarget / isReparentTarget) más abajo.
+  const style = { opacity: isDragging ? 0.4 : undefined };
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
