@@ -1442,6 +1442,20 @@ export function GanttChart({
     return { color: null, inherited: false };
   }, [taskById]);
 
+  // Color de la RAMA: color del ancestro de más alto nivel que tenga color
+  // asignado (la fila raíz del grupo, ej. "1"). Así todas las madres anidadas
+  // (1.3, 1.3.x, …) comparten el color de su grupo de primer nivel y no el de
+  // un ancestro cercano ni un color propio mal asignado.
+  const getBranchRootColor = useCallback((task: GanttTask): string | null => {
+    let node: GanttTask | undefined = task;
+    let topColor: string | null = task.color ?? null;
+    while (node?.parent_id && taskById.has(node.parent_id)) {
+      node = taskById.get(node.parent_id);
+      if (node?.color) topColor = node.color; // el más alto gana
+    }
+    return topColor;
+  }, [taskById]);
+
   // Progreso efectivo: una línea madre muestra el progreso agregado de sus hijas
   // (promedio ponderado por duración); una hoja usa su progreso manual o automático.
   const getEffectiveProgress = useCallback((task: GanttTask): number => {
@@ -2260,10 +2274,11 @@ export function GanttChart({
               const effective = getEffectiveColor(task);
               const rowNumber = rowIdx + 1;
               // Solo las líneas madre (las que muestran chevron, es decir, con hijas)
-              // se colorean: fondo con SU color al 70% de transparencia (equivale a
-              // mezclar con blanco → lightenHex 0.7) y texto en negrita, desde la
-              // columna "#" hasta "% Avance". Las tareas hoja NO se colorean.
-              const depBg = hasChildren && effective.color ? lightenHex(effective.color, 0.7) : null;
+              // se colorean: fondo con el color de SU GRUPO de primer nivel (raíz de
+              // la rama) al 70% de transparencia (mezcla con blanco → lightenHex 0.7)
+              // y texto en negrita, desde "#" hasta "% Avance". Las hojas NO se colorean.
+              const branchColor = hasChildren ? getBranchRootColor(task) : null;
+              const depBg = branchColor ? lightenHex(branchColor, 0.7) : null;
 
               return (
                 <ContextMenu key={task.id}>
