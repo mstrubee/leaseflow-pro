@@ -1,6 +1,6 @@
-import { useState, createContext, useContext, useMemo } from "react";
+import { useState, createContext, useContext, useMemo, useRef } from "react";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
-import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowRight, Ruler, Percent } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowUp, ArrowDown, Ruler, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,7 +28,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   DragEndEvent,
+  DragMoveEvent,
   DragOverEvent,
   DragOverlay,
   DragStartEvent,
@@ -80,6 +82,15 @@ interface BudgetTemplateLineTreeProps {
   isRoot?: boolean;
 }
 
+// Intención semántica del arrastre (para feedback visual claro):
+//  - reorder-same: reordenar dentro del mismo padre
+//  - change-hierarchy: mover a otro padre (into a otro, o before/after con padre distinto)
+//  - new-root: soltar en la zona raíz para crear una jerarquía de primer nivel
+type DragIntent = "reorder-same" | "change-hierarchy" | "new-root" | null;
+
+// Id centinela del droppable de "nueva jerarquía de primer nivel"
+const ROOT_END_ID = "__root_end__";
+
 // Context for drag state
 interface DragContextType {
   activeId: string | null;
@@ -87,6 +98,7 @@ interface DragContextType {
   activeLevel: number | null;
   overLevel: number | null;
   dropPosition: "before" | "into" | "after" | null;
+  intent: DragIntent;
 }
 
 const DragStateContext = createContext<DragContextType>({
@@ -95,6 +107,7 @@ const DragStateContext = createContext<DragContextType>({
   activeLevel: null,
   overLevel: null,
   dropPosition: null,
+  intent: null,
 });
 
 // Helper to get all descendant IDs of a line
@@ -166,6 +179,27 @@ const getSiblings = (lines: TemplateLine[], lineId: string, parentId: string | n
   return parent?.children || [];
 };
 
+// Zona de drop dedicada al final de la lista: soltar aquí promueve la línea a
+// jerarquía de primer nivel (raíz). Solo visible mientras se arrastra.
+const RootEndDropZone = ({ visible }: { visible: boolean }) => {
+  const { setNodeRef, isOver } = useDroppable({ id: ROOT_END_ID });
+  if (!visible) return null;
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "mt-2 rounded-lg border-2 border-dashed py-6 px-4 text-center text-sm flex items-center justify-center gap-2 transition-colors",
+        isOver
+          ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium"
+          : "border-border/60 text-muted-foreground",
+      )}
+    >
+      <CornerDownRight className="h-4 w-4" />
+      Soltar aquí para crear una nueva jerarquía de primer nivel
+    </div>
+  );
+};
+
 export const BudgetTemplateLineTree = ({
   lines,
   onAddLine,
@@ -181,6 +215,10 @@ export const BudgetTemplateLineTree = ({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"before" | "into" | "after" | null>(null);
+  const [intent, setIntent] = useState<DragIntent>(null);
+  // Y del puntero durante el arrastre = Y inicial + delta acumulado.
+  const initialPointerYRef = useRef<number | null>(null);
+  const pointerYRef = useRef<number | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -201,51 +239,124 @@ export const BudgetTemplateLineTree = ({
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    // Captura la Y inicial del puntero (solo mouse/touch; teclado no la trae).
+    const ae = event.activatorEvent as any;
+    const y = typeof ae?.clientY === "number" ? ae.clientY : null;
+    initialPointerYRef.current = y;
+    pointerYRef.current = y;
   };
 
-  // Zona de drop según la posición vertical del cursor/arrastre sobre la fila
-  // destino: tercio superior → "before" (reordenar antes), tercio inferior →
-  // "after" (reordenar después), centro → "into" (mover dentro / reparentar).
+  const handleDragMove = (event: DragMoveEvent) => {
+    if (initialPointerYRef.current != null) {
+      pointerYRef.current = initialPointerYRef.current + event.delta.y;
+    }
+  };
+
+  // Zona de drop según la posición vertical del PUNTERO sobre la fila destino:
+  // tercio superior → "before", tercio inferior → "after", centro → "into".
+  // Si no hay puntero (arrastre por teclado), cae al centro del elemento arrastrado.
   const resolveDropPosition = (event: DragOverEvent | DragEndEvent): "before" | "into" | "after" => {
-    const activeRect = event.active.rect.current.translated;
     const overRect = event.over?.rect;
-    if (!activeRect || !overRect) return "into";
-    const activeCenter = activeRect.top + activeRect.height / 2;
-    const rel = (activeCenter - overRect.top) / overRect.height;
-    if (rel < 0.3) return "before";
-    if (rel > 0.7) return "after";
+    if (!overRect) return "into";
+    let refY = pointerYRef.current;
+    if (refY == null) {
+      const activeRect = event.active.rect.current.translated;
+      if (!activeRect) return "into";
+      refY = activeRect.top + activeRect.height / 2;
+    }
+    const rel = (refY - overRect.top) / overRect.height;
+    if (rel < 0.25) return "before";
+    if (rel > 0.75) return "after";
     return "into";
   };
 
+  // Deriva la intención semántica para pintar y para el hint.
+  const resolveDragIntent = (
+    activeLine: TemplateLine | null,
+    overLine: TemplateLine | null,
+    position: "before" | "into" | "after",
+    overIsRootZone: boolean,
+  ): DragIntent => {
+    if (overIsRootZone) return "new-root";
+    if (!activeLine || !overLine) return null;
+    if (position === "into") {
+      return overLine.id === activeLine.parent_id ? "reorder-same" : "change-hierarchy";
+    }
+    const newParentId = overLine.parent_id;
+    return newParentId === activeLine.parent_id ? "reorder-same" : "change-hierarchy";
+  };
+
   const handleDragOver = (event: DragOverEvent) => {
-    const { over } = event;
-    setOverId(over ? (over.id as string) : null);
-    setDropPosition(over ? resolveDropPosition(event) : null);
+    const { active, over } = event;
+    const overIdValue = over ? (over.id as string) : null;
+    setOverId(overIdValue);
+
+    // Zona raíz: no tiene línea/rect de fila asociada; cortocircuito.
+    if (overIdValue === ROOT_END_ID) {
+      setDropPosition(null);
+      setIntent("new-root");
+      return;
+    }
+    if (!over) {
+      setDropPosition(null);
+      setIntent(null);
+      return;
+    }
+    const position = resolveDropPosition(event);
+    setDropPosition(position);
+    const activeLine = findLineById(rootLines, active.id as string);
+    const overLine = findLineById(rootLines, overIdValue!);
+    setIntent(resolveDragIntent(activeLine, overLine, position, false));
+  };
+
+  const clearDragState = () => {
+    setActiveId(null);
+    setOverId(null);
+    setDropPosition(null);
+    setIntent(null);
+    initialPointerYRef.current = null;
+    pointerYRef.current = null;
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    const position = over ? resolveDropPosition(event) : "into";
-    setActiveId(null);
-    setOverId(null);
-    setDropPosition(null);
-
-    if (!over || active.id === over.id) return;
-
+    const overIdValue = over ? (over.id as string) : null;
+    const position = over && overIdValue !== ROOT_END_ID ? resolveDropPosition(event) : "into";
     const activeLineId = active.id as string;
-    const overLineId = over.id as string;
+    clearDragState();
+
+    if (!over) return;
 
     const activeLine = findLineById(rootLines, activeLineId);
+    if (!activeLine) return;
+    const descendantIds = getDescendantIds(activeLine);
+
+    // Nueva jerarquía de primer nivel (zona raíz dedicada).
+    if (overIdValue === ROOT_END_ID) {
+      const rootIds = rootLines
+        .filter((l) => l.parent_id === null && l.id !== activeLineId)
+        .map((l) => l.id);
+      if (onMoveLine) onMoveLine(activeLineId, null, [...rootIds, activeLineId]);
+      else if (onReparent) onReparent(activeLineId, null);
+      return;
+    }
+
+    if (active.id === over.id) return;
+    const overLineId = overIdValue!;
     const overLine = findLineById(rootLines, overLineId);
-    if (!activeLine || !overLine) return;
+    if (!overLine) return;
 
     // Prevenir ciclos: no soltar una línea dentro/como hermana bajo su propio subárbol
-    const descendantIds = getDescendantIds(activeLine);
     if (descendantIds.includes(overLineId)) return;
 
     if (position === "into") {
-      // Mover DENTRO de la línea destino (reparentar como hija)
-      if (onReparent) onReparent(activeLineId, overLineId);
+      // Mover DENTRO de la línea destino (reparentar como última hija, con
+      // display_order reindexado de forma atómica vía onMoveLine).
+      const childIds = getSiblings(rootLines, activeLineId, overLineId)
+        .map((s) => s.id)
+        .filter((id) => id !== activeLineId);
+      if (onMoveLine) onMoveLine(activeLineId, overLineId, [...childIds, activeLineId]);
+      else if (onReparent) onReparent(activeLineId, overLineId);
       return;
     }
 
@@ -279,27 +390,31 @@ export const BudgetTemplateLineTree = ({
   };
 
   const handleDragCancel = () => {
-    setActiveId(null);
-    setOverId(null);
-    setDropPosition(null);
+    clearDragState();
   };
 
   const activeLine = activeId ? findLineById(rootLines, activeId) : null;
-  const overLine = overId ? findLineById(rootLines, overId) : null;
-
-  // Tipo de acción para el cartelito, según la zona de drop (antes/dentro/después)
-  const actionType: "reorder" | "reparent" | null =
-    !activeLine || !overLine ? null : dropPosition === "into" ? "reparent" : "reorder";
+  const overLine = overId && overId !== ROOT_END_ID ? findLineById(rootLines, overId) : null;
+  // Padre destino (para el cartelito de "cambiar de jerarquía"):
+  //  into → la propia línea destino; before/after → el padre de la línea destino.
+  const destParent = overLine
+    ? dropPosition === "into"
+      ? overLine
+      : overLine.parent_id
+        ? findLineById(rootLines, overLine.parent_id)
+        : null
+    : null;
 
   // Only render the DndContext at the root level
   if (isRoot) {
     return (
-      <DragStateContext.Provider value={{ activeId, overId, activeLevel, overLevel, dropPosition }}>
+      <DragStateContext.Provider value={{ activeId, overId, activeLevel, overLevel, dropPosition, intent }}>
         <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
@@ -326,7 +441,12 @@ export const BudgetTemplateLineTree = ({
               easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
             }}>
               {activeLine ? (
-                <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-background border-2 border-primary shadow-xl animate-scale-in">
+                <div className={cn(
+                  "flex items-center gap-3 py-2.5 px-3 rounded-lg bg-background border-2 shadow-xl animate-scale-in",
+                  intent === "change-hierarchy" ? "border-violet-500"
+                    : intent === "new-root" ? "border-emerald-500"
+                    : "border-blue-500",
+                )}>
                   <GripVertical className="h-4 w-4 text-primary" />
                   <span className="text-sm font-medium">{activeLine.name}</span>
                   {activeLine.children && activeLine.children.length > 0 && (
@@ -342,32 +462,39 @@ export const BudgetTemplateLineTree = ({
                 </div>
               ) : null}
             </DragOverlay>
+
+            {/* Zona dedicada: soltar aquí para crear una jerarquía de primer nivel */}
+            {level === 0 && <RootEndDropZone visible={!!activeId} />}
           </DndContext>
-          
-          {/* Drop indicator hint */}
-          {activeId && overId && overLine && (
+
+          {/* Cartelito flotante: 3 intenciones claras (color + ícono + texto) */}
+          {activeId && intent && (intent === "new-root" || overLine) && (
             <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
               <div className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg text-sm font-medium",
-                actionType === "reparent" 
-                  ? "bg-primary text-primary-foreground" 
-                  : "bg-muted text-foreground"
+                "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg text-sm font-medium text-white",
+                intent === "reorder-same" && "bg-blue-600",
+                intent === "change-hierarchy" && "bg-violet-600",
+                intent === "new-root" && "bg-emerald-600",
               )}>
-                {actionType === "reparent" ? (
+                {intent === "new-root" ? (
+                  <><CornerDownRight className="h-4 w-4" /> Crear nueva jerarquía de primer nivel</>
+                ) : intent === "change-hierarchy" ? (
                   <>
                     <CornerDownRight className="h-4 w-4" />
-                    Mover dentro de "{overLine.name}"
+                    {dropPosition === "into"
+                      ? `Mover dentro de "${overLine!.name}"`
+                      : `Mover a la jerarquía de "${destParent?.name ?? "raíz"}"`}
                   </>
                 ) : (
                   <>
-                    <ArrowRight className="h-4 w-4" />
-                    Reordenar junto a "{overLine.name}"
+                    {dropPosition === "before" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+                    Reordenar {dropPosition === "before" ? "antes" : "después"} de "{overLine!.name}"
                   </>
                 )}
               </div>
             </div>
           )}
-          
+
           {level === 0 && (
             <Button
               variant="ghost"
@@ -429,7 +556,7 @@ const SortableTemplateLineItem = ({
   onMoveLine,
   allLines,
 }: SortableTemplateLineItemProps) => {
-  const { activeId, overId, dropPosition } = useContext(DragStateContext);
+  const { activeId, overId, dropPosition, intent } = useContext(DragStateContext);
   const { ufValue } = useEconomicIndicators();
   
   const {
@@ -486,6 +613,10 @@ const SortableTemplateLineItem = ({
   const isReparentTarget = isDropTarget && dropPosition === "into";
   const isReorderBefore = isDropTarget && dropPosition === "before";
   const isReorderAfter = isDropTarget && dropPosition === "after";
+  // Color por intención: azul = reordenar mismo nivel, violeta = cambiar de jerarquía.
+  const isChangeHierarchy = intent === "change-hierarchy";
+  const lineColor = isChangeHierarchy ? "bg-violet-500" : "bg-blue-500";
+  const showInsertionLine = isReorderBefore || isReorderAfter;
 
   const handleSaveQuantity = () => {
     const newQty = parseFloat(editQuantity) || 0;
@@ -589,7 +720,20 @@ const SortableTemplateLineItem = ({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-30")}>
+    <div ref={setNodeRef} style={style} className={cn("relative", isDragging && "opacity-30")}>
+      {/* Línea de inserción (reordenar / cambiar jerarquía) alineada al nivel destino */}
+      {showInsertionLine && (
+        <div
+          className={cn(
+            "absolute left-0 right-2 h-0.5 rounded-full z-20 pointer-events-none",
+            lineColor,
+            "before:content-[''] before:absolute before:-left-1 before:-top-[3px] before:h-2 before:w-2 before:rounded-full",
+            isChangeHierarchy ? "before:bg-violet-500" : "before:bg-blue-500",
+            isReorderBefore ? "-top-0.5" : "-bottom-0.5",
+          )}
+          style={{ marginLeft: `${level * 1.5}rem` }}
+        />
+      )}
       <div
         className={cn(
           "grid items-center py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
@@ -608,9 +752,10 @@ const SortableTemplateLineItem = ({
           level === 2 && !hasChildren && "bg-muted/10",
           level >= 3 && hasChildren && "bg-muted/35",
           level >= 3 && !hasChildren && "bg-muted/5",
-          isReparentTarget && "ring-2 ring-primary ring-offset-2 bg-primary/10 scale-[1.02]",
-          isReorderBefore && "border-t-2 border-primary",
-          isReorderAfter && "border-b-2 border-primary"
+          // "into": anillo violeta (cambiar de jerarquía) o azul (mismo padre, raro)
+          isReparentTarget && (isChangeHierarchy
+            ? "ring-2 ring-violet-500 ring-offset-2 bg-violet-500/10 scale-[1.02]"
+            : "ring-2 ring-blue-500 ring-offset-2 bg-blue-500/10 scale-[1.02]")
         )}
       >
         {/* Col 1: Drag handle */}

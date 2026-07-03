@@ -503,6 +503,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
           return supabase.from("budget_template_lines").update(patch).eq("id", id);
         }),
       );
+      toast({ title: "Línea movida", description: "La estructura se ha actualizado" });
     } catch (error: any) {
       setFlatLines(flatLines);
       setLines(buildTree(flatLines));
