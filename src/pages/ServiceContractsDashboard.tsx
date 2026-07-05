@@ -25,7 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle, ChevronRight, Search } from "lucide-react";
 
 type ServiceContractStatus = "en_negociacion" | "activo" | "vencido" | "cancelado";
 type ServiceContractFrequency = "mensual" | "trimestral" | "semestral" | "anual" | "otro";
@@ -140,6 +140,7 @@ export default function ServiceContractsDashboard() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [contractSearch, setContractSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,6 +187,7 @@ export default function ServiceContractsDashboard() {
   const openCreate = () => {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
+    setContractSearch("");
     setDialogOpen(true);
   };
 
@@ -211,6 +213,7 @@ export default function ServiceContractsDashboard() {
       notes: sc.notes ?? "",
       selectedContractIds: sc.linked_contracts ?? [],
     });
+    setContractSearch("");
     setDialogOpen(true);
   };
 
@@ -618,37 +621,85 @@ export default function ServiceContractsDashboard() {
             </div>
 
             {/* Associated contracts */}
-            {contractOptions.length > 0 && (
-              <div className="space-y-1.5">
-                <Label>Contratos de locales asociados</Label>
-                <p className="text-xs text-muted-foreground">
-                  Selecciona los locales donde aplica este servicio. Omite si es corporativo.
-                </p>
-                <ScrollArea className="h-44 border rounded-md p-3">
-                  <div className="space-y-2">
-                    {contractOptions.map(co => {
-                      const companyNames = getCompanyNames(co.contract_companies);
-                      return (
-                        <div key={co.id} className="flex items-center gap-2.5">
-                          <Checkbox
-                            id={`sc-contract-${co.id}`}
-                            checked={form.selectedContractIds.includes(co.id)}
-                            onCheckedChange={() => toggleContractId(co.id)}
-                          />
-                          <CompanyLogo companyNames={companyNames} size="sm" />
-                          <label
-                            htmlFor={`sc-contract-${co.id}`}
-                            className="text-sm cursor-pointer leading-none flex-1"
-                          >
-                            {co.name}
-                          </label>
-                        </div>
-                      );
-                    })}
+            {contractOptions.length > 0 && (() => {
+              const filtered = contractOptions.filter(co =>
+                co.name.toLowerCase().includes(contractSearch.toLowerCase())
+              );
+              const filteredIds = filtered.map(co => co.id);
+              const allFilteredSelected = filteredIds.length > 0 && filteredIds.every(id => form.selectedContractIds.includes(id));
+              const toggleAll = () => {
+                if (allFilteredSelected) {
+                  setForm(f => ({ ...f, selectedContractIds: f.selectedContractIds.filter(id => !filteredIds.includes(id)) }));
+                } else {
+                  setForm(f => ({ ...f, selectedContractIds: [...new Set([...f.selectedContractIds, ...filteredIds])] }));
+                }
+              };
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Contratos de locales asociados</Label>
+                    {form.selectedContractIds.length > 0 && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {form.selectedContractIds.length} seleccionado{form.selectedContractIds.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
                   </div>
-                </ScrollArea>
-              </div>
-            )}
+                  <p className="text-xs text-muted-foreground">
+                    Selecciona los locales donde aplica este servicio. Omite si es corporativo.
+                  </p>
+                  {/* Search + select-all row */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        value={contractSearch}
+                        onChange={e => setContractSearch(e.target.value)}
+                        placeholder="Buscar local..."
+                        className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 text-xs"
+                      onClick={toggleAll}
+                      disabled={filteredIds.length === 0}
+                    >
+                      {allFilteredSelected ? "Anular selección" : "Seleccionar todos"}
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-48 border rounded-md p-3">
+                    {filtered.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">Sin resultados</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {filtered.map(co => {
+                          const companyNames = getCompanyNames(co.contract_companies);
+                          return (
+                            <div key={co.id} className="flex items-center gap-2.5">
+                              <Checkbox
+                                id={`sc-contract-${co.id}`}
+                                checked={form.selectedContractIds.includes(co.id)}
+                                onCheckedChange={() => toggleContractId(co.id)}
+                              />
+                              <CompanyLogo companyNames={companyNames} size="sm" />
+                              <label
+                                htmlFor={`sc-contract-${co.id}`}
+                                className="text-sm cursor-pointer leading-none flex-1"
+                              >
+                                {co.name}
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </div>
+              );
+            })()}
 
             {/* Notes */}
             <div className="space-y-1.5">
