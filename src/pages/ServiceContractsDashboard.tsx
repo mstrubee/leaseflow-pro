@@ -57,6 +57,7 @@ interface ContractOption {
   id: string;
   name: string;
   contract_companies?: Array<{ companies: { name: string } | null }>;
+  contract_addresses?: Array<{ region: string }>;
 }
 
 const SERVICE_TYPES = [
@@ -141,6 +142,7 @@ export default function ServiceContractsDashboard() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [contractSearch, setContractSearch] = useState("");
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,7 +173,7 @@ export default function ServiceContractsDashboard() {
   const loadContractOptions = useCallback(async () => {
     const { data } = await supabase
       .from("contracts")
-      .select("id, name, contract_companies(companies(name))")
+      .select("id, name, contract_companies(companies(name)), contract_addresses(region)")
       .eq("status", "firmado")
       .is("deleted_at", null)
       .order("name");
@@ -188,6 +190,7 @@ export default function ServiceContractsDashboard() {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
     setContractSearch("");
+    setSelectedRegions([]);
     setDialogOpen(true);
   };
 
@@ -214,6 +217,7 @@ export default function ServiceContractsDashboard() {
       selectedContractIds: sc.linked_contracts ?? [],
     });
     setContractSearch("");
+    setSelectedRegions([]);
     setDialogOpen(true);
   };
 
@@ -622,20 +626,39 @@ export default function ServiceContractsDashboard() {
 
             {/* Associated contracts */}
             {contractOptions.length > 0 && (() => {
-              const filtered = contractOptions.filter(co =>
-                co.name.toLowerCase().includes(contractSearch.toLowerCase())
-              );
+              // Available regions across all options
+              const availableRegions = [...new Set(
+                contractOptions.flatMap(co => (co.contract_addresses ?? []).map(a => a.region).filter(Boolean))
+              )].sort();
+
+              // Apply filters: region(s) + text search
+              const filtered = contractOptions.filter(co => {
+                const matchesRegion = selectedRegions.length === 0 ||
+                  (co.contract_addresses ?? []).some(a => selectedRegions.includes(a.region));
+                const matchesSearch = co.name.toLowerCase().includes(contractSearch.toLowerCase());
+                return matchesRegion && matchesSearch;
+              });
+
               const filteredIds = filtered.map(co => co.id);
-              const allFilteredSelected = filteredIds.length > 0 && filteredIds.every(id => form.selectedContractIds.includes(id));
+              const anyFilteredSelected = filteredIds.some(id => form.selectedContractIds.includes(id));
+
               const toggleAll = () => {
-                if (allFilteredSelected) {
+                if (anyFilteredSelected) {
+                  // Deselect everything visible
                   setForm(f => ({ ...f, selectedContractIds: f.selectedContractIds.filter(id => !filteredIds.includes(id)) }));
                 } else {
+                  // Select everything visible, preserve others
                   setForm(f => ({ ...f, selectedContractIds: [...new Set([...f.selectedContractIds, ...filteredIds])] }));
                 }
               };
+
+              const toggleRegion = (region: string) =>
+                setSelectedRegions(prev =>
+                  prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]
+                );
+
               return (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <Label>Contratos de locales asociados</Label>
                     {form.selectedContractIds.length > 0 && (
@@ -645,9 +668,39 @@ export default function ServiceContractsDashboard() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Selecciona los locales donde aplica este servicio. Omite si es corporativo.
+                    Selecciona los locales donde aplica este servicio. Podés combinar filtros de región con búsqueda manual.
                   </p>
-                  {/* Search + select-all row */}
+
+                  {/* Region filter chips */}
+                  {availableRegions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableRegions.map(region => (
+                        <button
+                          key={region}
+                          type="button"
+                          onClick={() => toggleRegion(region)}
+                          className={`px-2.5 py-1 text-xs rounded-full border font-medium transition-colors ${
+                            selectedRegions.includes(region)
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                          }`}
+                        >
+                          {region}
+                        </button>
+                      ))}
+                      {selectedRegions.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRegions([])}
+                          className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground underline"
+                        >
+                          Limpiar regiones
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Search + select-all/none row */}
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -655,7 +708,7 @@ export default function ServiceContractsDashboard() {
                         type="text"
                         value={contractSearch}
                         onChange={e => setContractSearch(e.target.value)}
-                        placeholder="Buscar local..."
+                        placeholder="Buscar local por nombre..."
                         className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                     </div>
@@ -667,9 +720,11 @@ export default function ServiceContractsDashboard() {
                       onClick={toggleAll}
                       disabled={filteredIds.length === 0}
                     >
-                      {allFilteredSelected ? "Anular selección" : "Seleccionar todos"}
+                      {anyFilteredSelected ? "Anular selección" : "Seleccionar todos"}
                     </Button>
                   </div>
+
+                  {/* List */}
                   <ScrollArea className="h-48 border rounded-md p-3">
                     {filtered.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">Sin resultados</p>
@@ -677,6 +732,7 @@ export default function ServiceContractsDashboard() {
                       <div className="space-y-2">
                         {filtered.map(co => {
                           const companyNames = getCompanyNames(co.contract_companies);
+                          const region = co.contract_addresses?.[0]?.region;
                           return (
                             <div key={co.id} className="flex items-center gap-2.5">
                               <Checkbox
@@ -687,9 +743,12 @@ export default function ServiceContractsDashboard() {
                               <CompanyLogo companyNames={companyNames} size="sm" />
                               <label
                                 htmlFor={`sc-contract-${co.id}`}
-                                className="text-sm cursor-pointer leading-none flex-1"
+                                className="text-sm cursor-pointer leading-none flex-1 min-w-0"
                               >
-                                {co.name}
+                                <span className="block truncate">{co.name}</span>
+                                {region && (
+                                  <span className="text-xs text-muted-foreground">{region}</span>
+                                )}
                               </label>
                             </div>
                           );
