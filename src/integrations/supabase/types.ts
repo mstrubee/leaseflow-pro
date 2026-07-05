@@ -187,6 +187,7 @@ export type Database = {
           next_send_at: string | null
           priority: number | null
           repeat_every_days: number | null
+          service_contract_id: string | null
           title: string
           updated_at: string
         }
@@ -215,6 +216,7 @@ export type Database = {
           next_send_at?: string | null
           priority?: number | null
           repeat_every_days?: number | null
+          service_contract_id?: string | null
           title: string
           updated_at?: string
         }
@@ -243,6 +245,7 @@ export type Database = {
           next_send_at?: string | null
           priority?: number | null
           repeat_every_days?: number | null
+          service_contract_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -266,6 +269,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
         ]
@@ -5235,6 +5245,7 @@ export type Database = {
           opex_master_id: string | null
           order_date: string
           order_number: string
+          service_contract_id: string | null
           status: string
           storage_provider: string | null
           supplier_id: string | null
@@ -5269,6 +5280,7 @@ export type Database = {
           opex_master_id?: string | null
           order_date?: string
           order_number: string
+          service_contract_id?: string | null
           status?: string
           storage_provider?: string | null
           supplier_id?: string | null
@@ -5303,6 +5315,7 @@ export type Database = {
           opex_master_id?: string | null
           order_date?: string
           order_number?: string
+          service_contract_id?: string | null
           status?: string
           storage_provider?: string | null
           supplier_id?: string | null
@@ -5345,6 +5358,13 @@ export type Database = {
             columns: ["opex_master_id"]
             isOneToOne: false
             referencedRelation: "opex_master_budget"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
           {

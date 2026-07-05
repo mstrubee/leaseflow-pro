@@ -1377,8 +1377,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         amountClp = amount * ufValue;
       }
 
-      const { error } = await supabase.from("purchase_orders").insert({
-        contract_id: contractId,
+      const ocPayload: Record<string, unknown> = {
         budget_id: budget.id,
         budget_line_id: ocBudgetLineId,
         order_number: ocForm.order_number,
@@ -1389,8 +1388,14 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         input_currency: ocForm.currency,
         uf_value_at_entry: ufValue,
         year: selectedYear,
-        status: "abierta"
-      });
+        status: "abierta",
+      };
+      if (serviceContractId) {
+        ocPayload.service_contract_id = serviceContractId;
+      } else {
+        ocPayload.contract_id = contractId;
+      }
+      const { error } = await supabase.from("purchase_orders").insert(ocPayload);
 
       if (error) throw error;
 
@@ -1860,9 +1865,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
               onAddLine={canEditLines ? handleAddLine : undefined}
               onUpdateLine={canEditLines ? handleUpdateLine : undefined}
               onDeleteLine={canEditLines ? handleDeleteLine : undefined}
-              onCreateOC={canManageOC && !serviceContractId ? handleCreateOCFromLine : undefined}
-              onCreateOCRequest={canManageOC && !serviceContractId ? handleCreateOCRequestFromLine : undefined}
-              onCreateInvoice={canManageOC && !serviceContractId ? handleCreateInvoiceFromLine : undefined}
+              onCreateOC={canManageOC ? handleCreateOCFromLine : undefined}
+              onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
+              onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed || forceReadOnly || !canEditLines}
               compactView={forceReadOnly || !canEditLines}

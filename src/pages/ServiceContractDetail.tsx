@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { ServiceBudgetSection } from "@/components/budget/ServiceBudgetSection";
+import { ServiceContractAlertsSection } from "@/components/alerts/ServiceContractAlertsSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -167,11 +168,12 @@ export default function ServiceContractDetail() {
           </CardContent></Card>
         )}
 
-        {/* Tabs: Cronograma | Presupuesto */}
+        {/* Tabs: Cronograma | Presupuesto | Alertas */}
         <Tabs defaultValue="gantt">
           <TabsList>
             <TabsTrigger value="gantt">Cronograma</TabsTrigger>
             <TabsTrigger value="budget">Control Presupuestario</TabsTrigger>
+            <TabsTrigger value="alerts">Alertas</TabsTrigger>
           </TabsList>
           <TabsContent value="gantt" className="mt-4">
             <GanttModule serviceContractId={sc.id} />
@@ -180,6 +182,14 @@ export default function ServiceContractDetail() {
             <ServiceBudgetSection
               serviceContractId={sc.id}
               serviceContractName={sc.name}
+            />
+          </TabsContent>
+          <TabsContent value="alerts" className="mt-4">
+            <ServiceContractAlertsSection
+              serviceContractId={sc.id}
+              serviceContractName={sc.name}
+              endDate={sc.end_date}
+              noticeDays={sc.notice_days}
             />
           </TabsContent>
         </Tabs>
