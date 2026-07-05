@@ -29,6 +29,7 @@ import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
+import { ServiceContractApproversManager } from "@/components/admin/ServiceContractApproversManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
@@ -839,6 +840,7 @@ const AdminPanel = () => {
           <div className="space-y-4">
             <CompanyManager defaultCollapsed />
             <OrgChartManager defaultCollapsed />
+            <ServiceContractApproversManager />
             <CollapsibleCard
               title="Logos de la Aplicación"
               description="Administra los logos que se muestran en la aplicación"

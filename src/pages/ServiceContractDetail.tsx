@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { ServiceBudgetSection } from "@/components/budget/ServiceBudgetSection";
 import { ServiceContractAlertsSection } from "@/components/alerts/ServiceContractAlertsSection";
+import { ServiceContractApprovalPanel } from "@/components/serviceContracts/ServiceContractApprovalPanel";
+import type { ApprovalStatus } from "@/lib/serviceContractApproval";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +30,12 @@ interface ServiceContractFull {
   notice_days: number | null;
   notes: string | null;
   supplier: { id: string; name: string } | null;
+  created_by: string | null;
+  approval_status: ApprovalStatus;
+  approver_id: string | null;
+  approver_name: string | null;
+  approval_comment: string | null;
+  approved_at: string | null;
 }
 
 const STATUS_MAP: Record<ServiceContractStatus, { label: string; className: string }> = {
@@ -57,24 +65,26 @@ export default function ServiceContractDetail() {
   const [sc, setSc] = useState<ServiceContractFull | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadContract = useCallback(async () => {
     if (!id) return;
-    setLoading(true);
-    supabase
+    const { data, error } = await supabase
       .from("service_contracts")
       .select("*, supplier:suppliers(id, name)")
       .eq("id", id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error || !data) {
-          toast.error("No se encontró el contrato de servicio");
-          navigate("/service-contracts");
-        } else {
-          setSc(data as ServiceContractFull);
-        }
-        setLoading(false);
-      });
+      .maybeSingle();
+    if (error || !data) {
+      toast.error("No se encontró el contrato de servicio");
+      navigate("/service-contracts");
+    } else {
+      setSc(data as ServiceContractFull);
+    }
+    setLoading(false);
   }, [id, navigate]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadContract();
+  }, [loadContract]);
 
   if (loading) {
     return (
@@ -167,6 +177,26 @@ export default function ServiceContractDetail() {
             <p className="text-sm text-foreground whitespace-pre-line">{sc.notes}</p>
           </CardContent></Card>
         )}
+
+        {/* Aprobación */}
+        <ServiceContractApprovalPanel
+          contract={{
+            id: sc.id,
+            name: sc.name,
+            service_type: sc.service_type,
+            supplierName: sc.supplier?.name ?? null,
+            amountLabel: `${primaryAmt} / ${FREQUENCY_LABELS[sc.frequency].toLowerCase()}`,
+            periodLabel: `${formatDate(sc.start_date)}${sc.end_date ? ` — ${formatDate(sc.end_date)}` : ""}`,
+            notes: sc.notes,
+            approval_status: sc.approval_status,
+            approver_id: sc.approver_id,
+            approver_name: sc.approver_name,
+            approval_comment: sc.approval_comment,
+            approved_at: sc.approved_at,
+            created_by: sc.created_by,
+          }}
+          onChanged={loadContract}
+        />
 
         {/* Tabs: Cronograma | Presupuesto | Alertas */}
         <Tabs defaultValue="gantt">

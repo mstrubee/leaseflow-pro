@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
+import {
+  APPROVAL_STATUS_MAP, ApprovalStatus, requestApproval, canApprove,
+} from "@/lib/serviceContractApproval";
+import { ApprovalActionDialog, ApprovalDialogContract } from "@/components/serviceContracts/ApprovalActionDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,8 +53,15 @@ interface ServiceContract {
   renewal_term_months: number | null;
   notes: string | null;
   created_at: string;
+  created_by: string | null;
+  approval_status: ApprovalStatus;
+  approver_id: string | null;
+  approver_name: string | null;
+  approval_comment: string | null;
+  approved_at: string | null;
   supplier?: { id: string; name: string } | null;
   linked_contracts?: string[];
+  created_by_name?: string | null;
 }
 
 interface Supplier { id: string; name: string }
@@ -120,6 +132,7 @@ function formatDate(dateStr: string) {
 
 export default function ServiceContractsDashboard() {
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const { ufValue, convertPesosToUF, convertUFToPesos } = useEconomicIndicators();
 
   const [contracts, setContracts] = useState<ServiceContract[]>([]);
@@ -128,9 +141,13 @@ export default function ServiceContractsDashboard() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingApprovalStatus, setEditingApprovalStatus] = useState<ApprovalStatus | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [poolProfileIds, setPoolProfileIds] = useState<Set<string>>(new Set());
+  const [approvalTarget, setApprovalTarget] = useState<ApprovalDialogContract | null>(null);
+  const [approvalOpen, setApprovalOpen] = useState(false);
   const [contractSearch, setContractSearch] = useState("");
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [contractRegionMap, setContractRegionMap] = useState<Record<string, string>>({});
@@ -145,10 +162,18 @@ export default function ServiceContractsDashboard() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("service_contracts")
-      .select("*, supplier:suppliers(id, name), service_contract_contracts(contract_id)")
-      .order("created_at", { ascending: false });
+    const [{ data, error }, { data: profileData }] = await Promise.all([
+      supabase
+        .from("service_contracts")
+        .select("*, supplier:suppliers(id, name), service_contract_contracts(contract_id)")
+        .order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, full_name, email"),
+    ]);
+
+    const nameById: Record<string, string> = {};
+    for (const p of ((profileData as { id: string; full_name: string | null; email: string }[]) ?? [])) {
+      nameById[p.id] = p.full_name || p.email;
+    }
 
     if (error) {
       toast.error("Error al cargar contratos de servicio");
@@ -158,10 +183,19 @@ export default function ServiceContractsDashboard() {
           ...d,
           supplier: d.supplier ?? null,
           linked_contracts: (d.service_contract_contracts ?? []).map((c: any) => c.contract_id),
+          created_by_name: d.created_by ? (nameById[d.created_by] ?? null) : null,
         }))
       );
     }
     setLoading(false);
+  }, []);
+
+  const loadApproverPool = useCallback(async () => {
+    const { data } = await supabase
+      .from("service_contract_approvers")
+      .select("profile_id")
+      .not("profile_id", "is", null);
+    setPoolProfileIds(new Set(((data as { profile_id: string }[]) ?? []).map(a => a.profile_id)));
   }, []);
 
   const loadSuppliers = useCallback(async () => {
@@ -212,10 +246,12 @@ export default function ServiceContractsDashboard() {
     loadSuppliers();
     loadContractOptions();
     loadServiceTypes();
-  }, [load, loadSuppliers, loadContractOptions, loadServiceTypes]);
+    loadApproverPool();
+  }, [load, loadSuppliers, loadContractOptions, loadServiceTypes, loadApproverPool]);
 
   const openCreate = () => {
     setEditingId(null);
+    setEditingApprovalStatus(null);
     setForm({ ...EMPTY_FORM });
     setContractSearch("");
     setSelectedRegions([]);
@@ -226,6 +262,7 @@ export default function ServiceContractsDashboard() {
 
   const openEdit = (sc: ServiceContract) => {
     setEditingId(sc.id);
+    setEditingApprovalStatus(sc.approval_status);
     const cur = sc.display_currency as DisplayCurrency;
     const raw = cur === "CLP"
       ? sc.amount_clp != null ? String(Math.round(sc.amount_clp)) : ""
@@ -256,6 +293,12 @@ export default function ServiceContractsDashboard() {
   const handleSave = async () => {
     if (!form.name.trim() || !form.supplier_id || !form.service_type || !form.start_date || !form.amount_raw) {
       toast.error("Completa los campos obligatorios");
+      return;
+    }
+    // Bloqueo duro: no se puede activar sin estar aprobado
+    const approvedNow = editingId ? editingApprovalStatus === "aprobado" : false;
+    if (form.status === "activo" && !approvedNow) {
+      toast.error("No se puede poner en marcha (Activo) un contrato que no está aprobado.");
       return;
     }
     setSaving(true);
@@ -295,9 +338,17 @@ export default function ServiceContractsDashboard() {
       const { error } = await supabase.from("service_contracts").update(payload).eq("id", editingId);
       if (error) { toast.error("Error al actualizar el contrato"); setSaving(false); return; }
     } else {
-      const { data, error } = await supabase.from("service_contracts").insert(payload).select("id").single();
+      const { data, error } = await supabase
+        .from("service_contracts")
+        .insert({ ...payload, created_by: user?.id ?? null })
+        .select("id")
+        .single();
       if (error || !data) { toast.error("Error al crear el contrato de servicio"); setSaving(false); return; }
       serviceContractId = data.id;
+      // Solicitar aprobación: resuelve al aprobador (jefe directo designado) y deja "pendiente"
+      if (user?.id) {
+        await requestApproval(serviceContractId, user.id);
+      }
     }
 
     if (serviceContractId) {
@@ -309,7 +360,7 @@ export default function ServiceContractsDashboard() {
       }
     }
 
-    toast.success(editingId ? "Contrato actualizado" : "Contrato de servicio creado");
+    toast.success(editingId ? "Contrato actualizado" : "Contrato creado — enviado a aprobación");
     setDialogOpen(false);
     load();
     setSaving(false);
@@ -385,6 +436,22 @@ export default function ServiceContractsDashboard() {
         ? f.selectedContractIds.filter(x => x !== id)
         : [...f.selectedContractIds, id],
     }));
+
+  const openApproval = (sc: ServiceContract) => {
+    const primaryAmt = sc.display_currency === "CLP"
+      ? (sc.amount_clp != null ? formatCLP(sc.amount_clp) : formatCLP(convertUFToPesos(sc.amount_uf)))
+      : formatUF(sc.amount_uf);
+    setApprovalTarget({
+      id: sc.id,
+      name: sc.name,
+      supplierName: sc.supplier?.name ?? null,
+      serviceType: sc.service_type,
+      amountLabel: `${primaryAmt} / ${FREQUENCY_LABELS[sc.frequency].toLowerCase()}`,
+      periodLabel: `${formatDate(sc.start_date)}${sc.end_date ? ` — ${formatDate(sc.end_date)}` : ""}`,
+      notes: sc.notes,
+    });
+    setApprovalOpen(true);
+  };
 
   // Stats
   const activeContracts = contracts.filter(c => c.status === "activo");
@@ -464,16 +531,18 @@ export default function ServiceContractsDashboard() {
             <p className="text-sm mt-1">Crea el primero con el botón "Nuevo contrato de servicio"</p>
           </div>
         ) : (
-          <div className="border rounded-lg overflow-hidden bg-card">
+          <div className="border rounded-lg overflow-x-auto bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Proveedor</TableHead>
                   <TableHead>Servicio</TableHead>
                   <TableHead>Monto</TableHead>
-                  <TableHead>Inicio</TableHead>
                   <TableHead>Término</TableHead>
                   <TableHead className="text-center">Locales</TableHead>
+                  <TableHead>Creador</TableHead>
+                  <TableHead>Aprobador</TableHead>
+                  <TableHead>Aprobación</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="w-[80px]" />
                 </TableRow>
@@ -488,6 +557,9 @@ export default function ServiceContractsDashboard() {
                   const secondaryAmt = sc.display_currency === "CLP"
                     ? formatUF(sc.amount_clp != null && ufValue > 0 ? sc.amount_clp / ufValue : sc.amount_uf)
                     : (ufValue > 0 ? formatCLP(sc.amount_uf * ufValue) : null);
+
+                  const approval = APPROVAL_STATUS_MAP[sc.approval_status] ?? APPROVAL_STATUS_MAP.pendiente;
+                  const actionable = canApprove(sc, { userId: user?.id ?? null, isAdmin, inPool: !!user && poolProfileIds.has(user.id) });
 
                   return (
                     <TableRow
@@ -506,7 +578,6 @@ export default function ServiceContractsDashboard() {
                           / {FREQUENCY_LABELS[sc.frequency].toLowerCase()}
                         </span>
                       </TableCell>
-                      <TableCell className="text-sm">{formatDate(sc.start_date)}</TableCell>
                       <TableCell className="text-sm">
                         {sc.end_date ? (
                           <span className={expiring ? "text-amber-600 font-medium" : ""}>
@@ -519,6 +590,26 @@ export default function ServiceContractsDashboard() {
                       </TableCell>
                       <TableCell className="text-center text-sm text-muted-foreground">
                         {sc.linked_contracts?.length ?? 0}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {sc.created_by_name ?? <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {sc.approver_name ?? <span className="text-muted-foreground text-xs">Sin resolver</span>}
+                      </TableCell>
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          disabled={!actionable}
+                          onClick={() => actionable && openApproval(sc)}
+                          title={actionable ? "Revisar y aprobar" : sc.approval_comment ?? undefined}
+                          className={`text-xs font-semibold px-2 py-0.5 rounded-full ${approval.className} ${
+                            actionable ? "cursor-pointer ring-offset-1 hover:ring-2 hover:ring-current/30" : "cursor-default"
+                          }`}
+                        >
+                          {approval.label}
+                          {actionable && " ·"}
+                        </button>
                       </TableCell>
                       <TableCell>
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${status.className}`}>
@@ -649,11 +740,18 @@ export default function ServiceContractsDashboard() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="en_negociacion">En negociación</SelectItem>
-                    <SelectItem value="activo">Activo</SelectItem>
+                    <SelectItem value="activo" disabled={editingApprovalStatus !== "aprobado"}>
+                      Activo{editingApprovalStatus !== "aprobado" ? " (requiere aprobación)" : ""}
+                    </SelectItem>
                     <SelectItem value="vencido">Vencido</SelectItem>
                     <SelectItem value="cancelado">Cancelado</SelectItem>
                   </SelectContent>
                 </Select>
+                {editingApprovalStatus !== "aprobado" && (
+                  <p className="text-xs text-muted-foreground">
+                    No se puede poner en marcha hasta que el contrato esté aprobado.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1008,6 +1106,15 @@ export default function ServiceContractsDashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Approval action */}
+      <ApprovalActionDialog
+        contract={approvalTarget}
+        actorId={user?.id ?? null}
+        open={approvalOpen}
+        onOpenChange={setApprovalOpen}
+        onDone={() => { load(); loadApproverPool(); }}
+      />
     </div>
   );
 }

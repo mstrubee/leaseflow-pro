@@ -6190,6 +6190,87 @@ export type Database = {
           },
         ]
       }
+      service_contract_approvers: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          org_member_id: string
+          profile_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          org_member_id: string
+          profile_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          org_member_id?: string
+          profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contract_approvers_org_member_id_fkey"
+            columns: ["org_member_id"]
+            isOneToOne: true
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_approvers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_contract_approval_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          comment: string | null
+          created_at: string | null
+          id: string
+          service_contract_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          comment?: string | null
+          created_at?: string | null
+          id?: string
+          service_contract_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          comment?: string | null
+          created_at?: string | null
+          id?: string
+          service_contract_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contract_approval_events_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_approval_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       service_contract_contracts: {
         Row: {
           contract_id: string
@@ -6230,8 +6311,16 @@ export type Database = {
         Row: {
           amount_clp: number | null
           amount_uf: number
+          approval_comment: string | null
+          approval_requested_at: string | null
+          approval_status: string
+          approved_at: string | null
+          approver_id: string | null
+          approver_name: string | null
+          approver_org_member_id: string | null
           auto_renewal: boolean
           created_at: string
+          created_by: string | null
           display_currency: string
           drive_folder_id: string | null
           end_date: string | null
@@ -6251,8 +6340,16 @@ export type Database = {
         Insert: {
           amount_clp?: number | null
           amount_uf: number
+          approval_comment?: string | null
+          approval_requested_at?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approver_id?: string | null
+          approver_name?: string | null
+          approver_org_member_id?: string | null
           auto_renewal?: boolean
           created_at?: string
+          created_by?: string | null
           display_currency?: string
           drive_folder_id?: string | null
           end_date?: string | null
@@ -6272,8 +6369,16 @@ export type Database = {
         Update: {
           amount_clp?: number | null
           amount_uf?: number
+          approval_comment?: string | null
+          approval_requested_at?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approver_id?: string | null
+          approver_name?: string | null
+          approver_org_member_id?: string | null
           auto_renewal?: boolean
           created_at?: string
+          created_by?: string | null
           display_currency?: string
           drive_folder_id?: string | null
           end_date?: string | null
@@ -6303,6 +6408,27 @@ export type Database = {
             columns: ["opex_category_id"]
             isOneToOne: false
             referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_approver_id_fkey"
+            columns: ["approver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_approver_org_member_id_fkey"
+            columns: ["approver_org_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
             referencedColumns: ["id"]
           },
         ]
@@ -6613,6 +6739,14 @@ export type Database = {
       append_maintenance_comment: {
         Args: { p_comment: string; p_form_id: string }
         Returns: undefined
+      }
+      resolve_sc_approver: {
+        Args: { creator: string }
+        Returns: {
+          approver_profile: string
+          approver_org_member: string
+          approver_name: string
+        }[]
       }
       calculate_next_send_at: {
         Args: {

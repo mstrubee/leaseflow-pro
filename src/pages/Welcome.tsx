@@ -6,6 +6,7 @@ import { useAppLogos } from "@/hooks/useAppLogos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
+import { ServiceContractApprovalBanner } from "@/components/serviceContracts/ServiceContractApprovalBanner";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
@@ -111,6 +112,9 @@ const Welcome = () => {
           </h1>
           <p className="text-muted-foreground mt-1">¿En qué te gustaría trabajar hoy?</p>
         </div>
+
+        {/* Aprobaciones de contratos de servicio pendientes */}
+        <ServiceContractApprovalBanner />
 
         {/* Alerts */}
         <WelcomeAlertsBar />
