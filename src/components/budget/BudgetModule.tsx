@@ -26,7 +26,8 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface Budget {
   id: string;
-  contract_id: string;
+  contract_id: string | null;
+  service_contract_id?: string | null;
   year: number;
   budget_type: string;
   amount_uf: number;
@@ -39,7 +40,8 @@ interface Budget {
 }
 
 interface BudgetModuleProps {
-  contractId: string;
+  contractId?: string;
+  serviceContractId?: string;
   contractName?: string;
   contractCebe?: string | null;
   budgetType: "capex" | "opex";
@@ -52,9 +54,9 @@ interface BudgetModuleProps {
   readOnly?: boolean;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
-  // Sync new CAPEX lines to Gantt timelines that were created from CAPEX
-  const { syncNewCapexLine } = useGantt(contractId);
+export const BudgetModule = ({ contractId, serviceContractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
+  // Sync new CAPEX lines to Gantt timelines that were created from CAPEX (only for regular contracts)
+  const { syncNewCapexLine } = useGantt(contractId ?? null);
 
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
@@ -434,10 +436,12 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
   const loadBudgets = async () => {
     try {
+      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
+      const filterVal = serviceContractId ?? contractId!;
       const { data, error } = await supabase
         .from("contract_budgets")
         .select("*")
-        .eq("contract_id", contractId)
+        .eq(filterCol, filterVal)
         .eq("budget_type", budgetType)
         .order("year", { ascending: false });
 
@@ -1856,9 +1860,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onAddLine={canEditLines ? handleAddLine : undefined}
               onUpdateLine={canEditLines ? handleUpdateLine : undefined}
               onDeleteLine={canEditLines ? handleDeleteLine : undefined}
-              onCreateOC={canManageOC ? handleCreateOCFromLine : undefined}
-              onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
-              onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
+              onCreateOC={canManageOC && !serviceContractId ? handleCreateOCFromLine : undefined}
+              onCreateOCRequest={canManageOC && !serviceContractId ? handleCreateOCRequestFromLine : undefined}
+              onCreateInvoice={canManageOC && !serviceContractId ? handleCreateInvoiceFromLine : undefined}
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed || forceReadOnly || !canEditLines}
               compactView={forceReadOnly || !canEditLines}

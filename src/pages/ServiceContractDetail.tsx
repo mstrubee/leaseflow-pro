@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { GanttModule } from "@/components/gantt/GanttModule";
+import { ServiceBudgetSection } from "@/components/budget/ServiceBudgetSection";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -165,11 +167,22 @@ export default function ServiceContractDetail() {
           </CardContent></Card>
         )}
 
-        {/* Gantt */}
-        <div>
-          <h2 className="text-lg font-semibold mb-4">Cronograma</h2>
-          <GanttModule serviceContractId={sc.id} />
-        </div>
+        {/* Tabs: Cronograma | Presupuesto */}
+        <Tabs defaultValue="gantt">
+          <TabsList>
+            <TabsTrigger value="gantt">Cronograma</TabsTrigger>
+            <TabsTrigger value="budget">Control Presupuestario</TabsTrigger>
+          </TabsList>
+          <TabsContent value="gantt" className="mt-4">
+            <GanttModule serviceContractId={sc.id} />
+          </TabsContent>
+          <TabsContent value="budget" className="mt-4">
+            <ServiceBudgetSection
+              serviceContractId={sc.id}
+              serviceContractName={sc.name}
+            />
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );

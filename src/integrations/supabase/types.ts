@@ -1043,13 +1043,14 @@ export type Database = {
           budget_type: string
           closed_at: string | null
           closed_by: string | null
-          contract_id: string
+          contract_id: string | null
           created_at: string
           frozen_amount_uf: number | null
           frozen_at: string | null
           frozen_by: string | null
           id: string
           is_closed: boolean | null
+          service_contract_id: string | null
           updated_at: string
           year: number
         }
@@ -1058,13 +1059,14 @@ export type Database = {
           budget_type: string
           closed_at?: string | null
           closed_by?: string | null
-          contract_id: string
+          contract_id?: string | null
           created_at?: string
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
           id?: string
           is_closed?: boolean | null
+          service_contract_id?: string | null
           updated_at?: string
           year: number
         }
@@ -1073,13 +1075,14 @@ export type Database = {
           budget_type?: string
           closed_at?: string | null
           closed_by?: string | null
-          contract_id?: string
+          contract_id?: string | null
           created_at?: string
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
           id?: string
           is_closed?: boolean | null
+          service_contract_id?: string | null
           updated_at?: string
           year?: number
         }
@@ -1089,6 +1092,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_budgets_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
         ]
