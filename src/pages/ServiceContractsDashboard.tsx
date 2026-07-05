@@ -25,7 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle, ChevronRight, Search } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle, ChevronRight, Search, X, Settings2 } from "lucide-react";
 
 type ServiceContractStatus = "en_negociacion" | "activo" | "vencido" | "cancelado";
 type ServiceContractFrequency = "mensual" | "trimestral" | "semestral" | "anual" | "otro";
@@ -57,23 +57,13 @@ interface ContractOption {
   id: string;
   name: string;
   contract_companies?: Array<{ companies: { name: string } | null }>;
-  contract_addresses?: Array<{ region: string }>;
 }
 
-const SERVICE_TYPES = [
-  "Aseo y limpieza",
-  "Seguridad y vigilancia",
-  "Transporte de valores",
-  "Mantención de equipos",
-  "Soporte tecnológico (IT)",
-  "Jardinería y paisajismo",
-  "Gestión de residuos",
-  "Control de plagas",
-  "Catering y alimentación",
-  "Consultoría",
-  "Auditoría",
-  "Seguros",
-  "Otro",
+const SERVICE_TYPES_SEED = [
+  "Aseo y limpieza", "Seguridad y vigilancia", "Transporte de valores",
+  "Mantención de equipos", "Soporte tecnológico (IT)", "Jardinería y paisajismo",
+  "Gestión de residuos", "Control de plagas", "Catering y alimentación",
+  "Consultoría", "Auditoría", "Seguros",
 ];
 
 const FREQUENCY_LABELS: Record<ServiceContractFrequency, string> = {
@@ -143,6 +133,15 @@ export default function ServiceContractsDashboard() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [contractSearch, setContractSearch] = useState("");
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [contractRegionMap, setContractRegionMap] = useState<Record<string, string>>({});
+  const [serviceTypes, setServiceTypes] = useState<string[]>(SERVICE_TYPES_SEED);
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [newTypeInput, setNewTypeInput] = useState("");
+  const [savingType, setSavingType] = useState(false);
+  const [manageTypesOpen, setManageTypesOpen] = useState(false);
+  const [editingType, setEditingType] = useState<{ original: string; value: string } | null>(null);
+  const [typeContractCounts, setTypeContractCounts] = useState<Record<string, number>>({});
+  const [manageTypeInput, setManageTypeInput] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,26 +170,57 @@ export default function ServiceContractsDashboard() {
   }, []);
 
   const loadContractOptions = useCallback(async () => {
+    const [{ data: contractData }, { data: addressData }] = await Promise.all([
+      supabase
+        .from("contracts")
+        .select("id, name, contract_companies(companies(name))")
+        .eq("status", "firmado")
+        .is("deleted_at", null)
+        .order("name"),
+      supabase
+        .from("contract_addresses")
+        .select("contract_id, region")
+        .not("region", "is", null),
+    ]);
+    setContractOptions((contractData as ContractOption[]) ?? []);
+    const regionMap: Record<string, string> = {};
+    for (const a of (addressData ?? [])) {
+      if (a.contract_id && a.region) regionMap[a.contract_id] = a.region;
+    }
+    setContractRegionMap(regionMap);
+  }, []);
+
+  const loadServiceTypes = useCallback(async () => {
     const { data } = await supabase
-      .from("contracts")
-      .select("id, name, contract_companies(companies(name)), contract_addresses(region)")
-      .eq("status", "firmado")
-      .is("deleted_at", null)
+      .from("service_contract_types")
+      .select("name")
       .order("name");
-    setContractOptions((data as ContractOption[]) ?? []);
+    if (data && data.length > 0) setServiceTypes(data.map(d => d.name));
+  }, []);
+
+  const loadTypeContractCounts = useCallback(async () => {
+    const { data } = await supabase.from("service_contracts").select("service_type");
+    const counts: Record<string, number> = {};
+    for (const d of (data ?? [])) {
+      counts[d.service_type] = (counts[d.service_type] ?? 0) + 1;
+    }
+    setTypeContractCounts(counts);
   }, []);
 
   useEffect(() => {
     load();
     loadSuppliers();
     loadContractOptions();
-  }, [load, loadSuppliers, loadContractOptions]);
+    loadServiceTypes();
+  }, [load, loadSuppliers, loadContractOptions, loadServiceTypes]);
 
   const openCreate = () => {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
     setContractSearch("");
     setSelectedRegions([]);
+    setShowCustomInput(false);
+    setNewTypeInput("");
     setDialogOpen(true);
   };
 
@@ -218,6 +248,8 @@ export default function ServiceContractsDashboard() {
     });
     setContractSearch("");
     setSelectedRegions([]);
+    setShowCustomInput(false);
+    setNewTypeInput("");
     setDialogOpen(true);
   };
 
@@ -289,6 +321,61 @@ export default function ServiceContractsDashboard() {
     if (error) toast.error("Error al eliminar");
     else { toast.success("Contrato eliminado"); load(); }
     setDeleteId(null);
+  };
+
+  const handleAddCustomType = async (nameOverride?: string) => {
+    const name = (nameOverride ?? newTypeInput).trim();
+    if (!name) return;
+    setSavingType(true);
+    const { error } = await supabase.from("service_contract_types").insert({ name });
+    if (error && error.code !== "23505") {
+      toast.error("Error al agregar tipo");
+      setSavingType(false);
+      return;
+    }
+    await loadServiceTypes();
+    setForm(f => ({ ...f, service_type: name }));
+    setShowCustomInput(false);
+    setNewTypeInput("");
+    setSavingType(false);
+  };
+
+  const handleRenameType = async () => {
+    if (!editingType) return;
+    const newName = editingType.value.trim();
+    if (!newName || newName === editingType.original) { setEditingType(null); return; }
+    const { error } = await supabase
+      .from("service_contract_types")
+      .update({ name: newName })
+      .eq("name", editingType.original);
+    if (error) { toast.error("Error al renombrar"); return; }
+    await supabase.from("service_contracts").update({ service_type: newName }).eq("service_type", editingType.original);
+    toast.success("Tipo actualizado");
+    setEditingType(null);
+    loadServiceTypes();
+    load();
+  };
+
+  const handleDeleteType = async (name: string) => {
+    const { error } = await supabase.from("service_contract_types").delete().eq("name", name);
+    if (error) { toast.error("Error al eliminar"); return; }
+    toast.success("Tipo eliminado");
+    loadServiceTypes();
+  };
+
+  const handleAddTypeFromManager = async () => {
+    const name = manageTypeInput.trim();
+    if (!name) return;
+    setSavingType(true);
+    const { error } = await supabase.from("service_contract_types").insert({ name });
+    if (error) {
+      toast.error(error.code === "23505" ? "Ese tipo ya existe" : "Error al agregar");
+    } else {
+      toast.success("Tipo agregado");
+      setManageTypeInput("");
+      loadServiceTypes();
+    }
+    setSavingType(false);
   };
 
   const toggleContractId = (id: string) =>
@@ -512,13 +599,49 @@ export default function ServiceContractsDashboard() {
             {/* Service type + status */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Tipo de servicio <span className="text-destructive">*</span></Label>
-                <Select value={form.service_type} onValueChange={v => setForm(f => ({ ...f, service_type: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
-                  <SelectContent>
-                    {SERVICE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center justify-between">
+                  <Label>Tipo de servicio <span className="text-destructive">*</span></Label>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => { loadTypeContractCounts(); setManageTypesOpen(true); }}
+                  >
+                    <Settings2 className="h-3 w-3" />
+                    Editar lista
+                  </button>
+                </div>
+                {showCustomInput ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      autoFocus
+                      value={newTypeInput}
+                      onChange={e => setNewTypeInput(e.target.value)}
+                      placeholder="Nombre del nuevo tipo..."
+                      className="h-9 text-sm"
+                      onKeyDown={e => {
+                        if (e.key === "Enter") { e.preventDefault(); handleAddCustomType(); }
+                        if (e.key === "Escape") { setShowCustomInput(false); setNewTypeInput(""); }
+                      }}
+                    />
+                    <Button type="button" size="sm" className="h-9 px-3" onClick={() => handleAddCustomType()} disabled={savingType || !newTypeInput.trim()}>
+                      {savingType ? "..." : "OK"}
+                    </Button>
+                    <Button type="button" size="icon" variant="ghost" className="h-9 w-9" onClick={() => { setShowCustomInput(false); setNewTypeInput(""); }}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Select value={form.service_type} onValueChange={v => {
+                    if (v === "__otro__") { setShowCustomInput(true); setNewTypeInput(""); }
+                    else setForm(f => ({ ...f, service_type: v }));
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
+                    <SelectContent>
+                      {serviceTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      <SelectItem value="__otro__" className="text-muted-foreground italic">Otro (agregar nuevo)...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Estado</Label>
@@ -626,15 +749,15 @@ export default function ServiceContractsDashboard() {
 
             {/* Associated contracts */}
             {contractOptions.length > 0 && (() => {
-              // Available regions across all options
+              // Available regions across all options (from separate query)
               const availableRegions = [...new Set(
-                contractOptions.flatMap(co => (co.contract_addresses ?? []).map(a => a.region).filter(Boolean))
-              )].sort();
+                contractOptions.map(co => contractRegionMap[co.id]).filter(Boolean)
+              )].sort() as string[];
 
               // Apply filters: region(s) + text search
               const filtered = contractOptions.filter(co => {
-                const matchesRegion = selectedRegions.length === 0 ||
-                  (co.contract_addresses ?? []).some(a => selectedRegions.includes(a.region));
+                const region = contractRegionMap[co.id];
+                const matchesRegion = selectedRegions.length === 0 || (!!region && selectedRegions.includes(region));
                 const matchesSearch = co.name.toLowerCase().includes(contractSearch.toLowerCase());
                 return matchesRegion && matchesSearch;
               });
@@ -732,7 +855,7 @@ export default function ServiceContractsDashboard() {
                       <div className="space-y-2">
                         {filtered.map(co => {
                           const companyNames = getCompanyNames(co.contract_companies);
-                          const region = co.contract_addresses?.[0]?.region;
+                          const region = contractRegionMap[co.id];
                           return (
                             <div key={co.id} className="flex items-center gap-2.5">
                               <Checkbox
@@ -774,6 +897,95 @@ export default function ServiceContractsDashboard() {
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Guardando..." : editingId ? "Guardar cambios" : "Crear contrato"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage service types */}
+      <Dialog open={manageTypesOpen} onOpenChange={open => { setManageTypesOpen(open); if (!open) { setEditingType(null); setManageTypeInput(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gestionar tipos de servicio</DialogTitle>
+            <DialogDescription>
+              Los tipos en uso no se pueden eliminar. Al renombrar, los contratos existentes se actualizan automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <ScrollArea className="h-64 border rounded-md">
+              <div className="p-2 space-y-0.5">
+                {serviceTypes.map(type => {
+                  const count = typeContractCounts[type] ?? 0;
+                  const inUse = count > 0;
+                  return (
+                    <div key={type} className="flex items-center gap-1.5 group rounded px-2 py-1.5 hover:bg-muted/50">
+                      {editingType?.original === type ? (
+                        <>
+                          <Input
+                            autoFocus
+                            className="h-7 text-sm flex-1"
+                            value={editingType.value}
+                            onChange={e => setEditingType(prev => prev ? { ...prev, value: e.target.value } : null)}
+                            onKeyDown={e => { if (e.key === "Enter") handleRenameType(); if (e.key === "Escape") setEditingType(null); }}
+                          />
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600 shrink-0" onClick={handleRenameType}>
+                            <span className="text-sm">✓</span>
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setEditingType(null)}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-sm truncate">{type}</span>
+                          {inUse && (
+                            <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                              {count} contrato{count !== 1 ? "s" : ""}
+                            </span>
+                          )}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
+                            onClick={() => setEditingType({ original: type, value: type })}
+                            title="Renombrar"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={`h-7 w-7 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity ${
+                              inUse ? "text-muted-foreground/50 cursor-not-allowed" : "text-destructive"
+                            }`}
+                            disabled={inUse}
+                            title={inUse ? `En uso por ${count} contrato${count !== 1 ? "s" : ""}` : "Eliminar"}
+                            onClick={() => { if (!inUse) handleDeleteType(type); }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Agregar nuevo tipo..."
+                value={manageTypeInput}
+                onChange={e => setManageTypeInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddTypeFromManager(); } }}
+                className="h-9 text-sm"
+              />
+              <Button type="button" size="sm" className="h-9 shrink-0" onClick={handleAddTypeFromManager} disabled={savingType || !manageTypeInput.trim()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Agregar
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManageTypesOpen(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
