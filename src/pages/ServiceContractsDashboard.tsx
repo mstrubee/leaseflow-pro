@@ -25,7 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle, ChevronRight } from "lucide-react";
 
 type ServiceContractStatus = "en_negociacion" | "activo" | "vencido" | "cancelado";
 type ServiceContractFrequency = "mensual" | "trimestral" | "semestral" | "anual" | "otro";
@@ -396,7 +396,11 @@ export default function ServiceContractsDashboard() {
                     : (ufValue > 0 ? formatCLP(sc.amount_uf * ufValue) : null);
 
                   return (
-                    <TableRow key={sc.id}>
+                    <TableRow
+                      key={sc.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/service-contracts/${sc.id}`)}
+                    >
                       <TableCell className="font-medium">{sc.supplier?.name ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{sc.service_type}</TableCell>
                       <TableCell>
@@ -427,8 +431,11 @@ export default function ServiceContractsDashboard() {
                           {status.label}
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/service-contracts/${sc.id}`)}>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(sc)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>

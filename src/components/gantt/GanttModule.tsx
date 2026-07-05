@@ -21,10 +21,11 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 interface GanttModuleProps {
-  contractId: string;
+  contractId?: string;
+  serviceContractId?: string;
 }
 
-export function GanttModule({ contractId }: GanttModuleProps) {
+export function GanttModule({ contractId, serviceContractId }: GanttModuleProps) {
   const { isAdmin, hasPermission } = useAuth();
   const { toast } = useToast();
   const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
@@ -56,7 +57,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     updateBaseTemplate,
     deleteTimeline,
     reload,
-  } = useGantt(contractId);
+  } = useGantt(contractId ?? null, serviceContractId);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
@@ -83,6 +84,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   };
 
   useEffect(() => {
+    if (!contractId) { setRentStartDate(null); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -215,7 +217,9 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                     <SelectContent>
                       <SelectItem value="empty">Empezar vacío</SelectItem>
                       <SelectItem value="template">Desde una plantilla</SelectItem>
-                      <SelectItem value="capex">Importar desde CAPEX (Control Presupuestario)</SelectItem>
+                      {!serviceContractId && (
+                        <SelectItem value="capex">Importar desde CAPEX (Control Presupuestario)</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

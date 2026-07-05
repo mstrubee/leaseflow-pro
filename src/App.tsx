@@ -39,6 +39,7 @@ const GeoLocPage = lazy(() => import("./pages/GeoLocPage"));
 const MaintenanceRoutesPage = lazy(() => import("./pages/MaintenanceRoutesPage"));
 const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
 const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDashboard"));
+const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
 
 const queryClient = new QueryClient();
 
@@ -105,6 +106,7 @@ const App = () => (
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute><RouteExecutionPage /></ProtectedRoute>} />
                   <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
                   <Route path="/service-contracts" element={<ProtectedRoute resource="service_contracts"><ServiceContractsDashboard /></ProtectedRoute>} />
+                  <Route path="/service-contracts/:id" element={<ProtectedRoute resource="service_contracts"><ServiceContractDetail /></ProtectedRoute>} />
                   
                   <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
                   

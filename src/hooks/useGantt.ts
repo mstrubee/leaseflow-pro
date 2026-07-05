@@ -61,7 +61,8 @@ export interface GanttTaskPurchaseOrder {
 
 export interface GanttTimeline {
   id: string;
-  contract_id: string;
+  contract_id: string | null;
+  service_contract_id: string | null;
   name: string;
   template_id: string | null;
   created_at: string;
@@ -98,7 +99,7 @@ export interface Holiday {
   is_recurring: boolean;
 }
 
-export function useGantt(contractId: string) {
+export function useGantt(contractId: string | null, serviceContractId?: string | null) {
   const { toast } = useToast();
   const [timeline, setTimeline] = useState<GanttTimeline | null>(null);
   const [tasks, setTasks] = useState<GanttTask[]>([]);
@@ -136,11 +137,13 @@ export function useGantt(contractId: string) {
   const loadTimeline = useCallback(async () => {
     setLoading(true);
     try {
-      // Check if timeline exists for this contract
+      // Check if timeline exists for this contract or service contract
+      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
+      const filterVal = serviceContractId ?? contractId!;
       const { data: timelineData, error: timelineError } = await supabase
         .from("gantt_timelines")
         .select("*")
-        .eq("contract_id", contractId)
+        .eq(filterCol, filterVal)
         .maybeSingle();
 
       if (timelineError) throw timelineError;
@@ -199,7 +202,7 @@ export function useGantt(contractId: string) {
     } finally {
       setLoading(false);
     }
-  }, [contractId, toast]);
+  }, [contractId, serviceContractId, toast]);
 
   useEffect(() => {
     loadTimeline();
@@ -213,14 +216,13 @@ export function useGantt(contractId: string) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
+      const timelinePayload = serviceContractId
+        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id }
+        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id };
+
       const { data: newTimeline, error } = await supabase
         .from("gantt_timelines")
-        .insert({
-          contract_id: contractId,
-          name,
-          template_id: templateId || null,
-          created_by: user?.id,
-        })
+        .insert(timelinePayload)
         .select()
         .single();
 
@@ -1286,14 +1288,13 @@ export function useGantt(contractId: string) {
       }
 
       // 3. Create the timeline
+      const capexTimelinePayload = serviceContractId
+        ? { service_contract_id: serviceContractId, name, template_id: null, created_by: user?.id }
+        : { contract_id: contractId!, name, template_id: null, created_by: user?.id };
+
       const { data: newTimeline, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .insert({
-          contract_id: contractId,
-          name,
-          template_id: null,
-          created_by: user?.id,
-        })
+        .insert(capexTimelinePayload)
         .select()
         .single();
       if (tlErr || !newTimeline) throw tlErr || new Error("No se pudo crear la línea de tiempo");

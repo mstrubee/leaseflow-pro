@@ -2322,34 +2322,37 @@ export type Database = {
       }
       gantt_timelines: {
         Row: {
-          contract_id: string
+          contract_id: string | null
           created_at: string
           created_by: string | null
           id: string
           is_priority: boolean
           name: string
+          service_contract_id: string | null
           source: string
           template_id: string | null
           updated_at: string
         }
         Insert: {
-          contract_id: string
+          contract_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           is_priority?: boolean
           name?: string
+          service_contract_id?: string | null
           source?: string
           template_id?: string | null
           updated_at?: string
         }
         Update: {
-          contract_id?: string
+          contract_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           is_priority?: boolean
           name?: string
+          service_contract_id?: string | null
           source?: string
           template_id?: string | null
           updated_at?: string
@@ -2360,6 +2363,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_timelines_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
           {

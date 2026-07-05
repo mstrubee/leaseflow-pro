@@ -95,7 +95,7 @@ interface GanttTaskTreeProps {
   tasks: GanttTask[];
   allTasks: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
-  contractId: string;
+  contractId?: string | null;
   onAddTask: (name: string, parentId: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
@@ -283,13 +283,16 @@ export function GanttTaskTree({
 
   const handlePOClick = async (task: GanttTask) => {
     setSelectedTask(task);
-    // Load available purchase orders for this contract
-    const { data } = await supabase
-      .from("purchase_orders")
-      .select("id, order_number, amount_uf, supplier_name")
-      .eq("contract_id", contractId)
-      .order("order_date", { ascending: false });
-    setPurchaseOrders(data || []);
+    if (contractId) {
+      const { data } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, amount_uf, supplier_name")
+        .eq("contract_id", contractId)
+        .order("order_date", { ascending: false });
+      setPurchaseOrders(data || []);
+    } else {
+      setPurchaseOrders([]);
+    }
     setPODialogOpen(true);
   };
 
