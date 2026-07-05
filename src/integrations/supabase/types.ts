@@ -6188,9 +6188,11 @@ export type Database = {
       }
       service_contracts: {
         Row: {
+          amount_clp: number | null
           amount_uf: number
           auto_renewal: boolean
           created_at: string
+          display_currency: string
           drive_folder_id: string | null
           end_date: string | null
           frequency: Database["public"]["Enums"]["service_contract_frequency"]
@@ -6207,9 +6209,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          amount_clp?: number | null
           amount_uf: number
           auto_renewal?: boolean
           created_at?: string
+          display_currency?: string
           drive_folder_id?: string | null
           end_date?: string | null
           frequency?: Database["public"]["Enums"]["service_contract_frequency"]
@@ -6226,9 +6230,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          amount_clp?: number | null
           amount_uf?: number
           auto_renewal?: boolean
           created_at?: string
+          display_currency?: string
           drive_folder_id?: string | null
           end_date?: string | null
           frequency?: Database["public"]["Enums"]["service_contract_frequency"]

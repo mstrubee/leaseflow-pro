@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,12 +25,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import {
-  ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle,
-} from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, ExternalLink, Handshake, AlertTriangle } from "lucide-react";
 
 type ServiceContractStatus = "en_negociacion" | "activo" | "vencido" | "cancelado";
 type ServiceContractFrequency = "mensual" | "trimestral" | "semestral" | "anual" | "otro";
+type DisplayCurrency = "CLP" | "UF";
 
 interface ServiceContract {
   id: string;
@@ -39,6 +40,8 @@ interface ServiceContract {
   start_date: string;
   end_date: string | null;
   amount_uf: number;
+  amount_clp: number | null;
+  display_currency: DisplayCurrency;
   frequency: ServiceContractFrequency;
   notice_days: number | null;
   auto_renewal: boolean;
@@ -50,7 +53,11 @@ interface ServiceContract {
 }
 
 interface Supplier { id: string; name: string }
-interface ContractOption { id: string; name: string }
+interface ContractOption {
+  id: string;
+  name: string;
+  contract_companies?: Array<{ companies: { name: string } | null }>;
+}
 
 const SERVICE_TYPES = [
   "Aseo y limpieza",
@@ -76,12 +83,22 @@ const FREQUENCY_LABELS: Record<ServiceContractFrequency, string> = {
   otro: "Otro",
 };
 
+const FREQUENCY_MONTHS: Record<ServiceContractFrequency, number> = {
+  mensual: 1, trimestral: 3, semestral: 6, anual: 12, otro: 1,
+};
+
 const STATUS_MAP: Record<ServiceContractStatus, { label: string; className: string }> = {
   en_negociacion: { label: "En negociación", className: "bg-blue-100 text-blue-700" },
-  activo: { label: "Activo", className: "bg-emerald-100 text-emerald-700" },
-  vencido: { label: "Vencido", className: "bg-red-100 text-red-700" },
-  cancelado: { label: "Cancelado", className: "bg-gray-100 text-gray-600" },
+  activo:         { label: "Activo",          className: "bg-emerald-100 text-emerald-700" },
+  vencido:        { label: "Vencido",         className: "bg-red-100 text-red-700" },
+  cancelado:      { label: "Cancelado",       className: "bg-gray-100 text-gray-600" },
 };
+
+const formatCLP = (n: number) =>
+  "$ " + new Intl.NumberFormat("es-CL").format(Math.round(n));
+
+const formatUF = (n: number) =>
+  "UF " + n.toFixed(2);
 
 const EMPTY_FORM = {
   name: "",
@@ -90,7 +107,8 @@ const EMPTY_FORM = {
   status: "en_negociacion" as ServiceContractStatus,
   start_date: "",
   end_date: "",
-  amount_uf: "",
+  amount_raw: "",
+  display_currency: "CLP" as DisplayCurrency,
   frequency: "mensual" as ServiceContractFrequency,
   notice_days: "",
   auto_renewal: false,
@@ -99,18 +117,20 @@ const EMPTY_FORM = {
   selectedContractIds: [] as string[],
 };
 
+function daysUntil(dateStr: string) {
+  return (new Date(dateStr + "T12:00:00").getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+}
+
 function formatDate(dateStr: string) {
   return new Date(dateStr + "T12:00:00").toLocaleDateString("es-CL", {
     day: "2-digit", month: "short", year: "numeric",
   });
 }
 
-function daysUntil(dateStr: string) {
-  return (new Date(dateStr + "T12:00:00").getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-}
-
 export default function ServiceContractsDashboard() {
   const navigate = useNavigate();
+  const { ufValue, convertPesosToUF, convertUFToPesos } = useEconomicIndicators();
+
   const [contracts, setContracts] = useState<ServiceContract[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [contractOptions, setContractOptions] = useState<ContractOption[]>([]);
@@ -125,11 +145,7 @@ export default function ServiceContractsDashboard() {
     setLoading(true);
     const { data, error } = await supabase
       .from("service_contracts")
-      .select(`
-        *,
-        supplier:suppliers(id, name),
-        service_contract_contracts(contract_id)
-      `)
+      .select("*, supplier:suppliers(id, name), service_contract_contracts(contract_id)")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -147,21 +163,18 @@ export default function ServiceContractsDashboard() {
   }, []);
 
   const loadSuppliers = useCallback(async () => {
-    const { data } = await supabase
-      .from("suppliers")
-      .select("id, name")
-      .order("name");
+    const { data } = await supabase.from("suppliers").select("id, name").order("name");
     setSuppliers(data ?? []);
   }, []);
 
   const loadContractOptions = useCallback(async () => {
     const { data } = await supabase
       .from("contracts")
-      .select("id, name")
+      .select("id, name, contract_companies(companies(name))")
       .eq("status", "firmado")
       .is("deleted_at", null)
       .order("name");
-    setContractOptions(data ?? []);
+    setContractOptions((data as ContractOption[]) ?? []);
   }, []);
 
   useEffect(() => {
@@ -178,6 +191,10 @@ export default function ServiceContractsDashboard() {
 
   const openEdit = (sc: ServiceContract) => {
     setEditingId(sc.id);
+    const cur = sc.display_currency as DisplayCurrency;
+    const raw = cur === "CLP"
+      ? sc.amount_clp != null ? String(Math.round(sc.amount_clp)) : ""
+      : String(sc.amount_uf);
     setForm({
       name: sc.name,
       supplier_id: sc.supplier_id,
@@ -185,7 +202,8 @@ export default function ServiceContractsDashboard() {
       status: sc.status,
       start_date: sc.start_date,
       end_date: sc.end_date ?? "",
-      amount_uf: String(sc.amount_uf),
+      amount_raw: raw,
+      display_currency: cur,
       frequency: sc.frequency,
       notice_days: sc.notice_days != null ? String(sc.notice_days) : "",
       auto_renewal: sc.auto_renewal,
@@ -197,11 +215,23 @@ export default function ServiceContractsDashboard() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.supplier_id || !form.service_type || !form.start_date || !form.amount_uf) {
+    if (!form.name.trim() || !form.supplier_id || !form.service_type || !form.start_date || !form.amount_raw) {
       toast.error("Completa los campos obligatorios");
       return;
     }
     setSaving(true);
+
+    const raw = parseFloat(form.amount_raw);
+    let amount_uf: number;
+    let amount_clp: number | null;
+
+    if (form.display_currency === "CLP") {
+      amount_clp = raw;
+      amount_uf = ufValue > 0 ? convertPesosToUF(raw) : 0;
+    } else {
+      amount_uf = raw;
+      amount_clp = ufValue > 0 ? convertUFToPesos(raw) : null;
+    }
 
     const payload = {
       name: form.name.trim(),
@@ -210,7 +240,9 @@ export default function ServiceContractsDashboard() {
       status: form.status,
       start_date: form.start_date,
       end_date: form.end_date || null,
-      amount_uf: parseFloat(form.amount_uf),
+      amount_uf,
+      amount_clp,
+      display_currency: form.display_currency,
       frequency: form.frequency,
       notice_days: form.notice_days ? parseInt(form.notice_days) : null,
       auto_renewal: form.auto_renewal,
@@ -221,41 +253,19 @@ export default function ServiceContractsDashboard() {
     let serviceContractId = editingId;
 
     if (editingId) {
-      const { error } = await supabase
-        .from("service_contracts")
-        .update(payload)
-        .eq("id", editingId);
-      if (error) {
-        toast.error("Error al actualizar el contrato");
-        setSaving(false);
-        return;
-      }
+      const { error } = await supabase.from("service_contracts").update(payload).eq("id", editingId);
+      if (error) { toast.error("Error al actualizar el contrato"); setSaving(false); return; }
     } else {
-      const { data, error } = await supabase
-        .from("service_contracts")
-        .insert(payload)
-        .select("id")
-        .single();
-      if (error || !data) {
-        toast.error("Error al crear el contrato de servicio");
-        setSaving(false);
-        return;
-      }
+      const { data, error } = await supabase.from("service_contracts").insert(payload).select("id").single();
+      if (error || !data) { toast.error("Error al crear el contrato de servicio"); setSaving(false); return; }
       serviceContractId = data.id;
     }
 
     if (serviceContractId) {
-      await supabase
-        .from("service_contract_contracts")
-        .delete()
-        .eq("service_contract_id", serviceContractId);
-
+      await supabase.from("service_contract_contracts").delete().eq("service_contract_id", serviceContractId);
       if (form.selectedContractIds.length > 0) {
         await supabase.from("service_contract_contracts").insert(
-          form.selectedContractIds.map(cid => ({
-            service_contract_id: serviceContractId!,
-            contract_id: cid,
-          }))
+          form.selectedContractIds.map(cid => ({ service_contract_id: serviceContractId!, contract_id: cid }))
         );
       }
     }
@@ -274,25 +284,30 @@ export default function ServiceContractsDashboard() {
     setDeleteId(null);
   };
 
-  const toggleContractId = (id: string) => {
+  const toggleContractId = (id: string) =>
     setForm(f => ({
       ...f,
       selectedContractIds: f.selectedContractIds.includes(id)
         ? f.selectedContractIds.filter(x => x !== id)
         : [...f.selectedContractIds, id],
     }));
-  };
 
-  const activeCount = contracts.filter(c => c.status === "activo").length;
+  // Stats
+  const activeContracts = contracts.filter(c => c.status === "activo");
   const expiringCount = contracts.filter(c => c.end_date && daysUntil(c.end_date) >= 0 && daysUntil(c.end_date) <= 60).length;
-  const monthlyUF = contracts
-    .filter(c => c.status === "activo")
-    .reduce((sum, c) => {
-      const factor: Record<ServiceContractFrequency, number> = {
-        mensual: 1, trimestral: 1 / 3, semestral: 1 / 6, anual: 1 / 12, otro: 1,
-      };
-      return sum + c.amount_uf * factor[c.frequency];
-    }, 0);
+  const monthlyCLP = activeContracts.reduce((sum, c) => {
+    const months = FREQUENCY_MONTHS[c.frequency];
+    const clp = c.amount_clp != null ? c.amount_clp : convertUFToPesos(c.amount_uf);
+    return sum + clp / months;
+  }, 0);
+
+  // Form equivalence preview
+  const rawNum = parseFloat(form.amount_raw);
+  const equivalence = !isNaN(rawNum) && rawNum > 0 && ufValue > 0
+    ? form.display_currency === "CLP"
+      ? `≈ ${formatUF(convertPesosToUF(rawNum))}`
+      : `≈ ${formatCLP(convertUFToPesos(rawNum))}`
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -308,9 +323,7 @@ export default function ServiceContractsDashboard() {
                   <Handshake className="h-6 w-6 text-violet-600" />
                   Contratos de Servicio
                 </h1>
-                <p className="text-sm text-muted-foreground">
-                  Contratos recurrentes con proveedores de servicios
-                </p>
+                <p className="text-sm text-muted-foreground">Contratos recurrentes con proveedores de servicios</p>
               </div>
             </div>
             <Button onClick={openCreate}>
@@ -322,37 +335,30 @@ export default function ServiceContractsDashboard() {
       </header>
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Total</p>
-              <p className="text-2xl font-bold tabular-nums">{contracts.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Activos</p>
-              <p className="text-2xl font-bold text-emerald-600 tabular-nums">{activeCount}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Vencen en 60 días</p>
-              <p className={`text-2xl font-bold tabular-nums ${expiringCount > 0 ? "text-amber-600" : ""}`}>
-                {expiringCount}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Gasto mensual</p>
-              <p className="text-2xl font-bold tabular-nums">
-                UF {monthlyUF.toFixed(1)}
-              </p>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Total</p>
+            <p className="text-2xl font-bold tabular-nums">{contracts.length}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Activos</p>
+            <p className="text-2xl font-bold text-emerald-600 tabular-nums">{activeContracts.length}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Vencen en 60 días</p>
+            <p className={`text-2xl font-bold tabular-nums ${expiringCount > 0 ? "text-amber-600" : ""}`}>{expiringCount}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Gasto mensual</p>
+            <p className="text-lg font-bold tabular-nums leading-tight">{formatCLP(monthlyCLP)}</p>
+            {ufValue > 0 && (
+              <p className="text-xs text-muted-foreground tabular-nums">{formatUF(monthlyCLP / ufValue)}</p>
+            )}
+          </CardContent></Card>
         </div>
 
+        {/* Table */}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -361,9 +367,7 @@ export default function ServiceContractsDashboard() {
           <div className="text-center py-16 text-muted-foreground">
             <Handshake className="h-10 w-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">Sin contratos de servicio</p>
-            <p className="text-sm mt-1">
-              Crea el primero con el botón "Nuevo contrato de servicio"
-            </p>
+            <p className="text-sm mt-1">Crea el primero con el botón "Nuevo contrato de servicio"</p>
           </div>
         ) : (
           <div className="border rounded-lg overflow-hidden bg-card">
@@ -384,13 +388,23 @@ export default function ServiceContractsDashboard() {
                 {contracts.map(sc => {
                   const status = STATUS_MAP[sc.status];
                   const expiring = sc.end_date && daysUntil(sc.end_date) >= 0 && daysUntil(sc.end_date) <= 60;
+                  const primaryAmt = sc.display_currency === "CLP"
+                    ? (sc.amount_clp != null ? formatCLP(sc.amount_clp) : formatCLP(convertUFToPesos(sc.amount_uf)))
+                    : formatUF(sc.amount_uf);
+                  const secondaryAmt = sc.display_currency === "CLP"
+                    ? formatUF(sc.amount_clp != null && ufValue > 0 ? sc.amount_clp / ufValue : sc.amount_uf)
+                    : (ufValue > 0 ? formatCLP(sc.amount_uf * ufValue) : null);
+
                   return (
                     <TableRow key={sc.id}>
                       <TableCell className="font-medium">{sc.supplier?.name ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{sc.service_type}</TableCell>
-                      <TableCell className="tabular-nums whitespace-nowrap text-sm">
-                        UF {sc.amount_uf.toFixed(2)}
-                        <span className="text-xs text-muted-foreground ml-1">
+                      <TableCell>
+                        <span className="tabular-nums text-sm font-medium">{primaryAmt}</span>
+                        {secondaryAmt && (
+                          <span className="block text-xs text-muted-foreground tabular-nums">{secondaryAmt}</span>
+                        )}
+                        <span className="text-xs text-muted-foreground">
                           / {FREQUENCY_LABELS[sc.frequency].toLowerCase()}
                         </span>
                       </TableCell>
@@ -418,10 +432,7 @@ export default function ServiceContractsDashboard() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(sc)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost" size="icon" className="h-7 w-7 text-destructive"
-                            onClick={() => setDeleteId(sc.id)}
-                          >
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(sc.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -439,27 +450,22 @@ export default function ServiceContractsDashboard() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {editingId ? "Editar contrato de servicio" : "Nuevo contrato de servicio"}
-            </DialogTitle>
+            <DialogTitle>{editingId ? "Editar contrato de servicio" : "Nuevo contrato de servicio"}</DialogTitle>
             <DialogDescription>
-              Los campos marcados con <span className="text-destructive">*</span> son obligatorios.
+              Los campos con <span className="text-destructive">*</span> son obligatorios.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Name */}
             <div className="space-y-1.5">
-              <Label htmlFor="sc-name">
-                Nombre del contrato <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="sc-name"
-                value={form.name}
+              <Label htmlFor="sc-name">Nombre del contrato <span className="text-destructive">*</span></Label>
+              <Input id="sc-name" value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="Ej: Contrato de seguridad 2026"
-              />
+                placeholder="Ej: Contrato de seguridad 2026" />
             </div>
 
+            {/* Supplier */}
             <div className="space-y-1.5">
               <Label>Proveedor <span className="text-destructive">*</span></Label>
               {suppliers.length === 0 ? (
@@ -472,37 +478,29 @@ export default function ServiceContractsDashboard() {
                 </div>
               ) : (
                 <Select value={form.supplier_id} onValueChange={v => setForm(f => ({ ...f, supplier_id: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar proveedor..." />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar proveedor..." /></SelectTrigger>
                   <SelectContent>
-                    {suppliers.map(s => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
+                    {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               )}
               <p className="text-xs text-muted-foreground">
-                ¿No existe el proveedor?{" "}
-                <button
-                  className="text-primary underline"
-                  onClick={() => {
-                    sessionStorage.setItem("returnTo", "/service-contracts");
-                    navigate("/suppliers");
-                  }}
-                >
+                ¿No existe?{" "}
+                <button className="text-primary underline" onClick={() => {
+                  sessionStorage.setItem("returnTo", "/service-contracts");
+                  navigate("/suppliers");
+                }}>
                   Ir a Proveedores para crearlo
                 </button>
               </p>
             </div>
 
+            {/* Service type + status */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Tipo de servicio <span className="text-destructive">*</span></Label>
                 <Select value={form.service_type} onValueChange={v => setForm(f => ({ ...f, service_type: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar tipo..." />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
                   <SelectContent>
                     {SERVICE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
@@ -522,6 +520,7 @@ export default function ServiceContractsDashboard() {
               </div>
             </div>
 
+            {/* Dates */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="sc-start">Fecha inicio <span className="text-destructive">*</span></Label>
@@ -535,11 +534,49 @@ export default function ServiceContractsDashboard() {
               </div>
             </div>
 
+            {/* Amount + currency */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="sc-amount">Monto (UF) <span className="text-destructive">*</span></Label>
-                <Input id="sc-amount" type="number" step="0.01" min="0" value={form.amount_uf}
-                  onChange={e => setForm(f => ({ ...f, amount_uf: e.target.value }))} placeholder="0.00" />
+                <Label>
+                  Monto {form.display_currency === "CLP" ? "(CLP)" : "(UF)"}
+                  {" "}<span className="text-destructive">*</span>
+                </Label>
+                {/* Currency toggle */}
+                <div className="flex rounded-md border overflow-hidden w-fit mb-1">
+                  <button
+                    type="button"
+                    className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                      form.display_currency === "CLP"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                    onClick={() => setForm(f => ({ ...f, display_currency: "CLP" }))}
+                  >
+                    $ CLP
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-4 py-1.5 text-sm font-medium border-l transition-colors ${
+                      form.display_currency === "UF"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                    onClick={() => setForm(f => ({ ...f, display_currency: "UF" }))}
+                  >
+                    UF
+                  </button>
+                </div>
+                <Input
+                  type="number"
+                  step={form.display_currency === "UF" ? "0.01" : "1"}
+                  min="0"
+                  value={form.amount_raw}
+                  onChange={e => setForm(f => ({ ...f, amount_raw: e.target.value }))}
+                  placeholder={form.display_currency === "UF" ? "0.00" : "0"}
+                />
+                {equivalence && (
+                  <p className="text-xs text-muted-foreground">{equivalence}</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Frecuencia de pago</Label>
@@ -554,6 +591,7 @@ export default function ServiceContractsDashboard() {
               </div>
             </div>
 
+            {/* Notice days + Auto renewal */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="sc-notice">Días de aviso para término</Label>
@@ -563,10 +601,8 @@ export default function ServiceContractsDashboard() {
               <div className="space-y-1.5">
                 <Label>Renovación automática</Label>
                 <div className="flex items-center gap-3 h-10">
-                  <Switch
-                    checked={form.auto_renewal}
-                    onCheckedChange={v => setForm(f => ({ ...f, auto_renewal: v }))}
-                  />
+                  <Switch checked={form.auto_renewal}
+                    onCheckedChange={v => setForm(f => ({ ...f, auto_renewal: v }))} />
                   <span className="text-sm text-muted-foreground">
                     {form.auto_renewal ? "Sí" : "No"}
                   </span>
@@ -574,40 +610,45 @@ export default function ServiceContractsDashboard() {
               </div>
             </div>
 
+            {/* Associated contracts */}
             {contractOptions.length > 0 && (
               <div className="space-y-1.5">
                 <Label>Contratos de locales asociados</Label>
                 <p className="text-xs text-muted-foreground">
                   Selecciona los locales donde aplica este servicio. Omite si es corporativo.
                 </p>
-                <ScrollArea className="h-40 border rounded-md p-3">
+                <ScrollArea className="h-44 border rounded-md p-3">
                   <div className="space-y-2">
-                    {contractOptions.map(co => (
-                      <div key={co.id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`sc-contract-${co.id}`}
-                          checked={form.selectedContractIds.includes(co.id)}
-                          onCheckedChange={() => toggleContractId(co.id)}
-                        />
-                        <label htmlFor={`sc-contract-${co.id}`} className="text-sm cursor-pointer leading-none">
-                          {co.name}
-                        </label>
-                      </div>
-                    ))}
+                    {contractOptions.map(co => {
+                      const companyNames = getCompanyNames(co.contract_companies);
+                      return (
+                        <div key={co.id} className="flex items-center gap-2.5">
+                          <Checkbox
+                            id={`sc-contract-${co.id}`}
+                            checked={form.selectedContractIds.includes(co.id)}
+                            onCheckedChange={() => toggleContractId(co.id)}
+                          />
+                          <CompanyLogo companyNames={companyNames} size="sm" />
+                          <label
+                            htmlFor={`sc-contract-${co.id}`}
+                            className="text-sm cursor-pointer leading-none flex-1"
+                          >
+                            {co.name}
+                          </label>
+                        </div>
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
             )}
 
+            {/* Notes */}
             <div className="space-y-1.5">
               <Label htmlFor="sc-notes">Notas</Label>
-              <Textarea
-                id="sc-notes"
-                value={form.notes}
+              <Textarea id="sc-notes" value={form.notes}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Condiciones especiales, cláusulas de interés..."
-                rows={3}
-              />
+                placeholder="Condiciones especiales, cláusulas de interés..." rows={3} />
             </div>
           </div>
 
@@ -620,6 +661,7 @@ export default function ServiceContractsDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete confirm */}
       <AlertDialog open={!!deleteId} onOpenChange={open => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -630,10 +672,8 @@ export default function ServiceContractsDashboard() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>
