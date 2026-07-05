@@ -9,7 +9,7 @@ import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
-  BarChart3, Wrench, Shield, Users, MapPin, ScanSearch, LogOut, KeyRound,
+  BarChart3, Wrench, Shield, Users, MapPin, ScanSearch, LogOut, KeyRound, Handshake,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -36,6 +36,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "suppliers",      label: "Proveedores",              desc: "Gestión de proveedores",                       icon: Users,       path: "/suppliers",        resource: "suppliers",       color: "text-teal-600 bg-teal-100" },
   { id: "maintenance",    label: "Mantenciones",             desc: "Mantenciones preventivas y correctivas",       icon: Wrench,      path: "/maintenance",      resource: "maintenance",     color: "text-rose-600 bg-rose-100" },
   { id: "geoloc",         label: "GEOLOC",                   desc: "Sistema de información geográfica",            icon: MapPin,      path: "/geoloc",           resource: "geoloc",          color: "text-green-600 bg-green-100" },
+  { id: "service_contracts", label: "Contratos de Servicio", desc: "Contratos recurrentes con proveedores",         icon: Handshake,   path: "/service-contracts", resource: "service_contracts", color: "text-violet-600 bg-violet-100" },
   { id: "contract_review",label: "Revisor de Contratos (IA)",desc: "Analiza riesgos de un contrato Word con IA",   icon: ScanSearch,  path: "",                  resource: null,              color: "text-fuchsia-600 bg-fuchsia-100", external: true },
 ];
 

@@ -6150,6 +6150,117 @@ export type Database = {
           },
         ]
       }
+      service_contract_contracts: {
+        Row: {
+          contract_id: string
+          created_at: string
+          id: string
+          service_contract_id: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          id?: string
+          service_contract_id: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          id?: string
+          service_contract_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contract_contracts_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_contracts: {
+        Row: {
+          amount_uf: number
+          auto_renewal: boolean
+          created_at: string
+          drive_folder_id: string | null
+          end_date: string | null
+          frequency: Database["public"]["Enums"]["service_contract_frequency"]
+          id: string
+          name: string
+          notes: string | null
+          notice_days: number | null
+          opex_category_id: string | null
+          renewal_term_months: number | null
+          service_type: string
+          start_date: string
+          status: Database["public"]["Enums"]["service_contract_status"]
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_uf: number
+          auto_renewal?: boolean
+          created_at?: string
+          drive_folder_id?: string | null
+          end_date?: string | null
+          frequency?: Database["public"]["Enums"]["service_contract_frequency"]
+          id?: string
+          name: string
+          notes?: string | null
+          notice_days?: number | null
+          opex_category_id?: string | null
+          renewal_term_months?: number | null
+          service_type: string
+          start_date: string
+          status?: Database["public"]["Enums"]["service_contract_status"]
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_uf?: number
+          auto_renewal?: boolean
+          created_at?: string
+          drive_folder_id?: string | null
+          end_date?: string | null
+          frequency?: Database["public"]["Enums"]["service_contract_frequency"]
+          id?: string
+          name?: string
+          notes?: string | null
+          notice_days?: number | null
+          opex_category_id?: string | null
+          renewal_term_months?: number | null
+          service_type?: string
+          start_date?: string
+          status?: Database["public"]["Enums"]["service_contract_status"]
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contracts_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_opex_category_id_fkey"
+            columns: ["opex_category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           address: string | null
@@ -6580,6 +6691,8 @@ export type Database = {
         | "no_aplica"
       patent_priority: "priority_1" | "priority_2" | "priority_3" | "vigente"
       permission_type: "view" | "edit" | "all"
+      service_contract_frequency: "mensual" | "trimestral" | "semestral" | "anual" | "otro"
+      service_contract_status: "en_negociacion" | "activo" | "vencido" | "cancelado"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -6741,6 +6854,8 @@ export const Constants = {
       ],
       patent_priority: ["priority_1", "priority_2", "priority_3", "vigente"],
       permission_type: ["view", "edit", "all"],
+      service_contract_frequency: ["mensual", "trimestral", "semestral", "anual", "otro"],
+      service_contract_status: ["en_negociacion", "activo", "vencido", "cancelado"],
     },
   },
 } as const
