@@ -1243,6 +1243,233 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     }
   };
 
+  // Actualiza una plantilla A PARTIR del cronograma actual, PRESERVANDO los ids
+  // de las tareas-plantilla (a diferencia de writeTasksToTemplate, que borra y
+  // recrea). Esto mantiene vivos los vínculos template_task_id de los cronogramas
+  // ya derivados. Empareja tarea-plantilla ↔ tarea-cronograma por template_task_id
+  // (cronograma derivado) o por nombre + orden (cronograma origen).
+  // Solo sincroniza plazos (duraciones) y dependencias con sus características.
+  const syncTemplateFromTimeline = async (
+    templateId: string
+  ): Promise<{ matched: number; total: number } | null> => {
+    setSaving(true);
+    try {
+      const { data: tplTasks, error: tplErr } = await supabase
+        .from("gantt_template_tasks")
+        .select("id, name, display_order")
+        .eq("template_id", templateId);
+      if (tplErr) throw tplErr;
+      if (!tplTasks || tplTasks.length === 0) {
+        toast({ variant: "destructive", title: "Plantilla vacía", description: "La plantilla no tiene tareas para sincronizar." });
+        return null;
+      }
+
+      // Emparejar templateTaskId -> tarea del cronograma
+      const match = new Map<string, GanttTask>();
+      const useIdMatch = tasks.some((t) => t.template_task_id);
+      if (useIdMatch) {
+        const byId = new Map(
+          tasks.filter((t) => t.template_task_id).map((t) => [t.template_task_id as string, t])
+        );
+        for (const tt of tplTasks) {
+          const m = byId.get(tt.id);
+          if (m) match.set(tt.id, m);
+        }
+      } else {
+        // Cronograma origen: emparejar por nombre, desempatando por display_order.
+        const tlByName = new Map<string, GanttTask[]>();
+        for (const t of tasks) {
+          const arr = tlByName.get(t.name) ?? [];
+          arr.push(t);
+          tlByName.set(t.name, arr);
+        }
+        for (const arr of tlByName.values()) arr.sort((a, b) => a.display_order - b.display_order);
+        const tplByName = new Map<string, typeof tplTasks>();
+        for (const tt of tplTasks) {
+          const arr = tplByName.get(tt.name) ?? [];
+          arr.push(tt);
+          tplByName.set(tt.name, arr);
+        }
+        for (const [name, tts] of tplByName) {
+          const tls = (tlByName.get(name) ?? []).slice().sort((a, b) => a.display_order - b.display_order);
+          const sortedTts = tts.slice().sort((a, b) => a.display_order - b.display_order);
+          sortedTts.forEach((tt, i) => { if (tls[i]) match.set(tt.id, tls[i]); });
+        }
+      }
+
+      // Mapa inverso: id de tarea del cronograma -> id de tarea-plantilla
+      const tlToTpl = new Map<string, string>();
+      for (const [tplId, tl] of match) tlToTpl.set(tl.id, tplId);
+
+      // 1) Plazos: actualizar duraciones de las tareas-plantilla emparejadas
+      for (const [tplId, tl] of match) {
+        await supabase
+          .from("gantt_template_tasks")
+          .update({ default_duration_days: tl.duration_days || 1, duration_type: tl.duration_type })
+          .eq("id", tplId);
+      }
+
+      // 2) Dependencias: reconstruir a partir de las del cronograma
+      const tplTaskIds = tplTasks.map((t) => t.id);
+      const { error: delErr } = await supabase
+        .from("gantt_template_dependencies")
+        .delete()
+        .in("task_id", tplTaskIds);
+      if (delErr) throw delErr;
+
+      const newDeps: { task_id: string; depends_on_task_id: string; dep_type: string; lag_days: number; lag_type: string }[] = [];
+      for (const t of tasks) {
+        for (const d of (t.dependencies || [])) {
+          const a = tlToTpl.get(d.task_id);
+          const b = tlToTpl.get(d.depends_on_task_id);
+          if (a && b) newDeps.push({
+            task_id: a,
+            depends_on_task_id: b,
+            dep_type: d.dep_type ?? "end",
+            lag_days: d.lag_days ?? 0,
+            lag_type: d.lag_type ?? "calendar",
+          });
+        }
+      }
+      if (newDeps.length > 0) {
+        const { error: insErr } = await supabase.from("gantt_template_dependencies").insert(newDeps as any);
+        if (insErr) throw insErr;
+      }
+
+      await supabase.from("gantt_templates").update({ updated_at: new Date().toISOString() }).eq("id", templateId);
+      await loadTemplates();
+      toast({
+        title: "Plantilla actualizada",
+        description: `Se sincronizaron dependencias y plazos (${match.size}/${tplTasks.length} tareas emparejadas).`,
+      });
+      return { matched: match.size, total: tplTasks.length };
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la plantilla" });
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Aplica al cronograma actual (derivado) las dependencias y plazos de su
+  // plantilla base. Empareja por template_task_id, sobreescribe duraciones y
+  // dependencias template-gestionadas, preserva tareas/dependencias manuales
+  // que no provienen de la plantilla, y recalcula el cronograma.
+  const applyTemplateUpdates = async (): Promise<boolean> => {
+    if (!timeline?.template_id) {
+      toast({ variant: "destructive", title: "Sin plantilla base", description: "Este cronograma no fue creado a partir de una plantilla." });
+      return false;
+    }
+    setSaving(true);
+    try {
+      const templateId = timeline.template_id;
+      const [{ data: tplTasks }, { data: tplDeps }] = await Promise.all([
+        supabase.from("gantt_template_tasks").select("id, default_duration_days, duration_type").eq("template_id", templateId),
+        supabase.from("gantt_template_dependencies").select("task_id, depends_on_task_id, dep_type, lag_days, lag_type"),
+      ]);
+      if (!tplTasks || tplTasks.length === 0) throw new Error("La plantilla no tiene tareas");
+
+      const tplTaskIds = new Set(tplTasks.map((t) => t.id));
+      const durByTpl = new Map(tplTasks.map((t) => [t.id, { d: t.default_duration_days || 1, dt: (t.duration_type as "calendar" | "business") }]));
+      const tplDepsFiltered = (tplDeps ?? []).filter((d) => tplTaskIds.has(d.task_id) && tplTaskIds.has(d.depends_on_task_id));
+
+      // templateTaskId -> tarea del cronograma actual
+      const linkByTpl = new Map<string, GanttTask>();
+      for (const t of tasks) if (t.template_task_id && tplTaskIds.has(t.template_task_id)) linkByTpl.set(t.template_task_id, t);
+      if (linkByTpl.size === 0) {
+        toast({ variant: "destructive", title: "Sin tareas vinculadas", description: "Ninguna tarea de este cronograma está vinculada a la plantilla." });
+        return false;
+      }
+      const linkedTaskIds = new Set(Array.from(linkByTpl.values()).map((t) => t.id));
+
+      // 1) Plazos: actualizar duraciones de las tareas vinculadas
+      for (const [tplId, tl] of linkByTpl) {
+        const info = durByTpl.get(tplId);
+        if (info) await supabase.from("gantt_tasks").update({ duration_days: info.d, duration_type: info.dt }).eq("id", tl.id);
+      }
+
+      // 2) Dependencias template-gestionadas (ambos extremos vinculados): borrar y reinsertar
+      const linkedIdsArr = Array.from(linkedTaskIds);
+      const { error: delErr } = await supabase
+        .from("gantt_task_dependencies")
+        .delete()
+        .in("task_id", linkedIdsArr)
+        .in("depends_on_task_id", linkedIdsArr);
+      if (delErr) throw delErr;
+
+      const newDeps = tplDepsFiltered
+        .map((d) => {
+          const a = linkByTpl.get(d.task_id);
+          const b = linkByTpl.get(d.depends_on_task_id);
+          if (a && b) return {
+            task_id: a.id,
+            depends_on_task_id: b.id,
+            dep_type: d.dep_type ?? "end",
+            lag_days: d.lag_days ?? 0,
+            lag_type: d.lag_type ?? "calendar",
+          };
+          return null;
+        })
+        .filter(Boolean) as { task_id: string; depends_on_task_id: string; dep_type: string; lag_days: number; lag_type: string }[];
+
+      let insertedDeps: GanttTaskDependency[] = [];
+      if (newDeps.length > 0) {
+        const { data: ins, error: insErr } = await supabase.from("gantt_task_dependencies").insert(newDeps as any).select();
+        if (insErr) throw insErr;
+        insertedDeps = (ins as GanttTaskDependency[]) ?? [];
+      }
+
+      // 3) Reconstruir tareas en memoria (nuevas duraciones + dependencias) para recalcular fechas
+      const childIds = new Set(tasks.filter((t) => t.parent_id).map((t) => t.parent_id as string));
+      const nextTasks: GanttTask[] = tasks.map((t) => {
+        const info = t.template_task_id ? durByTpl.get(t.template_task_id) : null;
+        const duration_days = info ? info.d : t.duration_days;
+        const duration_type = info ? info.dt : t.duration_type;
+        const keep = (t.dependencies || []).filter(
+          (d) => !(linkedTaskIds.has(d.task_id) && linkedTaskIds.has(d.depends_on_task_id))
+        );
+        const added = insertedDeps.filter((d) => d.task_id === t.id);
+        return { ...t, duration_days, duration_type, dependencies: [...keep, ...added] };
+      });
+
+      // Semilla: recalcular fin de tareas hoja sin predecesores (anclas) según su nueva duración
+      const seed = new Map<string, Partial<GanttTask>>();
+      for (const t of nextTasks) {
+        const isLeaf = !childIds.has(t.id);
+        if (isLeaf && (t.dependencies || []).length === 0 && t.start_date) {
+          const end = format(
+            calculateEndDate(t.start_date, t.duration_days || 1, t.duration_type, holidays),
+            "yyyy-MM-dd",
+          );
+          seed.set(t.id, { end_date: end });
+        }
+      }
+
+      // 4) Recalcular fechas y persistir diffs (comparando contra el estado original)
+      const scheduleDiff = computeScheduleDiff(nextTasks, seed, tasks);
+      if (scheduleDiff.size > 0) {
+        const results = await Promise.all(
+          Array.from(scheduleDiff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id))
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
+      }
+
+      await loadTimeline();
+      toast({
+        title: "Cronograma actualizado",
+        description: `Se aplicaron las dependencias y plazos de la plantilla base (${linkByTpl.size} tareas).`,
+      });
+      return true;
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar desde la plantilla" });
+      await loadTimeline();
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const createTimelineFromCapex = async (name: string) => {
     setSaving(true);
     try {
@@ -1397,6 +1624,8 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     reorderTask,
     saveAsNewTemplate,
     updateBaseTemplate,
+    syncTemplateFromTimeline,
+    applyTemplateUpdates,
     reload: loadTimeline,
   };
 }

@@ -14,7 +14,7 @@ import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database, ArrowDownToLine } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { downloadGanttFullExport } from "@/lib/ganttFullExport";
 import { useToast } from "@/hooks/use-toast";
@@ -54,7 +54,8 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     unlinkPurchaseOrder,
     reorderTask,
     saveAsNewTemplate,
-    updateBaseTemplate,
+    syncTemplateFromTimeline,
+    applyTemplateUpdates,
     deleteTimeline,
     reload,
   } = useGantt(contractId ?? null, serviceContractId);
@@ -67,6 +68,9 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
+  const [confirmApplyOpen, setConfirmApplyOpen] = useState(false);
+  const [syncTemplateDialogOpen, setSyncTemplateDialogOpen] = useState(false);
+  const [syncTargetTemplateId, setSyncTargetTemplateId] = useState<string>("");
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [rentStartDate, setRentStartDate] = useState<string | null>(null);
   const [exportingFull, setExportingFull] = useState(false);
@@ -152,9 +156,25 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     }
   };
 
+  // Actualiza la plantilla base con este cronograma, preservando los vínculos
+  // de los cronogramas ya derivados (solo dependencias y plazos).
   const handleUpdateBase = async () => {
-    const ok = await updateBaseTemplate();
-    if (ok) setConfirmUpdateOpen(false);
+    if (!timeline?.template_id) return;
+    const r = await syncTemplateFromTimeline(timeline.template_id);
+    if (r) setConfirmUpdateOpen(false);
+  };
+
+  // Actualiza este cronograma (derivado) trayendo dependencias y plazos de su plantilla base.
+  const handleApplyFromTemplate = async () => {
+    const ok = await applyTemplateUpdates();
+    if (ok) setConfirmApplyOpen(false);
+  };
+
+  // Para un cronograma origen (sin plantilla base): elegir qué plantilla actualizar.
+  const handleSyncPickedTemplate = async () => {
+    if (!syncTargetTemplateId) return;
+    const r = await syncTemplateFromTimeline(syncTargetTemplateId);
+    if (r) { setSyncTemplateDialogOpen(false); setSyncTargetTemplateId(""); }
   };
 
   if (loading) {
@@ -316,14 +336,28 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
                     <Save className="h-4 w-4 mr-2" />
                     Crear nueva plantilla desde este Gantt
                   </DropdownMenuItem>
-                  {baseTemplate && (
+                  {baseTemplate ? (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => setConfirmUpdateOpen(true)}>
                         <RefreshCw className="h-4 w-4 mr-2" />
-                        Actualizar plantilla "{baseTemplate.name}"
+                        Actualizar plantilla "{baseTemplate.name}" con este cronograma
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setConfirmApplyOpen(true)}>
+                        <ArrowDownToLine className="h-4 w-4 mr-2" />
+                        Actualizar este cronograma desde "{baseTemplate.name}"
                       </DropdownMenuItem>
                     </>
+                  ) : (
+                    templates.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => { setSyncTargetTemplateId(""); setSyncTemplateDialogOpen(true); }}>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Actualizar una plantilla con este cronograma…
+                        </DropdownMenuItem>
+                      </>
+                    )
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -371,13 +405,13 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
         </DialogContent>
       </Dialog>
 
-      {/* Confirm update base template */}
+      {/* Confirm update base template (con este cronograma) */}
       <AlertDialog open={confirmUpdateOpen} onOpenChange={setConfirmUpdateOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Actualizar plantilla base</AlertDialogTitle>
+            <AlertDialogTitle>Actualizar plantilla con este cronograma</AlertDialogTitle>
             <AlertDialogDescription>
-              Se reemplazará el contenido de la plantilla <span className="font-medium">"{baseTemplate?.name}"</span> con la estructura actual de este cronograma. Esta acción no afecta a otros contratos que ya hayan creado su Gantt desde esta plantilla, pero sí cambiará la base para futuros usos.
+              Se sincronizarán las <span className="font-medium">dependencias y plazos</span> de este cronograma hacia la plantilla <span className="font-medium">"{baseTemplate?.name}"</span>, conservando los vínculos de los cronogramas ya creados desde ella. Luego, cada uno de esos cronogramas podrá traer estos cambios con el botón "Actualizar este cronograma desde la plantilla".
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -389,6 +423,55 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Confirm apply template -> this timeline */}
+      <AlertDialog open={confirmApplyOpen} onOpenChange={setConfirmApplyOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Actualizar cronograma desde la plantilla</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se reemplazarán las <span className="font-medium">dependencias y plazos</span> de este cronograma con los de la plantilla <span className="font-medium">"{baseTemplate?.name}"</span> y se recalcularán las fechas. No se modifican el avance, el estado ni las notas de las tareas. Las tareas o dependencias agregadas manualmente que no provienen de la plantilla se conservan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleApplyFromTemplate} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Actualizar cronograma
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Pick a template to update (para cronograma origen sin plantilla base) */}
+      <Dialog open={syncTemplateDialogOpen} onOpenChange={setSyncTemplateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Actualizar una plantilla con este cronograma</DialogTitle>
+            <DialogDescription>
+              Este cronograma no está vinculado a una plantilla. Elige a qué plantilla llevar sus dependencias y plazos. El emparejamiento se hace por nombre de tarea, conservando los vínculos de los cronogramas ya derivados.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Plantilla a actualizar</Label>
+            <Select value={syncTargetTemplateId} onValueChange={setSyncTargetTemplateId}>
+              <SelectTrigger><SelectValue placeholder="Seleccionar plantilla..." /></SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSyncTemplateDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSyncPickedTemplate} disabled={saving || !syncTargetTemplateId}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Actualizar plantilla
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm delete timeline */}
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
