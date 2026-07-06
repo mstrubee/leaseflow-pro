@@ -6330,6 +6330,7 @@ export type Database = {
           notes: string | null
           notice_days: number | null
           opex_category_id: string | null
+          pricing_mode: string
           renewal_term_months: number | null
           service_type: string
           start_date: string
@@ -6359,6 +6360,7 @@ export type Database = {
           notes?: string | null
           notice_days?: number | null
           opex_category_id?: string | null
+          pricing_mode?: string
           renewal_term_months?: number | null
           service_type: string
           start_date: string
@@ -6388,6 +6390,7 @@ export type Database = {
           notes?: string | null
           notice_days?: number | null
           opex_category_id?: string | null
+          pricing_mode?: string
           renewal_term_months?: number | null
           service_type?: string
           start_date?: string

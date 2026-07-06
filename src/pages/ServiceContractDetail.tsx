@@ -6,6 +6,7 @@ import { ServiceBudgetSection } from "@/components/budget/ServiceBudgetSection";
 import { ServiceContractAlertsSection } from "@/components/alerts/ServiceContractAlertsSection";
 import { ServiceContractApprovalPanel } from "@/components/serviceContracts/ServiceContractApprovalPanel";
 import type { ApprovalStatus } from "@/lib/serviceContractApproval";
+import { PricingMode, effectiveAmount } from "@/lib/serviceContractAmount";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,6 +26,7 @@ interface ServiceContractFull {
   amount_uf: number;
   amount_clp: number | null;
   display_currency: string;
+  pricing_mode: PricingMode;
   frequency: ServiceContractFrequency;
   auto_renewal: boolean;
   notice_days: number | null;
@@ -36,6 +38,7 @@ interface ServiceContractFull {
   approver_name: string | null;
   approval_comment: string | null;
   approved_at: string | null;
+  service_contract_contracts?: { contract_id: string }[];
 }
 
 const STATUS_MAP: Record<ServiceContractStatus, { label: string; className: string }> = {
@@ -69,7 +72,7 @@ export default function ServiceContractDetail() {
     if (!id) return;
     const { data, error } = await supabase
       .from("service_contracts")
-      .select("*, supplier:suppliers(id, name)")
+      .select("*, supplier:suppliers(id, name), service_contract_contracts(contract_id)")
       .eq("id", id)
       .maybeSingle();
     if (error || !data) {
@@ -98,10 +101,17 @@ export default function ServiceContractDetail() {
 
   const status = STATUS_MAP[sc.status];
   const expiring = sc.end_date && daysUntil(sc.end_date) >= 0 && daysUntil(sc.end_date) <= 60;
+  const branchCount = sc.service_contract_contracts?.length ?? 0;
+  const mode = (sc.pricing_mode ?? "total") as PricingMode;
+  const totalUf = effectiveAmount(sc.amount_uf, mode, branchCount);
+  const totalClp = sc.amount_clp != null ? effectiveAmount(sc.amount_clp, mode, branchCount) : null;
   const primaryAmt = sc.display_currency === "CLP"
-    ? (sc.amount_clp != null ? formatCLP(sc.amount_clp) : formatUF(sc.amount_uf))
-    : formatUF(sc.amount_uf);
-  const secondaryAmt = sc.display_currency === "CLP" ? formatUF(sc.amount_uf) : (sc.amount_clp != null ? formatCLP(sc.amount_clp) : null);
+    ? (totalClp != null ? formatCLP(totalClp) : formatUF(totalUf))
+    : formatUF(totalUf);
+  const secondaryAmt = sc.display_currency === "CLP" ? formatUF(totalUf) : (totalClp != null ? formatCLP(totalClp) : null);
+  const perBranchAmt = mode === "per_branch"
+    ? (sc.display_currency === "CLP" && sc.amount_clp != null ? formatCLP(sc.amount_clp) : formatUF(sc.amount_uf))
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -141,6 +151,9 @@ export default function ServiceContractDetail() {
             <p className="text-sm font-semibold tabular-nums">{primaryAmt}</p>
             {secondaryAmt && <p className="text-xs text-muted-foreground tabular-nums">{secondaryAmt}</p>}
             <p className="text-xs text-muted-foreground">/ {FREQUENCY_LABELS[sc.frequency].toLowerCase()}</p>
+            {perBranchAmt && (
+              <p className="text-xs text-muted-foreground mt-0.5">{branchCount} × {perBranchAmt} / sucursal</p>
+            )}
           </CardContent></Card>
 
           <Card><CardContent className="p-4">
@@ -185,7 +198,7 @@ export default function ServiceContractDetail() {
             name: sc.name,
             service_type: sc.service_type,
             supplierName: sc.supplier?.name ?? null,
-            amountLabel: `${primaryAmt} / ${FREQUENCY_LABELS[sc.frequency].toLowerCase()}`,
+            amountLabel: `${primaryAmt} / ${FREQUENCY_LABELS[sc.frequency].toLowerCase()}${perBranchAmt ? ` (${branchCount} × ${perBranchAmt})` : ""}`,
             periodLabel: `${formatDate(sc.start_date)}${sc.end_date ? ` — ${formatDate(sc.end_date)}` : ""}`,
             notes: sc.notes,
             approval_status: sc.approval_status,

@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, ChevronRight } from "lucide-react";
 import { ApprovalActionDialog, ApprovalDialogContract } from "@/components/serviceContracts/ApprovalActionDialog";
+import { PricingMode, effectiveAmount } from "@/lib/serviceContractAmount";
 
 interface PendingRow {
   id: string;
@@ -15,10 +16,12 @@ interface PendingRow {
   amount_uf: number;
   amount_clp: number | null;
   display_currency: string;
+  pricing_mode: PricingMode;
   frequency: string;
   notes: string | null;
   approver_id: string | null;
   supplier: { name: string } | null;
+  service_contract_contracts?: { contract_id: string }[];
 }
 
 const FREQ: Record<string, string> = {
@@ -48,7 +51,7 @@ export function ServiceContractApprovalBanner() {
       .eq("profile_id", user.id);
     const inPool = !!(poolData && poolData.length > 0);
 
-    const sel = "id, name, service_type, start_date, end_date, amount_uf, amount_clp, display_currency, frequency, notes, approver_id, supplier:suppliers(name)";
+    const sel = "id, name, service_type, start_date, end_date, amount_uf, amount_clp, display_currency, pricing_mode, frequency, notes, approver_id, supplier:suppliers(name), service_contract_contracts(contract_id)";
 
     // Asignadas directamente a mí
     const { data: mine } = await supabase
@@ -79,15 +82,20 @@ export function ServiceContractApprovalBanner() {
   if (pending.length === 0) return null;
 
   const openReview = (row: PendingRow) => {
+    const count = row.service_contract_contracts?.length ?? 0;
+    const mode = row.pricing_mode ?? "total";
     const primaryAmt = row.display_currency === "CLP"
-      ? (row.amount_clp != null ? formatCLP(row.amount_clp) : formatUF(row.amount_uf))
-      : formatUF(row.amount_uf);
+      ? (row.amount_clp != null ? formatCLP(effectiveAmount(row.amount_clp, mode, count)) : formatUF(effectiveAmount(row.amount_uf, mode, count)))
+      : formatUF(effectiveAmount(row.amount_uf, mode, count));
+    const perBranch = mode === "per_branch"
+      ? ` (${count} × ${row.display_currency === "CLP" && row.amount_clp != null ? formatCLP(row.amount_clp) : formatUF(row.amount_uf)} / sucursal)`
+      : "";
     setTarget({
       id: row.id,
       name: row.name,
       supplierName: row.supplier?.name ?? null,
       serviceType: row.service_type,
-      amountLabel: `${primaryAmt} / ${FREQ[row.frequency] ?? row.frequency}`,
+      amountLabel: `${primaryAmt} / ${FREQ[row.frequency] ?? row.frequency}${perBranch}`,
       periodLabel: `${formatDate(row.start_date)}${row.end_date ? ` — ${formatDate(row.end_date)}` : ""}`,
       notes: row.notes,
     });

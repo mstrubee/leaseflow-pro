@@ -8,6 +8,7 @@ import {
   APPROVAL_STATUS_MAP, ApprovalStatus, requestApproval, canApprove,
 } from "@/lib/serviceContractApproval";
 import { ApprovalActionDialog, ApprovalDialogContract } from "@/components/serviceContracts/ApprovalActionDialog";
+import { PricingMode, effectiveAmount } from "@/lib/serviceContractAmount";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,7 @@ interface ServiceContract {
   amount_uf: number;
   amount_clp: number | null;
   display_currency: DisplayCurrency;
+  pricing_mode: PricingMode;
   frequency: ServiceContractFrequency;
   notice_days: number | null;
   auto_renewal: boolean;
@@ -112,6 +114,7 @@ const EMPTY_FORM = {
   end_date: "",
   amount_raw: "",
   display_currency: "CLP" as DisplayCurrency,
+  pricing_mode: "total" as PricingMode,
   frequency: "mensual" as ServiceContractFrequency,
   notice_days: "",
   auto_renewal: false,
@@ -276,6 +279,7 @@ export default function ServiceContractsDashboard() {
       end_date: sc.end_date ?? "",
       amount_raw: raw,
       display_currency: cur,
+      pricing_mode: sc.pricing_mode ?? "total",
       frequency: sc.frequency,
       notice_days: sc.notice_days != null ? String(sc.notice_days) : "",
       auto_renewal: sc.auto_renewal,
@@ -325,6 +329,7 @@ export default function ServiceContractsDashboard() {
       amount_uf,
       amount_clp,
       display_currency: form.display_currency,
+      pricing_mode: form.pricing_mode,
       frequency: form.frequency,
       notice_days: form.notice_days ? parseInt(form.notice_days) : null,
       auto_renewal: form.auto_renewal,
@@ -438,15 +443,21 @@ export default function ServiceContractsDashboard() {
     }));
 
   const openApproval = (sc: ServiceContract) => {
+    const count = sc.linked_contracts?.length ?? 0;
+    const mode = sc.pricing_mode ?? "total";
+    const baseClp = sc.amount_clp != null ? sc.amount_clp : convertUFToPesos(sc.amount_uf);
     const primaryAmt = sc.display_currency === "CLP"
-      ? (sc.amount_clp != null ? formatCLP(sc.amount_clp) : formatCLP(convertUFToPesos(sc.amount_uf)))
-      : formatUF(sc.amount_uf);
+      ? formatCLP(effectiveAmount(baseClp, mode, count))
+      : formatUF(effectiveAmount(sc.amount_uf, mode, count));
+    const perBranch = mode === "per_branch"
+      ? ` (${count} × ${sc.display_currency === "CLP" ? formatCLP(baseClp) : formatUF(sc.amount_uf)} / sucursal)`
+      : "";
     setApprovalTarget({
       id: sc.id,
       name: sc.name,
       supplierName: sc.supplier?.name ?? null,
       serviceType: sc.service_type,
-      amountLabel: `${primaryAmt} / ${FREQUENCY_LABELS[sc.frequency].toLowerCase()}`,
+      amountLabel: `${primaryAmt} / ${FREQUENCY_LABELS[sc.frequency].toLowerCase()}${perBranch}`,
       periodLabel: `${formatDate(sc.start_date)}${sc.end_date ? ` — ${formatDate(sc.end_date)}` : ""}`,
       notes: sc.notes,
     });
@@ -458,17 +469,23 @@ export default function ServiceContractsDashboard() {
   const expiringCount = contracts.filter(c => c.end_date && daysUntil(c.end_date) >= 0 && daysUntil(c.end_date) <= 60).length;
   const monthlyCLP = activeContracts.reduce((sum, c) => {
     const months = FREQUENCY_MONTHS[c.frequency];
-    const clp = c.amount_clp != null ? c.amount_clp : convertUFToPesos(c.amount_uf);
+    const baseClp = c.amount_clp != null ? c.amount_clp : convertUFToPesos(c.amount_uf);
+    const clp = effectiveAmount(baseClp, c.pricing_mode ?? "total", c.linked_contracts?.length ?? 0);
     return sum + clp / months;
   }, 0);
 
-  // Form equivalence preview
+  // Form amount preview
   const rawNum = parseFloat(form.amount_raw);
-  const equivalence = !isNaN(rawNum) && rawNum > 0 && ufValue > 0
+  const hasAmount = !isNaN(rawNum) && rawNum > 0;
+  const branchCount = form.selectedContractIds.length;
+  const equivalence = hasAmount && ufValue > 0
     ? form.display_currency === "CLP"
       ? `≈ ${formatUF(convertPesosToUF(rawNum))}`
       : `≈ ${formatCLP(convertUFToPesos(rawNum))}`
     : null;
+  // Total efectivo (para modo por sucursal)
+  const effectiveTotalRaw = hasAmount ? effectiveAmount(rawNum, form.pricing_mode, branchCount) : 0;
+  const totalLabel = form.display_currency === "CLP" ? formatCLP(effectiveTotalRaw) : formatUF(effectiveTotalRaw);
 
   return (
     <div className="min-h-screen bg-background">
@@ -551,12 +568,18 @@ export default function ServiceContractsDashboard() {
                 {contracts.map(sc => {
                   const status = STATUS_MAP[sc.status];
                   const expiring = sc.end_date && daysUntil(sc.end_date) >= 0 && daysUntil(sc.end_date) <= 60;
-                  const primaryAmt = sc.display_currency === "CLP"
-                    ? (sc.amount_clp != null ? formatCLP(sc.amount_clp) : formatCLP(convertUFToPesos(sc.amount_uf)))
-                    : formatUF(sc.amount_uf);
+                  const branchCnt = sc.linked_contracts?.length ?? 0;
+                  const mode = sc.pricing_mode ?? "total";
+                  const baseClp = sc.amount_clp != null ? sc.amount_clp : convertUFToPesos(sc.amount_uf);
+                  const totalClp = effectiveAmount(baseClp, mode, branchCnt);
+                  const totalUf = effectiveAmount(sc.amount_uf, mode, branchCnt);
+                  const primaryAmt = sc.display_currency === "CLP" ? formatCLP(totalClp) : formatUF(totalUf);
                   const secondaryAmt = sc.display_currency === "CLP"
-                    ? formatUF(sc.amount_clp != null && ufValue > 0 ? sc.amount_clp / ufValue : sc.amount_uf)
-                    : (ufValue > 0 ? formatCLP(sc.amount_uf * ufValue) : null);
+                    ? (ufValue > 0 ? formatUF(totalClp / ufValue) : formatUF(totalUf))
+                    : (ufValue > 0 ? formatCLP(totalUf * ufValue) : null);
+                  const perBranchLabel = mode === "per_branch"
+                    ? (sc.display_currency === "CLP" ? formatCLP(baseClp) : formatUF(sc.amount_uf))
+                    : null;
 
                   const approval = APPROVAL_STATUS_MAP[sc.approval_status] ?? APPROVAL_STATUS_MAP.pendiente;
                   const actionable = canApprove(sc, { userId: user?.id ?? null, isAdmin, inPool: !!user && poolProfileIds.has(user.id) });
@@ -577,6 +600,11 @@ export default function ServiceContractsDashboard() {
                         <span className="text-xs text-muted-foreground">
                           / {FREQUENCY_LABELS[sc.frequency].toLowerCase()}
                         </span>
+                        {perBranchLabel && (
+                          <span className="block text-xs text-muted-foreground">
+                            {branchCnt} × {perBranchLabel} / sucursal
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">
                         {sc.end_date ? (
@@ -773,7 +801,8 @@ export default function ServiceContractsDashboard() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>
-                  Monto {form.display_currency === "CLP" ? "(CLP)" : "(UF)"}
+                  Monto {form.pricing_mode === "per_branch" ? "por sucursal " : ""}
+                  {form.display_currency === "CLP" ? "(CLP)" : "(UF)"}
                   {" "}<span className="text-destructive">*</span>
                 </Label>
                 {/* Currency toggle */}
@@ -812,6 +841,48 @@ export default function ServiceContractsDashboard() {
                 {equivalence && (
                   <p className="text-xs text-muted-foreground">{equivalence}</p>
                 )}
+                {/* Pricing mode: total vs per branch */}
+                <div className="pt-1 space-y-1">
+                  <div className="flex rounded-md border overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      className={`flex-1 px-2 py-1.5 font-medium transition-colors ${
+                        form.pricing_mode === "total"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                      onClick={() => setForm(f => ({ ...f, pricing_mode: "total" }))}
+                    >
+                      Monto total
+                    </button>
+                    <button
+                      type="button"
+                      className={`flex-1 px-2 py-1.5 font-medium border-l transition-colors ${
+                        form.pricing_mode === "per_branch"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                      onClick={() => setForm(f => ({ ...f, pricing_mode: "per_branch" }))}
+                    >
+                      Por sucursal
+                    </button>
+                  </div>
+                  {form.pricing_mode === "per_branch" && (
+                    hasAmount ? (
+                      <p className="text-xs text-foreground">
+                        Total: <span className="font-semibold tabular-nums">{totalLabel}</span>{" "}
+                        <span className="text-muted-foreground">
+                          ({branchCount} sucursal{branchCount !== 1 ? "es" : ""} × {form.display_currency === "CLP" ? formatCLP(rawNum) : formatUF(rawNum)})
+                        </span>
+                        {branchCount === 0 && (
+                          <span className="text-amber-600"> — selecciona al menos una sucursal abajo</span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">El monto se multiplicará por el número de sucursales asociadas.</p>
+                    )
+                  )}
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Frecuencia de pago</Label>
