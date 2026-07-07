@@ -66,9 +66,9 @@ function DurationInput({
 
   const commit = () => {
     const n = parseInt(local);
-    if (isNaN(n) || n < 1) {
-      onCommit(1);
-      setLocal("1");
+    if (isNaN(n) || n < 0) {
+      onCommit(0);
+      setLocal("0");
     } else {
       onCommit(n);
       setLocal(String(n));
@@ -77,7 +77,7 @@ function DurationInput({
   return (
     <Input
       type="number"
-      min={1}
+      min={0}
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onFocus={() => setFocused(true)}
@@ -1330,16 +1330,18 @@ export function GanttChart({
     }
 
     const updates: Partial<GanttTask> = { [field]: value };
-    if (field === "start_date" && value && task.duration_days) {
+    // Nota: duration_days puede ser 0 (línea que no consume tiempo), por eso se
+    // comprueba con `!= null` en vez de un chequeo booleano (0 es falsy en JS).
+    if (field === "start_date" && value && task.duration_days != null) {
       const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
-    } else if (field === "end_date" && value && task.duration_days) {
+    } else if (field === "end_date" && value && task.duration_days != null) {
       const startDate = calculateStartDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.start_date = format(startDate, "yyyy-MM-dd");
-    } else if (field === "duration_days" && task.start_date && value > 0) {
+    } else if (field === "duration_days" && task.start_date && value >= 0) {
       const endDate = calculateEndDate(task.start_date, value, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
-    } else if (field === "duration_type" && task.start_date && task.duration_days > 0) {
+    } else if (field === "duration_type" && task.start_date && task.duration_days >= 0) {
       const endDate = calculateEndDate(task.start_date, task.duration_days, value as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
     }
@@ -2662,13 +2664,19 @@ export function GanttChart({
                       </span>
                     ) : (
                       <DurationInput
-                        value={task.duration_days || 1}
+                        value={task.duration_days ?? 1}
                         onCommit={(n) => handleUpdateTaskField(task.id, "duration_days", n)}
                         editable={isAdmin}
                       />
                     )}
-                    <span className="text-[10px] text-muted-foreground">
-                      {task.duration_type === "business" ? "háb" : "días"}
+                    <span
+                      className={cn(
+                        "text-[10px]",
+                        !hasChildren && task.duration_days === 0 ? "text-amber-600 font-medium" : "text-muted-foreground"
+                      )}
+                      title={!hasChildren && task.duration_days === 0 ? "Sin plazo: no consume tiempo" : undefined}
+                    >
+                      {!hasChildren && task.duration_days === 0 ? "sin plazo" : (task.duration_type === "business" ? "háb" : "días")}
                     </span>
                   </div>
 

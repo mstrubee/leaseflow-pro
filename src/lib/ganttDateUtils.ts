@@ -52,11 +52,15 @@ export function calculateEndDate(
   holidays: Holiday[]
 ): Date {
   const start = typeof startDate === "string" ? parseISO(startDate) : startDate;
-  
+  // Plazo 0 = la línea no consume tiempo: término = inicio (mismo día).
+  // Sin este resguardo, durationDays-1 quedaría negativo y movería la
+  // fecha hacia atrás en vez de dejarla fija.
+  const offset = durationDays > 0 ? durationDays - 1 : 0;
+
   if (durationType === "business") {
-    return addBusinessDays(start, durationDays - 1, holidays);
+    return addBusinessDays(start, offset, holidays);
   } else {
-    return addDays(start, durationDays - 1);
+    return addDays(start, offset);
   }
 }
 
@@ -70,11 +74,13 @@ export function calculateStartDate(
   holidays: Holiday[]
 ): Date {
   const end = typeof endDate === "string" ? parseISO(endDate) : endDate;
-  
+  // Plazo 0 = la línea no consume tiempo: inicio = término (mismo día).
+  const offset = durationDays > 0 ? durationDays - 1 : 0;
+
   if (durationType === "business") {
-    return addBusinessDays(end, -(durationDays - 1), holidays);
+    return addBusinessDays(end, -offset, holidays);
   } else {
-    return addDays(end, -(durationDays - 1));
+    return addDays(end, -offset);
   }
 }
 

@@ -722,9 +722,9 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                 <Label>Duración por defecto (días)</Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
                   value={taskForm.default_duration_days}
-                  onChange={(e) => setTaskForm({ ...taskForm, default_duration_days: parseInt(e.target.value) || 1 })}
+                  onChange={(e) => setTaskForm({ ...taskForm, default_duration_days: parseInt(e.target.value) || 0 })}
                 />
               </div>
               <div className="space-y-2">

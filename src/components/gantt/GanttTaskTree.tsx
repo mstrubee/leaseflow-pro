@@ -247,6 +247,13 @@ export function GanttTaskTree({
       notes: editForm.notes || null,
     };
 
+    // El plazo cambió respecto a la tarea original: el término debe recalcularse
+    // desde el inicio + nuevo plazo (así un plazo 0 deja término = inicio), en vez
+    // de conservar la fecha de término que quedó cargada del valor anterior.
+    const durationChanged =
+      editForm.duration_days !== selectedTask.duration_days ||
+      editForm.duration_type !== selectedTask.duration_type;
+
     // Calculate dates
     if (editForm.start_date && !editForm.end_date) {
       const endDate = calculateEndDate(
@@ -266,6 +273,15 @@ export function GanttTaskTree({
       );
       updates.start_date = format(startDate, "yyyy-MM-dd");
       updates.end_date = editForm.end_date;
+    } else if (editForm.start_date && editForm.end_date && durationChanged) {
+      const endDate = calculateEndDate(
+        editForm.start_date,
+        editForm.duration_days,
+        editForm.duration_type,
+        holidays
+      );
+      updates.start_date = editForm.start_date;
+      updates.end_date = format(endDate, "yyyy-MM-dd");
     } else if (editForm.start_date && editForm.end_date) {
       updates.start_date = editForm.start_date;
       updates.end_date = editForm.end_date;
@@ -346,8 +362,10 @@ export function GanttTaskTree({
                   <Calendar className="h-3 w-3" />
                   {formatGanttDate(task.start_date)} - {formatGanttDate(task.end_date)}
                 </span>
-                <span>
-                  {task.duration_days} días {task.duration_type === "business" ? "háb." : "corr."}
+                <span className={task.duration_days === 0 ? "text-amber-600 font-medium" : undefined}>
+                  {task.duration_days === 0
+                    ? "Sin plazo (no consume tiempo)"
+                    : `${task.duration_days} días ${task.duration_type === "business" ? "háb." : "corr."}`}
                 </span>
                 <span>{task.progress}%</span>
                 {task.dependencies && task.dependencies.length > 0 && (
@@ -575,9 +593,9 @@ export function GanttTaskTree({
                 <Label>Plazo (días)</Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
                   value={editForm.duration_days}
-                  onChange={(e) => setEditForm({ ...editForm, duration_days: parseInt(e.target.value) || 1 })}
+                  onChange={(e) => setEditForm({ ...editForm, duration_days: parseInt(e.target.value) || 0 })}
                 />
               </div>
               <div className="space-y-2">

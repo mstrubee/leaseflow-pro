@@ -321,7 +321,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       timeline_id: timelineId,
       template_task_id: tt.id,
       name: tt.name,
-      duration_days: tt.default_duration_days || 1,
+      duration_days: tt.default_duration_days ?? 1,
       duration_type: tt.duration_type,
       display_order: tt.display_order,
       parent_id: null as string | null,
@@ -425,7 +425,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
           parent_id: parentId,
           name,
           display_order: maxOrder + 1,
-          duration_days: options.duration_days || 1,
+          duration_days: options.duration_days ?? 1,
           duration_type: options.duration_type || "calendar",
           start_date: options.start_date || null,
           end_date: options.end_date || null,
@@ -595,7 +595,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
           end = format(
             calculateEndDate(
               start,
-              t.duration_days || 1,
+              t.duration_days ?? 1,
               (t.duration_type as "calendar" | "business") || "calendar",
               holidays,
             ),
@@ -1190,7 +1190,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
           template_id: templateId,
           parent_id: null,
           name: t.name,
-          default_duration_days: t.duration_days || 1,
+          default_duration_days: t.duration_days ?? 1,
           duration_type: t.duration_type,
           display_order: t.display_order,
           // Guardar responsable y origen en la plantilla (editables luego)
@@ -1341,7 +1341,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       for (const [tplId, tl] of match) {
         await supabase
           .from("gantt_template_tasks")
-          .update({ default_duration_days: tl.duration_days || 1, duration_type: tl.duration_type })
+          .update({ default_duration_days: tl.duration_days ?? 1, duration_type: tl.duration_type })
           .eq("id", tplId);
       }
 
@@ -1406,7 +1406,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       if (!tplTasks || tplTasks.length === 0) throw new Error("La plantilla no tiene tareas");
 
       const tplTaskIds = new Set(tplTasks.map((t) => t.id));
-      const durByTpl = new Map(tplTasks.map((t) => [t.id, { d: t.default_duration_days || 1, dt: (t.duration_type as "calendar" | "business") }]));
+      const durByTpl = new Map(tplTasks.map((t) => [t.id, { d: t.default_duration_days ?? 1, dt: (t.duration_type as "calendar" | "business") }]));
       const tplDepsFiltered = (tplDeps ?? []).filter((d) => tplTaskIds.has(d.task_id) && tplTaskIds.has(d.depends_on_task_id));
 
       // templateTaskId -> tarea del cronograma actual
@@ -1474,7 +1474,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         const isLeaf = !childIds.has(t.id);
         if (isLeaf && (t.dependencies || []).length === 0 && t.start_date) {
           const end = format(
-            calculateEndDate(t.start_date, t.duration_days || 1, t.duration_type, holidays),
+            calculateEndDate(t.start_date, t.duration_days ?? 1, t.duration_type, holidays),
             "yyyy-MM-dd",
           );
           seed.set(t.id, { end_date: end });
