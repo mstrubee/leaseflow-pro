@@ -1649,6 +1649,15 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   // For percentage lines and parent lines (which sum sibling surcharges), recalc when linesMap changes
   const isParentLine = !!(prev.line.children && prev.line.children.length > 0);
   if ((prev.line.calc_type === "percentage" || isParentLine) && prev.linesMap !== next.linesMap) return false;
+  // A parent line renders its descendants inside a nested subtree. When expansion or
+  // selection changes anywhere below it, a descendant's checked/expanded state may have
+  // changed even though this line's own state did not — so the parent must re-render to
+  // propagate the update down. collapsedIds/selectedIds keep a stable reference except
+  // when they actually change, so this does NOT add re-renders while editing.
+  if (isParentLine) {
+    if (prev.collapsedIds !== next.collapsedIds) return false;
+    if (prev.selectedIds !== next.selectedIds) return false;
+  }
   if (prev.parentCategoryId !== next.parentCategoryId) return false;
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
   // Callbacks are stable (useCallback in parent), skip comparing

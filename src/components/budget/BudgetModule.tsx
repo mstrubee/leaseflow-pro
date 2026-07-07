@@ -89,10 +89,31 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const handleToggleSelectLine = useCallback((id: string) => {
     setSelectedLineIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      // Mapa plano id -> parent_id del árbol actual, para recorrer la cadena de ancestros.
+      const parentOf = new Map<string, string | null>();
+      const walk = (arr: BudgetLine[]) => arr.forEach((l) => {
+        parentOf.set(l.id, l.parent_id ?? null);
+        if (l.children?.length) walk(l.children);
+      });
+      walk(lines);
+
+      if (next.has(id)) {
+        // Deseleccionar: quita esta línea y toda su cadena de ancestros (misma rama).
+        // No se tocan hermanos, otras ramas ni los descendientes de esta línea.
+        next.delete(id);
+        let p = parentOf.get(id) ?? null;
+        while (p) {
+          next.delete(p);
+          p = parentOf.get(p) ?? null;
+        }
+      } else {
+        // Seleccionar: agrega esta línea y todos sus descendientes.
+        next.add(id);
+        for (const d of getAllDescendantIds(lines, id)) next.add(d);
+      }
       return next;
     });
-  }, []);
+  }, [lines]);
 
   const handleExitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -298,6 +319,10 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // Using a "collapsed set" approach: all lines are expanded by default, this set tracks collapsed ones
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   // collapsedIds is passed directly to the tree - no need to compute expandedIds
+  // Al abrir un presupuesto por primera vez, el árbol arranca totalmente colapsado.
+  // Este ref evita volver a colapsar en recargas posteriores del MISMO presupuesto
+  // (p. ej. tras editar una línea), para no perder lo que el usuario haya expandido.
+  const collapseInitedBudgetRef = useRef<string | null>(null);
   
   const handleToggleExpand = useCallback((id: string) => {
     setCollapsedIds(prev => {
@@ -476,8 +501,22 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
       if (error) throw error;
       const flatLines = (data || []) as BudgetLine[];
-      setLines(buildTree(flatLines));
-      
+      const tree = buildTree(flatLines);
+      setLines(tree);
+
+      // Estado inicial: al abrir este presupuesto por primera vez, colapsar todas
+      // las ramas. Solo la primera carga de cada budgetId; recargas posteriores
+      // conservan el estado de expansión actual.
+      if (collapseInitedBudgetRef.current !== budgetId) {
+        collapseInitedBudgetRef.current = budgetId;
+        const parentIds: string[] = [];
+        const collectParents = (items: BudgetLine[]) => items.forEach((i) => {
+          if (i.children?.length) { parentIds.push(i.id); collectParents(i.children); }
+        });
+        collectParents(tree);
+        setCollapsedIds(new Set(parentIds));
+      }
+
       // Fetch template prices for lines with template_line_id
       const templateLineIds = flatLines
         .filter(l => l.template_line_id)
