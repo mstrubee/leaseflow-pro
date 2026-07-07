@@ -140,10 +140,15 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       // Check if timeline exists for this contract or service contract
       const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
       const filterVal = serviceContractId ?? contractId!;
+      // .limit(1) es una salvaguarda defensiva: aunque hay un índice único que
+      // impide más de un cronograma por contrato, esto evita que .maybeSingle()
+      // arroje error si alguna vez existiera más de una fila.
       const { data: timelineData, error: timelineError } = await supabase
         .from("gantt_timelines")
         .select("*")
         .eq(filterCol, filterVal)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (timelineError) throw timelineError;
@@ -214,8 +219,28 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
   const createTimeline = async (name: string, templateId?: string) => {
     setSaving(true);
     try {
+      // Defensive check: solo puede existir un cronograma por contrato/contrato de
+      // servicio. Si ya hay uno (por ejemplo, quedó de una carga anterior fallida),
+      // recargarlo en vez de crear un duplicado.
+      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
+      const filterVal = serviceContractId ?? contractId!;
+      const { data: existing } = await supabase
+        .from("gantt_timelines")
+        .select("id")
+        .eq(filterCol, filterVal)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        toast({
+          title: "Ya existe un cronograma",
+          description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
+        });
+        await loadTimeline();
+        return null;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       const timelinePayload = serviceContractId
         ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id }
         : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id };
@@ -226,7 +251,18 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // 23505 = violación de unicidad (carrera: otra pestaña/usuario creó uno al mismo tiempo)
+        if (error.code === "23505") {
+          toast({
+            title: "Ya existe un cronograma",
+            description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
+          });
+          await loadTimeline();
+          return null;
+        }
+        throw error;
+      }
 
       // If template selected, copy tasks from template
       if (templateId) {
@@ -1473,6 +1509,24 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
   const createTimelineFromCapex = async (name: string) => {
     setSaving(true);
     try {
+      // Defensive check: solo puede existir un cronograma por contrato/contrato de servicio.
+      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
+      const filterVal = serviceContractId ?? contractId!;
+      const { data: existingTl } = await supabase
+        .from("gantt_timelines")
+        .select("id")
+        .eq(filterCol, filterVal)
+        .limit(1)
+        .maybeSingle();
+      if (existingTl) {
+        toast({
+          title: "Ya existe un cronograma",
+          description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
+        });
+        await loadTimeline();
+        return null;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
 
       // 1. Find CAPEX budgets for this contract
@@ -1524,7 +1578,18 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         .insert(capexTimelinePayload)
         .select()
         .single();
-      if (tlErr || !newTimeline) throw tlErr || new Error("No se pudo crear la línea de tiempo");
+      if (tlErr) {
+        if (tlErr.code === "23505") {
+          toast({
+            title: "Ya existe un cronograma",
+            description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
+          });
+          await loadTimeline();
+          return null;
+        }
+        throw tlErr;
+      }
+      if (!newTimeline) throw new Error("No se pudo crear la línea de tiempo");
 
       // 4. Insert all tasks first without parent_id, build id mapping
       const idMap = new Map<string, string>();
