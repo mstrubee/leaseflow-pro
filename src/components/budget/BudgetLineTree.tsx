@@ -872,16 +872,42 @@ const BudgetLineItemInner = ({
       return segments.length ? segments.join(" › ") : "(destino eliminado)";
     };
     const destinationPath = buildPath(line.moved_to_line_id);
+    // Solo un administrador puede eliminar marcas de movimiento (misma regla que
+    // el botón individual de abajo), así que la selección masiva se habilita igual.
+    const ghostSelectable = selectionMode && isAdmin;
 
     return (
       <div>
         <div
+          onClick={ghostSelectable ? (e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest('button, a, input, textarea, select, [role="button"], [role="checkbox"]')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleSelect?.(line.id);
+          } : undefined}
           className={cn(
             "flex items-center gap-2 py-1.5 px-2 rounded-md border border-dashed border-muted-foreground/30 bg-muted/10 opacity-60 italic",
             level === 0 && "ml-0",
+            ghostSelectable && "cursor-pointer select-none",
+            ghostSelectable && isSelected && "!bg-primary/20 border-primary opacity-100",
           )}
         >
-          <div className="h-3.5 w-3.5 flex-shrink-0" />
+          {ghostSelectable ? (
+            <div
+              aria-label={`Seleccionar ${line.name}`}
+              className={cn(
+                "h-3.5 w-3.5 flex-shrink-0 rounded border-2 flex items-center justify-center transition-colors pointer-events-none",
+                isSelected
+                  ? "bg-primary border-primary text-primary-foreground"
+                  : "bg-background border-muted-foreground/40"
+              )}
+            >
+              {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+            </div>
+          ) : (
+            <div className="h-3.5 w-3.5 flex-shrink-0" />
+          )}
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
           <span className="text-sm flex-shrink-0 max-w-[280px] truncate text-muted-foreground line-through">
             {line.name}

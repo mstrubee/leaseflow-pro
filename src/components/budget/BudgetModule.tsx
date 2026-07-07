@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake, CheckSquare } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
@@ -343,6 +343,17 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     walk(items);
     return out;
   }, []);
+
+  // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
+  // sin tener que expandir el árbol completo y marcarlas una por una.
+  const handleSelectAllMoved = useCallback(() => {
+    const movedIds = flattenLines(lines).filter((l) => l.is_ghost).map((l) => l.id);
+    if (movedIds.length === 0) {
+      toast({ title: "Sin líneas movidas", description: "No hay marcas de movimiento pendientes." });
+      return;
+    }
+    setSelectedLineIds(new Set(movedIds));
+  }, [lines, flattenLines]);
 
   const focusLine = useCallback((id: string, allLines: BudgetLine[]) => {
     // Expand ancestors: remove them from collapsed set
@@ -1806,6 +1817,18 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                       <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
                         {selectedLineIds.size} línea{selectedLineIds.size === 1 ? "" : "s"} seleccionada{selectedLineIds.size === 1 ? "" : "s"}
                       </span>
+                      {isAdmin && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSelectAllMoved}
+                          className="gap-2"
+                          title="Selecciona de una sola vez todas las marcas de líneas movidas"
+                        >
+                          <CheckSquare className="h-4 w-4" />
+                          Seleccionar movidas
+                        </Button>
+                      )}
                       <Button
                         variant="default"
                         size="sm"
