@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useContext } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight, GripVertical } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -894,17 +894,13 @@ const BudgetLineItemInner = ({
           )}
         >
           {ghostSelectable ? (
-            <div
+            <Checkbox
               aria-label={`Seleccionar ${line.name}`}
-              className={cn(
-                "h-3.5 w-3.5 flex-shrink-0 rounded border-2 flex items-center justify-center transition-colors pointer-events-none",
-                isSelected
-                  ? "bg-primary border-primary text-primary-foreground"
-                  : "bg-background border-muted-foreground/40"
-              )}
-            >
-              {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
-            </div>
+              checked={isSelected}
+              onCheckedChange={() => onToggleSelect?.(line.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-shrink-0"
+            />
           ) : (
             <div className="h-3.5 w-3.5 flex-shrink-0" />
           )}
@@ -983,17 +979,13 @@ const BudgetLineItemInner = ({
         isDragOver && dragCtx?.overPos === "below" && "border-b-2 border-primary",
       )}>
         {selectionMode && (
-          <div
+          <Checkbox
             aria-label={`Seleccionar ${line.name}`}
-            className={cn(
-              "h-5 w-5 flex-shrink-0 rounded border-2 flex items-center justify-center transition-colors pointer-events-none",
-              isSelected
-                ? "bg-primary border-primary text-primary-foreground"
-                : "bg-background border-muted-foreground/40"
-            )}
-          >
-            {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
-          </div>
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect?.(line.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-shrink-0"
+          />
         )}
         {dragCtx && !effectiveReadOnly && !selectionMode && !compactView && (
           <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-50 cursor-grab flex-shrink-0 active:cursor-grabbing" />
