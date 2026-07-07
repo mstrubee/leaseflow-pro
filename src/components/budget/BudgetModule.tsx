@@ -89,28 +89,38 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const handleToggleSelectLine = useCallback((id: string) => {
     setSelectedLineIds((prev) => {
       const next = new Set(prev);
-      // Mapa plano id -> parent_id del árbol actual, para recorrer la cadena de ancestros.
-      const parentOf = new Map<string, string | null>();
-      const walk = (arr: BudgetLine[]) => arr.forEach((l) => {
-        parentOf.set(l.id, l.parent_id ?? null);
-        if (l.children?.length) walk(l.children);
-      });
-      walk(lines);
 
-      if (next.has(id)) {
-        // Deseleccionar: quita esta línea y toda su cadena de ancestros (misma rama).
-        // No se tocan hermanos, otras ramas ni los descendientes de esta línea.
-        next.delete(id);
-        let p = parentOf.get(id) ?? null;
-        while (p) {
-          next.delete(p);
-          p = parentOf.get(p) ?? null;
+      // Mapas plano id->parent e id->hijos del árbol actual.
+      const parentOf = new Map<string, string | null>();
+      const childrenOf = new Map<string, string[]>();
+      const walk = (arr: BudgetLine[], parentId: string | null) => arr.forEach((l) => {
+        parentOf.set(l.id, parentId);
+        if (l.children?.length) {
+          childrenOf.set(l.id, l.children.map((c) => c.id));
+          walk(l.children, l.id);
         }
-      } else {
-        // Seleccionar: agrega esta línea y todos sus descendientes.
-        next.add(id);
-        for (const d of getAllDescendantIds(lines, id)) next.add(d);
+      });
+      walk(lines, null);
+
+      const willSelect = !prev.has(id);
+
+      // 1) Cascada hacia abajo: la línea y TODOS sus descendientes toman el nuevo estado.
+      const downward = [id, ...getAllDescendantIds(lines, id)];
+      for (const d of downward) {
+        if (willSelect) next.add(d); else next.delete(d);
       }
+
+      // 2) Recalcular ancestros de abajo hacia arriba: un padre queda marcado solo si
+      //    TODOS sus hijos están marcados; si falta al menos uno, se desmarca. Así el
+      //    estado del padre siempre refleja el de sus descendientes (simétrico).
+      let cursor = parentOf.get(id) ?? null;
+      while (cursor) {
+        const kids = childrenOf.get(cursor) ?? [];
+        const allSelected = kids.length > 0 && kids.every((k) => next.has(k));
+        if (allSelected) next.add(cursor); else next.delete(cursor);
+        cursor = parentOf.get(cursor) ?? null;
+      }
+
       return next;
     });
   }, [lines]);
