@@ -43,6 +43,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { DependencyDialog } from "./DependencyDialog";
 
 // Local input that only commits the value on Enter or blur, allowing free typing/erasing.
 function DurationInput({
@@ -325,81 +326,6 @@ const createEmptyNewTask = (): NewTaskRow => ({
   end_date: "",
   parent_id: null,
 });
-
-function ChartAddDependencyForm({
-  task,
-  allTasks,
-  onAdd,
-  onCancel,
-}: {
-  task: GanttTask;
-  allTasks: GanttTask[];
-  onAdd: (parentId: string, dep_type: "start" | "end", lag_days: number) => void | Promise<void>;
-  onCancel?: () => void;
-}) {
-  const [parentId, setParentId] = useState("");
-  const [depType, setDepType] = useState<"start" | "end">("end");
-  const [lag, setLag] = useState(0);
-
-  const reset = () => { setParentId(""); setLag(0); setDepType("end"); };
-
-  const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
-  const options = allTasks
-    .filter((t) => t.id !== task.id && !currentDeps.includes(t.id))
-    .map((t) => ({ value: t.id, label: t.name }));
-
-  return (
-    <div className="space-y-1.5">
-      <SearchableSelect
-        value={parentId}
-        onValueChange={setParentId}
-        options={options}
-        placeholder="Buscar tarea predecesora..."
-        searchPlaceholder="Buscar tarea..."
-        triggerClassName="h-7 text-xs"
-      />
-      <div className="flex items-center gap-1">
-        <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
-          <SelectTrigger className="h-7 text-xs w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="end">al término</SelectItem>
-            <SelectItem value="start">al inicio</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          type="number"
-          className="h-7 text-xs w-20"
-          value={lag}
-          onChange={(e) => setLag(parseInt(e.target.value) || 0)}
-          title="Días de desfase (+ retrasa, − adelanta)"
-        />
-        <span className="text-[10px] text-muted-foreground">días</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs"
-          onClick={() => { reset(); onCancel?.(); }}
-        >
-          Cancelar
-        </Button>
-        <Button
-          size="sm"
-          className="h-7 text-xs ml-auto"
-          disabled={!parentId}
-          onClick={async () => {
-            if (!parentId) return;
-            await onAdd(parentId, depType, lag);
-            reset();
-          }}
-        >
-          Agregar
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 export function GanttChart({
   tasks,
@@ -2379,116 +2305,19 @@ export function GanttChart({
                       </button>
                     )}
 
-                    {/* Chain link button (only for non-parent tasks) */}
+                    {/* Chain link button (only for non-parent tasks): abre el editor de dependencias (modal XL) */}
                     {!hasChildren && (
-                      <Popover
-                        open={depPopoverTaskId === task.id}
-                        onOpenChange={(o) => setDepPopoverTaskId(o ? task.id : null)}
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex-shrink-0 rounded hover:bg-muted p-0.5",
+                          !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
+                        )}
+                        title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
+                        onClick={(e) => { e.stopPropagation(); setDepPopoverTaskId(task.id); }}
                       >
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className={cn(
-                              "flex-shrink-0 rounded hover:bg-muted p-0.5",
-                              !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
-                            )}
-                            title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Link className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-96 p-2 z-50 bg-popover" align="start">
-                          <p className="text-xs font-medium mb-1.5">Depende de:</p>
-                          {task.dependencies && task.dependencies.length > 0 ? (
-                            <ul className="space-y-2 mb-2">
-                              {task.dependencies.map((dep) => {
-                                const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
-                                const options = tasks
-                                  .filter(
-                                    (t) =>
-                                      t.id !== task.id &&
-                                      (t.id === dep.depends_on_task_id || !currentDeps.includes(t.id))
-                                  )
-                                  .map((t) => ({ value: t.id, label: t.name }));
-                                return (
-                                  <li key={dep.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
-                                    <div className="flex items-center gap-1">
-                                      <div className="flex-1 min-w-0">
-                                        <SearchableSelect
-                                          value={dep.depends_on_task_id}
-                                          onValueChange={async (newParentId) => {
-                                            if (newParentId && newParentId !== dep.depends_on_task_id) {
-                                              await onRemoveDependency(dep.id);
-                                              await onAddDependency(task.id, newParentId, {
-                                                dep_type: (dep as any).dep_type ?? "end",
-                                                lag_days: (dep as any).lag_days ?? 0,
-                                              });
-                                            }
-                                          }}
-                                          options={options}
-                                          placeholder="Seleccionar tarea..."
-                                          searchPlaceholder="Buscar tarea..."
-                                          triggerClassName="h-7 text-xs"
-                                        />
-                                      </div>
-                                      <button
-                                        type="button"
-                                        className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
-                                        onClick={() => onRemoveDependency(dep.id)}
-                                      >
-                                        Quitar
-                                      </button>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      <Select
-                                        value={(dep as any).dep_type ?? "end"}
-                                        onValueChange={(v) =>
-                                          onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })
-                                        }
-                                      >
-                                        <SelectTrigger className="h-7 text-xs w-32">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="end">al término</SelectItem>
-                                          <SelectItem value="start">al inicio</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      <Input
-                                        type="number"
-                                        className="h-7 text-xs w-20"
-                                        defaultValue={(dep as any).lag_days ?? 0}
-                                        onBlur={(e) => {
-                                          const val = parseInt(e.target.value) || 0;
-                                          if (val !== ((dep as any).lag_days ?? 0)) {
-                                            onUpdateDependency?.(dep.id, { lag_days: val });
-                                          }
-                                        }}
-                                        title="Días de desfase (+ retrasa, − adelanta)"
-                                      />
-                                      <span className="text-[10px] text-muted-foreground">días</span>
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          ) : (
-                            <p className="text-[11px] text-muted-foreground mb-2">Sin dependencias</p>
-                          )}
-                          <div className="border-t pt-2">
-                            <p className="text-[11px] font-medium mb-1">Agregar dependencia:</p>
-                            <ChartAddDependencyForm
-                              task={task}
-                              allTasks={tasks}
-                              onAdd={(parentId, dep_type, lag_days) =>
-                                onAddDependency(task.id, parentId, { dep_type, lag_days })
-                              }
-                              onCancel={() => setDepPopoverTaskId(null)}
-                            />
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                        <Link className="h-3 w-3 text-muted-foreground" />
+                      </button>
                     )}
 
                     {/* Green: successor indicator */}
@@ -3102,6 +2931,17 @@ export function GanttChart({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Editor de dependencias (modal XL con explorador jerárquico) */}
+      <DependencyDialog
+        open={!!depPopoverTaskId}
+        onOpenChange={(open) => setDepPopoverTaskId(open ? depPopoverTaskId : null)}
+        selectedTask={tasks.find((t) => t.id === depPopoverTaskId) ?? null}
+        allTasks={tasks}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+        onUpdateDependency={onUpdateDependency}
+      />
 
       {/* Export PDF dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
