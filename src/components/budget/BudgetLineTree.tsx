@@ -890,7 +890,6 @@ const BudgetLineItemInner = ({
             "flex items-center gap-2 py-1.5 px-2 rounded-md border border-dashed border-muted-foreground/30 bg-muted/10 opacity-60 italic",
             level === 0 && "ml-0",
             ghostSelectable && "cursor-pointer select-none",
-            ghostSelectable && isSelected && "!bg-primary/20 border-primary opacity-100",
           )}
         >
           {ghostSelectable ? (
@@ -971,8 +970,6 @@ const BudgetLineItemInner = ({
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
         selectionMode && "cursor-pointer select-none",
-        // Selection styles last so they win precedence
-        selectionMode && isSelected && "!bg-primary/20 border-l-4 border-primary font-medium shadow-sm ring-1 ring-primary/40",
         // Drag-to-reorder visual state
         isDragSource && "opacity-40",
         isDragOver && dragCtx?.overPos === "above" && "border-t-2 border-primary",
