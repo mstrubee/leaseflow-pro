@@ -872,9 +872,9 @@ const BudgetLineItemInner = ({
       return segments.length ? segments.join(" › ") : "(destino eliminado)";
     };
     const destinationPath = buildPath(line.moved_to_line_id);
-    // Solo un administrador puede eliminar marcas de movimiento (misma regla que
-    // el botón individual de abajo), así que la selección masiva se habilita igual.
-    const ghostSelectable = selectionMode && isAdmin;
+    // Las marcas de movimiento pueden gestionarlas admins o quienes tengan permiso
+    // de edición de líneas (p. ej. rol Equipo Desarrollo); la selección se habilita igual.
+    const ghostSelectable = selectionMode && canEditLineas;
 
     return (
       <div>
@@ -910,7 +910,7 @@ const BudgetLineItemInner = ({
           <span className="text-xs text-muted-foreground truncate">
             Movida a: <span className="font-medium not-italic">{destinationPath}</span>
           </span>
-          {!effectiveReadOnly && isAdmin && (
+          {!effectiveReadOnly && canEditLineas && (
             <Button
               variant="ghost"
               size="sm"

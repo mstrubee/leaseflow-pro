@@ -901,12 +901,13 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     };
     const targetLine = findInTree(lines);
 
-    // Ghost lines (movement markers) can ONLY be deleted by admins
-    if (targetLine?.is_ghost && !isAdmin) {
+    // Las marcas de movimiento (ghost) pueden eliminarlas admins o quienes tengan
+    // permiso de edición de líneas de presupuesto (p. ej. el rol Equipo Desarrollo).
+    if (targetLine?.is_ghost && !canEditLines) {
       toast({
         variant: "destructive",
         title: "No autorizado",
-        description: "Solo un administrador puede eliminar marcas de movimiento.",
+        description: "No tienes permiso para eliminar marcas de movimiento.",
       });
       return;
     }
@@ -1866,7 +1867,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                       <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
                         {selectedLineIds.size} línea{selectedLineIds.size === 1 ? "" : "s"} seleccionada{selectedLineIds.size === 1 ? "" : "s"}
                       </span>
-                      {isAdmin && (
+                      {canEditLines && (
                         <Button
                           variant="outline"
                           size="sm"
