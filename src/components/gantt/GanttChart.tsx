@@ -289,6 +289,7 @@ interface GanttChartProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onDiscardTask?: (taskId: string) => Promise<void>;
   onRestoreTask?: (taskId: string) => Promise<void>;
+  getDescendantCount?: (taskId: string) => number;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
   /** Usuarios con permiso de ver: pueden reprogramar (columna Reprog.) */
@@ -344,6 +345,7 @@ export function GanttChart({
   onUpdateDependency,
   onDiscardTask,
   onRestoreTask,
+  getDescendantCount,
   onReorderTask,
   isAdmin = false,
   canReprogram = false,
@@ -2347,6 +2349,7 @@ export function GanttChart({
                         onToggleComplete={toggleTaskCompleted}
                         onDiscard={(id) => onDiscardTask!(id)}
                         onRestore={(id) => onRestoreTask!(id)}
+                        descendantCount={getDescendantCount?.(task.id) ?? 0}
                         size="sm"
                       />
                     )}
@@ -2904,9 +2907,12 @@ export function GanttChart({
                 return task.dependencies.map(dep => {
                   const predTask = tasks.find(t => t.id === dep.depends_on_task_id);
                   if (!predTask) return null;
+                  const isGhost = predTask.status === "discarded";
                   return (
-                    <div key={dep.id} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
-                      <div className="flex-1 p-2 bg-red-50 border border-red-200 rounded text-sm font-medium">{predTask.name}</div>
+                    <div key={dep.id} className={cn("flex items-center gap-2 p-2 border rounded bg-muted/30", isGhost && "opacity-50 border-dashed")}>
+                      <div className={cn("flex-1 p-2 rounded text-sm font-medium", isGhost ? "bg-muted border border-dashed line-through text-muted-foreground" : "bg-red-50 border border-red-200")}>
+                        {predTask.name}{isGhost && " (descartada)"}
+                      </div>
                       <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <div className="flex-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm font-medium">{task.name}</div>
                       <span className="text-xs text-muted-foreground">{(dep as any).dep_type === "start" ? "al inicio" : "al término"}{(dep as any).lag_days ? ` +${(dep as any).lag_days}d` : ""}</span>
@@ -2916,13 +2922,16 @@ export function GanttChart({
               })()}
               {depViewMode === "successors" && (() => {
                 const task = tasks.find(t => t.id === depViewTaskId);
+                const isSourceGhost = task?.status === "discarded";
                 const successors = tasks.filter(t => t.dependencies?.some(d => d.depends_on_task_id === depViewTaskId));
                 if (!successors.length) return <p className="text-sm text-muted-foreground">Sin sucesoras</p>;
                 return successors.map(sucTask => {
                   const dep = sucTask.dependencies?.find(d => d.depends_on_task_id === depViewTaskId);
                   return (
-                    <div key={sucTask.id} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
-                      <div className="flex-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm font-medium">{task?.name}</div>
+                    <div key={sucTask.id} className={cn("flex items-center gap-2 p-2 border rounded bg-muted/30", isSourceGhost && "opacity-50 border-dashed")}>
+                      <div className={cn("flex-1 p-2 rounded text-sm font-medium", isSourceGhost ? "bg-muted border border-dashed line-through text-muted-foreground" : "bg-blue-50 border border-blue-200")}>
+                        {task?.name}{isSourceGhost && " (descartada)"}
+                      </div>
                       <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <div className="flex-1 p-2 bg-green-50 border border-green-200 rounded text-sm font-medium">{sucTask.name}</div>
                       <span className="text-xs text-muted-foreground">{(dep as any)?.dep_type === "start" ? "al inicio" : "al término"}{(dep as any)?.lag_days ? ` +${(dep as any).lag_days}d` : ""}</span>

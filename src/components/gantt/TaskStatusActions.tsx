@@ -40,11 +40,14 @@ interface TaskStatusActionsProps {
   onToggleComplete: (task: GanttTask) => void | Promise<void>;
   onDiscard: (taskId: string) => void | Promise<void>;
   onRestore: (taskId: string) => void | Promise<void>;
+  /** Cantidad de tareas descendientes (hijas, nietas, etc.) — habilita la
+   *  confirmación inteligente que avisa que también se descartará la rama. */
+  descendantCount?: number;
   size?: "sm" | "md";
 }
 
 export function TaskStatusActions({
-  task, canComplete, canDiscard, onToggleComplete, onDiscard, onRestore, size = "md",
+  task, canComplete, canDiscard, onToggleComplete, onDiscard, onRestore, descendantCount = 0, size = "md",
 }: TaskStatusActionsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -96,9 +99,10 @@ export function TaskStatusActions({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Desea descartar esta tarea?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción actualizará automáticamente las dependencias del cronograma: las tareas que dependían
-              de "{task.name}" pasarán a depender de sus predecesoras. No se elimina — conserva toda su
-              información y puede restaurarse en cualquier momento con un clic.
+              {descendantCount > 0
+                ? `Esta acción también descartará automáticamente ${descendantCount} tarea${descendantCount === 1 ? "" : "s"} descendiente${descendantCount === 1 ? "" : "s"} y recalculará el cronograma.`
+                : "Se recalculará el cronograma en base a las dependencias restantes."}
+              {" "}No se elimina — conserva toda su información y puede restaurarse en cualquier momento con un clic.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

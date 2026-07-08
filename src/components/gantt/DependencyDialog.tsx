@@ -11,9 +11,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ChevronRight, ChevronDown, Search, Unlink, Link2, ChevronsDownUp, ChevronsUpDown, X, CornerDownRight,
-  ListChecks, Zap, Loader2, Sparkles,
+  ListChecks, Zap, Loader2, Sparkles, Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatusDot } from "./TaskStatusActions";
 
 type DepOptions = { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" };
 
@@ -351,7 +352,8 @@ export function DependencyDialog({
               <CornerDownRight className="h-3 w-3" />
             </span>
           )}
-          <span className={cn("truncate", hasKids && "font-medium")}>{node.task.name}</span>
+          <span className={cn("truncate", hasKids && "font-medium", node.task.status === "discarded" && "line-through text-muted-foreground")}>{node.task.name}</span>
+          {node.task.status === "discarded" && <StatusDot status="discarded" className="shrink-0" />}
           {isExisting && <span className="ml-2 text-[10px] text-muted-foreground shrink-0">(ya es dependencia)</span>}
         </div>
         {hasKids && isExpanded && kids.map((c) => renderNode(c, level + 1))}
@@ -460,16 +462,24 @@ export function DependencyDialog({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {draftDeps.map((dep) => (
-                    <div key={dep.id} className="border rounded-md p-2.5 bg-card space-y-2">
+                  {draftDeps.map((dep) => {
+                    const target = byId.get(dep.depends_on_task_id);
+                    const isGhost = target?.status === "discarded";
+                    return (
+                    <div key={dep.id} className={cn("border rounded-md p-2.5 bg-card space-y-2", isGhost && "border-dashed bg-muted/20 opacity-60")}>
                       <div className="flex items-start gap-2">
-                        <Link2 className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                        <Link2 className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", isGhost ? "text-muted-foreground/50" : "text-muted-foreground")} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate flex items-center gap-1.5">
-                            {byId.get(dep.depends_on_task_id)?.name ?? "Tarea no encontrada"}
+                          <p className={cn("text-sm font-medium truncate flex items-center gap-1.5", isGhost && "text-muted-foreground line-through")}>
+                            {target?.name ?? "Tarea no encontrada"}
                             {dep.isNew && (
                               <span className="inline-flex items-center gap-0.5 text-[10px] font-normal text-primary bg-primary/10 rounded px-1.5 py-0.5">
                                 <Sparkles className="h-2.5 w-2.5" /> nueva
+                              </span>
+                            )}
+                            {isGhost && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-normal not-italic text-muted-foreground bg-muted rounded px-1.5 py-0.5 no-underline">
+                                <Ban className="h-2.5 w-2.5" /> descartada — no cuenta en el cálculo
                               </span>
                             )}
                           </p>
@@ -506,7 +516,8 @@ export function DependencyDialog({
                         <span className="text-xs text-muted-foreground">días</span>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

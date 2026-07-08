@@ -34,6 +34,7 @@ interface GanttTaskTreeProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onDiscardTask?: (taskId: string) => Promise<void>;
   onRestoreTask?: (taskId: string) => Promise<void>;
+  getDescendantCount?: (taskId: string) => number;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
@@ -56,6 +57,7 @@ export function GanttTaskTree({
   onUpdateDependency,
   onDiscardTask,
   onRestoreTask,
+  getDescendantCount,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
   onExportPDF,
@@ -330,6 +332,7 @@ export function GanttTaskTree({
                   onToggleComplete={toggleCompleted}
                   onDiscard={(id) => onDiscardTask!(id)}
                   onRestore={(id) => onRestoreTask!(id)}
+                  descendantCount={getDescendantCount?.(task.id) ?? 0}
                 />
               )}
               {canAdd && (

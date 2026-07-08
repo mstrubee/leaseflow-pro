@@ -23,11 +23,11 @@ export interface GanttTask {
   // usa la fecha de término más tardía) u "any" (primera que finalice, usa la
   // más temprana). Sin efecto con 0 o 1 dependencia.
   dependency_join_mode: "all" | "any";
-  // Al descartar una tarea se guarda aquí la estructura de dependencias que
-  // tenían las tareas que dependían de ella, más las dependencias "puente"
-  // creadas para saltarla — así "Restaurar" puede reconstruir todo exacto.
+  // Cuándo se descartó (null si está activa). Al descartar, las dependencias
+  // NUNCA se modifican — quedan intactas como referencia histórica ("nublada");
+  // el motor de cálculo simplemente trata a la tarea descartada como si tuviera
+  // plazo 0, sin afectar a quien dependía de ella más allá de eso.
   discarded_at: string | null;
-  discarded_snapshot: DiscardedSnapshot | null;
   notes: string | null;
   color: string | null;
   display_order: number;
@@ -54,23 +54,6 @@ export interface GanttTaskDependency {
   lag_days: number;
   lag_type: "calendar" | "business";
   depends_on_task?: GanttTask;
-}
-
-// Snapshot guardado al descartar una tarea, para poder restaurarla exacto.
-interface DiscardedSnapshot {
-  // Dependencias que otras tareas tenían hacia la tarea descartada (se
-  // eliminan al descartar; se re-crean tal cual al restaurar).
-  successorEdgesRemoved: Array<{
-    task_id: string;
-    depends_on_task_id: string;
-    dep_type: "start" | "end";
-    lag_days: number;
-    lag_type: "calendar" | "business";
-  }>;
-  // Ids de las dependencias "puente" creadas para saltar la tarea descartada
-  // (esas tareas pasan a depender directamente de sus predecesoras activas).
-  // Se eliminan al restaurar.
-  bypassCreated: string[];
 }
 
 export interface GanttTaskPurchaseOrder {
@@ -623,10 +606,18 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         if (chosen) {
           const latest = clamp(chosen);
           start = format(latest, "yyyy-MM-dd");
+          // Una tarea descartada "no consume tiempo" para efectos de cálculo — su
+          // propia dependencia (nublada, se conserva sin cambios) sigue siendo
+          // visible, pero acá se le trata como plazo 0 (fin = inicio) para que
+          // quien dependía de ella salte directamente al punto donde ella habría
+          // empezado, sin sumar su duración. El desfase declarado hacia SU propia
+          // predecesora sí se respeta (compone correctamente cadenas de varias
+          // tareas descartadas seguidas).
+          const effectiveDuration = t.status === "discarded" ? 0 : (t.duration_days ?? 1);
           end = format(
             calculateEndDate(
               start,
-              t.duration_days ?? 1,
+              effectiveDuration,
               (t.duration_type as "calendar" | "business") || "calendar",
               holidays,
             ),
@@ -751,7 +742,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     lag_days: t.lag_days, lag_type: t.lag_type, notes: t.notes, color: t.color, display_order: t.display_order,
     responsible_member_id: t.responsible_member_id, origin: t.origin,
     dependency_join_mode: t.dependency_join_mode,
-    discarded_at: t.discarded_at, discarded_snapshot: t.discarded_snapshot as any,
+    discarded_at: t.discarded_at,
   });
 
   const deleteTask = async (taskId: string) => {
@@ -1062,169 +1053,122 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     }
   };
 
-  // Recorre las predecesoras de una tarea; si alguna está también descartada,
-  // sigue subiendo por SUS predecesoras hasta encontrar solo tareas activas.
-  // Así, descartar una cadena (A→B→C, ambas B y C descartadas) siempre termina
-  // apuntando al ancestro activo correcto, sin importar el orden de descarte.
-  const resolveActivePredecessorIds = (taskId: string, all: GanttTask[], visited = new Set<string>()): string[] => {
-    if (visited.has(taskId)) return [];
-    visited.add(taskId);
-    const task = all.find((t) => t.id === taskId);
-    if (!task) return [];
-    const result: string[] = [];
-    for (const dep of task.dependencies || []) {
-      const predecessor = all.find((t) => t.id === dep.depends_on_task_id);
-      if (!predecessor) continue;
-      if (predecessor.status === "discarded") {
-        result.push(...resolveActivePredecessorIds(predecessor.id, all, visited));
-      } else {
-        result.push(predecessor.id);
-      }
-    }
-    return [...new Set(result)];
+  // Ids de todos los descendientes (recursivo) de una tarea, según el árbol actual.
+  const getDescendantIds = (taskId: string, all: GanttTask[]): string[] => {
+    const direct = all.filter((t) => t.parent_id === taskId);
+    return direct.flatMap((c) => [c.id, ...getDescendantIds(c.id, all)]);
   };
 
-  // Descarta una tarea: no se elimina ni pierde información. Las tareas que
-  // dependían de ella pasan a depender directamente de sus predecesoras
-  // activas (conservando el tipo/desfase que ya tenían declarado), y se
-  // guarda un snapshot exacto para poder restaurar todo con "Restaurar".
+  // Cuántos descendientes tiene una tarea — usado por la UI para la
+  // confirmación inteligente ("...también descartará N tareas descendientes").
+  const getDescendantCount = (taskId: string) => getDescendantIds(taskId, tasks).length;
+
+  // Descarta una tarea y TODA su rama (hijas, nietas, etc. — recursivo). No se
+  // elimina ni se pierde información: las dependencias declaradas se
+  // conservan intactas en gantt_task_dependencies (quedan visibles como
+  // referencia histórica/"nublada"). El motor de cálculo (computeScheduleDiff)
+  // trata a una tarea descartada como si tuviera plazo 0 — no aporta tiempo a
+  // quien dependía de ella, que salta directo a donde ella habría empezado —
+  // sin modificar ninguna fila de dependencias. Todo se aplica de forma
+  // optimista sobre el estado en memoria (sin recargar la página, sin perder
+  // scroll/ramas expandidas/selección/foco) y se persiste en segundo plano.
   const discardTask = async (taskId: string) => {
+    const idsToDiscard = [taskId, ...getDescendantIds(taskId, tasks)];
     setSaving(true);
     try {
-      const task = tasks.find((t) => t.id === taskId);
-      if (!task) throw new Error("Tarea no encontrada");
+      const discardedAt = new Date().toISOString();
+      const applyStatus = (t: GanttTask): GanttTask =>
+        idsToDiscard.includes(t.id) ? { ...t, status: "discarded", discarded_at: discardedAt } : t;
 
-      const activePredecessorIds = resolveActivePredecessorIds(taskId, tasks);
+      const nextTasks = tasks.map(applyStatus);
+      const diff = computeScheduleDiff(nextTasks, new Map(), tasks);
 
-      // Tareas que dependen directamente de la descartada ("sucesoras").
-      const successorEdges: { successorId: string; dep: GanttTaskDependency }[] = [];
-      for (const t of tasks) {
-        for (const dep of t.dependencies || []) {
-          if (dep.depends_on_task_id === taskId) successorEdges.push({ successorId: t.id, dep });
-        }
-      }
+      setTasks((prev) =>
+        prev.map((t) => {
+          const withStatus = applyStatus(t);
+          const dateUpd = diff.get(t.id);
+          return dateUpd ? { ...withStatus, ...dateUpd } : withStatus;
+        }),
+      );
 
-      const snapshot: DiscardedSnapshot = {
-        successorEdgesRemoved: successorEdges.map(({ successorId, dep }) => ({
-          task_id: successorId,
-          depends_on_task_id: taskId,
-          dep_type: dep.dep_type ?? "end",
-          lag_days: dep.lag_days ?? 0,
-          lag_type: dep.lag_type ?? "calendar",
-        })),
-        bypassCreated: [],
-      };
-
-      // Crear dependencias "puente": cada sucesora pasa a depender de cada
-      // predecesora activa de la tarea descartada, con el mismo tipo/desfase
-      // que ya tenía declarado hacia la tarea que se está descartando.
-      // No se duplica si la sucesora ya dependía directamente de esa predecesora.
-      for (const { successorId, dep } of successorEdges) {
-        const successorTask = tasks.find((t) => t.id === successorId);
-        for (const predId of activePredecessorIds) {
-          if (predId === successorId) continue; // evita auto-dependencia
-          const already = successorTask?.dependencies?.some((d) => d.depends_on_task_id === predId);
-          if (already) continue;
-          const { data: inserted, error: insErr } = await supabase
-            .from("gantt_task_dependencies")
-            .insert({
-              task_id: successorId,
-              depends_on_task_id: predId,
-              dep_type: dep.dep_type ?? "end",
-              lag_days: dep.lag_days ?? 0,
-              lag_type: dep.lag_type ?? "calendar",
-            })
-            .select("id")
-            .single();
-          if (insErr) throw insErr;
-          if (inserted) snapshot.bypassCreated.push(inserted.id);
-        }
-      }
-
-      // Eliminar las dependencias que apuntaban a la tarea descartada.
-      if (successorEdges.length > 0) {
-        const { error: delErr } = await supabase
-          .from("gantt_task_dependencies")
-          .delete()
-          .eq("depends_on_task_id", taskId);
-        if (delErr) throw delErr;
-      }
-
-      const { error: updErr } = await supabase
+      const { error: statusErr } = await supabase
         .from("gantt_tasks")
-        .update({ status: "discarded", discarded_at: new Date().toISOString(), discarded_snapshot: snapshot as any })
-        .eq("id", taskId);
-      if (updErr) throw updErr;
+        .update({ status: "discarded", discarded_at: discardedAt })
+        .in("id", idsToDiscard);
+      if (statusErr) throw statusErr;
 
-      await recomputeAndReload();
-      toast({ title: "Tarea descartada", description: `"${task.name}" ya no participa en el cálculo del cronograma. Puede restaurarse en cualquier momento.` });
+      if (diff.size > 0) {
+        const results = await Promise.all(
+          Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id)),
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
+      }
+
+      const descendantCount = idsToDiscard.length - 1;
+      toast({
+        title: "Tarea descartada",
+        description: descendantCount > 0
+          ? `Se descartaron ${idsToDiscard.length} tareas (la tarea y ${descendantCount} descendiente${descendantCount === 1 ? "" : "s"}). No participan en el cálculo y pueden restaurarse en cualquier momento.`
+          : "Ya no participa en el cálculo del cronograma. Puede restaurarse en cualquier momento.",
+      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo descartar la tarea" });
+      await loadTimeline(); // resync solo si falló
     } finally {
       setSaving(false);
     }
   };
 
-  // Restaura una tarea descartada: recupera su estado "pendiente", vuelve a
-  // conectar exactamente las dependencias que tenían las tareas que dependían
-  // de ella, y elimina las dependencias puente creadas al descartarla.
+  // Restaura una tarea y TODA su rama: vuelven a "Pendiente" y, como las
+  // dependencias nunca se tocaron, el cronograma se recalcula automáticamente
+  // con la estructura original — no hay nada que reconstruir. Igual que
+  // discardTask, todo ocurre en memoria + persistencia dirigida, sin recargar.
   const restoreTask = async (taskId: string) => {
+    const idsToRestore = [taskId, ...getDescendantIds(taskId, tasks)];
     setSaving(true);
     try {
-      const task = tasks.find((t) => t.id === taskId);
-      if (!task) throw new Error("Tarea no encontrada");
-      const snapshot = task.discarded_snapshot;
+      const applyStatus = (t: GanttTask): GanttTask =>
+        idsToRestore.includes(t.id) ? { ...t, status: "pending", discarded_at: null } : t;
 
-      if (snapshot?.bypassCreated?.length) {
-        await supabase.from("gantt_task_dependencies").delete().in("id", snapshot.bypassCreated);
-      }
-      if (snapshot?.successorEdgesRemoved?.length) {
-        const { error: insErr } = await supabase
-          .from("gantt_task_dependencies")
-          .insert(snapshot.successorEdgesRemoved as any);
-        if (insErr) throw insErr;
-      }
+      const nextTasks = tasks.map(applyStatus);
+      const diff = computeScheduleDiff(nextTasks, new Map(), tasks);
 
-      const { error: updErr } = await supabase
+      setTasks((prev) =>
+        prev.map((t) => {
+          const withStatus = applyStatus(t);
+          const dateUpd = diff.get(t.id);
+          return dateUpd ? { ...withStatus, ...dateUpd } : withStatus;
+        }),
+      );
+
+      const { error: statusErr } = await supabase
         .from("gantt_tasks")
-        .update({ status: "pending", discarded_at: null, discarded_snapshot: null })
-        .eq("id", taskId);
-      if (updErr) throw updErr;
+        .update({ status: "pending", discarded_at: null })
+        .in("id", idsToRestore);
+      if (statusErr) throw statusErr;
 
-      await recomputeAndReload();
-      toast({ title: "Tarea restaurada", description: `"${task.name}" volvió a "Pendiente" con sus dependencias originales.` });
+      if (diff.size > 0) {
+        const results = await Promise.all(
+          Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id)),
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) throw failed.error;
+      }
+
+      const descendantCount = idsToRestore.length - 1;
+      toast({
+        title: "Tarea restaurada",
+        description: descendantCount > 0
+          ? `Se restauraron ${idsToRestore.length} tareas (la tarea y ${descendantCount} descendiente${descendantCount === 1 ? "" : "s"}) con sus dependencias originales.`
+          : "Volvió a \"Pendiente\" con sus dependencias originales.",
+      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo restaurar la tarea" });
+      await loadTimeline();
     } finally {
       setSaving(false);
     }
-  };
-
-  // Recarga tareas/dependencias desde la DB, recalcula fechas de todo el
-  // cronograma según el grafo ya actualizado, y persiste los cambios de fecha
-  // resultantes. Se usa tras operaciones que reconectan dependencias
-  // (descartar/restaurar), donde varias tareas pueden cambiar de predecesora.
-  const recomputeAndReload = async () => {
-    const { data: tasksData } = await supabase
-      .from("gantt_tasks")
-      .select("*")
-      .eq("timeline_id", timeline!.id)
-      .order("display_order");
-    const { data: depsData } = await supabase.from("gantt_task_dependencies").select("*");
-    const freshTasks = (tasksData || []).map((t) => ({
-      ...t,
-      dependencies: depsData?.filter((d) => d.task_id === t.id) || [],
-    })) as GanttTask[];
-
-    const diff = computeScheduleDiff(freshTasks, new Map(), freshTasks);
-    if (diff.size > 0) {
-      const results = await Promise.all(
-        Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id)),
-      );
-      const failed = results.find((r) => r.error);
-      if (failed?.error) throw failed.error;
-    }
-    await loadTimeline();
   };
 
   const linkPurchaseOrder = async (taskId: string, purchaseOrderId: string) => {
@@ -1885,6 +1829,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     updateDependency,
     discardTask,
     restoreTask,
+    getDescendantCount,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,
