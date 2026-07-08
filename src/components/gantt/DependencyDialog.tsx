@@ -360,7 +360,7 @@ export function DependencyDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) requestClose(); }}>
       <DialogContent
-        className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0 relative"
+        className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
           // Con el overlay de confirmación abierto, Esc vuelve a la opción segura
@@ -368,6 +368,12 @@ export function DependencyDialog({
           if (pendingAction !== null) { e.preventDefault(); setPendingAction(null); }
         }}
       >
+        {/* Wrapper "relative" separado del DialogContent: éste ya trae "fixed"
+            para centrarse en pantalla, y agregar "relative" directo ahí hace que
+            tailwind-merge descarte "fixed" (mismo grupo de utilidad "position"),
+            rompiendo el centrado del modal. El overlay de confirmación de abajo
+            se posiciona relativo a ESTE div, no al DialogContent. */}
+        <div className="relative flex flex-col h-full min-h-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0 text-left">
           <DialogTitle className="text-xl">
             <span className="text-foreground">{selectedTask?.name ?? "Tarea"}</span>{" "}
@@ -639,6 +645,7 @@ export function DependencyDialog({
             </div>
           </div>
         )}
+        </div>
       </DialogContent>
     </Dialog>
   );
