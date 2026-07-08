@@ -6,10 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   ChevronRight, ChevronDown, Search, Unlink, Link2, ChevronsDownUp, ChevronsUpDown, X, CornerDownRight,
   ListChecks, Zap, Loader2, Sparkles, Ban,
 } from "lucide-react";
@@ -364,8 +360,13 @@ export function DependencyDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) requestClose(); }}>
       <DialogContent
-        className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0"
+        className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0 relative"
         onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => {
+          // Con el overlay de confirmación abierto, Esc vuelve a la opción segura
+          // (Volver/Continuar editando) en vez de disparar el cierre del diálogo.
+          if (pendingAction !== null) { e.preventDefault(); setPendingAction(null); }
+        }}
       >
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0 text-left">
           <DialogTitle className="text-xl">
@@ -590,41 +591,55 @@ export function DependencyDialog({
             </Button>
           </div>
         </DialogFooter>
-      </DialogContent>
 
-      {/* Confirmación única para Guardar / Cancelar con cambios pendientes */}
-      <AlertDialog open={pendingAction !== null} onOpenChange={(o) => { if (!o && !committing) setPendingAction(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingAction === "save" ? "¿Desea guardar los cambios realizados en las dependencias?" : "Existen cambios sin guardar."}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingAction === "save"
-                ? "Se actualizarán las dependencias de esta tarea y se recalculará el cronograma."
-                : "¿Desea descartarlos?"}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            {pendingAction === "save" ? (
-              <>
-                <AlertDialogCancel disabled={committing} onClick={() => setPendingAction(null)}>Volver</AlertDialogCancel>
-                <AlertDialogAction onClick={handleConfirmSave} disabled={committing}>
-                  {committing && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-                  Guardar
-                </AlertDialogAction>
-              </>
-            ) : (
-              <>
-                <AlertDialogCancel onClick={() => setPendingAction(null)}>Continuar editando</AlertDialogCancel>
-                <AlertDialogAction onClick={handleConfirmDiscard} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                  Descartar cambios
-                </AlertDialogAction>
-              </>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* Confirmación de Guardar/Cancelar — overlay simple DENTRO del mismo
+            modal (no un segundo Dialog/AlertDialog de Radix): dos modales de
+            Radix montados a la vez y cerrándose en el mismo tick dejaban
+            `pointer-events` del body trabado, congelando toda la página. */}
+        {pendingAction !== null && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-[2px] rounded-lg"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dep-confirm-title"
+          >
+            <div className="w-full max-w-md rounded-lg border bg-background p-6 shadow-xl space-y-4 mx-4">
+              <div className="space-y-1.5">
+                <h2 id="dep-confirm-title" className="text-lg font-semibold">
+                  {pendingAction === "save" ? "¿Desea guardar los cambios realizados en las dependencias?" : "Existen cambios sin guardar."}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {pendingAction === "save"
+                    ? "Se actualizarán las dependencias de esta tarea y se recalculará el cronograma."
+                    : "¿Desea descartarlos?"}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                {pendingAction === "save" ? (
+                  <>
+                    <Button type="button" variant="outline" disabled={committing} onClick={() => setPendingAction(null)} className={FOCUS_RING} autoFocus>
+                      Volver
+                    </Button>
+                    <Button type="button" onClick={handleConfirmSave} disabled={committing} className={FOCUS_RING}>
+                      {committing && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                      Guardar
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button type="button" variant="outline" onClick={() => setPendingAction(null)} className={FOCUS_RING} autoFocus>
+                      Continuar editando
+                    </Button>
+                    <Button type="button" onClick={handleConfirmDiscard} className={cn("bg-destructive text-destructive-foreground hover:bg-destructive/90", FOCUS_RING)}>
+                      Descartar cambios
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
     </Dialog>
   );
 }
