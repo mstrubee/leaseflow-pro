@@ -2098,6 +2098,7 @@ export type Database = {
           budget_line_id: string | null
           color: string | null
           created_at: string
+          dependency_join_mode: string
           display_order: number | null
           duration_days: number | null
           duration_type: string
@@ -2122,6 +2123,7 @@ export type Database = {
           budget_line_id?: string | null
           color?: string | null
           created_at?: string
+          dependency_join_mode?: string
           display_order?: number | null
           duration_days?: number | null
           duration_type?: string
@@ -2146,6 +2148,7 @@ export type Database = {
           budget_line_id?: string | null
           color?: string | null
           created_at?: string
+          dependency_join_mode?: string
           display_order?: number | null
           duration_days?: number | null
           duration_type?: string

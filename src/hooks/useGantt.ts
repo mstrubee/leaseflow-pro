@@ -19,6 +19,10 @@ export interface GanttTask {
   has_lag: boolean;
   lag_days: number;
   lag_type: "calendar" | "business";
+  // Cómo se evalúan las dependencias cuando hay 2 o más: "all" (esperar todas,
+  // usa la fecha de término más tardía) u "any" (primera que finalice, usa la
+  // más temprana). Sin efecto con 0 o 1 dependencia.
+  dependency_join_mode: "all" | "any";
   notes: string | null;
   color: string | null;
   display_order: number;
@@ -580,17 +584,22 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         start = minStart;
         end = maxEnd;
       } else {
-        // Leaf: snap to the latest date implied by all predecessors.
+        // Leaf: snap to the date implied by predecessors. Con 2+ dependencias,
+        // "all" (por defecto) espera a la más tardía (AND); "any" arranca con
+        // la primera que termine, usando la más temprana (OR). Con 0 o 1
+        // dependencia ambos modos coinciden, así que no hace falta distinguir.
         const deps = t.dependencies || [];
-        let latest: Date | null = null;
+        const joinMode = t.dependency_join_mode === "any" ? "any" : "all";
+        let chosen: Date | null = null;
         for (const dep of deps) {
           compute(dep.depends_on_task_id);
           const candidate = dependencyDate(dep);
           if (!candidate) continue;
-          if (!latest || candidate > latest) latest = candidate;
+          if (!chosen) chosen = candidate;
+          else if (joinMode === "any" ? candidate < chosen : candidate > chosen) chosen = candidate;
         }
-        if (latest) {
-          latest = clamp(latest);
+        if (chosen) {
+          const latest = clamp(chosen);
           start = format(latest, "yyyy-MM-dd");
           end = format(
             calculateEndDate(
@@ -648,7 +657,8 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       updates.end_date !== undefined ||
       updates.duration_days !== undefined ||
       updates.duration_type !== undefined ||
-      updates.parent_id !== undefined;
+      updates.parent_id !== undefined ||
+      updates.dependency_join_mode !== undefined;
 
     // 1) Compute the full schedule synchronously from in-memory state (instant).
     let cascade = new Map<string, Partial<GanttTask>>();
@@ -718,6 +728,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     duration_type: t.duration_type, progress: t.progress, status: t.status, has_lag: t.has_lag,
     lag_days: t.lag_days, lag_type: t.lag_type, notes: t.notes, color: t.color, display_order: t.display_order,
     responsible_member_id: t.responsible_member_id, origin: t.origin,
+    dependency_join_mode: t.dependency_join_mode,
   });
 
   const deleteTask = async (taskId: string) => {

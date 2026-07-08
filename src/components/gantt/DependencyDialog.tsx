@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   ChevronRight, ChevronDown, Search, Unlink, Link2, ChevronsDownUp, ChevronsUpDown, X, CornerDownRight,
+  ListChecks, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ interface DependencyDialogProps {
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: DepOptions) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: DepOptions) => Promise<void>;
+  onUpdateTask?: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
 }
 
 interface TreeNode {
@@ -35,6 +37,7 @@ export function DependencyDialog({
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
+  onUpdateTask,
 }: DependencyDialogProps) {
   const [predecessorId, setPredecessorId] = useState<string>("");
   const [depType, setDepType] = useState<"start" | "end">("end");
@@ -42,6 +45,7 @@ export function DependencyDialog({
   const [search, setSearch] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [savingJoinMode, setSavingJoinMode] = useState(false);
 
   // Mapas base
   const byId = useMemo(() => {
@@ -156,6 +160,13 @@ export function DependencyDialog({
     setDepType("end");
   };
 
+  const handleSetJoinMode = async (mode: "all" | "any") => {
+    if (!liveTask || liveTask.dependency_join_mode === mode || !onUpdateTask) return;
+    setSavingJoinMode(true);
+    await onUpdateTask(liveTask.id, { dependency_join_mode: mode });
+    setSavingJoinMode(false);
+  };
+
   const renderNode = (node: TreeNode, level: number): JSX.Element | null => {
     if (visibleIds && !visibleIds.has(node.task.id)) return null;
     const kids = node.children;
@@ -245,7 +256,51 @@ export function DependencyDialog({
 
           {/* Panel derecho: dependencias actuales + agregar */}
           <div className="flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Modo de evaluación: solo tiene efecto con 2+ dependencias */}
+              {currentDeps.length >= 2 && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Inicio de la tarea
+                  </Label>
+                  <div className="grid grid-cols-2 rounded-lg border p-1 gap-1 bg-muted/40">
+                    <button
+                      type="button"
+                      disabled={savingJoinMode}
+                      onClick={() => handleSetJoinMode("all")}
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        (liveTask?.dependency_join_mode ?? "all") === "all"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+                      )}
+                    >
+                      <ListChecks className="h-4 w-4" />
+                      Esperar todas
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingJoinMode}
+                      onClick={() => handleSetJoinMode("any")}
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        liveTask?.dependency_join_mode === "any"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+                      )}
+                    >
+                      <Zap className="h-4 w-4" />
+                      Primera que finalice
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {(liveTask?.dependency_join_mode ?? "all") === "all"
+                      ? "Comienza cuando terminen TODAS sus dependencias (la fecha más tardía)."
+                      : "Comienza apenas termine CUALQUIERA de sus dependencias (la fecha más temprana)."}
+                  </p>
+                </div>
+              )}
+
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Dependencias actuales ({currentDeps.length})
               </Label>

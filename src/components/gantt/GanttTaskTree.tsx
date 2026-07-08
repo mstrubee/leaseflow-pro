@@ -642,6 +642,7 @@ export function GanttTaskTree({
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
         onUpdateDependency={onUpdateDependency}
+        onUpdateTask={onUpdateTask}
       />
 
       {/* Purchase Orders Dialog */}

@@ -2941,6 +2941,7 @@ export function GanttChart({
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
         onUpdateDependency={onUpdateDependency}
+        onUpdateTask={onUpdateTask}
       />
 
       {/* Export PDF dialog */}
