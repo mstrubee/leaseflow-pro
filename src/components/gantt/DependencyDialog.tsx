@@ -1,13 +1,17 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { GanttTask } from "@/hooks/useGantt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ChevronRight, ChevronDown, Search, Unlink, Link2, ChevronsDownUp, ChevronsUpDown, X, CornerDownRight,
-  ListChecks, Zap,
+  ListChecks, Zap, Loader2, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +33,18 @@ interface TreeNode {
   children: TreeNode[];
 }
 
+// Fila de dependencia en edición local (borrador): no se persiste hasta Guardar.
+interface DraftDep {
+  id: string;
+  depends_on_task_id: string;
+  dep_type: "start" | "end";
+  lag_days: number;
+  lag_type: "calendar" | "business";
+  isNew?: boolean;
+}
+
+const FOCUS_RING = "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1";
+
 export function DependencyDialog({
   open,
   onOpenChange,
@@ -39,13 +55,21 @@ export function DependencyDialog({
   onUpdateDependency,
   onUpdateTask,
 }: DependencyDialogProps) {
+  // --- Borrador local: nada de esto se persiste hasta que el usuario confirma Guardar ---
+  const [draftDeps, setDraftDeps] = useState<DraftDep[]>([]);
+  const [originalDeps, setOriginalDeps] = useState<DraftDep[]>([]);
+  const [draftJoinMode, setDraftJoinMode] = useState<"all" | "any">("all");
+  const [originalJoinMode, setOriginalJoinMode] = useState<"all" | "any">("all");
+  const [pendingAction, setPendingAction] = useState<null | "save" | "discard">(null);
+  const [committing, setCommitting] = useState(false);
+
   const [predecessorId, setPredecessorId] = useState<string>("");
   const [depType, setDepType] = useState<"start" | "end">("end");
   const [lag, setLag] = useState(0);
   const [search, setSearch] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [adding, setAdding] = useState(false);
-  const [savingJoinMode, setSavingJoinMode] = useState(false);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
 
   // Mapas base
   const byId = useMemo(() => {
@@ -66,14 +90,12 @@ export function DependencyDialog({
     return m;
   }, [allTasks]);
 
-  // Árbol jerárquico
   const tree = useMemo(() => {
     const build = (parentId: string | null): TreeNode[] =>
       (childrenOf.get(parentId) ?? []).map((task) => ({ task, children: build(task.id) }));
     return build(null);
   }, [childrenOf]);
 
-  // Ruta jerárquica de una tarea: "Proyecto / Construcción / Instalación eléctrica"
   const pathOf = (id: string | null | undefined): string => {
     const segs: string[] = [];
     let cursor = id ? byId.get(id) : undefined;
@@ -86,47 +108,56 @@ export function DependencyDialog({
     return segs.join("  /  ");
   };
 
-  // Live task (refleja cambios tras agregar/quitar dependencias)
-  const liveTask = useMemo(
-    () => (selectedTask ? byId.get(selectedTask.id) ?? selectedTask : null),
-    [selectedTask, byId],
-  );
+  const taskId = selectedTask?.id ?? null;
 
-  // Conjuntos que NO pueden ser predecesores (evita ciclos y duplicados)
-  const { forbidden, existingDepIds } = useMemo(() => {
-    const forbidden = new Set<string>();
-    const existingDepIds = new Set<string>();
-    if (!liveTask) return { forbidden, existingDepIds };
-    forbidden.add(liveTask.id);
-    // descendientes (dependencia hacia abajo = ciclo)
-    const collectDesc = (id: string) => {
-      for (const c of childrenOf.get(id) ?? []) { forbidden.add(c.id); collectDesc(c.id); }
-    };
-    collectDesc(liveTask.id);
-    // ancestros (dependencia hacia arriba = ciclo, el padre se calcula desde los hijos)
-    let cur = liveTask.parent_id ? byId.get(liveTask.parent_id) : undefined;
-    while (cur) { forbidden.add(cur.id); cur = cur.parent_id ? byId.get(cur.parent_id) : undefined; }
-    // dependencias ya existentes
-    for (const d of liveTask.dependencies ?? []) { existingDepIds.add(d.depends_on_task_id); forbidden.add(d.depends_on_task_id); }
-    return { forbidden, existingDepIds };
-  }, [liveTask, childrenOf, byId]);
-
-  // Reset al abrir
+  // Reinicia el borrador SOLO cuando se abre para una tarea (no en cada re-render
+  // del padre mientras el diálogo está abierto, para no pisar la edición en curso).
   useEffect(() => {
-    if (open) {
+    if (open && selectedTask) {
+      const initial: DraftDep[] = (selectedTask.dependencies ?? []).map((d) => ({
+        id: d.id,
+        depends_on_task_id: d.depends_on_task_id,
+        dep_type: d.dep_type ?? "end",
+        lag_days: d.lag_days ?? 0,
+        lag_type: d.lag_type ?? "calendar",
+      }));
+      setDraftDeps(initial);
+      setOriginalDeps(initial);
+      setDraftJoinMode(selectedTask.dependency_join_mode ?? "all");
+      setOriginalJoinMode(selectedTask.dependency_join_mode ?? "all");
       setPredecessorId("");
       setDepType("end");
       setLag(0);
       setSearch("");
-      // Expandir todo por defecto para ver la estructura completa (como un explorador)
-      setExpandedIds(new Set(allTasks.filter((t) => (childrenOf.get(t.id) ?? []).length > 0).map((t) => t.id)));
+      setPendingAction(null);
+      const parentIds = allTasks.filter((t) => (childrenOf.get(t.id) ?? []).length > 0).map((t) => t.id);
+      setExpandedIds(new Set(parentIds));
+      const firstRoot = (childrenOf.get(null) ?? [])[0]?.id ?? null;
+      setFocusedId(firstRoot);
     }
-  }, [open, allTasks, childrenOf]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, taskId]);
 
-  // Búsqueda: nodos visibles = coinciden o tienen un descendiente que coincide
+  // Conjuntos que NO pueden ser predecesores (evita ciclos y duplicados en el borrador)
+  const { forbidden, draftDepIds } = useMemo(() => {
+    const forbidden = new Set<string>();
+    const draftDepIds = new Set(draftDeps.map((d) => d.depends_on_task_id));
+    if (!taskId) return { forbidden, draftDepIds };
+    forbidden.add(taskId);
+    const collectDesc = (id: string) => {
+      for (const c of childrenOf.get(id) ?? []) { forbidden.add(c.id); collectDesc(c.id); }
+    };
+    collectDesc(taskId);
+    const self = byId.get(taskId);
+    let cur = self?.parent_id ? byId.get(self.parent_id) : undefined;
+    while (cur) { forbidden.add(cur.id); cur = cur.parent_id ? byId.get(cur.parent_id) : undefined; }
+    for (const id of draftDepIds) forbidden.add(id);
+    return { forbidden, draftDepIds };
+  }, [taskId, childrenOf, byId, draftDeps]);
+
   const q = search.trim().toLowerCase();
   const visibleIds = useMemo(() => {
-    if (!q) return null; // null = sin filtro
+    if (!q) return null;
     const matches = (t: GanttTask) => t.name.toLowerCase().includes(q);
     const visible = new Set<string>();
     const walk = (node: TreeNode): boolean => {
@@ -139,6 +170,23 @@ export function DependencyDialog({
     return visible;
   }, [q, tree]);
 
+  // Lista plana de nodos actualmente visibles, en orden de despliegue — usada
+  // para la navegación con flechas (siguiente/anterior/padre/primer hijo).
+  const visibleFlat = useMemo(() => {
+    const out: { id: string; level: number; hasKids: boolean }[] = [];
+    const walk = (nodes: TreeNode[], level: number) => {
+      for (const n of nodes) {
+        if (visibleIds && !visibleIds.has(n.task.id)) continue;
+        const hasKids = n.children.length > 0;
+        out.push({ id: n.task.id, level, hasKids });
+        const isExpanded = q ? true : expandedIds.has(n.task.id);
+        if (hasKids && isExpanded) walk(n.children, level + 1);
+      }
+    };
+    walk(tree, 0);
+    return out;
+  }, [tree, visibleIds, expandedIds, q]);
+
   const toggleExpand = (id: string) =>
     setExpandedIds((prev) => {
       const n = new Set(prev);
@@ -150,21 +198,112 @@ export function DependencyDialog({
     setExpandedIds(new Set(allTasks.filter((t) => (childrenOf.get(t.id) ?? []).length > 0).map((t) => t.id)));
   const collapseAll = () => setExpandedIds(new Set());
 
-  const handleAdd = async () => {
-    if (!liveTask || !predecessorId) return;
-    setAdding(true);
-    await onAddDependency(liveTask.id, predecessorId, { dep_type: depType, lag_days: lag });
-    setAdding(false);
-    setPredecessorId("");
-    setLag(0);
-    setDepType("end");
+  const moveFocus = (id: string) => {
+    setFocusedId(id);
+    rowRefs.current.get(id)?.focus();
   };
 
-  const handleSetJoinMode = async (mode: "all" | "any") => {
-    if (!liveTask || liveTask.dependency_join_mode === mode || !onUpdateTask) return;
-    setSavingJoinMode(true);
-    await onUpdateTask(liveTask.id, { dependency_join_mode: mode });
-    setSavingJoinMode(false);
+  const handleTreeKeyDown = (e: React.KeyboardEvent, node: { id: string; level: number; hasKids: boolean }) => {
+    const idx = visibleFlat.findIndex((n) => n.id === node.id);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = visibleFlat[idx + 1];
+      if (next) moveFocus(next.id);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev = visibleFlat[idx - 1];
+      if (prev) moveFocus(prev.id);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (node.hasKids && !q && !expandedIds.has(node.id)) {
+        toggleExpand(node.id);
+      } else {
+        const next = visibleFlat[idx + 1];
+        if (next && next.level > node.level) moveFocus(next.id);
+      }
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (node.hasKids && !q && expandedIds.has(node.id)) {
+        toggleExpand(node.id);
+      } else {
+        for (let i = idx - 1; i >= 0; i--) {
+          if (visibleFlat[i].level < node.level) { moveFocus(visibleFlat[i].id); break; }
+        }
+      }
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (!forbidden.has(node.id)) setPredecessorId(node.id);
+    }
+  };
+
+  // Agrega la predecesora elegida al borrador (no persiste todavía).
+  const handleAddToDraft = () => {
+    if (!predecessorId) return;
+    setDraftDeps((prev) => [
+      ...prev,
+      { id: `draft-${crypto.randomUUID()}`, depends_on_task_id: predecessorId, dep_type: depType, lag_days: lag, lag_type: "calendar", isNew: true },
+    ]);
+    setPredecessorId("");
+    setDepType("end");
+    setLag(0);
+  };
+
+  const handleRemoveFromDraft = (id: string) => setDraftDeps((prev) => prev.filter((d) => d.id !== id));
+
+  const handleUpdateDraft = (id: string, updates: Partial<Pick<DraftDep, "dep_type" | "lag_days" | "lag_type">>) =>
+    setDraftDeps((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)));
+
+  // ¿Hay cambios sin guardar respecto al estado original de la tarea?
+  const isDirty = useMemo(() => {
+    if (draftJoinMode !== originalJoinMode) return true;
+    if (draftDeps.length !== originalDeps.length) return true;
+    const origById = new Map(originalDeps.map((d) => [d.id, d]));
+    for (const d of draftDeps) {
+      const o = origById.get(d.id);
+      if (!o) return true;
+      if (o.dep_type !== d.dep_type || o.lag_days !== d.lag_days || o.lag_type !== d.lag_type) return true;
+    }
+    return false;
+  }, [draftDeps, originalDeps, draftJoinMode, originalJoinMode]);
+
+  // Todo intento de cerrar (Cancelar, cruz, Esc) pasa por acá: si hay cambios
+  // sin guardar, pide confirmación; si no, cierra directo. Clic afuera NO pasa
+  // por acá — está bloqueado por completo más abajo (onInteractOutside).
+  const requestClose = () => {
+    if (isDirty) setPendingAction("discard");
+    else onOpenChange(false);
+  };
+
+  const handleConfirmDiscard = () => {
+    setPendingAction(null);
+    onOpenChange(false);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!taskId) return;
+    setCommitting(true);
+    try {
+      const origById = new Map(originalDeps.map((d) => [d.id, d]));
+      const draftById = new Map(draftDeps.map((d) => [d.id, d]));
+      const removed = originalDeps.filter((d) => !draftById.has(d.id));
+      const added = draftDeps.filter((d) => !origById.has(d.id));
+      const updated = draftDeps.filter((d) => {
+        const o = origById.get(d.id);
+        return !!o && (o.dep_type !== d.dep_type || o.lag_days !== d.lag_days || o.lag_type !== d.lag_type);
+      });
+
+      for (const d of removed) await onRemoveDependency(d.id);
+      for (const d of added) await onAddDependency(taskId, d.depends_on_task_id, { dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type });
+      for (const d of updated) await onUpdateDependency?.(d.id, { dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type });
+      if (draftJoinMode !== originalJoinMode) await onUpdateTask?.(taskId, { dependency_join_mode: draftJoinMode });
+
+      setPendingAction(null);
+      setCommitting(false);
+      onOpenChange(false);
+    } catch {
+      setCommitting(false);
+      setPendingAction(null);
+    }
   };
 
   const renderNode = (node: TreeNode, level: number): JSX.Element | null => {
@@ -174,14 +313,23 @@ export function DependencyDialog({
     const isExpanded = q ? true : expandedIds.has(node.task.id);
     const isForbidden = forbidden.has(node.task.id);
     const isSelected = predecessorId === node.task.id;
-    const isExisting = existingDepIds.has(node.task.id);
+    const isExisting = draftDepIds.has(node.task.id) && !isSelected;
 
     return (
       <div key={node.task.id}>
         <div
-          onClick={() => { if (!isForbidden) setPredecessorId(node.task.id); }}
+          ref={(el) => { if (el) rowRefs.current.set(node.task.id, el); else rowRefs.current.delete(node.task.id); }}
+          role="treeitem"
+          aria-expanded={hasKids ? isExpanded : undefined}
+          aria-selected={isSelected}
+          aria-disabled={isForbidden}
+          tabIndex={focusedId === node.task.id ? 0 : -1}
+          onFocus={() => setFocusedId(node.task.id)}
+          onKeyDown={(e) => handleTreeKeyDown(e, { id: node.task.id, level, hasKids })}
+          onClick={() => { if (!isForbidden) { setPredecessorId(node.task.id); moveFocus(node.task.id); } }}
           className={cn(
             "flex items-center gap-1.5 rounded-md pr-2 py-1.5 text-sm transition-colors",
+            FOCUS_RING,
             isForbidden ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent",
             isSelected && "bg-primary/15 ring-1 ring-primary/50 font-medium",
           )}
@@ -191,6 +339,7 @@ export function DependencyDialog({
           {hasKids ? (
             <button
               type="button"
+              tabIndex={-1}
               onClick={(e) => { e.stopPropagation(); toggleExpand(node.task.id); }}
               className="p-0.5 hover:bg-muted rounded shrink-0"
               disabled={!!q}
@@ -210,18 +359,19 @@ export function DependencyDialog({
     );
   };
 
-  const currentDeps = liveTask?.dependencies ?? [];
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0">
+    <Dialog open={open} onOpenChange={(o) => { if (!o) requestClose(); }}>
+      <DialogContent
+        className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0 text-left">
           <DialogTitle className="text-xl">
-            <span className="text-foreground">{liveTask?.name ?? "Tarea"}</span>{" "}
+            <span className="text-foreground">{selectedTask?.name ?? "Tarea"}</span>{" "}
             <span className="text-muted-foreground font-normal">depende de:</span>
           </DialogTitle>
           <DialogDescription>
-            Navegá el árbol del cronograma y elegí la tarea predecesora. La jerarquía es la misma que ves en el cronograma.
+            Navegá el árbol del cronograma y elegí la tarea predecesora. Los cambios se aplican recién al presionar Guardar.
           </DialogDescription>
         </DialogHeader>
 
@@ -235,17 +385,17 @@ export function DependencyDialog({
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Buscar tarea en el árbol..."
-                  className="pl-8 h-9"
+                  className={cn("pl-8 h-9", FOCUS_RING)}
                 />
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={expandAll} disabled={!!q} title="Expandir todo">
+              <Button type="button" variant="outline" size="sm" onClick={expandAll} disabled={!!q} title="Expandir todo" className={FOCUS_RING}>
                 <ChevronsUpDown className="h-4 w-4" />
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={collapseAll} disabled={!!q} title="Colapsar todo">
+              <Button type="button" variant="outline" size="sm" onClick={collapseAll} disabled={!!q} title="Colapsar todo" className={FOCUS_RING}>
                 <ChevronsDownUp className="h-4 w-4" />
               </Button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2">
+            <div className="flex-1 overflow-y-auto p-2" role="tree" aria-label="Árbol de tareas del cronograma">
               {tree.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No hay tareas en el cronograma.</p>
               ) : (
@@ -254,11 +404,11 @@ export function DependencyDialog({
             </div>
           </div>
 
-          {/* Panel derecho: dependencias actuales + agregar */}
+          {/* Panel derecho: dependencias actuales (borrador) + agregar */}
           <div className="flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Modo de evaluación: solo tiene efecto con 2+ dependencias */}
-              {currentDeps.length >= 2 && (
+              {/* Modo de evaluación: solo tiene efecto con 2+ dependencias en el borrador */}
+              {draftDeps.length >= 2 && (
                 <div className="space-y-1.5">
                   <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                     Inicio de la tarea
@@ -266,11 +416,11 @@ export function DependencyDialog({
                   <div className="grid grid-cols-2 rounded-lg border p-1 gap-1 bg-muted/40">
                     <button
                       type="button"
-                      disabled={savingJoinMode}
-                      onClick={() => handleSetJoinMode("all")}
+                      onClick={() => setDraftJoinMode("all")}
                       className={cn(
                         "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        (liveTask?.dependency_join_mode ?? "all") === "all"
+                        FOCUS_RING,
+                        draftJoinMode === "all"
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground hover:bg-background/60",
                       )}
@@ -280,11 +430,11 @@ export function DependencyDialog({
                     </button>
                     <button
                       type="button"
-                      disabled={savingJoinMode}
-                      onClick={() => handleSetJoinMode("any")}
+                      onClick={() => setDraftJoinMode("any")}
                       className={cn(
                         "flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        liveTask?.dependency_join_mode === "any"
+                        FOCUS_RING,
+                        draftJoinMode === "any"
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground hover:bg-background/60",
                       )}
@@ -294,7 +444,7 @@ export function DependencyDialog({
                     </button>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {(liveTask?.dependency_join_mode ?? "all") === "all"
+                    {draftJoinMode === "all"
                       ? "Comienza cuando terminen TODAS sus dependencias (la fecha más tardía)."
                       : "Comienza apenas termine CUALQUIERA de sus dependencias (la fecha más temprana)."}
                   </p>
@@ -302,27 +452,34 @@ export function DependencyDialog({
               )}
 
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Dependencias actuales ({currentDeps.length})
+                Dependencias ({draftDeps.length})
               </Label>
-              {currentDeps.length === 0 ? (
+              {draftDeps.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
                   Esta tarea todavía no depende de ninguna otra.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {currentDeps.map((dep) => (
+                  {draftDeps.map((dep) => (
                     <div key={dep.id} className="border rounded-md p-2.5 bg-card space-y-2">
                       <div className="flex items-start gap-2">
                         <Link2 className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{byId.get(dep.depends_on_task_id)?.name ?? "Tarea no encontrada"}</p>
+                          <p className="text-sm font-medium truncate flex items-center gap-1.5">
+                            {byId.get(dep.depends_on_task_id)?.name ?? "Tarea no encontrada"}
+                            {dep.isNew && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-normal text-primary bg-primary/10 rounded px-1.5 py-0.5">
+                                <Sparkles className="h-2.5 w-2.5" /> nueva
+                              </span>
+                            )}
+                          </p>
                           <p className="text-[11px] text-muted-foreground truncate">{pathOf(dep.depends_on_task_id) || "—"}</p>
                         </div>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-destructive shrink-0"
-                          onClick={() => onRemoveDependency(dep.id)}
+                          className={cn("h-7 w-7 text-destructive shrink-0", FOCUS_RING)}
+                          onClick={() => handleRemoveFromDraft(dep.id)}
                           title="Quitar dependencia"
                         >
                           <Unlink className="h-4 w-4" />
@@ -330,10 +487,10 @@ export function DependencyDialog({
                       </div>
                       <div className="flex items-center gap-2 pl-5">
                         <Select
-                          value={dep.dep_type ?? "end"}
-                          onValueChange={(v) => onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })}
+                          value={dep.dep_type}
+                          onValueChange={(v) => handleUpdateDraft(dep.id, { dep_type: v as "start" | "end" })}
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className={cn("h-8 w-32 text-xs", FOCUS_RING)}><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="end">al término</SelectItem>
                             <SelectItem value="start">al inicio</SelectItem>
@@ -341,12 +498,9 @@ export function DependencyDialog({
                         </Select>
                         <Input
                           type="number"
-                          className="h-8 w-20 text-xs"
-                          defaultValue={dep.lag_days ?? 0}
-                          onBlur={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            if (val !== (dep.lag_days ?? 0)) onUpdateDependency?.(dep.id, { lag_days: val });
-                          }}
+                          className={cn("h-8 w-20 text-xs", FOCUS_RING)}
+                          value={dep.lag_days}
+                          onChange={(e) => handleUpdateDraft(dep.id, { lag_days: parseInt(e.target.value) || 0 })}
                           title="Días de desfase (+ retrasa, − adelanta)"
                         />
                         <span className="text-xs text-muted-foreground">días</span>
@@ -371,7 +525,12 @@ export function DependencyDialog({
                         <p className="font-medium truncate">{byId.get(predecessorId)?.name}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{pathOf(predecessorId)}</p>
                       </div>
-                      <button type="button" onClick={() => setPredecessorId("")} className="text-muted-foreground hover:text-foreground shrink-0" title="Deseleccionar">
+                      <button
+                        type="button"
+                        onClick={() => setPredecessorId("")}
+                        className={cn("text-muted-foreground hover:text-foreground shrink-0 rounded", FOCUS_RING)}
+                        title="Deseleccionar"
+                      >
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -382,7 +541,7 @@ export function DependencyDialog({
               </div>
               <div className="flex items-center gap-2">
                 <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
-                  <SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className={cn("h-9 w-36", FOCUS_RING)}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="end">al término</SelectItem>
                     <SelectItem value="start">al inicio</SelectItem>
@@ -390,14 +549,14 @@ export function DependencyDialog({
                 </Select>
                 <Input
                   type="number"
-                  className="h-9 w-20"
+                  className={cn("h-9 w-20", FOCUS_RING)}
                   value={lag}
                   onChange={(e) => setLag(parseInt(e.target.value) || 0)}
                   title="Días de desfase (+ retrasa, − adelanta)"
                 />
                 <span className="text-xs text-muted-foreground">días</span>
-                <Button className="ml-auto" disabled={!predecessorId || adding} onClick={handleAdd}>
-                  {adding ? "Agregando..." : "Agregar"}
+                <Button className={cn("ml-auto", FOCUS_RING)} disabled={!predecessorId} onClick={handleAddToDraft}>
+                  Agregar
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground">
@@ -406,7 +565,55 @@ export function DependencyDialog({
             </div>
           </div>
         </div>
+
+        <DialogFooter className="px-6 py-4 border-t shrink-0 sm:justify-between">
+          <span className="text-xs text-muted-foreground self-center">
+            {isDirty ? "Hay cambios sin guardar." : "Sin cambios pendientes."}
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={requestClose} className={FOCUS_RING}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => (isDirty ? setPendingAction("save") : onOpenChange(false))} className={FOCUS_RING}>
+              Guardar
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
+
+      {/* Confirmación única para Guardar / Cancelar con cambios pendientes */}
+      <AlertDialog open={pendingAction !== null} onOpenChange={(o) => { if (!o && !committing) setPendingAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction === "save" ? "¿Desea guardar los cambios realizados en las dependencias?" : "Existen cambios sin guardar."}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction === "save"
+                ? "Se actualizarán las dependencias de esta tarea y se recalculará el cronograma."
+                : "¿Desea descartarlos?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {pendingAction === "save" ? (
+              <>
+                <AlertDialogCancel disabled={committing} onClick={() => setPendingAction(null)}>Volver</AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmSave} disabled={committing}>
+                  {committing && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                  Guardar
+                </AlertDialogAction>
+              </>
+            ) : (
+              <>
+                <AlertDialogCancel onClick={() => setPendingAction(null)}>Continuar editando</AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmDiscard} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Descartar cambios
+                </AlertDialogAction>
+              </>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

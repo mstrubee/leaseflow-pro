@@ -5,7 +5,7 @@ import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ga
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronsDownUp, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronsDownUp, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +44,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { DependencyDialog } from "./DependencyDialog";
+import { TaskStatusActions, StatusDot } from "./TaskStatusActions";
 
 // Local input that only commits the value on Enter or blur, allowing free typing/erasing.
 function DurationInput({
@@ -286,6 +287,8 @@ interface GanttChartProps {
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
+  onDiscardTask?: (taskId: string) => Promise<void>;
+  onRestoreTask?: (taskId: string) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
   /** Usuarios con permiso de ver: pueden reprogramar (columna Reprog.) */
@@ -339,6 +342,8 @@ export function GanttChart({
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
+  onDiscardTask,
+  onRestoreTask,
   onReorderTask,
   isAdmin = false,
   canReprogram = false,
@@ -2197,6 +2202,7 @@ export function GanttChart({
               // Así su inicio/plazo/término siempre se derivan de las hijas y un duration_days
               // corrupto nunca vuelve a dibujarla como hoja (2013/2050).
               const hasChildren = parentTaskIds.has(task.id) || !!(task.children && task.children.length > 0);
+              const isDiscarded = task.status === "discarded";
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
@@ -2225,6 +2231,7 @@ export function GanttChart({
                         rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
                         rowDragOverId === task.id && dropPosition === "into" && "ring-2 ring-inset ring-primary bg-primary/10",
                         task.status === "completed" && "bg-muted/30",
+                        isDiscarded && "bg-muted/20 opacity-60",
                         hasChildren && "font-bold"
                       )}
                       style={{ height: ROW_HEIGHT }}
@@ -2275,18 +2282,19 @@ export function GanttChart({
                     ) : (
                       <span className="w-4 flex-shrink-0" />
                     )}
+                    <StatusDot status={task.status} className="flex-shrink-0" />
                     {isAdmin ? (
                       <TaskNameInput
                         taskId={task.id}
                         value={task.name}
-                        completed={task.status === "completed"}
+                        completed={task.status === "completed" || isDiscarded}
                         onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
                       />
                     ) : (
                       <span
                         className={cn(
                           "flex-1 h-7 text-xs px-1 flex items-center truncate",
-                          task.status === "completed" && "line-through text-muted-foreground"
+                          (task.status === "completed" || isDiscarded) && "line-through text-muted-foreground"
                         )}
                         title={task.name}
                       >
@@ -2332,20 +2340,15 @@ export function GanttChart({
                       </button>
                     )}
                     {(isAdmin || canComplete) && (
-                      <Button
-                        variant="ghost"
+                      <TaskStatusActions
+                        task={task}
+                        canComplete={isAdmin || canComplete}
+                        canDiscard={isAdmin && !!onDiscardTask && !!onRestoreTask}
+                        onToggleComplete={toggleTaskCompleted}
+                        onDiscard={(id) => onDiscardTask!(id)}
+                        onRestore={(id) => onRestoreTask!(id)}
                         size="sm"
-                        className="h-6 w-6 p-0 flex-shrink-0"
-                        onClick={() => toggleTaskCompleted(task)}
-                        title={task.status === "completed" ? "Marcar como pendiente" : "Marcar como completada"}
-                      >
-                        <CheckCircle2
-                          className={cn(
-                            "h-3.5 w-3.5",
-                            task.status === "completed" ? "text-primary" : "text-muted-foreground"
-                          )}
-                        />
-                      </Button>
+                      />
                     )}
                     {isAdmin && (
                     <Button

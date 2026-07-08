@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, ChevronDown, ChevronRight, Trash2, Edit, Link, Unlink,
-  Calendar, FileText, Loader2, ShoppingCart, CheckCircle2, Eye, EyeOff, FileDown,
+  Calendar, FileText, Loader2, ShoppingCart, Eye, EyeOff, FileDown,
   ChevronsDownUp, ChevronsUpDown
 } from "lucide-react";
 import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { DependencyDialog } from "./DependencyDialog";
+import { TaskStatusActions, StatusDot } from "./TaskStatusActions";
 
 interface GanttTaskTreeProps {
   tasks: GanttTask[];
@@ -31,6 +32,8 @@ interface GanttTaskTreeProps {
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
+  onDiscardTask?: (taskId: string) => Promise<void>;
+  onRestoreTask?: (taskId: string) => Promise<void>;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
@@ -51,6 +54,8 @@ export function GanttTaskTree({
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
+  onDiscardTask,
+  onRestoreTask,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
   onExportPDF,
@@ -247,6 +252,7 @@ export function GanttTaskTree({
       in_progress: { label: "En Progreso", variant: "default" },
       completed: { label: "Completada", variant: "outline" },
       delayed: { label: "Retrasada", variant: "destructive" },
+      discarded: { label: "Descartada", variant: "secondary" },
     };
     const info = statusMap[status] || { label: status, variant: "secondary" as const };
     return <Badge variant={info.variant}>{info.label}</Badge>;
@@ -256,6 +262,7 @@ export function GanttTaskTree({
     if (hideCompleted && task.status === "completed") return null;
     const hasChildren = task.children && task.children.length > 0;
     const isCompleted = task.status === "completed";
+    const isDiscarded = task.status === "discarded";
 
     const isExpanded = expandedTasks.has(task.id);
     return (
@@ -265,7 +272,8 @@ export function GanttTaskTree({
             className={cn(
               "flex items-center gap-2 py-2 px-2 hover:bg-muted/50 rounded transition-colors border-b",
               level > 0 && "ml-4",
-              isCompleted && "bg-muted/30"
+              isCompleted && "bg-muted/30",
+              isDiscarded && "bg-muted/20 opacity-60"
             )}
             style={{ marginLeft: level * 16 }}
           >
@@ -283,7 +291,8 @@ export function GanttTaskTree({
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className={cn("font-medium truncate", isCompleted && "line-through text-muted-foreground")}>{task.name}</span>
+                <StatusDot status={task.status} />
+                <span className={cn("font-medium truncate", (isCompleted || isDiscarded) && "line-through text-muted-foreground")}>{task.name}</span>
                 {getStatusBadge(task.status)}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
@@ -314,15 +323,14 @@ export function GanttTaskTree({
 
             <div className="flex items-center gap-1">
               {canEdit && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => toggleCompleted(task)}
-                  title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
-                >
-                  <CheckCircle2 className={cn("h-4 w-4", isCompleted ? "text-primary" : "text-muted-foreground")} />
-                </Button>
+                <TaskStatusActions
+                  task={task}
+                  canComplete={canEdit}
+                  canDiscard={!!onDiscardTask && !!onRestoreTask}
+                  onToggleComplete={toggleCompleted}
+                  onDiscard={(id) => onDiscardTask!(id)}
+                  onRestore={(id) => onRestoreTask!(id)}
+                />
               )}
               {canAdd && (
                 <Button

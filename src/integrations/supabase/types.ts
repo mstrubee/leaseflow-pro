@@ -2099,6 +2099,8 @@ export type Database = {
           color: string | null
           created_at: string
           dependency_join_mode: string
+          discarded_at: string | null
+          discarded_snapshot: Json | null
           display_order: number | null
           duration_days: number | null
           duration_type: string
@@ -2124,6 +2126,8 @@ export type Database = {
           color?: string | null
           created_at?: string
           dependency_join_mode?: string
+          discarded_at?: string | null
+          discarded_snapshot?: Json | null
           display_order?: number | null
           duration_days?: number | null
           duration_type?: string
@@ -2149,6 +2153,8 @@ export type Database = {
           color?: string | null
           created_at?: string
           dependency_join_mode?: string
+          discarded_at?: string | null
+          discarded_snapshot?: Json | null
           display_order?: number | null
           duration_days?: number | null
           duration_type?: string

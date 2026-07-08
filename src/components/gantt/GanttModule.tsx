@@ -50,6 +50,8 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     addDependency,
     updateDependency,
     removeDependency,
+    discardTask,
+    restoreTask,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,
@@ -521,6 +523,8 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onUpdateDependency={updateDependency}
+              onDiscardTask={discardTask}
+              onRestoreTask={restoreTask}
               onReorderTask={reorderTask}
               isAdmin={canEdit}
               canReprogram={canInteract}
@@ -568,6 +572,8 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onUpdateDependency={updateDependency}
+              onDiscardTask={discardTask}
+              onRestoreTask={restoreTask}
               onLinkPurchaseOrder={linkPurchaseOrder}
               onUnlinkPurchaseOrder={unlinkPurchaseOrder}
               onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
