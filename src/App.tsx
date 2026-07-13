@@ -97,10 +97,10 @@ const App = () => (
                   <Route path="/purchase-orders/bulk-import" element={<ProtectedRoute resource="purchase_orders"><BulkOCImport /></ProtectedRoute>} />
                   <Route path="/opex" element={<ProtectedRoute resource="opex"><OpexDashboard /></ProtectedRoute>} />
                   <Route path="/capex" element={<ProtectedRoute resource="capex"><CapexDashboard /></ProtectedRoute>} />
-                  <Route path="/reports" element={<ProtectedRoute resource="reports"><ReportsDashboard /></ProtectedRoute>} />
+                  <Route path="/reports" element={<ProtectedRoute resource={["reports", "patents", "suppliers", "capex", "maintenance"]}><ReportsDashboard /></ProtectedRoute>} />
                   <Route path="/kpi" element={<ProtectedRoute resource="kpi"><KPIDashboard /></ProtectedRoute>} />
                   <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
-                  <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
+                  <Route path="/special-attention" element={<ProtectedRoute resource="special_attention"><SpecialAttentionPage /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
                   <Route path="/maintenance/routes" element={<ProtectedRoute resource="maintenance"><MaintenanceRoutesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute><RouteExecutionPage /></ProtectedRoute>} />

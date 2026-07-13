@@ -4,7 +4,11 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  resource?: string;
+  /** Un recurso único, o una lista de recursos donde basta con tener "view"
+   *  sobre CUALQUIERA de ellos (OR) — útil para páginas como /reports cuya
+   *  visibilidad puede otorgarse a través de un permiso general o de
+   *  cualquiera de sus sub-secciones. */
+  resource?: string | string[];
 }
 
 export function ProtectedRoute({ children, resource }: ProtectedRouteProps) {
@@ -25,8 +29,10 @@ export function ProtectedRoute({ children, resource }: ProtectedRouteProps) {
   }
 
   // Redirect to dashboard if user lacks permission for this resource
-  if (resource && !hasPermission(resource, "view")) {
-    return <Navigate to="/" replace />;
+  if (resource) {
+    const resources = Array.isArray(resource) ? resource : [resource];
+    const hasAny = resources.some(r => hasPermission(r, "view"));
+    if (!hasAny) return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
