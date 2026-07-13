@@ -349,6 +349,25 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             <Textarea value={formData.resolution_observations} onChange={e => set("resolution_observations", e.target.value)} rows={2} placeholder="Observaciones de Control de Gestión..." />
           </div>
 
+          {form?.ot_file_url && (
+            <div className="space-y-1.5">
+              <Label>Orden de Trabajo (OT) Firmada</Label>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start gap-2 font-normal"
+                onClick={async () => {
+                  const url = await resolveFileUrl(form.ot_file_url);
+                  if (url) window.open(url, "_blank", "noopener,noreferrer");
+                }}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">Ver OT firmada</span>
+                <ExternalLink className="h-3 w-3 ml-auto shrink-0 text-muted-foreground" />
+              </Button>
+            </div>
+          )}
+
           {form?.evidence_links && form.evidence_links.length > 0 && (
             <div className="space-y-1.5">
               <Label>Evidencias</Label>

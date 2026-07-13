@@ -1029,8 +1029,28 @@ export function MaintenanceModule() {
           ) : opts.isChild ? (
             <div className="flex items-center gap-1 pl-5 text-muted-foreground">
               <span className="text-purple-400">↳</span>
-              <span>{f.form_number}</span>
+              {f.sub_status === "resuelto" && f.ot_file_url ? (
+                <button
+                  type="button"
+                  onClick={async () => { const u = await resolveFileUrl(f.ot_file_url); if (u) window.open(u, "_blank", "noopener,noreferrer"); }}
+                  className="text-primary hover:underline"
+                  title="Ver OT firmada"
+                >
+                  {f.form_number}
+                </button>
+              ) : (
+                <span>{f.form_number}</span>
+              )}
             </div>
+          ) : f.sub_status === "resuelto" && f.ot_file_url ? (
+            <button
+              type="button"
+              onClick={async () => { const u = await resolveFileUrl(f.ot_file_url); if (u) window.open(u, "_blank", "noopener,noreferrer"); }}
+              className="text-primary hover:underline"
+              title="Ver OT firmada"
+            >
+              {f.form_number}
+            </button>
           ) : (
             f.form_number
           )}
