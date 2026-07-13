@@ -13,9 +13,41 @@ interface Props {
   onSuccess: () => void;
 }
 
+/** Comprime fotos (JPG/PNG) antes de subirlas: la mayoría de las OT firmadas
+ *  llegan como foto de celular (varios MB a resolución completa), lo que hace
+ *  la subida muy lenta en las sucursales con internet más débil. Los PDF no
+ *  se tocan — recomprimir un PDF ya generado requiere librerías más pesadas. */
+async function compressIfImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/gif") return file;
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = URL.createObjectURL(file);
+  });
+
+  const MAX_DIMENSION = 2000;
+  const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width, img.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return file;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(img.src);
+
+  const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.75));
+  if (!blob || blob.size >= file.size) return file;
+
+  const newName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+  return new File([blob], newName, { type: "image/jpeg" });
+}
+
 export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSuccess }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -41,15 +73,37 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
   const handleUpload = async () => {
     if (!file || !formId) return;
     setUploading(true);
+    setProgress(0);
     try {
-      const ext = file.name.split(".").pop() || "pdf";
-      const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const toUpload = await compressIfImage(file);
+      const sanitized = toUpload.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${new Date().toISOString().slice(0, 10)}/${formId}_OT_${sanitized}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("ot-files")
-        .upload(path, file, { upsert: true });
-      if (uploadError) throw uploadError;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+      // Se usa XHR directo (en vez del upload() de supabase-js) para poder
+      // mostrar el progreso real de la subida — sin esto la UI parece
+      // "colgada" durante archivos grandes en conexiones lentas de sucursal.
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${supabaseUrl}/storage/v1/object/ot-files/${path}`);
+        xhr.setRequestHeader("apikey", anonKey);
+        xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+        xhr.setRequestHeader("x-upsert", "true");
+        xhr.setRequestHeader("Content-Type", toUpload.type || "application/octet-stream");
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`No se pudo subir el archivo (${xhr.status})`));
+        };
+        xhr.onerror = () => reject(new Error("Error de red al subir el archivo"));
+        xhr.send(toUpload);
+      });
 
       const { data: urlData } = supabase.storage
         .from("ot-files")
@@ -72,6 +126,7 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
       toast({ title: "Error al subir OT", description: err.message, variant: "destructive" });
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -133,13 +188,22 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
           )}
         </div>
 
+        {uploading && (
+          <div className="space-y-1">
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground text-right">{progress}%</p>
+          </div>
+        )}
+
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={handleClose} disabled={uploading}>
             Cancelar
           </Button>
           <Button onClick={handleUpload} disabled={!file || uploading}>
             {uploading ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Subiendo...</>
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Subiendo... {progress}%</>
             ) : (
               <><Upload className="h-4 w-4 mr-2" /> Subir OT</>
             )}
