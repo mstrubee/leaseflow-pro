@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +24,13 @@ import { AddressLatLngFields } from "@/components/contracts/AddressLatLngFields"
 const NewContract = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, loading: authLoading, isAdmin, hasPermission, roleLoaded } = useAuth();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/auth");
+    if (!authLoading && roleLoaded && !isAdmin && !hasPermission("contracts", "edit")) navigate("/");
+  }, [authLoading, user, isAdmin, hasPermission, roleLoaded, navigate]);
 
   // Contract basic info
   const [companyIds, setCompanyIds] = useState<string[]>([]);

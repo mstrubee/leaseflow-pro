@@ -81,7 +81,7 @@ interface ChartFilter {
 const ReportsDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin, hasPermission } = useAuth();
   const [contracts, setContracts] = useState<ContractPatentData[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [patentStatuses, setPatentStatuses] = useState<PatentStatus[]>([]);
@@ -1569,45 +1569,49 @@ const ReportsDashboard = () => {
         </Collapsible>
 
         {/* Supplier Reports Section */}
-        <Collapsible open={isSupplierSectionOpen} onOpenChange={setSupplierSectionOpen}>
-          <Card className="mt-6">
-            <CollapsibleTrigger asChild>
-              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-2">
-                  {isSupplierSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  <CardTitle>Informe de Proveedores</CardTitle>
-                </div>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent>
-                <SupplierReports />
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
+        {(isAdmin || hasPermission("suppliers", "view")) && (
+          <Collapsible open={isSupplierSectionOpen} onOpenChange={setSupplierSectionOpen}>
+            <Card className="mt-6">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {isSupplierSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <CardTitle>Informe de Proveedores</CardTitle>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <SupplierReports />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
 
         {/* Gantt Charts General View */}
         <GanttReportsSection />
 
         {/* Maintenance Reports Section */}
-        <Collapsible open={isMaintenanceSectionOpen} onOpenChange={setMaintenanceSectionOpen}>
-          <Card className="mt-6">
-            <CollapsibleTrigger asChild>
-              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-2">
-                  {isMaintenanceSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  <CardTitle>Informe de Mantenciones</CardTitle>
-                </div>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent>
-                <MaintenanceReports />
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
+        {(isAdmin || hasPermission("maintenance", "view")) && (
+          <Collapsible open={isMaintenanceSectionOpen} onOpenChange={setMaintenanceSectionOpen}>
+            <Card className="mt-6">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {isMaintenanceSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <CardTitle>Informe de Mantenciones</CardTitle>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <MaintenanceReports />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
       </main>
     </div>
   );

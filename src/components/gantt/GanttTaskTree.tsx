@@ -18,6 +18,7 @@ import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/gan
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { DependencyDialog } from "./DependencyDialog";
 import { TaskStatusActions, StatusDot } from "./TaskStatusActions";
 
@@ -42,6 +43,7 @@ interface GanttTaskTreeProps {
   canEdit?: boolean;
   canDelete?: boolean;
   canManageDeps?: boolean;
+  canComplete?: boolean;
 }
 
 export function GanttTaskTree({
@@ -65,7 +67,9 @@ export function GanttTaskTree({
   canEdit = true,
   canDelete = true,
   canManageDeps = true,
+  canComplete = true,
 }: GanttTaskTreeProps) {
+  const { isAdmin } = useAuth();
   const [hideCompleted, setHideCompleted] = useState(false);
 
   const allParentTaskIds = useMemo(() => {
@@ -324,11 +328,11 @@ export function GanttTaskTree({
             </div>
 
             <div className="flex items-center gap-1">
-              {canEdit && (
+              {canComplete && (
                 <TaskStatusActions
                   task={task}
-                  canComplete={canEdit}
-                  canDiscard={!!onDiscardTask && !!onRestoreTask}
+                  canComplete={canComplete}
+                  canDiscard={isAdmin && !!onDiscardTask && !!onRestoreTask}
                   onToggleComplete={toggleCompleted}
                   onDiscard={(id) => onDiscardTask!(id)}
                   onRestore={(id) => onRestoreTask!(id)}

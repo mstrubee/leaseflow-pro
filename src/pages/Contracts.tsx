@@ -217,7 +217,8 @@ const Contracts = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "firmado";
-  const { user, loading: authLoading, roleLoaded, isAdmin } = useAuth();
+  const { user, loading: authLoading, roleLoaded, isAdmin, hasPermission } = useAuth();
+  const canEditContracts = isAdmin || hasPermission("contracts", "edit");
   const { ufValue } = useEconomicIndicators();
   const { columnWidths, normalizedWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
 
@@ -1016,33 +1017,37 @@ const Contracts = () => {
                   }
                 />
               )}
-              <Button
-                variant="outline"
-                onClick={handleSyncAllToDrive}
-                disabled={isSyncing}
-                className="gap-2"
-              >
-                {isSyncing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sincronizando...
-                  </>
-                ) : (
-                  <>
-                    <Cloud className="h-4 w-4" />
-                    Sincronizar con Drive
-                  </>
-                )}
-              </Button>
+              {canEditContracts && (
+                <Button
+                  variant="outline"
+                  onClick={handleSyncAllToDrive}
+                  disabled={isSyncing}
+                  className="gap-2"
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="h-4 w-4" />
+                      Sincronizar con Drive
+                    </>
+                  )}
+                </Button>
+              )}
               {isNegociacionView && !rechazadosFilter && (
                 <div className="flex flex-col gap-1">
-                  <Button
-                    onClick={() => navigate("/contracts/new")}
-                    className="gap-2"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Nuevo Contrato
-                  </Button>
+                  {canEditContracts && (
+                    <Button
+                      onClick={() => navigate("/contracts/new")}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nuevo Contrato
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"

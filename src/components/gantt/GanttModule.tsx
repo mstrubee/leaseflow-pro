@@ -579,6 +579,11 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
               getDescendantCount={getDescendantCount}
               onLinkPurchaseOrder={linkPurchaseOrder}
               onUnlinkPurchaseOrder={unlinkPurchaseOrder}
+              canAdd={canEdit}
+              canEdit={canEdit}
+              canDelete={canEdit}
+              canManageDeps={canEdit || hasPermission("gantt_dependencias", "edit")}
+              canComplete={canInteract}
               onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
                 try {

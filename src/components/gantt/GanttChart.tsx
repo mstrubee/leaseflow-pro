@@ -2316,7 +2316,7 @@ export function GanttChart({
                     )}
 
                     {/* Chain link button (only for non-parent tasks): abre el editor de dependencias (modal XL) */}
-                    {!hasChildren && (
+                    {!hasChildren && isAdmin && (
                       <button
                         type="button"
                         className={cn(

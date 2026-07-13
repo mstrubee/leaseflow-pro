@@ -45,7 +45,7 @@ export const useUserPermissions = () => {
     const contractSectionIds = [
       "contract_address", "contract_contact", "contract_commercial",
       "contract_renegotiation", "contract_surfaces", "contract_documents",
-      "contract_repository", "contract_gantt",
+      "contract_repository", "contract_gantt", "contract_budget",
       "contract_alerts", "contract_patents",
     ];
     const dashboardSectionIds = [

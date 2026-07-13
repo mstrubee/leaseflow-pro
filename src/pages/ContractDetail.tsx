@@ -201,7 +201,7 @@ const ContractDetail = () => {
 
   const { toast } = useToast();
   const { isAdmin, roleLoaded } = useAuth();
-  const { isHidden, loading: permissionsLoading } = useUserPermissions();
+  const { isHidden, canEdit: canEditSection, loading: permissionsLoading } = useUserPermissions();
   const {
     sections,
     reorderSections,
@@ -1225,7 +1225,7 @@ const ContractDetail = () => {
                         )}
                         
                         {/* Renegotiation sub-section within Commercial Conditions */}
-                        {isSigned && currentVersion && (
+                        {isSigned && currentVersion && !isHidden("contract_renegotiation") && (
                           <div className="mt-6 border-t pt-6">
                             <div className="flex items-center gap-2 mb-4">
                               <RefreshCw className="h-4 w-4 text-muted-foreground" />
@@ -1292,6 +1292,7 @@ const ContractDetail = () => {
                     >
                       <ContractSurfacesSection
                         contractId={contract.id}
+                        readOnly={!isAdmin && !canEditSection("contract_surfaces")}
                         onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
                       />
                     </CollapsibleSection>
