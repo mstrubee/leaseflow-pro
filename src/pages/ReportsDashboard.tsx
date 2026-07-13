@@ -862,6 +862,7 @@ const ReportsDashboard = () => {
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Reporte de Estado de Patentes - Collapsible */}
+        {(isAdmin || hasPermission("patents", "view")) && (
         <Collapsible open={isPatentSectionOpen} onOpenChange={setPatentSectionOpen}>
           <Card>
             <CardHeader className="pb-4">
@@ -1567,6 +1568,7 @@ const ReportsDashboard = () => {
             </CollapsibleContent>
           </Card>
         </Collapsible>
+        )}
 
         {/* Supplier Reports Section */}
         {(isAdmin || hasPermission("suppliers", "view")) && (
@@ -1590,7 +1592,7 @@ const ReportsDashboard = () => {
         )}
 
         {/* Gantt Charts General View */}
-        <GanttReportsSection />
+        {(isAdmin || hasPermission("capex", "view")) && <GanttReportsSection />}
 
         {/* Maintenance Reports Section */}
         {(isAdmin || hasPermission("maintenance", "view")) && (

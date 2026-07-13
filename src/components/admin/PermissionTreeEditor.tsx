@@ -89,7 +89,17 @@ export const PERMISSION_TREE: TreeNode[] = [
   },
   { id: "repository", label: "Repositorio General", resource: "repository" },
   { id: "alerts", label: "Alertas", resource: "alerts" },
-  { id: "reports", label: "Informes", resource: "reports" },
+  {
+    id: "reports",
+    label: "Informes",
+    resource: "reports",
+    children: [
+      { id: "report_patents", label: "Estado general de Patentes", resource: "patents" },
+      { id: "report_suppliers", label: "Informe de Proveedores", resource: "suppliers" },
+      { id: "report_gantt", label: "Cartas Gantt — Vista General", resource: "capex" },
+      { id: "report_maintenance", label: "Informe de Mantenciones", resource: "maintenance" },
+    ],
+  },
   {
     id: "kpi",
     label: "KPIs",
