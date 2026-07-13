@@ -27,7 +27,7 @@ interface ModuleItem {
 
 const ALL_MODULES: ModuleItem[] = [
   { id: "contracts",      label: "Contratos",                desc: "Gestión de contratos inmobiliarios",           icon: FileText,    path: "/contracts",       resource: "contracts",       color: "text-blue-600 bg-blue-100" },
-  { id: "patents",        label: "Patentes",                 desc: "Gestión de patentes municipales",              icon: Shield,      path: "/patents",          resource: null,              color: "text-purple-600 bg-purple-100" },
+  { id: "patents",        label: "Patentes",                 desc: "Gestión de patentes municipales",              icon: Shield,      path: "/patents",          resource: "patents",         color: "text-purple-600 bg-purple-100" },
   { id: "purchase_orders",label: "Órdenes de Compra",        desc: "Control de órdenes y presupuestos",            icon: ShoppingCart,path: "/purchase-orders",  resource: "purchase_orders", color: "text-orange-600 bg-orange-100" },
   { id: "opex",           label: "OPEX",                     desc: "Gastos operacionales",                         icon: Wallet,      path: "/opex",             resource: "opex",            color: "text-emerald-600 bg-emerald-100" },
   { id: "capex",          label: "CAPEX",                    desc: "Inversiones de capital",                       icon: HardHat,     path: "/capex",            resource: "capex",           color: "text-amber-600 bg-amber-100" },
