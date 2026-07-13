@@ -79,30 +79,39 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
       const sanitized = toUpload.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${new Date().toISOString().slice(0, 10)}/${formId}_OT_${sanitized}`;
 
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
       const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("Sesión expirada, vuelva a iniciar sesión.");
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
       // Se usa XHR directo (en vez del upload() de supabase-js) para poder
       // mostrar el progreso real de la subida — sin esto la UI parece
       // "colgada" durante archivos grandes en conexiones lentas de sucursal.
+      // El body se manda como multipart/form-data replicando exactamente lo
+      // que hace el cliente oficial de Supabase (StorageFileApi.uploadOrUpdate),
+      // que espera el archivo en un campo sin nombre junto a "cacheControl" —
+      // mandar los bytes crudos con Content-Type del archivo lo rechaza.
+      const formData = new FormData();
+      formData.append("cacheControl", "3600");
+      formData.append("", toUpload);
+
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${supabaseUrl}/storage/v1/object/ot-files/${path}`);
         xhr.setRequestHeader("apikey", anonKey);
         xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
         xhr.setRequestHeader("x-upsert", "true");
-        xhr.setRequestHeader("Content-Type", toUpload.type || "application/octet-stream");
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
         };
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error(`No se pudo subir el archivo (${xhr.status})`));
+          else reject(new Error(`No se pudo subir el archivo (${xhr.status}): ${xhr.responseText}`));
         };
         xhr.onerror = () => reject(new Error("Error de red al subir el archivo"));
-        xhr.send(toUpload);
+        xhr.send(formData);
       });
 
       const { data: urlData } = supabase.storage
