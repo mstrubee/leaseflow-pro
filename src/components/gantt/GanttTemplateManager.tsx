@@ -207,9 +207,13 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
       .eq("template_id", templateId)
       .order("display_order");
 
-    const { data: depsData } = await supabase
-      .from("gantt_template_dependencies")
-      .select("*");
+    const taskIds = (tasksData || []).map(t => t.id);
+    const { data: depsData } = taskIds.length > 0
+      ? await supabase
+          .from("gantt_template_dependencies")
+          .select("*")
+          .in("task_id", taskIds)
+      : { data: [] as any[] };
 
     setTasks((tasksData || []) as GanttTemplateTask[]);
     setDependencies((depsData || []) as GanttTemplateDependency[]);

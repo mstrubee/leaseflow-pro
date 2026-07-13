@@ -174,20 +174,32 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
 
         if (tasksError) throw tasksError;
 
-        // Load dependencies
-        const { data: depsData } = await supabase
-          .from("gantt_task_dependencies")
-          .select("*");
+        const taskIds = (tasksData || []).map(t => t.id);
+
+        // Load dependencies — filtrado por las tareas de ESTE cronograma. Sin este
+        // filtro, la consulta trae las dependencias de TODOS los contratos del
+        // sistema y queda expuesta al límite de 1000 filas de Supabase, que trunca
+        // la respuesta en silencio y hace que falten dependencias al abrir/crear
+        // un cronograma cuando la cantidad total del sistema se acerca a ese tope.
+        const { data: depsData } = taskIds.length > 0
+          ? await supabase
+              .from("gantt_task_dependencies")
+              .select("*")
+              .in("task_id", taskIds)
+          : { data: [] as any[] };
 
         // Load purchase order relations
-        const { data: poData } = await supabase
-          .from("gantt_task_purchase_orders")
-          .select(`
-            *,
-            purchase_order:purchase_orders (
-              id, order_number, amount_uf, supplier_name
-            )
-          `);
+        const { data: poData } = taskIds.length > 0
+          ? await supabase
+              .from("gantt_task_purchase_orders")
+              .select(`
+                *,
+                purchase_order:purchase_orders (
+                  id, order_number, amount_uf, supplier_name
+                )
+              `)
+              .in("task_id", taskIds)
+          : { data: [] as any[] };
 
         // Attach dependencies and POs to tasks
         const tasksWithRelations = (tasksData || []).map(task => ({
@@ -312,10 +324,14 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       default_origin?: string | null;
     };
 
-    // Load template dependencies
+    // Load template dependencies — filtrado por las tareas de ESTA plantilla.
+    // Sin este filtro, la consulta trae las dependencias de TODAS las plantillas
+    // del sistema y queda expuesta al límite de 1000 filas de Supabase.
+    const templateTaskIds = templateTasks.map(tt => tt.id);
     const { data: templateDeps } = await supabase
       .from("gantt_template_dependencies")
-      .select("*");
+      .select("*")
+      .in("task_id", templateTaskIds);
 
     // Map to track template_task_id -> new_task_id
     const taskIdMap = new Map<string, string>();
@@ -1542,13 +1558,20 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     setSaving(true);
     try {
       const templateId = timeline.template_id;
-      const [{ data: tplTasks }, { data: tplDeps }] = await Promise.all([
-        supabase.from("gantt_template_tasks").select("id, default_duration_days, duration_type").eq("template_id", templateId),
-        supabase.from("gantt_template_dependencies").select("task_id, depends_on_task_id, dep_type, lag_days, lag_type"),
-      ]);
+      const { data: tplTasks } = await supabase
+        .from("gantt_template_tasks")
+        .select("id, default_duration_days, duration_type")
+        .eq("template_id", templateId);
       if (!tplTasks || tplTasks.length === 0) throw new Error("La plantilla no tiene tareas");
 
       const tplTaskIds = new Set(tplTasks.map((t) => t.id));
+      // Filtrado por las tareas de ESTA plantilla — sin esto la consulta trae las
+      // dependencias de TODAS las plantillas del sistema (riesgo de truncado por
+      // el límite de 1000 filas de Supabase).
+      const { data: tplDeps } = await supabase
+        .from("gantt_template_dependencies")
+        .select("task_id, depends_on_task_id, dep_type, lag_days, lag_type")
+        .in("task_id", tplTasks.map((t) => t.id));
       const durByTpl = new Map(tplTasks.map((t) => [t.id, { d: t.default_duration_days ?? 1, dt: (t.duration_type as "calendar" | "business") }]));
       const tplDepsFiltered = (tplDeps ?? []).filter((d) => tplTaskIds.has(d.task_id) && tplTaskIds.has(d.depends_on_task_id));
 
