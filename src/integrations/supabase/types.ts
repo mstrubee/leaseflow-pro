@@ -2260,6 +2260,7 @@ export type Database = {
       }
       gantt_template_tasks: {
         Row: {
+          color: string | null
           created_at: string
           default_duration_days: number | null
           default_origin: string | null
@@ -2272,6 +2273,7 @@ export type Database = {
           template_id: string
         }
         Insert: {
+          color?: string | null
           created_at?: string
           default_duration_days?: number | null
           default_origin?: string | null
@@ -2284,6 +2286,7 @@ export type Database = {
           template_id: string
         }
         Update: {
+          color?: string | null
           created_at?: string
           default_duration_days?: number | null
           default_origin?: string | null

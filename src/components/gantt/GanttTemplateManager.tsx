@@ -11,9 +11,37 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Edit, ChevronDown, ChevronRight, Loader2, GripVertical, CalendarDays, Link, User } from "lucide-react";
+import { Plus, Trash2, Edit, ChevronDown, ChevronRight, Loader2, GripVertical, CalendarDays, Link, User, Palette } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { cn } from "@/lib/utils";
+
+// Misma paleta y lógica de herencia de color que el Gantt real de un contrato
+// (GanttChart.tsx) — para que una plantilla se vea igual que el cronograma
+// que termina generando.
+const TASK_COLORS: Array<{ name: string; value: string }> = [
+  { name: "Azul", value: "#3b82f6" },
+  { name: "Verde", value: "#10b981" },
+  { name: "Naranjo", value: "#f97316" },
+  { name: "Rojo", value: "#ef4444" },
+  { name: "Morado", value: "#8b5cf6" },
+  { name: "Rosa", value: "#ec4899" },
+  { name: "Amarillo", value: "#eab308" },
+  { name: "Cian", value: "#06b6d4" },
+  { name: "Gris", value: "#64748b" },
+];
+
+function lightenHex(hex: string, amount: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
+}
 
 interface GanttTemplate {
   id: string;
@@ -33,6 +61,7 @@ interface GanttTemplateTask {
   display_order: number;
   default_responsible_member_id: string | null;
   default_origin: "nuevo" | "traslado" | null;
+  color: string | null;
   children?: GanttTemplateTask[];
 }
 
@@ -236,6 +265,35 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
 
   const taskTree = buildTaskTree(tasks);
 
+  const taskById = new Map(tasks.map(t => [t.id, t]));
+
+  // Resolve effective color: own color, else inherit from nearest ancestor
+  // (lightened 50% por generación) — misma lógica que el Gantt real.
+  const getEffectiveColor = (task: GanttTemplateTask): { color: string | null; inherited: boolean } => {
+    if (task.color) return { color: task.color, inherited: false };
+    let current = task.parent_id ? taskById.get(task.parent_id) : null;
+    while (current) {
+      if (current.color) return { color: lightenHex(current.color, 0.5), inherited: true };
+      current = current.parent_id ? taskById.get(current.parent_id) : null;
+    }
+    return { color: null, inherited: false };
+  };
+
+  const handleSetColor = async (taskId: string, color: string | null) => {
+    await supabase.from("gantt_template_tasks").update({ color }).eq("id", taskId);
+    // Propagar el color a todas las tareas descendientes (igual que en el Gantt real),
+    // para que toda la rama adopte el mismo color.
+    const descendants: string[] = [];
+    const collect = (id: string) => {
+      tasks.filter(t => t.parent_id === id).forEach(child => { descendants.push(child.id); collect(child.id); });
+    };
+    collect(taskId);
+    if (descendants.length > 0) {
+      await supabase.from("gantt_template_tasks").update({ color }).in("id", descendants);
+    }
+    if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+  };
+
   // Calculate sum of direct children durations for a task
   const getChildrenDurationSum = (task: GanttTemplateTask): number | null => {
     if (!task.children || task.children.length === 0) return null;
@@ -438,6 +496,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
 
     const childrenSum = getChildrenDurationSum(task);
     const hasMismatch = childrenSum !== null && childrenSum !== task.default_duration_days;
+    const effective = getEffectiveColor(task);
 
     return (
       <div key={task.id}>
@@ -457,6 +516,18 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             )}
 
             <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+
+            {/* Indicador de color — mismo criterio que el número de fila en el Gantt real:
+                marco del color propio, o del heredado (más claro) si no tiene uno propio. */}
+            <span
+              className="h-5 w-5 rounded-md border shrink-0"
+              style={
+                effective.color
+                  ? { border: `${hasChildren ? "3px" : "2px"} solid ${effective.color}`, backgroundColor: `${effective.color}1a` }
+                  : { borderColor: "hsl(var(--border))" }
+              }
+              title={effective.color ? (effective.inherited ? "Color heredado" : "Color propio") : "Sin color"}
+            />
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -540,7 +611,39 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Color de la tarea">
+                    <Palette className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2" align="end">
+                  <div className="grid grid-cols-5 gap-1">
+                    {TASK_COLORS.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        title={c.name}
+                        onClick={() => handleSetColor(task.id, c.value)}
+                        className={cn(
+                          "h-6 w-6 rounded-md border border-border hover:scale-110 transition-transform",
+                          task.color === c.value && "ring-2 ring-foreground ring-offset-1 ring-offset-popover"
+                        )}
+                        style={{ backgroundColor: c.value }}
+                      />
+                    ))}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2 text-xs h-7"
+                    onClick={() => handleSetColor(task.id, null)}
+                  >
+                    Quitar color {task.parent_id ? "(heredar del padre)" : ""}
+                  </Button>
+                </PopoverContent>
+              </Popover>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openAddTask(task.id)} title="Agregar subtarea">
                 <Plus className="h-4 w-4" />
               </Button>
