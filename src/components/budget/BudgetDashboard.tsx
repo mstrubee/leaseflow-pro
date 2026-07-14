@@ -64,7 +64,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const [contractCebe, setContractCebe] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${contractId}`);
-    return saved ? parseInt(saved) : new Date().getFullYear();
+    const parsed = saved ? parseInt(saved) : NaN;
+    return Number.isFinite(parsed) ? parsed : new Date().getFullYear();
   });
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
@@ -159,13 +160,14 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // CRITICAL: Only calculate summaries when ufValue is loaded.
     // Without ufValue, CLP budget lines would be treated as UF values,
     // producing astronomically wrong numbers (e.g. $9M CLP shown as 9M UF).
-    if (ufValue > 0) {
+    if (ufValue > 0 && Number.isFinite(selectedYear)) {
       refreshData();
     }
   }, [contractId, selectedYear, refreshKey, ufValue]);
 
   // Save selected year to localStorage when it changes
   const handleYearChange = (year: number) => {
+    if (!Number.isFinite(year)) return;
     setSelectedYear(year);
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${contractId}`, year.toString());
   };
@@ -460,8 +462,12 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
 
   // Check previous year pending OCs when opening new year dialog
   const checkPreviousYearPendingOCs = async (targetYear: number) => {
+    if (!Number.isFinite(targetYear)) {
+      setPreviousYearPendingOCs({ count: 0, totalPending: 0 });
+      return;
+    }
     const previousYear = targetYear - 1;
-    
+
     // Get all budgets from previous year
     const { data: prevBudgets } = await supabase
       .from("contract_budgets")
@@ -1018,11 +1024,15 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               <Label>Año</Label>
               <Input
                 type="number"
-                value={newYear}
+                value={Number.isFinite(newYear) ? newYear : ""}
                 onChange={(e) => {
                   const year = parseInt(e.target.value);
                   setNewYear(year);
-                  checkPreviousYearPendingOCs(year);
+                  if (Number.isFinite(year)) {
+                    checkPreviousYearPendingOCs(year);
+                  } else {
+                    setPreviousYearPendingOCs({ count: 0, totalPending: 0 });
+                  }
                 }}
               />
             </div>
@@ -1086,9 +1096,9 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             <Button variant="outline" onClick={() => setShowNewYearDialog(false)}>
               Cancelar
             </Button>
-            <Button 
-              onClick={handleCreateNewYear} 
-              disabled={creatingYear}
+            <Button
+              onClick={handleCreateNewYear}
+              disabled={creatingYear || !Number.isFinite(newYear)}
             >
               {creatingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear CAPEX
