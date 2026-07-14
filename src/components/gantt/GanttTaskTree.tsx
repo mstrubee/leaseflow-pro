@@ -44,6 +44,9 @@ interface GanttTaskTreeProps {
   canDelete?: boolean;
   canManageDeps?: boolean;
   canComplete?: boolean;
+  /** Fila-resumen no editable arriba de todas las tareas, con la fecha de
+   *  inicio/término de todo el cronograma — solo cronogramas "general". */
+  showSummaryRow?: boolean;
 }
 
 export function GanttTaskTree({
@@ -68,6 +71,7 @@ export function GanttTaskTree({
   canDelete = true,
   canManageDeps = true,
   canComplete = true,
+  showSummaryRow = false,
 }: GanttTaskTreeProps) {
   const { isAdmin } = useAuth();
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -84,6 +88,18 @@ export function GanttTaskTree({
     };
     collect(tasks);
     return ids;
+  }, [tasks]);
+
+  // Fecha de inicio/término de TODO el cronograma (rollup de las raíces) para
+  // la fila-resumen no editable de arriba (showSummaryRow).
+  const { overallStart, overallEnd } = useMemo(() => {
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const t of tasks) {
+      if (t.start_date && (!minStart || t.start_date < minStart)) minStart = t.start_date;
+      if (t.end_date && (!maxEnd || t.end_date > maxEnd)) maxEnd = t.end_date;
+    }
+    return { overallStart: minStart, overallEnd: maxEnd };
   }, [tasks]);
 
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set());
@@ -455,6 +471,17 @@ export function GanttTaskTree({
           )}
         </div>
       </div>
+
+      {showSummaryRow && (overallStart || overallEnd) && (
+        <div className="flex items-center gap-2 py-2 px-3 mb-2 rounded-lg border-2 bg-muted/40 font-semibold text-sm">
+          <span className="flex-1">Cronograma completo</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {overallStart ? format(new Date(overallStart + "T00:00:00"), "dd/MM/yyyy") : "—"}
+            {" → "}
+            {overallEnd ? format(new Date(overallEnd + "T00:00:00"), "dd/MM/yyyy") : "—"}
+          </span>
+        </div>
+      )}
 
       <div className="border rounded-lg">
         {tasks.length === 0 ? (

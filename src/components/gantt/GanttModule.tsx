@@ -825,6 +825,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               canReprogram={canInteract}
               canComplete={canInteract}
               rentStartDate={rentStartDate}
+              showSummaryRow={!isMaintenance}
               onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
                 try {
@@ -877,6 +878,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               canDelete={canEdit}
               canManageDeps={canEdit || hasPermission("gantt_dependencias", "edit")}
               canComplete={canInteract}
+              showSummaryRow={!isMaintenance}
               onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
                 try {

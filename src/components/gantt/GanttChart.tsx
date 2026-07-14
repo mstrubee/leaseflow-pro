@@ -299,6 +299,10 @@ interface GanttChartProps {
   canComplete?: boolean;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
   rentStartDate?: string | null;
+  /** Fila-resumen no editable arriba de todas las tareas, con la fecha de
+   *  inicio/término de todo el cronograma — solo para cronogramas "general"
+   *  (no se pasa en "Cronogramas de Mantenciones"). */
+  showSummaryRow?: boolean;
 }
 
 const BASE_DAY_WIDTH = 30;
@@ -353,6 +357,7 @@ export function GanttChart({
   canComplete = false,
   onExportPDF,
   rentStartDate,
+  showSummaryRow = false,
 }: GanttChartProps) {
   const { toast } = useToast();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
@@ -772,6 +777,26 @@ export function GanttChart({
       visible: true,
     };
   }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates, DAY_WIDTH]);
+
+  // Fecha de inicio/término de TODO el cronograma (rollup de las raíces del
+  // árbol) — para la fila-resumen no editable de arriba (showSummaryRow).
+  const { overallStart, overallEnd } = useMemo(() => {
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const t of taskTree) {
+      const eff = getEffectiveDates(t);
+      if (eff.start && (!minStart || eff.start < minStart)) minStart = eff.start;
+      if (eff.end && (!maxEnd || eff.end > maxEnd)) maxEnd = eff.end;
+    }
+    return { overallStart: minStart, overallEnd: maxEnd };
+  }, [taskTree, getEffectiveDates]);
+
+  const summaryPosition = useMemo(() => {
+    if (!overallStart || !overallEnd) return { left: 0, width: 0, visible: false };
+    const startIdx = resolveVisibleIndex(overallStart, "start");
+    const endIdx = resolveVisibleIndex(overallEnd, "end");
+    return { left: startIdx * DAY_WIDTH, width: Math.max(1, endIdx - startIdx + 1) * DAY_WIDTH, visible: true };
+  }, [overallStart, overallEnd, resolveVisibleIndex, DAY_WIDTH]);
 
   // Ancho total del bloque de columnas fijas (excluye columnas ocultas).
   const headerOffset = useMemo(() => {
@@ -2169,6 +2194,46 @@ export function GanttChart({
                   );
                 })}
               </svg>
+            )}
+
+            {/* Fila-resumen no editable: fecha de inicio/término de todo el
+                cronograma, arriba de todas las tareas (solo cronogramas
+                "general" — no aplica a Cronogramas de Mantenciones). */}
+            {showSummaryRow && (
+              <div className="flex border-b-2 border-border bg-muted/40" style={{ height: ROW_HEIGHT }}>
+                <div className="flex sticky left-0 z-[15] bg-muted/40 flex-shrink-0">
+                  <div className="flex-shrink-0 w-6" />
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("index", INDEX_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r px-2 flex items-center font-semibold text-xs truncate" style={{ width: taskNameColWidth }}>
+                    Cronograma completo
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("origin", ORIGIN_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("start", DATE_COL_WIDTH) }}>
+                    {overallStart ? format(parseISO(overallStart), "dd/MM/yy") : "—"}
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("duration", DURATION_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("end", endColWidth) }}>
+                    {overallEnd ? format(parseISO(overallEnd), "dd/MM/yy") : "—"}
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("reprog", REPROG_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
+                </div>
+                <div className="relative flex-1" style={{ width: totalDays * DAY_WIDTH }}>
+                  <div className="absolute inset-0 flex pointer-events-none">
+                    {days.map((day, idx) => (
+                      <div key={idx} className="flex-shrink-0 border-r h-full" style={{ width: DAY_WIDTH }} />
+                    ))}
+                  </div>
+                  {summaryPosition.visible && (
+                    <div
+                      className="absolute top-3 h-3.5 rounded-full bg-foreground/60 pointer-events-none"
+                      style={{ left: summaryPosition.left, width: Math.max(summaryPosition.width - 4, 8) }}
+                      title={`${overallStart ? format(parseISO(overallStart), "dd/MM/yyyy") : ""} → ${overallEnd ? format(parseISO(overallEnd), "dd/MM/yyyy") : ""}`}
+                    />
+                  )}
+                </div>
+              </div>
             )}
 
             {/* Task rows */}
