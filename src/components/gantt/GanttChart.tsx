@@ -1310,20 +1310,25 @@ export function GanttChart({
   // una tarea y registra, tanto para ella como para cada dependiente que se
   // mueva en cascada, la fecha de término ANTES del cambio — para poder mostrar
   // "(fecha antigua) ±N días" debajo de la nueva fecha en ambos casos.
+  //
+  // Llama a onUpdateTask DIRECTAMENTE (no a handleUpdateTaskField): esta última
+  // pregunta "romper/mantener" cuando la tarea tiene una dependencia entrante,
+  // porque un cambio de fecha manual vía el date-picker podría ser accidental.
+  // Reprog. es lo opuesto — una reprogramación explícita que SIEMPRE debe
+  // aplicarse y cascadear, sin preguntar.
   const commitReprogDelta = async (task: GanttTask) => {
     const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
-    console.log("[Reprog] commit", { taskId: task.id, rawValue: reprogValues.get(task.id), delta, endDate: task.end_date });
     setReprogValues(prev => new Map(prev).set(task.id, "0"));
-    if (isNaN(delta) || delta === 0 || !task.end_date) {
-      console.log("[Reprog] abortado — delta inválido/0 o sin end_date");
-      return;
-    }
+    if (isNaN(delta) || delta === 0 || !task.end_date) return;
 
     try {
       const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-      console.log("[Reprog] nueva fecha calculada", newEnd);
-      const cascade = await handleUpdateTaskField(task.id, "end_date", newEnd);
-      console.log("[Reprog] cascade resultante", cascade);
+      const updates: Partial<GanttTask> = { end_date: newEnd };
+      if (task.duration_days != null) {
+        const newStart = calculateStartDate(newEnd, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+        updates.start_date = format(newStart, "yyyy-MM-dd");
+      }
+      const cascade = await onUpdateTask(task.id, updates);
 
       setReprogOldEnd(prev => {
         const next = new Map(prev);
@@ -1338,7 +1343,6 @@ export function GanttChart({
         return next;
       });
     } catch (err) {
-      console.error("[Reprog] error al reprogramar", err);
       toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
     }
   };
