@@ -88,6 +88,12 @@ export function useUserPreferences<T>({
 }: UseUserPreferencesOptions<T>) {
   const { user, loading: authLoading } = useAuth();
   const [value, setValue] = useState<T>(defaultValue);
+  // Callers often pass inline objects/arrays as defaultValue (new identity on
+  // every render). Pin the first one so loadPreferences stays referentially
+  // stable and the mount effect doesn't re-run after every render — that
+  // caused an infinite render loop that starved React Router v7 navigation
+  // transitions (URL changed but the view never updated).
+  const defaultValueRef = useRef(defaultValue);
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -191,10 +197,10 @@ export function useUserPreferences<T>({
                 }).catch(() => {});
               } catch (e) {
                 console.error("Error parsing localStorage data:", e);
-                setValue(defaultValue);
+                setValue(defaultValueRef.current);
               }
             } else {
-              setValue(defaultValue);
+              setValue(defaultValueRef.current);
             }
           }
         } else {
@@ -215,7 +221,7 @@ export function useUserPreferences<T>({
     loadingPromiseRef.current = loadPromise;
     await loadPromise;
     loadingPromiseRef.current = null;
-  }, [user, authLoading, preferenceKey, localStorageKey, defaultValue, fetchFromSupabaseWithRetry]);
+  }, [user, authLoading, preferenceKey, localStorageKey, fetchFromSupabaseWithRetry]);
 
   const loadFromLocalStorage = () => {
     const localStorageKeyToUse = localStorageKey || preferenceKey;
@@ -226,11 +232,11 @@ export function useUserPreferences<T>({
         setValue(parsed);
         lastSavedRef.current = stored;
       } else {
-        setValue(defaultValue);
+        setValue(defaultValueRef.current);
       }
     } catch (e) {
       console.error("Error reading from localStorage:", e);
-      setValue(defaultValue);
+      setValue(defaultValueRef.current);
     }
   };
 
