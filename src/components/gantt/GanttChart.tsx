@@ -371,6 +371,10 @@ export function GanttChart({
   // poder mostrar "(fecha antigua) ±N días" tanto en la tarea editada como en
   // cualquier dependiente que se haya movido en cascada.
   const [reprogOldEnd, setReprogOldEnd] = useState<Map<string, string>>(new Map());
+  // La columna "Término" se ensancha mientras haya alguna reprogramación activa
+  // en la sesión, para que "(fecha antigua) ±N días" entre completo — el ancho
+  // normal (140px) lo recorta. Vuelve al ancho normal cuando no hay nada que mostrar.
+  const endColWidth = reprogOldEnd.size > 0 ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
@@ -775,8 +779,8 @@ export function GanttChart({
     return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
       get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
       get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
-      get("end", DATE_COL_WIDTH) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
-  }, [hiddenCols, taskNameColWidth]);
+      get("end", endColWidth) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
+  }, [hiddenCols, taskNameColWidth, endColWidth]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
@@ -1854,9 +1858,9 @@ export function GanttChart({
             </div>
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
-              style={{ width: cw("end", DATE_COL_WIDTH) }}
+              style={{ width: cw("end", endColWidth) }}
             >
-              {cw("end", DATE_COL_WIDTH) > 0 && (
+              {cw("end", endColWidth) > 0 && (
                 colSelectMode ? (
                   <div
                     className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
@@ -2223,7 +2227,7 @@ export function GanttChart({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", DATE_COL_WIDTH) }}>
+                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", endColWidth) }}>
                       <DatePickerCell
                         value={newTaskRow!.end_date || null}
                         onChange={(date) => handleNewTaskChange("end_date", date)}
@@ -2564,7 +2568,7 @@ export function GanttChart({
                   </div>
 
                   {/* End date */}
-                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", DATE_COL_WIDTH) }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", endColWidth) }}>
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).end : task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
