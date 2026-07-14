@@ -280,7 +280,7 @@ interface GanttChartProps {
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
   orgMembers?: OrgMember[];
-  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
+  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<Map<string, Partial<GanttTask>> | void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onUndoDelete?: () => Promise<void>;
@@ -364,7 +364,11 @@ export function GanttChart({
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
-  const [reprogDeltas, setReprogDeltas] = useState<Map<string, number>>(new Map());
+  // Fecha de término ANTES de la primera reprogramación de la sesión — se guarda
+  // una sola vez por tarea (no se sobreescribe en reprogramaciones sucesivas) para
+  // poder mostrar "(fecha antigua) ±N días" tanto en la tarea editada como en
+  // cualquier dependiente que se haya movido en cascada.
+  const [reprogOldEnd, setReprogOldEnd] = useState<Map<string, string>>(new Map());
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
@@ -1279,7 +1283,7 @@ export function GanttChart({
       updates.end_date = format(endDate, "yyyy-MM-dd");
     }
 
-    await onUpdateTask(taskId, updates);
+    const cascade = await onUpdateTask(taskId, updates);
 
     // Al asignar responsable a una línea madre, las hijas SIN responsable heredan
     // el mismo por defecto (cada una puede editarse después).
@@ -1297,6 +1301,33 @@ export function GanttChart({
     // onUpdateTask now rolls up ancestor (parent) dates and cascades any task that
     // depends on those parents, so an explicit syncAncestorsDates call here would
     // be redundant and could clobber the engine's result with stale data.
+    return cascade;
+  };
+
+  // Aplica el delta ingresado en la columna "Reprog." a la fecha de término de
+  // una tarea y registra, tanto para ella como para cada dependiente que se
+  // mueva en cascada, la fecha de término ANTES del cambio — para poder mostrar
+  // "(fecha antigua) ±N días" debajo de la nueva fecha en ambos casos.
+  const commitReprogDelta = async (task: GanttTask) => {
+    const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
+    setReprogValues(prev => new Map(prev).set(task.id, "0"));
+    if (isNaN(delta) || delta === 0 || !task.end_date) return;
+
+    const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
+    const cascade = await handleUpdateTaskField(task.id, "end_date", newEnd);
+
+    setReprogOldEnd(prev => {
+      const next = new Map(prev);
+      if (!next.has(task.id)) next.set(task.id, task.end_date!);
+      if (cascade) {
+        for (const [id, upd] of cascade) {
+          if (id === task.id || upd.end_date === undefined || next.has(id)) continue;
+          const original = tasks.find(t => t.id === id);
+          if (original?.end_date) next.set(id, original.end_date);
+        }
+      }
+      return next;
+    });
   };
 
   const toggleTaskCompleted = async (task: GanttTask) => {
@@ -2522,7 +2553,17 @@ export function GanttChart({
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
-                      suffix={(() => { const d = reprogDeltas.get(task.id) ?? 0; return d !== 0 ? <span className="text-[10px] font-bold text-red-500 leading-none">({d > 0 ? "+" : ""}{d})</span> : null; })()}
+                      suffix={(() => {
+                        const oldEnd = reprogOldEnd.get(task.id);
+                        if (!oldEnd || !task.end_date) return null;
+                        const delta = differenceInDays(parseISO(task.end_date), parseISO(oldEnd));
+                        if (delta === 0) return null;
+                        return (
+                          <span className="text-[10px] font-bold text-red-500 leading-none whitespace-nowrap">
+                            ({format(parseISO(oldEnd), "dd/MM/yy")}) {delta > 0 ? "+" : ""}{delta} días
+                          </span>
+                        );
+                      })()}
                     />
                   </div>
 
@@ -2537,29 +2578,9 @@ export function GanttChart({
                           setReprogValues(prev => new Map(prev).set(task.id, v));
                         }}
                         onKeyDown={async (e) => {
-                          if (e.key === "Enter") {
-                            const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
-                            if (!isNaN(delta) && delta !== 0 && task.end_date) {
-                              const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-                              setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                              setReprogDeltas(prev => { const n = new Map(prev); n.set(task.id, (n.get(task.id) ?? 0) + delta); return n; });
-                              await handleUpdateTaskField(task.id, "end_date", newEnd);
-                            } else {
-                              setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                            }
-                          }
+                          if (e.key === "Enter") await commitReprogDelta(task);
                         }}
-                        onBlur={async () => {
-                          const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
-                          if (!isNaN(delta) && delta !== 0 && task.end_date) {
-                            const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-                            setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                            setReprogDeltas(prev => { const n = new Map(prev); n.set(task.id, (n.get(task.id) ?? 0) + delta); return n; });
-                            await handleUpdateTaskField(task.id, "end_date", newEnd);
-                          } else {
-                            setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                          }
-                        }}
+                        onBlur={async () => { await commitReprogDelta(task); }}
                         className="h-7 text-xs w-14 text-center border border-gray-200 rounded px-1 focus:outline-none focus:border-amber-400"
                         title="Días de reprogramación (positivo = atrasa, negativo = adelanta). Arrastra dependientes en cascada."
                       />

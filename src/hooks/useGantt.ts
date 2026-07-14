@@ -746,6 +746,9 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     } finally {
       setSaving(false);
     }
+    // Se retorna el cascade para que quien llamó (ej. el input de "Reprog.") sepa
+    // qué otras tareas dependientes también cambiaron de fecha y en cuánto.
+    return cascade;
   };
 
   // Snapshot de la última eliminación para poder deshacer (Ctrl/Cmd+Z)
