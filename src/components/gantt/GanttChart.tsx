@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { GanttTask, OrgMember } from "@/hooks/useGantt";
+import { useToast } from "@/hooks/use-toast";
 import { Holiday, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
@@ -353,6 +354,7 @@ export function GanttChart({
   onExportPDF,
   rentStartDate,
 }: GanttChartProps) {
+  const { toast } = useToast();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const didInitExpandRef = useRef(false);
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
@@ -1310,24 +1312,35 @@ export function GanttChart({
   // "(fecha antigua) ±N días" debajo de la nueva fecha en ambos casos.
   const commitReprogDelta = async (task: GanttTask) => {
     const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
+    console.log("[Reprog] commit", { taskId: task.id, rawValue: reprogValues.get(task.id), delta, endDate: task.end_date });
     setReprogValues(prev => new Map(prev).set(task.id, "0"));
-    if (isNaN(delta) || delta === 0 || !task.end_date) return;
+    if (isNaN(delta) || delta === 0 || !task.end_date) {
+      console.log("[Reprog] abortado — delta inválido/0 o sin end_date");
+      return;
+    }
 
-    const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-    const cascade = await handleUpdateTaskField(task.id, "end_date", newEnd);
+    try {
+      const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
+      console.log("[Reprog] nueva fecha calculada", newEnd);
+      const cascade = await handleUpdateTaskField(task.id, "end_date", newEnd);
+      console.log("[Reprog] cascade resultante", cascade);
 
-    setReprogOldEnd(prev => {
-      const next = new Map(prev);
-      if (!next.has(task.id)) next.set(task.id, task.end_date!);
-      if (cascade) {
-        for (const [id, upd] of cascade) {
-          if (id === task.id || upd.end_date === undefined || next.has(id)) continue;
-          const original = tasks.find(t => t.id === id);
-          if (original?.end_date) next.set(id, original.end_date);
+      setReprogOldEnd(prev => {
+        const next = new Map(prev);
+        if (!next.has(task.id)) next.set(task.id, task.end_date!);
+        if (cascade) {
+          for (const [id, upd] of cascade) {
+            if (id === task.id || upd.end_date === undefined || next.has(id)) continue;
+            const original = tasks.find(t => t.id === id);
+            if (original?.end_date) next.set(id, original.end_date);
+          }
         }
-      }
-      return next;
-    });
+        return next;
+      });
+    } catch (err) {
+      console.error("[Reprog] error al reprogramar", err);
+      toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
+    }
   };
 
   const toggleTaskCompleted = async (task: GanttTask) => {
@@ -2974,7 +2987,7 @@ export function GanttChart({
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
         onUpdateDependency={onUpdateDependency}
-        onUpdateTask={onUpdateTask}
+        onUpdateTask={async (taskId, updates) => { await onUpdateTask(taskId, updates); }}
       />
 
       {/* Export PDF dialog */}

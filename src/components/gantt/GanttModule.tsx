@@ -569,7 +569,7 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
               holidays={holidays}
               contractId={contractId}
               onAddTask={addTask}
-              onUpdateTask={updateTask}
+              onUpdateTask={async (taskId, updates) => { await updateTask(taskId, updates); }}
               onDeleteTask={deleteTask}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
