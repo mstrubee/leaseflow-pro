@@ -176,15 +176,9 @@ function matchFormsToLocation(
   allForms: RouteForm[],
   companyByContract: Map<string, CompanyKey>,
   contractNameById: Map<string, string>,
+  linkedContractIds: Set<string>,
 ): RouteForm[] {
   if (allForms.length === 0) return [];
-
-  // Si el local está VINCULADO a un contrato (asignado por el admin al renombrar/
-  // agregar), emparejar EXACTO por contract_id. Evita falsos positivos por ciudad
-  // (ej. un "Casablanca" nuevo capturando forms del "Casablanca" original).
-  if (loc.contract_id) {
-    return allForms.filter((f) => f.contract_id === loc.contract_id);
-  }
 
   const localName = norm(loc.local_name ?? "");
   const localCode = norm(loc.local_code ?? "");
@@ -193,12 +187,13 @@ function matchFormsToLocation(
   const locCompany = detectCompany(loc.folder, loc.local_code, loc.local_name, loc.name);
   // Ciudad del local: el name sin el prefijo de empresa ("Agroplanet Casablanca" → "casablanca")
   const locCity = locName.replace(/^(agro|auto)planet\s+/, "");
-  // Nombre "pelado": sin el prefijo de código del local ("AP0048-Rotonda Atena" → "rotonda atena").
-  // Permite emparejar con contract_name sin código ("Rotonda Atenas").
+  // Nombre "pelado": sin prefijo de empresa ni código del local
+  // ("AP0048-Rotonda Atena" → "rotonda atena", "Agroplanet Linares Bodega" → "linares bodega").
+  // Permite emparejar con contract_name sin código ("Rotonda Atenas", "Linares Bodega Imple").
   const stripCode = (s: string) => s.replace(/^[a-z]{1,4}\s*\d+\s*[-–]\s*/, "").trim();
-  const bareName = stripCode(localName || locName);
+  const bareName = stripCode((localName || locName).replace(/^(agro|auto)planet\s+/, ""));
 
-  return allForms.filter((f) => {
+  const matchesByName = (f: RouteForm): boolean => {
     // Candidatos de nombre de contrato: el guardado en el form Y el nombre real del
     // contrato (de la tabla contracts, que lleva el código del local, ej. "AP0049-…").
     const candidates = [
@@ -240,7 +235,23 @@ function matchFormsToLocation(
     }
 
     return false;
-  });
+  };
+
+  // Local VINCULADO a un contrato (columna contract_id, asignada por el admin o el
+  // backfill): emparejamiento EXACTO. Evita falsos positivos por ciudad (ej. un
+  // "Casablanca" nuevo capturando forms del "Casablanca" original) y adivinanzas
+  // por nombre ("P40" ↔ "AP0049-Gran Avenida").
+  // Los forms "no reclamados" (su contrato no está vinculado a NINGÚN local, ej.
+  // "10 de Julio Web" o "Linares Bodega Imple" que comparten recinto con otro
+  // contrato) conservan el fallback por nombre para no desaparecer del mapa.
+  if (loc.contract_id) {
+    return allForms.filter((f) =>
+      f.contract_id === loc.contract_id ||
+      ((!f.contract_id || !linkedContractIds.has(f.contract_id)) && matchesByName(f)),
+    );
+  }
+
+  return allForms.filter(matchesByName);
 }
 
 // ---------------------------------------------------------------------------
@@ -625,8 +636,13 @@ export function useRouteBuilder(editTourId?: string | null) {
   // ---------------------------------------------------------------------------
   const formsByLocation = useMemo(() => {
     const map = new Map<string, RouteForm[]>();
+    // Contratos ya reclamados por algún local vinculado: sus forms solo aparecen
+    // en ese local (el fallback por nombre no puede volver a capturarlos).
+    const linkedContractIds = new Set(
+      locations.map((l) => l.contract_id).filter((id): id is string => !!id),
+    );
     for (const loc of locations) {
-      const matched = matchFormsToLocation(loc, allForms, companyByContract, contractNameById);
+      const matched = matchFormsToLocation(loc, allForms, companyByContract, contractNameById, linkedContractIds);
       // Colapsar forms fusionados en un representante (el de mayor criticidad del grupo)
       const groups = new Map<string, RouteForm[]>();
       const singles: RouteForm[] = [];
