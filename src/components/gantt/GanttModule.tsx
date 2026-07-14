@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { addMonths, format } from "date-fns";
+import { addMonths, format, parseISO } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useGantt } from "@/hooks/useGantt";
+import { useGantt, type GanttTask } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { CapexLineSelector, getAllCapexLineIds, type CapexSelectionMode } from "./CapexLineSelector";
@@ -95,6 +95,11 @@ export function GanttModule({ contractId, serviceContractId, category = "general
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [rentStartDate, setRentStartDate] = useState<string | null>(null);
   const [exportingFull, setExportingFull] = useState(false);
+  // Filtro por año/mes — solo para "Cronogramas de Mantenciones": permite ver
+  // qué tareas están vigentes en un período puntual sin perder el historial
+  // (las tareas de otros meses siguen existiendo, solo se ocultan de la vista).
+  const [filterYear, setFilterYear] = useState<number | "all">("all");
+  const [filterMonth, setFilterMonth] = useState<number | "all">("all");
 
   const handleExportFull = async () => {
     setExportingFull(true);
@@ -162,6 +167,40 @@ export function GanttModule({ contractId, serviceContractId, category = "general
   };
 
   const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
+
+  // Solo para Mantenciones: ¿la tarea (hoja) está vigente en el año/mes elegido?
+  // Las tareas madre no se evalúan directamente — se conservan si alguna
+  // descendiente aplica, para no romper la jerarquía visualmente.
+  const taskInPeriod = (t: GanttTask): boolean => {
+    if (filterYear === "all" && filterMonth === "all") return true;
+    if (!t.start_date || !t.end_date) return false;
+    const year = filterYear === "all" ? null : filterYear;
+    const month = filterMonth === "all" ? null : filterMonth; // 1-12
+    const periodStart = new Date(year ?? parseISO(t.start_date).getFullYear(), month ? month - 1 : 0, 1);
+    const periodEnd = year && month
+      ? new Date(year, month, 0)
+      : year
+        ? new Date(year, 11, 31)
+        : new Date(parseISO(t.end_date).getFullYear(), month ? month : 11, month ? 0 : 31);
+    const taskStart = parseISO(t.start_date);
+    const taskEnd = parseISO(t.end_date);
+    return taskStart <= periodEnd && taskEnd >= periodStart;
+  };
+
+  const filterTreeByPeriod = (nodes: GanttTask[]): GanttTask[] => {
+    if (filterYear === "all" && filterMonth === "all") return nodes;
+    const result: GanttTask[] = [];
+    for (const n of nodes) {
+      const children = n.children ? filterTreeByPeriod(n.children) : undefined;
+      const hasMatchingChildren = !!children && children.length > 0;
+      const selfMatches = !n.children?.length && taskInPeriod(n);
+      if (!selfMatches && !hasMatchingChildren) continue;
+      result.push({ ...n, children });
+    }
+    return result;
+  };
+
+  const filteredTaskTree = isMaintenance ? filterTreeByPeriod(taskTree) : taskTree;
 
   const handleCreateTimeline = async () => {
     let result = null;
@@ -482,6 +521,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
           </div>
           {canEdit && (
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              {!isMaintenance && (
               <Button
                 variant="outline"
                 size="sm"
@@ -496,7 +536,8 @@ export function GanttModule({ contractId, serviceContractId, category = "general
                 <Plus className="h-4 w-4" />
                 Nuevo cronograma
               </Button>
-              {isAdmin && !timeline.is_priority && (
+              )}
+              {!isMaintenance && isAdmin && !timeline.is_priority && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -509,7 +550,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
                   Hacer principal
                 </Button>
               )}
-              {isAdmin && (
+              {!isMaintenance && isAdmin && (
               <Button
                 variant="outline"
                 size="sm"
@@ -522,7 +563,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
                 Exportar JSON
               </Button>
               )}
-              {isAdmin && (
+              {!isMaintenance && isAdmin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
@@ -711,6 +752,46 @@ export function GanttModule({ contractId, serviceContractId, category = "general
         </AlertDialogContent>
       </AlertDialog>
       <CardContent>
+        {isMaintenance && (() => {
+          const currentYear = new Date().getFullYear();
+          const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
+          const monthNames = [
+            "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+          ];
+          return (
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <span className="text-xs text-muted-foreground font-medium">Filtrar por período:</span>
+              <Select value={String(filterYear)} onValueChange={(v) => setFilterYear(v === "all" ? "all" : parseInt(v))}>
+                <SelectTrigger className="h-8 w-[110px] text-xs">
+                  <SelectValue placeholder="Año" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los años</SelectItem>
+                  {yearOptions.map((y) => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={String(filterMonth)} onValueChange={(v) => setFilterMonth(v === "all" ? "all" : parseInt(v))}>
+                <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectValue placeholder="Mes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los meses</SelectItem>
+                  {monthNames.map((m, idx) => (
+                    <SelectItem key={m} value={String(idx + 1)}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(filterYear !== "all" || filterMonth !== "all") && (
+                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setFilterYear("all"); setFilterMonth("all"); }}>
+                  Limpiar filtro
+                </Button>
+              )}
+            </div>
+          );
+        })()}
         <Tabs defaultValue="chart" className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="chart" className="gap-2">
@@ -726,7 +807,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
           <TabsContent value="chart">
             <GanttChart
               tasks={tasks}
-              taskTree={taskTree}
+              taskTree={filteredTaskTree}
               holidays={holidays}
               orgMembers={orgMembers}
               onUpdateTask={updateTask}
@@ -776,7 +857,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
 
           <TabsContent value="list">
             <GanttTaskTree
-              tasks={taskTree}
+              tasks={filteredTaskTree}
               allTasks={tasks}
               holidays={holidays}
               contractId={contractId}
