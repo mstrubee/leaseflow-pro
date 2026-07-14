@@ -91,12 +91,12 @@ export function GanttCurvaS({ tasks, contractName, open, onOpenChange }: Props) 
                   <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
                   <Tooltip
-                    formatter={(value: number, name: string) => [`${value}%`, name === "scheduledProgress" ? "Programado" : "Real"]}
+                    formatter={(value: number | null, name: string) => [value === null ? "—" : `${value}%`, name === "scheduledProgress" ? "Programado" : "Real"]}
                     labelFormatter={(label) => `Semana ${label}`}
                   />
                   <Legend formatter={(value) => (value === "scheduledProgress" ? "Avance Programado" : "Avance Real")} />
                   <Line type="monotone" dataKey="scheduledProgress" stroke="#2563eb" strokeWidth={2} dot={false} name="scheduledProgress" />
-                  <Line type="monotone" dataKey="actualProgress" stroke="#f97316" strokeWidth={2} dot={false} name="actualProgress" />
+                  <Line type="monotone" dataKey="actualProgress" stroke="#f97316" strokeWidth={2} dot={false} name="actualProgress" connectNulls={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

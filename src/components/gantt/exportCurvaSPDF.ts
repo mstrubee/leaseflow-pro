@@ -85,8 +85,12 @@ export function exportCurvaSPDF({ contractName, filterLabel, points }: ExportOpt
     doc.setDrawColor(...color);
     doc.setLineWidth(0.8);
     for (let i = 0; i < points.length - 1; i++) {
-      const [x1, y1] = toXY(i, points[i][key]);
-      const [x2, y2] = toXY(i + 1, points[i + 1][key]);
+      const vA = points[i][key];
+      const vB = points[i + 1][key];
+      // null = semana futura sin dato real todavía — no se dibuja ese tramo.
+      if (vA === null || vB === null) continue;
+      const [x1, y1] = toXY(i, vA);
+      const [x2, y2] = toXY(i + 1, vB);
       doc.line(x1, y1, x2, y2);
     }
   };
@@ -94,8 +98,10 @@ export function exportCurvaSPDF({ contractName, filterLabel, points }: ExportOpt
   drawSeries("scheduledProgress", [37, 99, 235]); // azul
   drawSeries("actualProgress", [249, 115, 22]); // naranja
 
-  // Leyenda + % actual
+  // Leyenda + % actual — el % real se toma de la última semana con dato
+  // (puede no ser la última del gráfico, si el cronograma se extiende a futuro).
   const last = points[points.length - 1];
+  const lastWithActual = [...points].reverse().find((p) => p.actualProgress !== null);
   const legendY = chartY - 4;
   doc.setDrawColor(37, 99, 235);
   doc.setLineWidth(1.5);
@@ -106,10 +112,13 @@ export function exportCurvaSPDF({ contractName, filterLabel, points }: ExportOpt
 
   doc.setDrawColor(249, 115, 22);
   doc.line(chartX + chartW - 60, legendY, chartX + chartW - 50, legendY);
-  doc.text(`Real: ${last.actualProgress}%`, chartX + chartW - 48, legendY + 1.5);
+  doc.text(`Real: ${lastWithActual ? lastWithActual.actualProgress : 0}%`, chartX + chartW - 48, legendY + 1.5);
 
   // --- Tabla resumen ---
   const rows = points.map((p) => {
+    if (p.actualProgress === null) {
+      return [p.weekLabel, `${p.scheduledProgress}%`, "—", "—", "Futuro"];
+    }
     const deviation = p.actualProgress - p.scheduledProgress;
     const estado = Math.abs(deviation) < 2 ? "On track" : deviation < 0 ? "Atrasado" : "Adelantado";
     return [p.weekLabel, `${p.scheduledProgress}%`, `${p.actualProgress}%`, `${deviation > 0 ? "+" : ""}${deviation.toFixed(1)}%`, estado];

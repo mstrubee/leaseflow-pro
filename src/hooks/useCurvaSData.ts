@@ -7,7 +7,10 @@ export interface CurvaSPoint {
   weekStart: Date;
   weekLabel: string; // "15-may"
   scheduledProgress: number; // % acumulado 0-100
-  actualProgress: number; // % acumulado 0-100
+  // null en semanas futuras: no se puede predecir avance real, así que la
+  // línea roja simplemente no se dibuja ahí (a diferencia de antes, que la
+  // congelaba en el valor de hoy hacia adelante).
+  actualProgress: number | null;
 }
 
 export interface CurvaSData {
@@ -134,9 +137,9 @@ export function useCurvaSData(
     let guard = 0;
     while (!isAfter(weekStart, loopEnd) && guard < 600) {
       const scheduled = weightedScheduledAt(weekStart);
-      let actual: number;
+      let actual: number | null;
       if (isAfter(weekStart, today)) {
-        actual = todayActual; // futuro: no se puede predecir, se congela en el valor de hoy
+        actual = null; // futuro: la línea real no se dibuja más allá de hoy
       } else if (scaleFactor !== null) {
         actual = Math.min(100, scheduled * scaleFactor);
       } else {
@@ -148,7 +151,7 @@ export function useCurvaSData(
         weekStart,
         weekLabel: format(weekStart, "dd-MMM", { locale: es }),
         scheduledProgress: Math.round(scheduled * 10) / 10,
-        actualProgress: Math.round(actual * 10) / 10,
+        actualProgress: actual === null ? null : Math.round(actual * 10) / 10,
       });
 
       weekStart = addDays(weekStart, 7);

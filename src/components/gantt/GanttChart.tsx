@@ -312,11 +312,11 @@ const ROW_HEIGHT = 40;
 const TASK_NAME_WIDTH = 450;
 const INDEX_COL_WIDTH = 40;
 const RESPONSIBLE_COL_WIDTH = 180;
-const ORIGIN_COL_WIDTH = 120;
 const DATE_COL_WIDTH = 140;
 const DURATION_COL_WIDTH = 110;
 const REPROG_COL_WIDTH = 72;
 const PROGRESS_COL_WIDTH = 80;
+const PROGRESS_REAL_COL_WIDTH = 90;
 
 interface NewTaskRow {
   name: string;
@@ -802,9 +802,10 @@ export function GanttChart({
   const headerOffset = useMemo(() => {
     const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
     return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
-      get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
+      get("responsible", RESPONSIBLE_COL_WIDTH) +
       get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
-      get("end", endColWidth) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
+      get("end", endColWidth) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH) +
+      get("progressReal", PROGRESS_REAL_COL_WIDTH);
   }, [hiddenCols, taskNameColWidth, endColWidth]);
 
   // Calculate dependency arrows data
@@ -1485,6 +1486,25 @@ export function GanttChart({
     return totalW > 0 ? Math.round(acc / totalW) : 0;
   }, [tasks]);
 
+  // "% Avance Prog.": progreso que DEBERÍA tener la tarea según sus fechas
+  // (100% × días transcurridos / duración total), sin considerar lo que el
+  // usuario haya registrado como avance real. Es de solo lectura — el dato
+  // manual vive en "% Avance Real" (columna al final, ver getEffectiveProgress).
+  const getEffectiveScheduledProgress = useCallback((task: GanttTask): number => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return computeAutoProgress(task);
+    }
+    let totalW = 0;
+    let acc = 0;
+    for (const c of children) {
+      const w = c.duration_days && c.duration_days > 0 ? c.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveScheduledProgress(c);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [tasks]);
+
   const handleSetColor = async (taskId: string, color: string | null) => {
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
     // Propagar el color a TODAS las líneas de nivel inferior (hijas, nietas, etc.),
@@ -1829,24 +1849,6 @@ export function GanttChart({
             </div>
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
-              style={{ width: cw("origin", ORIGIN_COL_WIDTH) }}
-            >
-              {cw("origin", ORIGIN_COL_WIDTH) > 0 && (
-                colSelectMode ? (
-                  <div
-                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
-                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("origin") ? n.delete("origin") : n.add("origin"); return n; })}
-                  >
-                    <Checkbox checked={colPending.has("origin")} className="h-3 w-3 pointer-events-none" />
-                    <span>Origen</span>
-                  </div>
-                ) : (
-                  <div className="text-center px-2 py-2">Origen</div>
-                )
-              )}
-            </div>
-            <div
-              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
               style={{ width: cw("start", DATE_COL_WIDTH) }}
             >
               {cw("start", DATE_COL_WIDTH) > 0 && (
@@ -1928,10 +1930,28 @@ export function GanttChart({
                     onClick={() => setColPending(prev => { const n = new Set(prev); n.has("progress") ? n.delete("progress") : n.add("progress"); return n; })}
                   >
                     <Checkbox checked={colPending.has("progress")} className="h-3 w-3 pointer-events-none" />
-                    <span>% Avance</span>
+                    <span>% Avance Prog.</span>
                   </div>
                 ) : (
-                  <div className="text-center px-2 py-2">% Avance</div>
+                  <div className="text-center px-2 py-2">% Avance Prog.</div>
+                )
+              )}
+            </div>
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}
+            >
+              {cw("progressReal", PROGRESS_REAL_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("progressReal") ? n.delete("progressReal") : n.add("progressReal"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("progressReal")} className="h-3 w-3 pointer-events-none" />
+                    <span>% Avance Real</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">% Avance Real</div>
                 )
               )}
             </div>
@@ -2208,7 +2228,6 @@ export function GanttChart({
                     Cronograma completo
                   </div>
                   <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
-                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("origin", ORIGIN_COL_WIDTH) }} />
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("start", DATE_COL_WIDTH) }}>
                     {overallStart ? format(parseISO(overallStart), "dd/MM/yy") : "—"}
                   </div>
@@ -2218,6 +2237,7 @@ export function GanttChart({
                   </div>
                   <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("reprog", REPROG_COL_WIDTH) }} />
                   <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }} />
                 </div>
                 <div className="relative flex-1" style={{ width: totalDays * DAY_WIDTH }}>
                   <div className="absolute inset-0 flex pointer-events-none">
@@ -2261,7 +2281,6 @@ export function GanttChart({
                       />
                     </div>
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
-                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("origin", ORIGIN_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
                       <DatePickerCell
                         value={newTaskRow!.start_date || null}
@@ -2303,6 +2322,7 @@ export function GanttChart({
                     </div>
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("reprog", REPROG_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }} />
                     </div>
                     <div className="flex items-center px-2 gap-2">
                       <Button size="sm" className="h-7 text-xs" onClick={handleSaveNewTask} disabled={!newTaskRow!.name.trim() || isSaving}>
@@ -2562,37 +2582,6 @@ export function GanttChart({
                     )}
                   </div>
 
-                  {/* Origen */}
-                  <div
-                    className="flex-shrink-0 border-r overflow-hidden flex items-center px-1"
-                    style={{ width: cw("origin", ORIGIN_COL_WIDTH) }}
-                  >
-                    {isAdmin ? (
-                      <SearchableSelect
-                        value={(task as any).origin ?? ""}
-                        onValueChange={(v) =>
-                          handleUpdateTaskField(task.id, "origin" as any, v || null)
-                        }
-                        options={[
-                          { value: "", label: "—" },
-                          { value: "nuevo", label: "Nuevo" },
-                          { value: "traslado", label: "Traslado" },
-                        ]}
-                        placeholder="—"
-                        searchPlaceholder="Buscar..."
-                        triggerClassName="h-7 text-xs"
-                      />
-                    ) : (
-                      <span className="text-xs text-muted-foreground truncate px-1">
-                        {(task as any).origin === "nuevo"
-                          ? "Nuevo"
-                          : (task as any).origin === "traslado"
-                            ? "Traslado"
-                            : "—"}
-                      </span>
-                    )}
-                  </div>
-
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
                     {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
@@ -2673,8 +2662,17 @@ export function GanttChart({
                     )}
                   </div>
 
-                  {/* Progress % */}
+                  {/* % Avance Prog. — de solo lectura: lo que debería llevar la tarea
+                      según sus fechas (o el agregado de sus hijas). El dato editable
+                      (lo que realmente se avanzó) vive en "% Avance Real", al final. */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}>
+                    <span className="text-xs text-muted-foreground" title="Avance esperado según el cronograma (no editable)">
+                      {hasChildren ? getEffectiveScheduledProgress(task) : computeAutoProgress(task)}%
+                    </span>
+                  </div>
+
+                  {/* % Avance Real — el dato manual que alimenta la Curva S. */}
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}>
                     <Input
                       type="number"
                       min={0}
@@ -2699,7 +2697,7 @@ export function GanttChart({
                       className="h-7 text-xs w-16 text-center px-1"
                       title={hasChildren
                         ? "Progreso agregado de las líneas hijas (no editable)."
-                        : "Se calcula automáticamente según la fecha actual. Escribe un valor para fijarlo manualmente."}
+                        : "Avance real registrado manualmente. Alimenta la línea real de la Curva S."}
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
