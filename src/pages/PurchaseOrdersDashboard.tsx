@@ -81,6 +81,8 @@ import {
   ArrowUp,
   ArrowDown,
   FileSpreadsheet,
+  Wrench,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -208,6 +210,21 @@ interface GroupedOrder {
   contracts: { contract_id: string; contract_name: string; amount_uf: number; order_id: string }[];
 }
 
+interface MaintenanceFormOption {
+  id: string;
+  form_number: string;
+  general_description: string | null;
+  electrical_description: string | null;
+  civil_description: string | null;
+  hvac_description: string | null;
+  fixed_assets_description: string | null;
+  created_date: string | null;
+}
+
+function getFormDescription(f: MaintenanceFormOption): string {
+  return f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-";
+}
+
 const COLORS = [
   "hsl(var(--chart-1))",
   "hsl(var(--chart-2))",
@@ -309,8 +326,14 @@ const PurchaseOrdersDashboard = () => {
     attachment_url: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
-  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_clp: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string }[]>([]);
+  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_clp: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string; maintenance_form_ids: string[] }[]>([]);
   const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
+  // Maintenance form assignment (per contract) for the Editar OC dialog
+  const [editingOCContractForms, setEditingOCContractForms] = useState<Record<string, MaintenanceFormOption[]>>({});
+  const [editingOCFormsSortAsc, setEditingOCFormsSortAsc] = useState(false);
+  const [editingOCViewingForm, setEditingOCViewingForm] = useState<MaintenanceFormOption | null>(null);
+  // Original maintenance_form_ids per order.id, captured when the dialog opens — used to diff on save
+  const [editingOCInitialFormIdsByOrderId, setEditingOCInitialFormIdsByOrderId] = useState<Record<string, string[]>>({});
   const [updatingOC, setUpdatingOC] = useState(false);
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
@@ -1599,18 +1622,46 @@ const PurchaseOrdersDashboard = () => {
   };
 
   // Handle edit OC
+  // Load maintenance forms "En Proceso" for a contract, plus any already-assigned forms
+  // (even if their status has since moved on) so an existing assignment never silently disappears.
+  const loadFormsForEditOC = async (contractId: string, includeFormIds: string[] = []) => {
+    try {
+      const { data: proceso } = await supabase
+        .from("maintenance_forms")
+        .select("id, form_number, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, created_date")
+        .eq("contract_id", contractId)
+        .eq("status", "proceso")
+        .is("deleted_at", null)
+        .order("created_date", { ascending: false });
+
+      let forms = proceso || [];
+      const missingIds = includeFormIds.filter(id => !forms.some(f => f.id === id));
+      if (missingIds.length > 0) {
+        const { data: extra } = await supabase
+          .from("maintenance_forms")
+          .select("id, form_number, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, created_date")
+          .in("id", missingIds);
+        forms = [...forms, ...(extra || [])];
+      }
+
+      setEditingOCContractForms(prev => ({ ...prev, [contractId]: forms }));
+    } catch (error) {
+      console.error("Error loading forms:", error);
+    }
+  };
+
   const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
     setEditingOCFile(null);
     
-    // Fetch full order data including amount_clp and attachment_url for each contract
+    // Fetch full order data including amount_clp, attachment_url and assigned forms for each contract
     const orderIds = groupedOrder.orders.map(o => o.id);
     const { data: fullOrders } = await supabase
       .from("purchase_orders")
-      .select("id, contract_id, amount_uf, amount_clp, attachment_url")
+      .select("id, contract_id, amount_uf, amount_clp, attachment_url, maintenance_form_ids")
       .in("id", orderIds);
-    
+
     const firstOrderAttachment = fullOrders?.[0]?.attachment_url || null;
     
     setEditingOCData({
@@ -1623,10 +1674,17 @@ const PurchaseOrdersDashboard = () => {
     });
     
     const orderClpMap = new Map<string, number>();
+    const orderFormIdsMap = new Map<string, string[]>();
+    const initialFormIdsByOrderId: Record<string, string[]> = {};
     (fullOrders || []).forEach(o => {
       orderClpMap.set(o.contract_id, o.amount_clp || Math.round(o.amount_uf * ufValue));
+      const formIds = o.maintenance_form_ids || [];
+      orderFormIdsMap.set(o.contract_id, formIds);
+      initialFormIdsByOrderId[o.id] = formIds;
     });
-    
+    setEditingOCInitialFormIdsByOrderId(initialFormIdsByOrderId);
+    setEditingOCContractForms({});
+
     // Set multi-contract info with CLP as default display currency
     setEditingOCIsMulti(groupedOrder.is_multi_contract);
     setEditingOCContracts(groupedOrder.contracts.map(c => {
@@ -1639,8 +1697,12 @@ const PurchaseOrdersDashboard = () => {
         amount_input: amountClp, // Default to CLP display
         currency: "CLP" as "UF" | "CLP",
         order_id: c.order_id,
+        maintenance_form_ids: orderFormIdsMap.get(c.contract_id) || [],
       };
     }));
+    groupedOrder.contracts.forEach(c => {
+      loadFormsForEditOC(c.contract_id, orderFormIdsMap.get(c.contract_id) || []);
+    });
     setShowEditOCDialog(true);
   };
 
@@ -1662,7 +1724,16 @@ const PurchaseOrdersDashboard = () => {
       amount_clp: 0,
       amount_input: 0,
       currency: "CLP" as "UF" | "CLP",
+      maintenance_form_ids: [],
     }]);
+    loadFormsForEditOC(contractId);
+  };
+
+  // Handle updating the assigned maintenance forms for a contract in the edit OC dialog
+  const handleUpdateContractFormsInEditOC = (contractId: string, formIds: string[]) => {
+    setEditingOCContracts(prev => prev.map(c => (
+      c.contract_id === contractId ? { ...c, maintenance_form_ids: formIds } : c
+    )));
   };
 
   // Handle removing a contract from the edit OC dialog
@@ -1769,12 +1840,21 @@ const PurchaseOrdersDashboard = () => {
         }
         await supabase.from("purchase_orders").update({ deleted_at: new Date().toISOString() }).eq("id", order.id);
         await supabase.from("purchase_order_contract_allocations").delete().eq("purchase_order_id", order.id);
+
+        // Un-link any maintenance forms that were assigned to the removed contract's order
+        const removedFormIds = editingOCInitialFormIdsByOrderId[order.id] || [];
+        if (removedFormIds.length > 0) {
+          await supabase.from("maintenance_forms")
+            .update({ purchase_order_id: null, purchase_order_number: null })
+            .eq("purchase_order_id", order.id)
+            .in("id", removedFormIds);
+        }
       }
-      
+
       for (const contractData of contractsToUpdate) {
         const existingOrder = existingOrders.find(o => o.contract_id === contractData.contract_id);
         if (!existingOrder) continue;
-        
+
         await supabase.from("purchase_orders").update({
           order_number: editingOCData.order_number,
           description: editingOCData.description || null,
@@ -1787,8 +1867,28 @@ const PurchaseOrdersDashboard = () => {
           uf_value_at_entry: ufValue,
           is_multi_contract: isMulti,
           attachment_url: newAttachmentUrl,
+          maintenance_form_ids: contractData.maintenance_form_ids,
         }).eq("id", existingOrder.id);
-        
+
+        // Sync the maintenance_forms back-reference: link newly-checked forms, un-link unchecked ones
+        const previousFormIds = editingOCInitialFormIdsByOrderId[existingOrder.id] || [];
+        const formIdsToLink = contractData.maintenance_form_ids.filter(id => !previousFormIds.includes(id));
+        const formIdsToUnlink = previousFormIds.filter(id => !contractData.maintenance_form_ids.includes(id));
+
+        if (formIdsToLink.length > 0) {
+          await supabase.from("maintenance_forms").update({
+            supplier_name: editingOCData.supplier_name || null,
+            purchase_order_id: existingOrder.id,
+            purchase_order_number: editingOCData.order_number,
+          }).in("id", formIdsToLink);
+        }
+        if (formIdsToUnlink.length > 0) {
+          await supabase.from("maintenance_forms").update({
+            purchase_order_id: null,
+            purchase_order_number: null,
+          }).eq("purchase_order_id", existingOrder.id).in("id", formIdsToUnlink);
+        }
+
         await supabase.from("purchase_order_contract_allocations").upsert({
           purchase_order_id: existingOrder.id,
           contract_id: contractData.contract_id,
@@ -1814,11 +1914,12 @@ const PurchaseOrdersDashboard = () => {
           status: "abierta" as const,
           is_multi_contract: isMulti,
           attachment_url: newAttachmentUrl,
+          maintenance_form_ids: contractData.maintenance_form_ids,
         };
         const { data: newOrder, error: insertError } = await supabase.from("purchase_orders").insert(insertData).select().single();
 
         if (insertError) throw insertError;
-        
+
         if (newOrder) {
           await supabase.from("purchase_order_contract_allocations").insert({
             purchase_order_id: newOrder.id,
@@ -1826,6 +1927,14 @@ const PurchaseOrdersDashboard = () => {
             amount_uf: contractData.amount_uf,
             amount_clp: contractData.amount_clp,
           });
+
+          if (contractData.maintenance_form_ids.length > 0) {
+            await supabase.from("maintenance_forms").update({
+              supplier_name: editingOCData.supplier_name || null,
+              purchase_order_id: newOrder.id,
+              purchase_order_number: editingOCData.order_number,
+            }).in("id", contractData.maintenance_form_ids);
+          }
         }
       }
 
@@ -4174,7 +4283,10 @@ const PurchaseOrdersDashboard = () => {
               </div>
 
               {/* Contracts table */}
-              {editingOCContracts.length > 0 && (
+              {editingOCContracts.length > 0 && (() => {
+                const editingOCFirstOrder = orders.find(o => o.order_number === editingOCOriginalOrderNumber);
+                const editingOCIsCapex = editingOCFirstOrder?.budget_classification === "CAPEX";
+                return (
                 <div className="border rounded-lg overflow-hidden max-h-[250px] overflow-y-auto">
                   <Table>
                     <TableHeader>
@@ -4183,6 +4295,7 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead className="text-xs w-[80px]">Moneda</TableHead>
                         <TableHead className="text-xs text-right w-[130px]">Monto</TableHead>
                         <TableHead className="text-xs text-right w-[100px]">Equiv. UF</TableHead>
+                        {!editingOCIsCapex && <TableHead className="text-xs">Form de Mantención</TableHead>}
                         <TableHead className="text-xs w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -4221,6 +4334,49 @@ const PurchaseOrdersDashboard = () => {
                               <span className="text-foreground">{c.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             )}
                           </TableCell>
+                          {!editingOCIsCapex && (
+                            <TableCell className="py-1.5 align-top">
+                              {(() => {
+                                const forms = editingOCContractForms[c.contract_id] || [];
+                                if (forms.length === 0) {
+                                  return <span className="text-xs text-muted-foreground">Sin Forms en proceso</span>;
+                                }
+                                return (
+                                  <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
+                                    {[...forms].sort((a, b) => {
+                                      const da = a.created_date ? new Date(a.created_date).getTime() : 0;
+                                      const db = b.created_date ? new Date(b.created_date).getTime() : 0;
+                                      return editingOCFormsSortAsc ? da - db : db - da;
+                                    }).map(f => (
+                                      <label key={f.id} className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                        <Checkbox
+                                          className="h-3.5 w-3.5"
+                                          checked={c.maintenance_form_ids.includes(f.id)}
+                                          onCheckedChange={(checked) => {
+                                            const newIds = checked
+                                              ? [...c.maintenance_form_ids, f.id]
+                                              : c.maintenance_form_ids.filter(id => id !== f.id);
+                                            handleUpdateContractFormsInEditOC(c.contract_id, newIds);
+                                          }}
+                                        />
+                                        <span className="whitespace-nowrap">FORM {f.form_number}</span>
+                                        <span className="text-muted-foreground">{f.created_date || ""}</span>
+                                        <span className="text-muted-foreground truncate max-w-[140px]">{getFormDescription(f).slice(0, 40)}</span>
+                                        <button
+                                          type="button"
+                                          className="ml-auto p-0.5 rounded hover:bg-muted"
+                                          title="Ver detalle del Form"
+                                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingOCViewingForm(f); }}
+                                        >
+                                          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                        </button>
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+                          )}
                           <TableCell className="py-1.5">
                             <Button
                               variant="ghost"
@@ -4237,8 +4393,9 @@ const PurchaseOrdersDashboard = () => {
                     </TableBody>
                   </Table>
                 </div>
-              )}
-              
+                );
+              })()}
+
               {/* Total */}
               <div className="flex justify-between items-center text-sm pt-1">
                 <span className="text-muted-foreground">Total:</span>
@@ -4265,6 +4422,53 @@ const PurchaseOrdersDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Maintenance Form detail dialog (from the Editar OC "Contratos asignados" table) */}
+      <Dialog open={!!editingOCViewingForm} onOpenChange={(v) => { if (!v) setEditingOCViewingForm(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Detalle FORM {editingOCViewingForm?.form_number}</DialogTitle>
+          </DialogHeader>
+          {editingOCViewingForm && (
+            <div className="space-y-3 text-sm max-h-[60vh] overflow-y-auto">
+              <div>
+                <span className="font-medium">Fecha:</span> {editingOCViewingForm.created_date || "—"}
+              </div>
+              {editingOCViewingForm.general_description && (
+                <div>
+                  <span className="font-medium">Descripción General:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.general_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.electrical_description && (
+                <div>
+                  <span className="font-medium">Eléctrico:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.electrical_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.civil_description && (
+                <div>
+                  <span className="font-medium">Obra Civil:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.civil_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.hvac_description && (
+                <div>
+                  <span className="font-medium">Climatización:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.hvac_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.fixed_assets_description && (
+                <div>
+                  <span className="font-medium">Activos Fijos:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.fixed_assets_description}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* File Destination Settings Dialog */}
       <Dialog open={showFileDestDialog} onOpenChange={setShowFileDestDialog}>
         <DialogContent className="sm:max-w-md">
