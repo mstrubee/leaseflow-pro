@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
+import { CapexLineSelector, getAllCapexLineIds, type CapexSelectionMode } from "./CapexLineSelector";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database, ArrowDownToLine, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +46,9 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     orgMembers,
     loading,
     saving,
+    capexLines,
+    capexLinesLoading,
+    loadCapexLines,
     createTimeline,
     createTimelineFromCapex,
     addTask,
@@ -71,6 +75,9 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
   const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [creationSource, setCreationSource] = useState<"empty" | "template" | "capex">("empty");
+  const [capexScope, setCapexScope] = useState<"all" | "select">("all");
+  const [capexMode, setCapexMode] = useState<CapexSelectionMode>("hierarchy");
+  const [selectedCapexLineIds, setSelectedCapexLineIds] = useState<Set<string>>(new Set());
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
@@ -129,6 +136,19 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     };
   }, [contractId]);
 
+  // Al elegir CAPEX como origen, cargar sus líneas para poder elegir cuáles
+  // importar (o simplemente mostrar el mensaje de "sin presupuesto").
+  useEffect(() => {
+    if (creationSource !== "capex" || !contractId) return;
+    loadCapexLines();
+  }, [creationSource, contractId, loadCapexLines]);
+
+  // Por defecto, al activar la selección manual parte con todo marcado
+  // (el usuario desmarca lo que no quiere importar).
+  useEffect(() => {
+    if (capexScope === "select") setSelectedCapexLineIds(getAllCapexLineIds(capexLines));
+  }, [capexScope, capexLines]);
+
   const handleDeleteTimeline = async () => {
     const ok = await deleteTimeline();
     if (ok) setConfirmDeleteOpen(false);
@@ -139,7 +159,8 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
   const handleCreateTimeline = async () => {
     let result = null;
     if (creationSource === "capex") {
-      result = await createTimelineFromCapex(newTimelineName);
+      const lineIds = capexScope === "select" ? Array.from(selectedCapexLineIds) : undefined;
+      result = await createTimelineFromCapex(newTimelineName, lineIds);
     } else if (creationSource === "template" && selectedTemplateId) {
       result = await createTimeline(newTimelineName, selectedTemplateId);
     } else {
@@ -150,6 +171,8 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
       setNewTimelineName("");
       setSelectedTemplateId("");
       setCreationSource("empty");
+      setCapexScope("all");
+      setSelectedCapexLineIds(new Set());
     }
   };
 
@@ -196,8 +219,17 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
 
   // Diálogo de creación compartido: se usa tanto cuando no hay cronogramas
   // como para agregar cronogramas adicionales al contrato.
+  const handleCreateDialogOpenChange = (open: boolean) => {
+    setCreateDialogOpen(open);
+    if (!open) {
+      setCreationSource("empty");
+      setCapexScope("all");
+      setSelectedCapexLineIds(new Set());
+    }
+  };
+
   const createTimelineDialog = (
-    <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+    <Dialog open={createDialogOpen} onOpenChange={handleCreateDialogOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{timelines.length > 0 ? "Nuevo cronograma" : "Crear Línea de Tiempo"}</DialogTitle>
@@ -256,21 +288,95 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
             </div>
           )}
           {creationSource === "capex" && (
-            <p className="text-xs text-muted-foreground">
-              Se importarán todas las líneas (madre e hijas) del presupuesto CAPEX manteniendo la jerarquía. Las fechas y duraciones quedarán en blanco para que las completes.
-            </p>
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Las fechas y duraciones quedarán en blanco para que las completes.
+              </p>
+              <div className="space-y-2">
+                <Label>Líneas a importar</Label>
+                <Select value={capexScope} onValueChange={(v) => setCapexScope(v as "all" | "select")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las líneas</SelectItem>
+                    <SelectItem value="select">Seleccionar líneas específicas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {capexScope === "select" && (
+                capexLinesLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Cargando líneas del presupuesto…
+                  </div>
+                ) : capexLines.length === 0 ? (
+                  <p className="text-sm text-destructive">
+                    Este contrato no tiene un presupuesto CAPEX con líneas para importar.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Select value={capexMode} onValueChange={(v) => setCapexMode(v as CapexSelectionMode)}>
+                        <SelectTrigger className="h-8 w-[220px] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hierarchy" className="text-xs">Con jerarquía (arrastra hijas)</SelectItem>
+                          <SelectItem value="line" className="text-xs">Línea a línea</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setSelectedCapexLineIds(getAllCapexLineIds(capexLines))}
+                        >
+                          Seleccionar todas
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setSelectedCapexLineIds(new Set())}
+                        >
+                          Ninguna
+                        </Button>
+                      </div>
+                    </div>
+                    <CapexLineSelector
+                      lines={capexLines}
+                      selectedIds={selectedCapexLineIds}
+                      onChange={setSelectedCapexLineIds}
+                      mode={capexMode}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {selectedCapexLineIds.size} de {capexLines.length} líneas seleccionadas
+                    </p>
+                  </div>
+                )
+              )}
+            </div>
           )}
         </div>
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => setCreateDialogOpen(false)}
+            onClick={() => handleCreateDialogOpenChange(false)}
           >
             Cancelar
           </Button>
           <Button
             onClick={handleCreateTimeline}
-            disabled={saving || !newTimelineName.trim() || (creationSource === "template" && !selectedTemplateId)}
+            disabled={
+              saving ||
+              !newTimelineName.trim() ||
+              (creationSource === "template" && !selectedTemplateId) ||
+              (creationSource === "capex" && capexScope === "select" && selectedCapexLineIds.size === 0)
+            }
           >
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Crear

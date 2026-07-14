@@ -69,6 +69,13 @@ export interface GanttTaskPurchaseOrder {
   };
 }
 
+export interface CapexBudgetLine {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  display_order: number;
+}
+
 export interface GanttTimeline {
   id: string;
   contract_id: string | null;
@@ -124,6 +131,39 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [capexLines, setCapexLines] = useState<CapexBudgetLine[]>([]);
+  const [capexLinesLoading, setCapexLinesLoading] = useState(false);
+
+  // Vista previa de las líneas CAPEX del contrato, para que el usuario pueda
+  // elegir cuáles importar antes de crear el cronograma (ver createTimelineFromCapex).
+  const loadCapexLines = useCallback(async () => {
+    if (serviceContractId || !contractId) {
+      setCapexLines([]);
+      return;
+    }
+    setCapexLinesLoading(true);
+    try {
+      const { data: capexBudgets } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("budget_type", "capex");
+      const budgetIds = (capexBudgets || []).map((b) => b.id);
+      if (budgetIds.length === 0) {
+        setCapexLines([]);
+        return;
+      }
+      const { data: lines } = await supabase
+        .from("budget_lines")
+        .select("id, parent_id, name, display_order, is_ghost")
+        .in("budget_id", budgetIds)
+        .is("deleted_at", null)
+        .order("display_order", { ascending: true });
+      setCapexLines((lines || []).filter((l) => !l.is_ghost));
+    } finally {
+      setCapexLinesLoading(false);
+    }
+  }, [contractId, serviceContractId]);
 
   const loadOrgMembers = useCallback(async () => {
     const { data } = await supabase.rpc("get_org_members_basic");
@@ -1665,7 +1705,10 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     }
   };
 
-  const createTimelineFromCapex = async (name: string) => {
+  // selectedLineIds: undefined/null = importar todas las líneas (comportamiento
+  // por defecto); un array = importar solo esas líneas (línea a línea o por
+  // jerarquía, decidido en la UI antes de llamar a esta función).
+  const createTimelineFromCapex = async (name: string, selectedLineIds?: string[] | null) => {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -1698,7 +1741,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         .order("display_order", { ascending: true });
       if (linesErr) throw linesErr;
 
-      const visibleLines = (lines || []).filter((l) => !l.is_ghost);
+      let visibleLines = (lines || []).filter((l) => !l.is_ghost);
 
       if (visibleLines.length === 0) {
         toast({
@@ -1707,6 +1750,19 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
           description: "El presupuesto CAPEX no tiene líneas para importar",
         });
         return null;
+      }
+
+      if (selectedLineIds) {
+        const selectedSet = new Set(selectedLineIds);
+        visibleLines = visibleLines.filter((l) => selectedSet.has(l.id));
+        if (visibleLines.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "Sin líneas seleccionadas",
+            description: "Selecciona al menos una línea del presupuesto para importar",
+          });
+          return null;
+        }
       }
 
       // 3. Create the timeline — nunca nace como principal (ver createTimeline)
@@ -1875,6 +1931,9 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     orgMembers,
     loading,
     saving,
+    capexLines,
+    capexLinesLoading,
+    loadCapexLines,
     createTimeline,
     createTimelineFromCapex,
     deleteTimeline,
