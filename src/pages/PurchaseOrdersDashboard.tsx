@@ -411,6 +411,7 @@ const PurchaseOrdersDashboard = () => {
     if (supplierParam) {
       setSearchTerm(supplierParam);
       // Clean the URL param after applying
+      if (window.location.pathname !== "/purchase-orders") return;
       searchParams.delete("supplier");
       setSearchParams(searchParams, { replace: true });
     }

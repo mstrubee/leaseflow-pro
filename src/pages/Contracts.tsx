@@ -276,7 +276,9 @@ const Contracts = () => {
   useEffect(() => {
     let cancelled = false;
     const handler = setTimeout(() => {
-      if (!cancelled) updateFilter("search", localSearchTerm);
+      if (!cancelled && localSearchTerm !== (getFreshParams().get("search") || "")) {
+        updateFilter("search", localSearchTerm);
+      }
     }, 300);
     return () => { cancelled = true; clearTimeout(handler); };
   }, [localSearchTerm]);
