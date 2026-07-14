@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, CalendarClock, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveFileUrl } from "@/lib/storageUtils";
@@ -25,7 +25,9 @@ import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTab
 import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF, exportMergedFormAndOT } from "./maintenanceExport";
 import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExport";
 import { OTDownloadOfferDialog } from "./OTDownloadOfferDialog";
+import { ScheduleMaintenanceDialog } from "./ScheduleMaintenanceDialog";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 
 /** "Resuelto con Observaciones": subestado dedicado resuelto_obs, o resuelto + observaciones. */
@@ -399,6 +401,8 @@ function invalidateCache() {
 
 export function MaintenanceModule() {
   const navigate = useNavigate();
+  const { isAdmin, hasPermission } = useAuth();
+  const canEditSchedule = isAdmin || hasPermission("maintenance", "edit");
   const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, loading: subStatusLoading } = useMaintenanceSubStatuses();
   const [forms, setForms] = useState<MaintenanceForm[]>(() => {
     const cached = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
@@ -427,6 +431,10 @@ export function MaintenanceModule() {
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [otOfferTarget, setOtOfferTarget] = useState<string | null>(null);
   const [otOfferOpen, setOtOfferOpen] = useState(false);
+  const [scheduleTarget, setScheduleTarget] = useState<MaintenanceForm | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Datos de la tarea vinculada (columna "Programación") — mapa por gantt_task_id.
+  const [scheduledTasks, setScheduledTasks] = useState<Map<string, { id: string; name: string; start_date: string | null; end_date: string | null; duration_days: number }>>(new Map());
   formsRef.current = forms;
 
   // Comment editing state removed — now handled by CommentCell
@@ -500,6 +508,24 @@ export function MaintenanceModule() {
     };
     fetchCriticalities();
   }, []);
+
+  // Carga los datos (nombre/fechas/plazo) de las tareas de cronograma ya
+  // vinculadas a algún form, para mostrar la columna "Programación" y
+  // precargar el diálogo al reprogramar.
+  useEffect(() => {
+    const ids = Array.from(new Set(forms.map(f => f.gantt_task_id).filter((id): id is string => !!id)));
+    if (ids.length === 0) { setScheduledTasks(new Map()); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("gantt_tasks")
+        .select("id, name, start_date, end_date, duration_days")
+        .in("id", ids);
+      if (cancelled || !data) return;
+      setScheduledTasks(new Map(data.map(t => [t.id, t])));
+    })();
+    return () => { cancelled = true; };
+  }, [forms]);
 
   useEffect(() => {
     const cached = readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP);
@@ -1163,6 +1189,38 @@ export function MaintenanceModule() {
             );
           })()}
         </TableCell>
+        <TableCell className="text-xs">
+          {(() => {
+            const task = f.gantt_task_id ? scheduledTasks.get(f.gantt_task_id) : undefined;
+            if (!canEditSchedule) {
+              return task?.start_date ? (
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <CalendarClock className="h-3 w-3 shrink-0" />
+                  {format(new Date(task.start_date + "T00:00:00"), "dd/MM")}
+                  {task.end_date && task.end_date !== task.start_date && ` → ${format(new Date(task.end_date + "T00:00:00"), "dd/MM")}`}
+                </span>
+              ) : <span className="text-muted-foreground">-</span>;
+            }
+            return (
+              <button
+                type="button"
+                onClick={() => { setScheduleTarget(f); setScheduleOpen(true); }}
+                className="text-primary hover:underline flex items-center gap-1 text-left"
+                title="Programar en el cronograma de mantenciones"
+              >
+                <CalendarClock className="h-3 w-3 shrink-0" />
+                {task?.start_date ? (
+                  <span>
+                    {format(new Date(task.start_date + "T00:00:00"), "dd/MM")}
+                    {task.end_date && task.end_date !== task.start_date && ` → ${format(new Date(task.end_date + "T00:00:00"), "dd/MM")}`}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Programar</span>
+                )}
+              </button>
+            );
+          })()}
+        </TableCell>
         <TableCell>
           <div className="flex items-center justify-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
@@ -1651,6 +1709,7 @@ export function MaintenanceModule() {
                     <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
                     <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-20" />
                     <TableHead className="w-20">Evidencia</TableHead>
+                    <TableHead className="w-28">Programación</TableHead>
                     <TableHead className="w-24 text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1734,6 +1793,18 @@ export function MaintenanceModule() {
           setOtOfferOpen(false);
           setOtOfferTarget(null);
         }}
+      />
+      <ScheduleMaintenanceDialog
+        open={scheduleOpen}
+        onOpenChange={(v) => { setScheduleOpen(v); if (!v) setScheduleTarget(null); }}
+        contractId={scheduleTarget?.contract_id ?? null}
+        formId={scheduleTarget?.id ?? ""}
+        formNumber={scheduleTarget?.form_number ?? ""}
+        existingTaskId={scheduleTarget?.gantt_task_id ?? null}
+        existingName={scheduleTarget?.gantt_task_id ? scheduledTasks.get(scheduleTarget.gantt_task_id)?.name : undefined}
+        existingStartDate={scheduleTarget?.gantt_task_id ? scheduledTasks.get(scheduleTarget.gantt_task_id)?.start_date : undefined}
+        existingDurationDays={scheduleTarget?.gantt_task_id ? scheduledTasks.get(scheduleTarget.gantt_task_id)?.duration_days : undefined}
+        onScheduled={handleDataChanged}
       />
 
       {/* Excel download dialog with checkboxes */}

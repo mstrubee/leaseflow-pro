@@ -3165,6 +3165,7 @@ export type Database = {
           evidence_links: string[] | null
           fixed_assets_description: string | null
           form_number: string
+          gantt_task_id: string | null
           general_description: string | null
           hvac_description: string | null
           id: string
@@ -3202,6 +3203,7 @@ export type Database = {
           evidence_links?: string[] | null
           fixed_assets_description?: string | null
           form_number: string
+          gantt_task_id?: string | null
           general_description?: string | null
           hvac_description?: string | null
           id?: string
@@ -3239,6 +3241,7 @@ export type Database = {
           evidence_links?: string[] | null
           fixed_assets_description?: string | null
           form_number?: string
+          gantt_task_id?: string | null
           general_description?: string | null
           hvac_description?: string | null
           id?: string
@@ -3275,6 +3278,13 @@ export type Database = {
             columns: ["criticality_category_id"]
             isOneToOne: false
             referencedRelation: "maintenance_criticality_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_forms_gantt_task_id_fkey"
+            columns: ["gantt_task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_tasks"
             referencedColumns: ["id"]
           },
           {
