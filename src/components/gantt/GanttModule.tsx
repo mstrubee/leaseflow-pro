@@ -15,9 +15,10 @@ import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { CapexLineSelector, getAllCapexLineIds, type CapexSelectionMode } from "./CapexLineSelector";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database, ArrowDownToLine, Star, Wrench } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database, ArrowDownToLine, Star, Wrench, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
+import { GanttCurvaS } from "./GanttCurvaS";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { downloadGanttFullExport } from "@/lib/ganttFullExport";
 import { useToast } from "@/hooks/use-toast";
@@ -95,6 +96,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [rentStartDate, setRentStartDate] = useState<string | null>(null);
   const [exportingFull, setExportingFull] = useState(false);
+  const [curvaSOpen, setCurvaSOpen] = useState(false);
   // Filtro por año/mes — solo para "Cronogramas de Mantenciones": permite ver
   // qué tareas están vigentes en un período puntual sin perder el historial
   // (las tareas de otros meses siguen existiendo, solo se ocultan de la vista).
@@ -550,6 +552,18 @@ export function GanttModule({ contractId, serviceContractId, category = "general
                   Hacer principal
                 </Button>
               )}
+              {!isMaintenance && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setCurvaSOpen(true)}
+                title="Ver avance programado vs. real acumulado en el tiempo"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Curva S
+              </Button>
+              )}
               {!isMaintenance && isAdmin && (
               <Button
                 variant="outline"
@@ -911,6 +925,14 @@ export function GanttModule({ contractId, serviceContractId, category = "general
         </Tabs>
       </CardContent>
     </Card>
+    {!isMaintenance && (
+      <GanttCurvaS
+        tasks={tasks}
+        contractName={timeline.name}
+        open={curvaSOpen}
+        onOpenChange={setCurvaSOpen}
+      />
+    )}
     {maintenanceSection}
     </div>
   );
