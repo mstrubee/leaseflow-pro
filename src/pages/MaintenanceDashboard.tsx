@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { MaintenanceModule } from "@/components/maintenance/MaintenanceModule";
-import { Wrench, Navigation } from "lucide-react";
+import { MaintenanceSchedulesOverview } from "@/components/maintenance/MaintenanceSchedulesOverview";
+import { Wrench, Navigation, CalendarClock } from "lucide-react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 const MaintenanceDashboard = () => {
   const navigate = useNavigate();
   const { hasPermission, roleLoaded } = useAuth();
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
 
   // Si el usuario puede ver rutas pero no formularios → solo accede a /maintenance/routes
   const soloRutas = roleLoaded && hasPermission("maintenance_rutas", "view") && !hasPermission("maintenance_formularios", "view");
@@ -22,7 +25,16 @@ const MaintenanceDashboard = () => {
                 <h1 className="text-2xl font-semibold text-foreground">Mantenciones</h1>
                 <p className="text-sm text-muted-foreground">Control y seguimiento de requerimientos de mantención y activos fijos</p>
               </div>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSchedulesOpen(true)}
+                  className="gap-2"
+                >
+                  <CalendarClock className="w-4 h-4" />
+                  Programaciones
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -39,6 +51,7 @@ const MaintenanceDashboard = () => {
         <main className="max-w-[2112px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <MaintenanceModule />
         </main>
+        <MaintenanceSchedulesOverview open={schedulesOpen} onOpenChange={setSchedulesOpen} />
     </div>
   );
 };
