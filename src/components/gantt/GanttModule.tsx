@@ -15,8 +15,9 @@ import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { CapexLineSelector, getAllCapexLineIds, type CapexSelectionMode } from "./CapexLineSelector";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database, ArrowDownToLine, Star } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2, Database, ArrowDownToLine, Star, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { downloadGanttFullExport } from "@/lib/ganttFullExport";
 import { useToast } from "@/hooks/use-toast";
@@ -25,9 +26,13 @@ import { supabase } from "@/integrations/supabase/client";
 interface GanttModuleProps {
   contractId?: string;
   serviceContractId?: string;
+  // "maintenance" renderiza la subsección "Cronogramas de Mantenciones" —
+  // un cronograma aparte, independiente del principal del contrato.
+  category?: "general" | "maintenance";
 }
 
-export function GanttModule({ contractId, serviceContractId }: GanttModuleProps) {
+export function GanttModule({ contractId, serviceContractId, category = "general" }: GanttModuleProps) {
+  const isMaintenance = category === "maintenance";
   const { isAdmin, hasPermission } = useAuth();
   const { toast } = useToast();
   const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
@@ -69,10 +74,12 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     applyTemplateUpdates,
     deleteTimeline,
     reload,
-  } = useGantt(contractId ?? null, serviceContractId);
+  } = useGantt(contractId ?? null, serviceContractId, category);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
+  const [newTimelineName, setNewTimelineName] = useState(
+    isMaintenance ? "Cronograma de Mantenciones" : "Línea de Tiempo Principal"
+  );
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [creationSource, setCreationSource] = useState<"empty" | "template" | "capex">("empty");
   const [capexScope, setCapexScope] = useState<"all" | "select">("all");
@@ -386,38 +393,65 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
     </Dialog>
   );
 
+  // Subsección "Cronogramas de Mantenciones": un cronograma aparte para el
+  // mismo contrato, independiente del principal — solo se renderiza desde la
+  // instancia "general" (evita anidar recursivamente sobre sí misma), y solo
+  // para contratos de arriendo (no aplica a contratos de servicio).
+  const maintenanceSection = !isMaintenance && contractId && !serviceContractId && (
+    <CollapsibleCard
+      title="Cronogramas de Mantenciones"
+      description="Cronograma de mantenciones de este local, independiente del cronograma principal del contrato."
+      icon={<Wrench className="h-5 w-5 text-amber-500" />}
+      defaultOpen={false}
+    >
+      <GanttModule contractId={contractId} category="maintenance" />
+    </CollapsibleCard>
+  );
+
   // No timeline yet - show creation option
   if (!timeline) {
     return (
+      <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5" />
-            Línea de Tiempo / Gantt
+            {isMaintenance ? <Wrench className="h-5 w-5 text-amber-500" /> : <CalendarDays className="h-5 w-5" />}
+            {isMaintenance ? "Cronogramas de Mantenciones" : "Línea de Tiempo / Gantt"}
           </CardTitle>
           <CardDescription>
-            Crea una línea de tiempo para planificar y hacer seguimiento del proyecto
+            {isMaintenance
+              ? "Cronograma de mantenciones de este local, independiente del cronograma principal del contrato."
+              : "Crea una línea de tiempo para planificar y hacer seguimiento del proyecto"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button onClick={() => setCreateDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Crear Línea de Tiempo
+            {isMaintenance ? "Crear Cronograma de Mantenciones" : "Crear Línea de Tiempo"}
           </Button>
           {createTimelineDialog}
         </CardContent>
       </Card>
+      {maintenanceSection}
+      </div>
     );
   }
 
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="flex items-center gap-2 flex-wrap">
-              <CalendarDays className="h-5 w-5" />
+              {isMaintenance ? <Wrench className="h-5 w-5 text-amber-500" /> : <CalendarDays className="h-5 w-5" />}
               {timeline.name}
+              {isMaintenance && (
+                <Badge variant="outline" className="gap-1 text-xs font-medium border-amber-300 text-amber-700 bg-amber-50">
+                  <Wrench className="h-3 w-3" />
+                  Mantenciones
+                </Badge>
+              )}
               {timeline.is_priority && (
                 <Badge variant="secondary" className="gap-1 text-xs font-medium">
                   <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
@@ -794,5 +828,7 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
         </Tabs>
       </CardContent>
     </Card>
+    {maintenanceSection}
+    </div>
   );
 }

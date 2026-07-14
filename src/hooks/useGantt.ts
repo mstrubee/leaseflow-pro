@@ -85,6 +85,9 @@ export interface GanttTimeline {
   // Cronograma principal del contrato: siempre hay exactamente uno (índice único
   // parcial en DB). Solo un admin puede cambiarlo o eliminarlo.
   is_priority: boolean;
+  // "general" (cronograma normal del contrato) o "maintenance" (cronograma de
+  // mantenciones del local — sección separada, independiente del principal).
+  category: "general" | "maintenance";
   created_at: string;
   updated_at: string;
   tasks?: GanttTask[];
@@ -119,7 +122,11 @@ export interface Holiday {
   is_recurring: boolean;
 }
 
-export function useGantt(contractId: string | null, serviceContractId?: string | null) {
+export function useGantt(
+  contractId: string | null,
+  serviceContractId?: string | null,
+  category: "general" | "maintenance" = "general",
+) {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const [timeline, setTimeline] = useState<GanttTimeline | null>(null);
@@ -202,6 +209,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         .from("gantt_timelines")
         .select("*")
         .eq(filterCol, filterVal)
+        .eq("category", category)
         .order("is_priority", { ascending: false })
         .order("created_at", { ascending: true });
 
@@ -280,7 +288,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     } finally {
       setLoading(false);
     }
-  }, [contractId, serviceContractId, selectedTimelineId, toast]);
+  }, [contractId, serviceContractId, category, selectedTimelineId, toast]);
 
   // El cronograma (y sus tareas) se recarga al cambiar de contrato o de
   // cronograma seleccionado; los catálogos estáticos solo se cargan una vez.
@@ -303,8 +311,8 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
       // principal es una acción explícita de un administrador ("Hacer
       // principal"), no algo que se herede ni se asigne automáticamente.
       const timelinePayload = serviceContractId
-        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id }
-        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id };
+        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id, category }
+        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id, category };
 
       const { data: newTimeline, error } = await supabase
         .from("gantt_timelines")
