@@ -552,7 +552,7 @@ export function GanttModule({ contractId, serviceContractId }: GanttModuleProps)
               Esta acción eliminará permanentemente la línea de tiempo <span className="font-medium">"{timeline.name}"</span> junto con todas sus tareas, dependencias y vínculos a órdenes de compra. Esta acción no se puede deshacer.
               {timeline.is_priority && (
                 <span className="block mt-2 font-medium text-destructive">
-                  Este es el cronograma principal del contrato. Si existen otros cronogramas, el más antiguo pasará a ser el nuevo principal.
+                  Este es el cronograma principal del contrato. Al eliminarlo, el contrato quedará sin cronograma principal hasta que un administrador designe uno nuevo con "Hacer principal".
                 </span>
               )}
             </AlertDialogDescription>

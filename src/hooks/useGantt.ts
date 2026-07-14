@@ -259,28 +259,18 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      // El primer cronograma del contrato queda como principal automáticamente.
-      // El índice único parcial en DB garantiza que nunca haya dos principales.
-      const isFirst = timelines.length === 0;
+      // Los cronogramas nuevos nunca nacen como principal: designar el
+      // principal es una acción explícita de un administrador ("Hacer
+      // principal"), no algo que se herede ni se asigne automáticamente.
       const timelinePayload = serviceContractId
-        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id, is_priority: isFirst }
-        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id, is_priority: isFirst };
+        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id }
+        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id };
 
-      let { data: newTimeline, error } = await supabase
+      const { data: newTimeline, error } = await supabase
         .from("gantt_timelines")
         .insert(timelinePayload)
         .select()
         .single();
-
-      if (error?.code === "23505") {
-        // Carrera: otra pestaña/usuario creó el principal al mismo tiempo.
-        // Reintentar como cronograma secundario.
-        ({ data: newTimeline, error } = await supabase
-          .from("gantt_timelines")
-          .insert({ ...timelinePayload, is_priority: false })
-          .select()
-          .single());
-      }
 
       if (error) throw error;
 
@@ -1719,25 +1709,16 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         return null;
       }
 
-      // 3. Create the timeline (el primero del contrato queda como principal)
-      const isFirst = timelines.length === 0;
+      // 3. Create the timeline — nunca nace como principal (ver createTimeline)
       const capexTimelinePayload = serviceContractId
-        ? { service_contract_id: serviceContractId, name, template_id: null, created_by: user?.id, is_priority: isFirst }
-        : { contract_id: contractId!, name, template_id: null, created_by: user?.id, is_priority: isFirst };
+        ? { service_contract_id: serviceContractId, name, template_id: null, created_by: user?.id }
+        : { contract_id: contractId!, name, template_id: null, created_by: user?.id };
 
-      let { data: newTimeline, error: tlErr } = await supabase
+      const { data: newTimeline, error: tlErr } = await supabase
         .from("gantt_timelines")
         .insert(capexTimelinePayload)
         .select()
         .single();
-      if (tlErr?.code === "23505") {
-        // Carrera: otro usuario creó el principal al mismo tiempo → crear como secundario
-        ({ data: newTimeline, error: tlErr } = await supabase
-          .from("gantt_timelines")
-          .insert({ ...capexTimelinePayload, is_priority: false })
-          .select()
-          .single());
-      }
       if (tlErr) throw tlErr;
       if (!newTimeline) throw new Error("No se pudo crear la línea de tiempo");
 
@@ -1823,16 +1804,9 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         });
         return false;
       }
-      // Si se eliminó el principal (solo admins llegan aquí) y quedan otros
-      // cronogramas, el más antiguo pasa a ser el nuevo principal para mantener
-      // el invariante de que todo contrato con cronogramas tiene un principal.
-      const remaining = timelines.filter((t) => t.id !== timeline.id);
-      if (timeline.is_priority && remaining.length > 0) {
-        await supabase
-          .from("gantt_timelines")
-          .update({ is_priority: true })
-          .eq("id", remaining[0].id);
-      }
+      // El principal no se hereda: si se elimina (solo un admin puede), el
+      // contrato queda sin cronograma principal hasta que un admin designe uno
+      // nuevo explícitamente con "Hacer principal".
       toast({ title: "Carta Gantt eliminada", description: "La línea de tiempo y sus tareas fueron eliminadas." });
       setTimeline(null);
       setTasks([]);
