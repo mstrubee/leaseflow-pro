@@ -229,7 +229,9 @@ function matchFormsToLocation(
       if (localName && (cn === localName || cn.includes(localName))) return true;
       // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ⊂ "Rotonda Atenas").
       // Ambiguo entre locales homónimos → exige misma empresa confirmada.
-      if (bareName && bareName.length >= 5 && cityNeedsSameCompany && (cn === bareName || cn.includes(bareName))) return true;
+      // Igualdad exacta vale con cualquier largo ("Buin"); el match por substring
+      // exige ≥5 letras para no capturar contratos ajenos con nombres cortos.
+      if (bareName && cityNeedsSameCompany && (cn === bareName || (bareName.length >= 5 && cn.includes(bareName)))) return true;
       // Ciudad: igualdad exacta Y misma empresa confirmada (no mezclar AG/AP ni
       // distintos locales de la misma ciudad).
       if (locCity && cn === locCity && cityNeedsSameCompany) return true;
