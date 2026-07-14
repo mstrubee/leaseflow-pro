@@ -583,12 +583,13 @@ export function GanttReportsSection() {
       // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .select("id, name, contract_id")
+        .select("id, name, contract_id, is_priority")
         .in("contract_id", contractIds)
+        .order("is_priority", { ascending: false })
         .order("created_at", { ascending: false });
       if (tlErr) throw tlErr;
 
-      // La timeline más reciente por contrato
+      // El cronograma PRINCIPAL de cada contrato (o el más reciente si no lo hay)
       const timelineByContract = new Map<string, { id: string; name: string }>();
       (timelines || []).forEach((t: any) => {
         if (!timelineByContract.has(t.contract_id))

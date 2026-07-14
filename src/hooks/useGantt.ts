@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, addDays, differenceInDays } from "date-fns";
 import { calculateEndDate, applyLag, addBusinessDays } from "@/lib/ganttDateUtils";
@@ -74,6 +75,9 @@ export interface GanttTimeline {
   service_contract_id: string | null;
   name: string;
   template_id: string | null;
+  // Cronograma principal del contrato: siempre hay exactamente uno (índice único
+  // parcial en DB). Solo un admin puede cambiarlo o eliminarlo.
+  is_priority: boolean;
   created_at: string;
   updated_at: string;
   tasks?: GanttTask[];
@@ -110,7 +114,10 @@ export interface Holiday {
 
 export function useGantt(contractId: string | null, serviceContractId?: string | null) {
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [timeline, setTimeline] = useState<GanttTimeline | null>(null);
+  const [timelines, setTimelines] = useState<GanttTimeline[]>([]);
+  const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<GanttTask[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
@@ -146,21 +153,26 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
   const loadTimeline = useCallback(async () => {
     setLoading(true);
     try {
-      // Check if timeline exists for this contract or service contract
+      // Un contrato puede tener varios cronogramas. Se cargan todos (el
+      // principal primero) y se trabaja sobre el seleccionado; si no hay
+      // selección explícita, se abre el principal.
       const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
       const filterVal = serviceContractId ?? contractId!;
-      // .limit(1) es una salvaguarda defensiva: aunque hay un índice único que
-      // impide más de un cronograma por contrato, esto evita que .maybeSingle()
-      // arroje error si alguna vez existiera más de una fila.
-      const { data: timelineData, error: timelineError } = await supabase
+      const { data: timelineRows, error: timelineError } = await supabase
         .from("gantt_timelines")
         .select("*")
         .eq(filterCol, filterVal)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("is_priority", { ascending: false })
+        .order("created_at", { ascending: true });
 
       if (timelineError) throw timelineError;
+
+      const allTimelines = (timelineRows || []) as GanttTimeline[];
+      setTimelines(allTimelines);
+      const timelineData =
+        (selectedTimelineId && allTimelines.find((t) => t.id === selectedTimelineId)) ||
+        allTimelines[0] ||
+        null;
 
       if (timelineData) {
         setTimeline(timelineData);
@@ -228,62 +240,49 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     } finally {
       setLoading(false);
     }
-  }, [contractId, serviceContractId, toast]);
+  }, [contractId, serviceContractId, selectedTimelineId, toast]);
 
+  // El cronograma (y sus tareas) se recarga al cambiar de contrato o de
+  // cronograma seleccionado; los catálogos estáticos solo se cargan una vez.
   useEffect(() => {
     loadTimeline();
+  }, [loadTimeline]);
+
+  useEffect(() => {
     loadHolidays();
     loadTemplates();
     loadOrgMembers();
-  }, [loadTimeline, loadHolidays, loadTemplates, loadOrgMembers]);
+  }, [loadHolidays, loadTemplates, loadOrgMembers]);
 
   const createTimeline = async (name: string, templateId?: string) => {
     setSaving(true);
     try {
-      // Defensive check: solo puede existir un cronograma por contrato/contrato de
-      // servicio. Si ya hay uno (por ejemplo, quedó de una carga anterior fallida),
-      // recargarlo en vez de crear un duplicado.
-      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
-      const filterVal = serviceContractId ?? contractId!;
-      const { data: existing } = await supabase
-        .from("gantt_timelines")
-        .select("id")
-        .eq(filterCol, filterVal)
-        .limit(1)
-        .maybeSingle();
-      if (existing) {
-        toast({
-          title: "Ya existe un cronograma",
-          description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
-        });
-        await loadTimeline();
-        return null;
-      }
-
       const { data: { user } } = await supabase.auth.getUser();
 
+      // El primer cronograma del contrato queda como principal automáticamente.
+      // El índice único parcial en DB garantiza que nunca haya dos principales.
+      const isFirst = timelines.length === 0;
       const timelinePayload = serviceContractId
-        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id }
-        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id };
+        ? { service_contract_id: serviceContractId, name, template_id: templateId || null, created_by: user?.id, is_priority: isFirst }
+        : { contract_id: contractId!, name, template_id: templateId || null, created_by: user?.id, is_priority: isFirst };
 
-      const { data: newTimeline, error } = await supabase
+      let { data: newTimeline, error } = await supabase
         .from("gantt_timelines")
         .insert(timelinePayload)
         .select()
         .single();
 
-      if (error) {
-        // 23505 = violación de unicidad (carrera: otra pestaña/usuario creó uno al mismo tiempo)
-        if (error.code === "23505") {
-          toast({
-            title: "Ya existe un cronograma",
-            description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
-          });
-          await loadTimeline();
-          return null;
-        }
-        throw error;
+      if (error?.code === "23505") {
+        // Carrera: otra pestaña/usuario creó el principal al mismo tiempo.
+        // Reintentar como cronograma secundario.
+        ({ data: newTimeline, error } = await supabase
+          .from("gantt_timelines")
+          .insert({ ...timelinePayload, is_priority: false })
+          .select()
+          .single());
       }
+
+      if (error) throw error;
 
       // If template selected, copy tasks from template
       if (templateId) {
@@ -295,7 +294,8 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         description: "La línea de tiempo ha sido creada exitosamente",
       });
 
-      await loadTimeline();
+      // Abrir el cronograma recién creado (el efecto de carga reacciona al cambio)
+      setSelectedTimelineId(newTimeline!.id);
       return newTimeline;
     } catch (error: any) {
       toast({
@@ -1678,24 +1678,6 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
   const createTimelineFromCapex = async (name: string) => {
     setSaving(true);
     try {
-      // Defensive check: solo puede existir un cronograma por contrato/contrato de servicio.
-      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
-      const filterVal = serviceContractId ?? contractId!;
-      const { data: existingTl } = await supabase
-        .from("gantt_timelines")
-        .select("id")
-        .eq(filterCol, filterVal)
-        .limit(1)
-        .maybeSingle();
-      if (existingTl) {
-        toast({
-          title: "Ya existe un cronograma",
-          description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
-        });
-        await loadTimeline();
-        return null;
-      }
-
       const { data: { user } } = await supabase.auth.getUser();
 
       // 1. Find CAPEX budgets for this contract
@@ -1737,27 +1719,26 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         return null;
       }
 
-      // 3. Create the timeline
+      // 3. Create the timeline (el primero del contrato queda como principal)
+      const isFirst = timelines.length === 0;
       const capexTimelinePayload = serviceContractId
-        ? { service_contract_id: serviceContractId, name, template_id: null, created_by: user?.id }
-        : { contract_id: contractId!, name, template_id: null, created_by: user?.id };
+        ? { service_contract_id: serviceContractId, name, template_id: null, created_by: user?.id, is_priority: isFirst }
+        : { contract_id: contractId!, name, template_id: null, created_by: user?.id, is_priority: isFirst };
 
-      const { data: newTimeline, error: tlErr } = await supabase
+      let { data: newTimeline, error: tlErr } = await supabase
         .from("gantt_timelines")
         .insert(capexTimelinePayload)
         .select()
         .single();
-      if (tlErr) {
-        if (tlErr.code === "23505") {
-          toast({
-            title: "Ya existe un cronograma",
-            description: "Este contrato ya tiene una línea de tiempo. Se cargó la existente.",
-          });
-          await loadTimeline();
-          return null;
-        }
-        throw tlErr;
+      if (tlErr?.code === "23505") {
+        // Carrera: otro usuario creó el principal al mismo tiempo → crear como secundario
+        ({ data: newTimeline, error: tlErr } = await supabase
+          .from("gantt_timelines")
+          .insert({ ...capexTimelinePayload, is_priority: false })
+          .select()
+          .single());
       }
+      if (tlErr) throw tlErr;
       if (!newTimeline) throw new Error("No se pudo crear la línea de tiempo");
 
       // 4. Insert all tasks first without parent_id, build id mapping
@@ -1797,7 +1778,7 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
         description: `Se importaron ${visibleLines.length} líneas del presupuesto CAPEX`,
       });
 
-      await loadTimeline();
+      setSelectedTimelineId(newTimeline.id);
       return newTimeline;
     } catch (error: any) {
       console.error("Error creating timeline from CAPEX:", error);
@@ -1814,17 +1795,50 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
 
   const deleteTimeline = async () => {
     if (!timeline) return false;
+    // El cronograma principal solo puede eliminarlo un administrador.
+    // La política RLS de DB lo garantiza; este guard da el mensaje claro.
+    if (timeline.is_priority && !isAdmin) {
+      toast({
+        variant: "destructive",
+        title: "Cronograma principal protegido",
+        description: "Solo un administrador puede eliminar el cronograma principal.",
+      });
+      return false;
+    }
     setSaving(true);
     try {
-      const { error } = await supabase
+      // .select() para verificar el borrado real: con RLS, un DELETE sin
+      // permiso no arroja error — simplemente elimina 0 filas.
+      const { data: deleted, error } = await supabase
         .from("gantt_timelines")
         .delete()
-        .eq("id", timeline.id);
+        .eq("id", timeline.id)
+        .select("id");
       if (error) throw error;
+      if (!deleted || deleted.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Sin permisos",
+          description: "No fue posible eliminar este cronograma (el principal solo puede eliminarlo un administrador).",
+        });
+        return false;
+      }
+      // Si se eliminó el principal (solo admins llegan aquí) y quedan otros
+      // cronogramas, el más antiguo pasa a ser el nuevo principal para mantener
+      // el invariante de que todo contrato con cronogramas tiene un principal.
+      const remaining = timelines.filter((t) => t.id !== timeline.id);
+      if (timeline.is_priority && remaining.length > 0) {
+        await supabase
+          .from("gantt_timelines")
+          .update({ is_priority: true })
+          .eq("id", remaining[0].id);
+      }
       toast({ title: "Carta Gantt eliminada", description: "La línea de tiempo y sus tareas fueron eliminadas." });
       setTimeline(null);
       setTasks([]);
-      await loadTimeline();
+      // Volver al principal (o al primero disponible) del contrato
+      if (selectedTimelineId) setSelectedTimelineId(null);
+      else await loadTimeline();
       return true;
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar la Carta Gantt" });
@@ -1834,8 +1848,52 @@ export function useGantt(contractId: string | null, serviceContractId?: string |
     }
   };
 
+  // Cambia cuál cronograma es el principal del contrato. Solo admins: la UI lo
+  // restringe y un trigger en DB lo garantiza (protege contra degradar+borrar).
+  const setPriorityTimeline = async (timelineId: string) => {
+    const current = timelines.find((t) => t.is_priority);
+    if (current?.id === timelineId) return true;
+    setSaving(true);
+    try {
+      // Primero degradar el principal actual (el índice único solo admite uno)
+      if (current) {
+        const { error: demoteErr } = await supabase
+          .from("gantt_timelines")
+          .update({ is_priority: false })
+          .eq("id", current.id);
+        if (demoteErr) throw demoteErr;
+      }
+      const { error } = await supabase
+        .from("gantt_timelines")
+        .update({ is_priority: true })
+        .eq("id", timelineId);
+      if (error) {
+        // Restaurar el principal anterior si la promoción falló
+        if (current) {
+          await supabase.from("gantt_timelines").update({ is_priority: true }).eq("id", current.id);
+        }
+        throw error;
+      }
+      toast({ title: "Cronograma principal actualizado" });
+      await loadTimeline();
+      return true;
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo cambiar el cronograma principal (requiere permisos de administrador).",
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
     timeline,
+    timelines,
+    selectTimeline: setSelectedTimelineId,
+    setPriorityTimeline,
     tasks,
     taskTree,
     holidays,
