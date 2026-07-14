@@ -26,6 +26,7 @@ import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF, expo
 import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExport";
 import { OTDownloadOfferDialog } from "./OTDownloadOfferDialog";
 import { ScheduleMaintenanceDialog } from "./ScheduleMaintenanceDialog";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
@@ -374,6 +375,7 @@ const CACHE_KEY_FORMS = "maintenance_forms_cache";
 const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
 const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
 const CACHE_KEY_ZONAL_MAP = "maintenance_zonal_map_cache";
+const CACHE_KEY_SUPPLIERS = "maintenance_suppliers_cache";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function readCache<T>(key: string): T | null {
@@ -420,6 +422,7 @@ export function MaintenanceModule() {
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
   const [zonalMap, setZonalMap] = useState<Record<string, string>>(() => readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP) || {});
   const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>(() => readCache<{ id: string; name: string }[]>(CACHE_KEY_SUPPLIERS) || []);
   const [excelDialog, setExcelDialog] = useState(false);
   const [excelIncludeCriticality, setExcelIncludeCriticality] = useState(false);
   const [excelIncludeRevisado, setExcelIncludeRevisado] = useState(false);
@@ -507,6 +510,18 @@ export function MaintenanceModule() {
       }
     };
     fetchCriticalities();
+  }, []);
+
+  useEffect(() => {
+    const cached = readCache<{ id: string; name: string }[]>(CACHE_KEY_SUPPLIERS);
+    if (cached) return;
+    (async () => {
+      const { data } = await supabase.from("suppliers").select("id, name").order("name");
+      if (data) {
+        setSuppliers(data);
+        writeCache(CACHE_KEY_SUPPLIERS, data);
+      }
+    })();
   }, []);
 
   // Carga los datos (nombre/fechas/plazo) de las tareas de cronograma ya
@@ -938,6 +953,27 @@ export function MaintenanceModule() {
     }
   }, []);
 
+  // Guarda el proveedor seleccionado en el dropdown de la columna "Proveedor"
+  // — se guarda de inmediato al elegir, sin botón "Guardar" (mismo patrón que
+  // el resto de los selects inline de esta tabla, ej. saveComment).
+  const saveSupplier = useCallback(async (formId: string, supplierId: string | null) => {
+    const supplierName = supplierId ? suppliers.find(s => s.id === supplierId)?.name ?? null : null;
+    const { error } = await supabase
+      .from("maintenance_forms")
+      .update({ supplier_id: supplierId, supplier_name: supplierName, updated_at: new Date().toISOString() })
+      .eq("id", formId);
+    if (error) {
+      console.error(error);
+      toast({ title: "Error", description: "No se pudo guardar el proveedor", variant: "destructive" });
+    } else {
+      setForms(prev => {
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, supplier_id: supplierId, supplier_name: supplierName } : fm);
+        writeCache(CACHE_KEY_FORMS, updated);
+        return updated;
+      });
+    }
+  }, [suppliers]);
+
   // Sub-status change handler (called by SubStatusCell)
   const handleSubStatusChange = useCallback(async (formId: string, newSubStatus: string) => {
     const form = formsRef.current.find(f => f.id === formId);
@@ -1150,8 +1186,21 @@ export function MaintenanceModule() {
         <TableCell className="text-xs overflow-hidden">
           <CommentCell form={f} onSave={saveComment} />
         </TableCell>
-        <TableCell className="text-xs overflow-hidden">
-          {f.supplier_name ? (
+        <TableCell className="text-xs overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          {canEditSchedule ? (
+            <SearchableSelect
+              value={f.supplier_id ?? "__none__"}
+              onValueChange={(v) => saveSupplier(f.id, v === "__none__" ? null : v)}
+              options={[
+                { value: "__none__", label: "Sin asignar" },
+                ...suppliers.map(s => ({ value: s.id, label: s.name })),
+              ]}
+              placeholder="Sin asignar"
+              searchPlaceholder="Buscar proveedor..."
+              emptyMessage="No hay proveedores."
+              triggerClassName="h-7 text-xs w-full"
+            />
+          ) : f.supplier_name ? (
             <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 w-full min-w-0">
               <span className="truncate">{f.supplier_name}</span>
               <ExternalLink className="h-3 w-3 shrink-0" />
@@ -1192,32 +1241,41 @@ export function MaintenanceModule() {
         <TableCell className="text-xs">
           {(() => {
             const task = f.gantt_task_id ? scheduledTasks.get(f.gantt_task_id) : undefined;
-            if (!canEditSchedule) {
-              return task?.start_date ? (
-                <span className="flex items-center gap-1 text-muted-foreground">
-                  <CalendarClock className="h-3 w-3 shrink-0" />
-                  {format(new Date(task.start_date + "T00:00:00"), "dd/MM")}
-                  {task.end_date && task.end_date !== task.start_date && ` → ${format(new Date(task.end_date + "T00:00:00"), "dd/MM")}`}
-                </span>
-              ) : <span className="text-muted-foreground">-</span>;
-            }
+            const dateLabel = task?.start_date ? (
+              <span>
+                {format(new Date(task.start_date + "T00:00:00"), "dd/MM")}
+                {task.end_date && task.end_date !== task.start_date && ` → ${format(new Date(task.end_date + "T00:00:00"), "dd/MM")}`}
+              </span>
+            ) : null;
             return (
-              <button
-                type="button"
-                onClick={() => { setScheduleTarget(f); setScheduleOpen(true); }}
-                className="text-primary hover:underline flex items-center gap-1 text-left"
-                title="Programar en el cronograma de mantenciones"
-              >
-                <CalendarClock className="h-3 w-3 shrink-0" />
-                {task?.start_date ? (
-                  <span>
-                    {format(new Date(task.start_date + "T00:00:00"), "dd/MM")}
-                    {task.end_date && task.end_date !== task.start_date && ` → ${format(new Date(task.end_date + "T00:00:00"), "dd/MM")}`}
-                  </span>
+              <div className="flex items-center gap-1.5">
+                {canEditSchedule ? (
+                  <button
+                    type="button"
+                    onClick={() => { setScheduleTarget(f); setScheduleOpen(true); }}
+                    className="text-primary hover:underline flex items-center gap-1 text-left"
+                    title="Programar en el cronograma de mantenciones"
+                  >
+                    <CalendarClock className="h-3 w-3 shrink-0" />
+                    {dateLabel ?? <span className="text-muted-foreground">Programar</span>}
+                  </button>
                 ) : (
-                  <span className="text-muted-foreground">Programar</span>
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <CalendarClock className="h-3 w-3 shrink-0" />
+                    {dateLabel ?? "-"}
+                  </span>
                 )}
-              </button>
+                {f.contract_id && task?.start_date && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/contracts/${f.contract_id}`, { state: { fromMaintenance: true } })}
+                    className="text-muted-foreground hover:text-primary shrink-0"
+                    title="Ver en el cronograma del contrato"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             );
           })()}
         </TableCell>

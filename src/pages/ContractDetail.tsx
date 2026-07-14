@@ -181,6 +181,10 @@ const ContractDetail = () => {
   const sectionParam = searchParams.get("section");
   const returnToParam = searchParams.get("returnTo");
   const backTo = (location.state as any)?.backTo as string | undefined;
+  // Llegó desde el listado de /maintenance (botón "Ver en el cronograma" de un
+  // form ya programado) — se muestra un botón flotante para volver ahí, sin
+  // tocar el botón "Volver" genérico de arriba (que sigue yendo a /contracts).
+  const fromMaintenance = (location.state as any)?.fromMaintenance as boolean | undefined;
 
   const storedBackTo =
     typeof window !== "undefined"
@@ -807,6 +811,16 @@ const ContractDetail = () => {
   // Filter documents: show signed docs always, drafts for renegotiation, and regular drafts for signed contracts
   const documents = isSigned ? allDocuments.filter(d => d.document_type === "firmado" || d.document_type === "firmado_r" || d.document_type === "borrador" || d.document_type === "borrador_final" || hasActiveRenegotiation && (d.document_type === "borrador_r" || d.document_type === "borrador_final_r")) : allDocuments;
   return <div className="min-h-screen bg-background">
+      {fromMaintenance && (
+        <Button
+          onClick={() => navigate("/maintenance")}
+          className="fixed bottom-6 right-6 z-50 gap-2 shadow-lg"
+          title="Volver al listado de Forms de Mantención"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Volver a Mantenciones
+        </Button>
+      )}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Button variant="ghost" onClick={() => navigate(resolvedBackTo)} className="gap-2 mb-2">

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock, User, CalendarClock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveFileUrl } from "@/lib/storageUtils";
@@ -55,9 +56,33 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     fixed_assets_description: "",
     additional_comments: "",
     resolution_observations: "",
+    supplier_id: null as string | null,
   });
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || suppliers.length > 0) return;
+    supabase.from("suppliers").select("id, name").order("name").then(({ data }) => {
+      if (data) setSuppliers(data);
+    });
+  }, [open, suppliers.length]);
+
+  const saveSupplier = async (supplierId: string | null) => {
+    if (!form) return;
+    const supplierName = supplierId ? suppliers.find(s => s.id === supplierId)?.name ?? null : null;
+    setFormData(p => ({ ...p, supplier_id: supplierId }));
+    const { error } = await supabase
+      .from("maintenance_forms")
+      .update({ supplier_id: supplierId, supplier_name: supplierName, updated_at: new Date().toISOString() })
+      .eq("id", form.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo guardar el proveedor" });
+    } else {
+      onSuccess();
+    }
+  };
 
   useEffect(() => {
     if (form) {
@@ -74,6 +99,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         fixed_assets_description: form.fixed_assets_description || "",
         additional_comments: form.additional_comments || "",
         resolution_observations: form.resolution_observations || "",
+        supplier_id: form.supplier_id || null,
       });
     }
   }, [form]);
@@ -300,7 +326,19 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
           {/* Proveedor y OC asignados */}
           <div className="space-y-1.5">
             <Label>Proveedor</Label>
-            {form?.supplier_name ? (
+            {canEditSchedule ? (
+              <SearchableSelect
+                value={formData.supplier_id ?? "__none__"}
+                onValueChange={(v) => saveSupplier(v === "__none__" ? null : v)}
+                options={[
+                  { value: "__none__", label: "Sin asignar" },
+                  ...suppliers.map(s => ({ value: s.id, label: s.name })),
+                ]}
+                placeholder="Sin asignar"
+                searchPlaceholder="Buscar proveedor..."
+                emptyMessage="No hay proveedores."
+              />
+            ) : form?.supplier_name ? (
               <Button
                 variant="outline"
                 className="w-full justify-start gap-2 font-normal"
