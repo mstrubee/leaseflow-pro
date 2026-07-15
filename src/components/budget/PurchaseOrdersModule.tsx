@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { filterCapexLines } from "@/components/budget/CentralizedOrderCreator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -108,6 +109,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   // Collapsed parent line ids in the budget-line picker (Create/Edit OC dialogs).
   const [collapsedPickerLines, setCollapsedPickerLines] = useState<Set<string>>(new Set());
+  // Typed search filters for the CAPEX budget-line pickers
+  const [createLineSearch, setCreateLineSearch] = useState("");
+  const [editLineSearch, setEditLineSearch] = useState("");
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
   const [editOrder, setEditOrder] = useState<PurchaseOrder | null>(null);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
@@ -1448,7 +1452,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
         )}
       </CardContent>
 
-      <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) setBudgetWarning(null); }}>
+      <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) { setBudgetWarning(null); setCreateLineSearch(""); } }}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
@@ -1490,13 +1494,21 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             {newOrder.budget_type === "capex" ? (
               <div className="space-y-2">
                 <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
+                <Input
+                  value={createLineSearch}
+                  onChange={(e) => setCreateLineSearch(e.target.value)}
+                  placeholder="Buscar línea..."
+                  className="h-8 text-sm"
+                />
                 <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
                   {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    getHierarchicalLinesForBudgetType("capex")
+                    filterCapexLines(getHierarchicalLinesForBudgetType("capex"), createLineSearch)
                       .filter((line) => {
-                        // Hide lines whose any ancestor is collapsed.
+                        // Hide lines whose any ancestor is collapsed — unless a
+                        // search is active (matches must always be visible).
+                        if (createLineSearch.trim()) return true;
                         let pid = line.parent_id;
                         while (pid) {
                           if (collapsedPickerLines.has(pid)) return false;
@@ -1829,7 +1841,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
 
 
       {/* Edit Order Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setBudgetWarning(null); }}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) { setBudgetWarning(null); setEditLineSearch(""); } }}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Editar Orden de Compra</DialogTitle>
@@ -1870,12 +1882,20 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             {editFormData.budget_type === "capex" ? (
               <div className="space-y-2">
                 <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
+                <Input
+                  value={editLineSearch}
+                  onChange={(e) => setEditLineSearch(e.target.value)}
+                  placeholder="Buscar línea..."
+                  className="h-8 text-sm"
+                />
                 <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
                   {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    getHierarchicalLinesForBudgetType("capex")
+                    filterCapexLines(getHierarchicalLinesForBudgetType("capex"), editLineSearch)
                       .filter((line) => {
+                        // Search matches must always be visible even if collapsed
+                        if (editLineSearch.trim()) return true;
                         let pid = line.parent_id;
                         while (pid) {
                           if (collapsedPickerLines.has(pid)) return false;

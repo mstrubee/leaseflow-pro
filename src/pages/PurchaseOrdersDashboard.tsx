@@ -91,7 +91,7 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { CentralizedOrderCreator, buildHierarchicalCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
+import { CentralizedOrderCreator, buildHierarchicalCapexLines, loadCapexLineUsage, filterCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -349,6 +349,11 @@ const PurchaseOrdersDashboard = () => {
   const [editCapexBudgetIdByContract, setEditCapexBudgetIdByContract] = useState<Record<string, string | null>>({});
   const [editCapexSelections, setEditCapexSelections] = useState<Record<string, string[]>>({});
   const [editCapexInitialSelections, setEditCapexInitialSelections] = useState<Record<string, string[]>>({});
+  const [editCapexLineUsage, setEditCapexLineUsage] = useState<Record<string, number>>({});
+  const [editCapexLineSearch, setEditCapexLineSearch] = useState<Record<string, string>>({});
+  // Order ids of the OC being edited — excluded from line usage so the OC
+  // doesn't count against its own available budget
+  const editCapexExcludeOrderIdsRef = useRef<string[]>([]);
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
   const invoiceFileInputRef = useRef<HTMLInputElement>(null);
@@ -1716,6 +1721,10 @@ const PurchaseOrdersDashboard = () => {
       }
       setEditCapexBudgetIdByContract(prev => ({ ...prev, [contractId]: budgetIds[0] || null }));
       setEditCapexLinesByContract(prev => ({ ...prev, [contractId]: lines }));
+      if (lines.length > 0) {
+        const usage = await loadCapexLineUsage(lines.map(l => l.id), editCapexExcludeOrderIdsRef.current);
+        setEditCapexLineUsage(prev => ({ ...prev, ...usage }));
+      }
     } catch (error) {
       console.error("Error loading CAPEX budget lines:", error);
     }
@@ -1765,6 +1774,9 @@ const PurchaseOrdersDashboard = () => {
     setEditCapexBudgetIdByContract({});
     setEditCapexSelections({});
     setEditCapexInitialSelections({});
+    setEditCapexLineUsage({});
+    setEditCapexLineSearch({});
+    editCapexExcludeOrderIdsRef.current = orderIds;
     if (isCapex) {
       groupedOrder.contracts.forEach(c => loadCapexLinesForEditOC(c.contract_id, ocYear));
 
@@ -4598,6 +4610,8 @@ const PurchaseOrdersDashboard = () => {
               {editOCIsCapex && editingOCContracts.map(c => {
                 const lines = editCapexLinesByContract[c.contract_id];
                 const selected = editCapexSelections[c.contract_id] || [];
+                const search = editCapexLineSearch[c.contract_id] || "";
+                const visibleLines = lines ? filterCapexLines(lines, search) : [];
                 return (
                   <div key={c.contract_id} className="space-y-1.5 pt-2 border-t">
                     <Label className="text-sm">
@@ -4609,29 +4623,43 @@ const PurchaseOrdersDashboard = () => {
                     ) : lines.length === 0 ? (
                       <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {editOCCapexYear}.</p>
                     ) : (
-                      <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
-                        {lines.map(line => {
-                          const isSelected = selected.includes(line.id);
-                          return (
-                            <div
-                              key={line.id}
-                              role="checkbox"
-                              aria-checked={isSelected}
-                              tabIndex={0}
-                              onClick={() => toggleEditCapexLine(c.contract_id, line)}
-                              className={cn(
-                                "flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm",
-                                isSelected && "bg-accent",
-                                line.hasChildren && "font-medium"
-                              )}
-                              style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
-                            >
-                              <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
-                              <span className="flex-1 truncate">{line.name}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <>
+                        <Input
+                          value={search}
+                          onChange={(e) => setEditCapexLineSearch(prev => ({ ...prev, [c.contract_id]: e.target.value }))}
+                          placeholder="Buscar línea..."
+                          className="h-8 text-sm"
+                        />
+                        <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
+                          {visibleLines.length === 0 ? (
+                            <p className="text-xs text-muted-foreground p-2">Sin resultados para "{search}".</p>
+                          ) : visibleLines.map(line => {
+                            const isSelected = selected.includes(line.id);
+                            const available = line.amount_uf - (editCapexLineUsage[line.id] || 0);
+                            return (
+                              <div
+                                key={line.id}
+                                role="checkbox"
+                                aria-checked={isSelected}
+                                tabIndex={0}
+                                onClick={() => toggleEditCapexLine(c.contract_id, line)}
+                                className={cn(
+                                  "flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm",
+                                  isSelected && "bg-accent",
+                                  line.hasChildren && "font-medium"
+                                )}
+                                style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                              >
+                                <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
+                                <span className="flex-1 truncate">{line.name}</span>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  (Disp: {formatCLP(available * ufValue)})
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                     {selected.length > 0 && (
                       <p className="text-xs text-muted-foreground">{selected.length} línea(s) seleccionada(s)</p>

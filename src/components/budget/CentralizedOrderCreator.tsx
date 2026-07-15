@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
+import { formatCLP } from "@/lib/utils";
 interface Contract {
   id: string;
   name: string;
@@ -103,6 +104,81 @@ export function buildHierarchicalCapexLines(lines: Omit<CapexBudgetLine, "depth"
   return result;
 }
 
+// Total UF already consumed per budget line by existing (non-deleted) OCs.
+// Counts the split amounts in purchase_order_budget_lines and, for legacy OCs
+// that only have the single budget_line_id column, the full order amount.
+// excludeOrderIds: the OC being edited, so it doesn't count against itself.
+export async function loadCapexLineUsage(lineIds: string[], excludeOrderIds: string[] = []): Promise<Record<string, number>> {
+  const usage: Record<string, number> = {};
+  if (lineIds.length === 0) return usage;
+  const excluded = new Set(excludeOrderIds);
+  try {
+    const { data: assoc } = await supabase
+      .from("purchase_order_budget_lines")
+      .select("purchase_order_id, budget_line_id, amount_uf")
+      .in("budget_line_id", lineIds);
+    const assocRows = assoc || [];
+    const assocOrderIds = Array.from(new Set(assocRows.map(a => a.purchase_order_id)));
+
+    // Only count association rows whose OC still exists (not soft-deleted)
+    const aliveIds = new Set<string>();
+    if (assocOrderIds.length > 0) {
+      const { data: alive } = await supabase
+        .from("purchase_orders")
+        .select("id")
+        .in("id", assocOrderIds)
+        .is("deleted_at", null);
+      (alive || []).forEach(o => aliveIds.add(o.id));
+    }
+    assocRows.forEach(a => {
+      if (excluded.has(a.purchase_order_id) || !aliveIds.has(a.purchase_order_id)) return;
+      usage[a.budget_line_id] = (usage[a.budget_line_id] || 0) + (a.amount_uf || 0);
+    });
+
+    const assocOrderIdSet = new Set(assocOrderIds);
+    const { data: legacy } = await supabase
+      .from("purchase_orders")
+      .select("id, budget_line_id, amount_uf")
+      .in("budget_line_id", lineIds)
+      .is("deleted_at", null);
+    (legacy || []).forEach(o => {
+      if (excluded.has(o.id) || assocOrderIdSet.has(o.id) || !o.budget_line_id) return;
+      usage[o.budget_line_id] = (usage[o.budget_line_id] || 0) + (o.amount_uf || 0);
+    });
+  } catch (error) {
+    console.error("Error loading CAPEX line usage:", error);
+  }
+  return usage;
+}
+
+// Filter hierarchical lines by a typed search term. A line stays visible if
+// its name matches, or an ancestor matches (children of a matched parent),
+// or a descendant matches (parents kept for hierarchy context).
+export function filterCapexLines<T extends { id: string; name: string; parent_id: string | null }>(lines: T[], search: string): T[] {
+  const term = search.trim().toLowerCase();
+  if (!term) return lines;
+  const byId = new Map(lines.map(l => [l.id, l]));
+  const matches = new Set(lines.filter(l => l.name.toLowerCase().includes(term)).map(l => l.id));
+  const keep = new Set<string>();
+  lines.forEach(l => {
+    // Visible if this line or any ancestor matches
+    let cur: T | undefined = l;
+    while (cur) {
+      if (matches.has(cur.id)) { keep.add(l.id); break; }
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+    }
+  });
+  // Keep ancestors of every visible line so indentation still makes sense
+  Array.from(keep).forEach(id => {
+    let cur = byId.get(id);
+    while (cur?.parent_id) {
+      cur = byId.get(cur.parent_id);
+      if (cur) keep.add(cur.id);
+    }
+  });
+  return lines.filter(l => keep.has(l.id));
+}
+
 interface CentralizedOrderCreatorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -150,6 +226,8 @@ export const CentralizedOrderCreator = ({
   const [capexLinesByContract, setCapexLinesByContract] = useState<Record<string, CapexBudgetLine[]>>({});
   const [capexBudgetIdByContract, setCapexBudgetIdByContract] = useState<Record<string, string | null>>({});
   const [capexLineSelections, setCapexLineSelections] = useState<Record<string, string[]>>({});
+  const [capexLineUsage, setCapexLineUsage] = useState<Record<string, number>>({});
+  const [capexLineSearch, setCapexLineSearch] = useState<Record<string, string>>({});
 
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
@@ -217,6 +295,10 @@ export const CentralizedOrderCreator = ({
       }
       setCapexBudgetIdByContract(prev => ({ ...prev, [contractId]: budgetIds[0] || null }));
       setCapexLinesByContract(prev => ({ ...prev, [contractId]: lines }));
+      if (lines.length > 0) {
+        const usage = await loadCapexLineUsage(lines.map(l => l.id));
+        setCapexLineUsage(prev => ({ ...prev, ...usage }));
+      }
     } catch (error) {
       console.error("Error loading CAPEX budget lines:", error);
     }
@@ -264,25 +346,41 @@ export const CentralizedOrderCreator = ({
     if (lines.length === 0) {
       return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {year}.</p>;
     }
+    const search = capexLineSearch[contractId] || "";
+    const visibleLines = filterCapexLines(lines, search);
     return (
-      <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
-        {lines.map(line => {
-          const isSelected = selected.includes(line.id);
-          return (
-            <div
-              key={line.id}
-              role="checkbox"
-              aria-checked={isSelected}
-              tabIndex={0}
-              onClick={() => toggleCapexLine(contractId, line)}
-              className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm ${isSelected ? "bg-accent" : ""} ${line.hasChildren ? "font-medium" : ""}`}
-              style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
-            >
-              <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
-              <span className="flex-1 truncate">{line.name}</span>
-            </div>
-          );
-        })}
+      <div className="space-y-1">
+        <Input
+          value={search}
+          onChange={(e) => setCapexLineSearch(prev => ({ ...prev, [contractId]: e.target.value }))}
+          placeholder="Buscar línea..."
+          className="h-8 text-sm"
+        />
+        <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
+          {visibleLines.length === 0 ? (
+            <p className="text-xs text-muted-foreground p-2">Sin resultados para "{search}".</p>
+          ) : visibleLines.map(line => {
+            const isSelected = selected.includes(line.id);
+            const available = line.amount_uf - (capexLineUsage[line.id] || 0);
+            return (
+              <div
+                key={line.id}
+                role="checkbox"
+                aria-checked={isSelected}
+                tabIndex={0}
+                onClick={() => toggleCapexLine(contractId, line)}
+                className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm ${isSelected ? "bg-accent" : ""} ${line.hasChildren ? "font-medium" : ""}`}
+                style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+              >
+                <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
+                <span className="flex-1 truncate">{line.name}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  (Disp: {formatCLP(available * ufValue)})
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -934,6 +1032,8 @@ export const CentralizedOrderCreator = ({
     setCapexLinesByContract({});
     setCapexBudgetIdByContract({});
     setCapexLineSelections({});
+    setCapexLineUsage({});
+    setCapexLineSearch({});
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
