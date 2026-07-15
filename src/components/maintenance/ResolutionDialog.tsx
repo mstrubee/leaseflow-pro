@@ -34,7 +34,13 @@ export function ResolutionDialog({ open, onOpenChange, existingObservations, onR
 
   const proceedToOTUpload = (obs: string | null) => {
     setPendingObservations(obs);
-    onOpenChange(false);
+    // OJO: no se llama a onOpenChange(false) acá. Este paso solo oculta la
+    // vista "elegir Resuelto/Con Observaciones" (ver `open={open && !otUploadOpen}`
+    // más abajo) para mostrar la de subir OT — NO es un cierre real del flujo.
+    // Llamar a onOpenChange(false) aquí hacía que el padre (MaintenanceModule)
+    // interpretara la transición interna como "el usuario cerró todo" y
+    // borrara el ID del formulario (formId) justo cuando el diálogo de
+    // subida de OT lo necesitaba, dejándolo en null.
     setOtUploadOpen(true);
   };
 
@@ -50,7 +56,7 @@ export function ResolutionDialog({ open, onOpenChange, existingObservations, onR
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open && !otUploadOpen} onOpenChange={onOpenChange}>
         <DialogContent
           className="max-w-md"
           // Igual que en OTUploadDialog: mientras el flujo de resolución está
