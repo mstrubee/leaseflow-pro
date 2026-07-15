@@ -652,6 +652,14 @@ export function useGantt(
         }
         start = minStart;
         end = maxEnd;
+      } else if (seedUpdates.get(id)?.start_date !== undefined || seedUpdates.get(id)?.end_date !== undefined) {
+        // Ancla manual: esta tarea es la que se está editando directamente
+        // (ej. "Reprog."), no una que se recalcula por cascada. Se respeta la
+        // fecha que trae el seed tal cual, aunque la tarea tenga una
+        // dependencia entrante — si no, quedaría descartada en silencio y
+        // recalculada desde su predecesora, ignorando el cambio manual.
+        start = t.start_date;
+        end = t.end_date;
       } else {
         // Leaf: snap to the date implied by predecessors. Con 2+ dependencias,
         // "all" (por defecto) espera a la más tardía (AND); "any" arranca con
