@@ -296,7 +296,7 @@ interface GanttChartProps {
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
   orgMembers?: OrgMember[];
-  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<Map<string, Partial<GanttTask>> | void>;
+  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean; isReprogram?: boolean }) => Promise<Map<string, Partial<GanttTask>> | void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onUndoDelete?: () => Promise<void>;
@@ -1403,7 +1403,7 @@ export function GanttChart({
       // baseline_end_date vs. end_date (persistido) — no hace falta guardar
       // nada más acá; se muestra solo, en esta fila y en cualquier
       // dependiente que se haya movido en cascada.
-      await onUpdateTask(task.id, updates);
+      await onUpdateTask(task.id, updates, { isReprogram: true });
     } catch (err) {
       toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
     } finally {

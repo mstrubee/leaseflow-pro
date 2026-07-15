@@ -735,7 +735,7 @@ export function useGantt(
   const updateTask = async (
     taskId: string,
     updates: Partial<GanttTask>,
-    options?: { skipPropagation?: boolean; breakDependencies?: boolean }
+    options?: { skipPropagation?: boolean; breakDependencies?: boolean; isReprogram?: boolean }
   ) => {
     const scheduleRelevant =
       updates.start_date !== undefined ||
@@ -752,23 +752,28 @@ export function useGantt(
       cascade = computeScheduleDiff(tasks, seed);
     }
 
-    // Si la tarea todavía no tiene un plan original guardado (típico de
-    // tareas copiadas de una plantilla/CAPEX, que nacen sin fechas) y esta
-    // actualización es la PRIMERA vez que recibe fechas reales, esas mismas
-    // fechas quedan fijadas como baseline — de ahí en adelante start_date/
-    // end_date pueden seguir cambiando (Reprog., cascada) sin tocar el plan
-    // original ya capturado.
-    const captureBaselineIfMissing = (id: string, upd: Partial<GanttTask>): Partial<GanttTask> => {
+    // Política de baseline según el origen del cambio de fecha:
+    // - "Reprog." (isReprogram=true) es una reprogramación EXPLÍCITA — el plan
+    //   original nunca se toca (solo se captura la primera vez, si la tarea
+    //   nació sin fechas). Así el atraso/adelanto queda medible para siempre.
+    // - Cualquier otra edición de fecha/plazo (date-picker, duración, arrastre,
+    //   cascada disparada por una de estas) NO es una reprogramación: es fijar
+    //   o corregir el plan, así que el nuevo valor pasa a ser el plan original.
+    const applyBaselinePolicy = (id: string, upd: Partial<GanttTask>): Partial<GanttTask> => {
       if (upd.start_date === undefined && upd.end_date === undefined) return upd;
       const current = tasks.find((t) => t.id === id);
-      if (!current || current.baseline_start_date) return upd;
+      if (!current) return upd;
       const newStart = upd.start_date !== undefined ? upd.start_date : current.start_date;
       const newEnd = upd.end_date !== undefined ? upd.end_date : current.end_date;
       if (!newStart && !newEnd) return upd;
+      if (options?.isReprogram) {
+        if (current.baseline_start_date) return upd;
+        return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
+      }
       return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
     };
 
-    const persistedTaskUpdates = captureBaselineIfMissing(
+    const persistedTaskUpdates = applyBaselinePolicy(
       taskId,
       { ...updates, ...(cascade.get(taskId) || {}) } as Partial<GanttTask>,
     );
@@ -780,7 +785,7 @@ export function useGantt(
         if (t.id === taskId) {
           return { ...t, ...persistedTaskUpdates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
         }
-        if (cascade.has(t.id)) return { ...t, ...captureBaselineIfMissing(t.id, cascade.get(t.id)!) };
+        if (cascade.has(t.id)) return { ...t, ...applyBaselinePolicy(t.id, cascade.get(t.id)!) };
         return t;
       })
     );
@@ -804,7 +809,7 @@ export function useGantt(
       if (cascade.size > 0) {
         const results = await Promise.all(
           Array.from(cascade.entries()).filter(([id]) => id !== taskId).map(([id, u]) =>
-            supabase.from("gantt_tasks").update(captureBaselineIfMissing(id, u) as any).eq("id", id)
+            supabase.from("gantt_tasks").update(applyBaselinePolicy(id, u) as any).eq("id", id)
           )
         );
         const failed = results.find((r) => r.error);
