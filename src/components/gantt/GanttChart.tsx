@@ -1387,23 +1387,19 @@ export function GanttChart({
 
     const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
     setReprogValues(prev => new Map(prev).set(task.id, "0"));
-    if (isNaN(delta) || delta === 0 || !task.end_date) {
+    if (isNaN(delta) || delta === 0) {
       reprogBusyRef.current.delete(task.id);
       return;
     }
 
     try {
-      const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-      const updates: Partial<GanttTask> = { end_date: newEnd };
-      if (task.duration_days != null) {
-        const newStart = calculateStartDate(newEnd, task.duration_days, task.duration_type as "calendar" | "business", holidays);
-        updates.start_date = format(newStart, "yyyy-MM-dd");
-      }
-      // El indicador "(fecha baseline) ±N días" se deriva directamente de
-      // baseline_end_date vs. end_date (persistido) — no hace falta guardar
-      // nada más acá; se muestra solo, en esta fila y en cualquier
-      // dependiente que se haya movido en cascada.
-      await onUpdateTask(task.id, updates, { isReprogram: true });
+      // Reprog. ya NO fija una fecha de término directamente: acumula un
+      // offset propio de esta fila (reprog_offset_days), independiente de lo
+      // que herede en cascada. Así, si su predecesora se reprograma de nuevo
+      // más adelante, este ajuste sigue sumándose encima en vez de perderse
+      // (antes se recalculaba desde cero cada vez, borrando la corrección).
+      const newOffset = (task.reprog_offset_days ?? 0) + delta;
+      await onUpdateTask(task.id, { reprog_offset_days: newOffset } as Partial<GanttTask>, { isReprogram: true });
     } catch (err) {
       toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
     } finally {

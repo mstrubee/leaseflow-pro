@@ -20,6 +20,13 @@ export interface GanttTask {
   // Real" y la línea roja.
   baseline_start_date: string | null;
   baseline_end_date: string | null;
+  // Ajuste propio (en días calendario) que "Reprog." acumuló para ESTA tarea
+  // puntual, independiente de lo que herede en cascada de sus dependencias.
+  // La fecha final de una tarea siempre es: fecha "natural" (por dependencia,
+  // o su baseline si es un ancla) + este offset — así una corrección manual
+  // en una fila dependiente sobrevive aunque su predecesora se reprograme de
+  // nuevo más adelante, en vez de perderse al recalcularse desde cero.
+  reprog_offset_days: number;
   duration_days: number;
   duration_type: "calendar" | "business";
   progress: number;
@@ -703,19 +710,16 @@ export function useGantt(
         }
         start = minStart;
         end = maxEnd;
-      } else if (seedUpdates.get(id)?.start_date !== undefined || seedUpdates.get(id)?.end_date !== undefined) {
-        // Ancla manual: esta tarea es la que se está editando directamente
-        // (ej. "Reprog."), no una que se recalcula por cascada. Se respeta la
-        // fecha que trae el seed tal cual, aunque la tarea tenga una
-        // dependencia entrante — si no, quedaría descartada en silencio y
-        // recalculada desde su predecesora, ignorando el cambio manual.
-        start = t.start_date;
-        end = t.end_date;
       } else {
-        // Leaf: snap to the date implied by predecessors. Con 2+ dependencias,
-        // "all" (por defecto) espera a la más tardía (AND); "any" arranca con
-        // la primera que termine, usando la más temprana (OR). Con 0 o 1
-        // dependencia ambos modos coinciden, así que no hace falta distinguir.
+        // Leaf: su fecha "natural" (antes de aplicar su propio offset de
+        // Reprog.) sale de sus dependencias si las tiene — con 2+, "all" (por
+        // defecto) espera a la más tardía (AND), "any" arranca con la primera
+        // que termine, usando la más temprana (OR) — o de su plan original
+        // (baseline) si es un ancla sin predecesor resoluble. Sumar SIEMPRE
+        // el offset a ese punto fijo (nunca a "donde quedó la última vez") es
+        // lo que permite reprogramar la misma fila más de una vez sin que se
+        // acumule error, y que el offset propio de una dependiente sobreviva
+        // aunque su predecesora se reprograme de nuevo después.
         const deps = t.dependencies || [];
         const joinMode = t.dependency_join_mode === "any" ? "any" : "all";
         let chosen: Date | null = null;
@@ -726,9 +730,11 @@ export function useGantt(
           if (!chosen) chosen = candidate;
           else if (joinMode === "any" ? candidate < chosen : candidate > chosen) chosen = candidate;
         }
+
+        let naturalStart: Date | null = null;
+        let naturalEnd: Date | null = null;
         if (chosen) {
-          const latest = clamp(chosen);
-          start = format(latest, "yyyy-MM-dd");
+          naturalStart = clamp(chosen);
           // Una tarea descartada "no consume tiempo" para efectos de cálculo — su
           // propia dependencia (nublada, se conserva sin cambios) sigue siendo
           // visible, pero acá se le trata como plazo 0 (fin = inicio) para que
@@ -737,17 +743,27 @@ export function useGantt(
           // predecesora sí se respeta (compone correctamente cadenas de varias
           // tareas descartadas seguidas).
           const effectiveDuration = t.status === "discarded" ? 0 : (t.duration_days ?? 1);
-          end = format(
-            calculateEndDate(
-              start,
-              effectiveDuration,
-              (t.duration_type as "calendar" | "business") || "calendar",
-              holidays,
-            ),
-            "yyyy-MM-dd",
+          naturalEnd = calculateEndDate(
+            format(naturalStart, "yyyy-MM-dd"),
+            effectiveDuration,
+            (t.duration_type as "calendar" | "business") || "calendar",
+            holidays,
           );
         } else {
-          // No resolvable predecessor: keep the stored anchor date.
+          // Ancla: sin predecesor resoluble, el punto de partida natural es su
+          // plan original — si todavía no tiene baseline (tarea recién creada
+          // sin fechas propias asignadas), se usa lo que ya tenga guardado.
+          const baseS = t.baseline_start_date ?? t.start_date;
+          const baseE = t.baseline_end_date ?? t.end_date;
+          naturalStart = baseS ? parseISO(baseS) : null;
+          naturalEnd = baseE ? parseISO(baseE) : null;
+        }
+
+        const offset = t.reprog_offset_days ?? 0;
+        if (naturalStart && naturalEnd) {
+          start = format(offset !== 0 ? addDays(naturalStart, offset) : naturalStart, "yyyy-MM-dd");
+          end = format(offset !== 0 ? addDays(naturalEnd, offset) : naturalEnd, "yyyy-MM-dd");
+        } else {
           start = t.start_date;
           end = t.end_date;
         }
@@ -794,7 +810,8 @@ export function useGantt(
       updates.duration_days !== undefined ||
       updates.duration_type !== undefined ||
       updates.parent_id !== undefined ||
-      updates.dependency_join_mode !== undefined;
+      updates.dependency_join_mode !== undefined ||
+      updates.reprog_offset_days !== undefined;
 
     // 1) Compute the full schedule synchronously from in-memory state (instant).
     let cascade = new Map<string, Partial<GanttTask>>();
@@ -821,7 +838,16 @@ export function useGantt(
         if (current.baseline_start_date) return upd;
         return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
       }
-      return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
+      // Edición directa (no Reprog.): el nuevo valor ES el plan, así que
+      // cualquier offset de Reprog. que esta tarea traía queda absorbido en
+      // el nuevo baseline — si no, se seguiría sumando por encima del plan
+      // recién fijado, corriendo la fecha sin que nadie lo haya pedido.
+      return {
+        ...upd,
+        baseline_start_date: newStart,
+        baseline_end_date: newEnd,
+        ...(current.reprog_offset_days ? { reprog_offset_days: 0 } : {}),
+      };
     };
 
     const persistedTaskUpdates = applyBaselinePolicy(

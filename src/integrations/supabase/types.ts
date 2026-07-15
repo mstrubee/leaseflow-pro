@@ -2116,6 +2116,7 @@ export type Database = {
           origin: string | null
           parent_id: string | null
           progress: number | null
+          reprog_offset_days: number
           responsible_member_id: string | null
           start_date: string | null
           status: string
@@ -2145,6 +2146,7 @@ export type Database = {
           origin?: string | null
           parent_id?: string | null
           progress?: number | null
+          reprog_offset_days?: number
           responsible_member_id?: string | null
           start_date?: string | null
           status?: string
@@ -2174,6 +2176,7 @@ export type Database = {
           origin?: string | null
           parent_id?: string | null
           progress?: number | null
+          reprog_offset_days?: number
           responsible_member_id?: string | null
           start_date?: string | null
           status?: string
