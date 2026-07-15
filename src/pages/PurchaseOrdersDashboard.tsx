@@ -270,6 +270,7 @@ const PurchaseOrdersDashboard = () => {
   const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string; is_generic: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("oc");
 
@@ -465,6 +466,13 @@ const PurchaseOrdersDashboard = () => {
         .eq("is_active", true)
         .order("display_order");
       setOpexCategories(categoriesData || []);
+
+      // Load suppliers (for the searchable supplier selector in the edit dialog)
+      const { data: suppliersData } = await supabase
+        .from("suppliers")
+        .select("id, name, is_generic")
+        .order("name", { ascending: true });
+      setSuppliers(suppliersData || []);
 
       // Load contract-company relationships
       const { data: contractCompaniesData } = await supabase
@@ -4158,10 +4166,20 @@ const PurchaseOrdersDashboard = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="oc_supplier">Proveedor</Label>
-              <Input
-                id="oc_supplier"
-                value={editingOCData.supplier_name}
-                onChange={(e) => setEditingOCData({ ...editingOCData, supplier_name: e.target.value })}
+              {/* Listado desplegable con búsqueda. Si la OC antigua tiene un
+                  proveedor escrito a mano que no existe en el listado, se
+                  muestra su nombre original como placeholder y se conserva
+                  al guardar si no se elige otro. */}
+              <SearchableSelect
+                value={suppliers.find(s => s.name === editingOCData.supplier_name)?.id || ""}
+                onValueChange={(v) => {
+                  const supplier = suppliers.find(s => s.id === v);
+                  setEditingOCData({ ...editingOCData, supplier_name: supplier?.name || "" });
+                }}
+                options={suppliers.map(s => ({ value: s.id, label: `${s.name}${s.is_generic ? " (Genérico)" : ""}`, searchValue: s.name }))}
+                placeholder={editingOCData.supplier_name || "Seleccione un proveedor"}
+                searchPlaceholder="Buscar proveedor..."
+                emptyMessage="No hay proveedores."
               />
             </div>
 

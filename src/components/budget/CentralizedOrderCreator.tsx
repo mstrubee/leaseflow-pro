@@ -68,6 +68,41 @@ interface PaymentPlanItem {
   due_date: string;
 }
 
+interface CapexBudgetLine {
+  id: string;
+  name: string;
+  amount_uf: number;
+  budget_id: string;
+  parent_id: string | null;
+  display_order: number | null;
+  depth: number;
+  hasChildren: boolean;
+}
+
+// Flatten budget lines into a hierarchical list (parents first, children
+// indented) — same ordering used by the per-contract budget module picker.
+function buildHierarchicalCapexLines(lines: Omit<CapexBudgetLine, "depth" | "hasChildren">[]): CapexBudgetLine[] {
+  const byId = new Map(lines.map(l => [l.id, l]));
+  const childrenOf = new Map<string | null, typeof lines>();
+  lines.forEach(l => {
+    const key = l.parent_id && byId.has(l.parent_id) ? l.parent_id : null;
+    const arr = childrenOf.get(key) ?? [];
+    arr.push(l);
+    childrenOf.set(key, arr);
+  });
+  const result: CapexBudgetLine[] = [];
+  const walk = (parentKey: string | null, depth: number) => {
+    const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    items.forEach(item => {
+      const hasChildren = (childrenOf.get(item.id) ?? []).length > 0;
+      result.push({ ...item, depth, hasChildren });
+      walk(item.id, depth + 1);
+    });
+  };
+  walk(null, 0);
+  return result;
+}
+
 interface CentralizedOrderCreatorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -110,6 +145,12 @@ export const CentralizedOrderCreator = ({
   const [formsSortAsc, setFormsSortAsc] = useState(false);
   const [viewingForm, setViewingForm] = useState<MaintenanceFormOption | null>(null);
   
+  // CAPEX budget lines per contract (regla: una OC de CAPEX debe imputarse a
+  // al menos una línea del presupuesto CAPEX del local — se permite más de una)
+  const [capexLinesByContract, setCapexLinesByContract] = useState<Record<string, CapexBudgetLine[]>>({});
+  const [capexBudgetIdByContract, setCapexBudgetIdByContract] = useState<Record<string, string | null>>({});
+  const [capexLineSelections, setCapexLineSelections] = useState<Record<string, string[]>>({});
+
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -154,6 +195,97 @@ export const CentralizedOrderCreator = ({
       loadInitialData();
     }
   }, [open, year]);
+
+  const loadCapexLinesForContract = useCallback(async (contractId: string) => {
+    if (!contractId || capexLinesByContract[contractId] !== undefined) return;
+    try {
+      const { data: budgetData } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .eq("budget_type", "capex");
+      const budgetIds = (budgetData || []).map(b => b.id);
+      let lines: CapexBudgetLine[] = [];
+      if (budgetIds.length > 0) {
+        const { data: linesData } = await supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, budget_id, parent_id, display_order")
+          .in("budget_id", budgetIds)
+          .is("deleted_at", null);
+        lines = buildHierarchicalCapexLines(linesData || []);
+      }
+      setCapexBudgetIdByContract(prev => ({ ...prev, [contractId]: budgetIds[0] || null }));
+      setCapexLinesByContract(prev => ({ ...prev, [contractId]: lines }));
+    } catch (error) {
+      console.error("Error loading CAPEX budget lines:", error);
+    }
+  }, [year, capexLinesByContract]);
+
+  // Load CAPEX lines for every contract involved when budget type is CAPEX
+  useEffect(() => {
+    if (budgetType !== "capex") return;
+    const ids = isMultiContract
+      ? contractAllocations.map(a => a.contractId).filter(Boolean)
+      : (singleContractId ? [singleContractId] : []);
+    ids.forEach(id => loadCapexLinesForContract(id));
+  }, [budgetType, isMultiContract, singleContractId, contractAllocations, loadCapexLinesForContract]);
+
+  const toggleCapexLine = (contractId: string, line: CapexBudgetLine) => {
+    const contractLines = capexLinesByContract[contractId] || [];
+    // Cascade: selecting a parent selects its descendants (same behavior as budget module)
+    const descendants: string[] = [];
+    const collect = (id: string) => {
+      contractLines.forEach(l => {
+        if (l.parent_id === id) {
+          descendants.push(l.id);
+          collect(l.id);
+        }
+      });
+    };
+    collect(line.id);
+    const affected = [line.id, ...descendants];
+    setCapexLineSelections(prev => {
+      const current = prev[contractId] || [];
+      const willCheck = !current.includes(line.id);
+      const next = willCheck
+        ? Array.from(new Set([...current, ...affected]))
+        : current.filter(id => !affected.includes(id));
+      return { ...prev, [contractId]: next };
+    });
+  };
+
+  const renderCapexLinePicker = (contractId: string) => {
+    const lines = capexLinesByContract[contractId];
+    const selected = capexLineSelections[contractId] || [];
+    if (lines === undefined) {
+      return <p className="text-xs text-muted-foreground p-2">Cargando líneas CAPEX...</p>;
+    }
+    if (lines.length === 0) {
+      return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {year}.</p>;
+    }
+    return (
+      <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
+        {lines.map(line => {
+          const isSelected = selected.includes(line.id);
+          return (
+            <div
+              key={line.id}
+              role="checkbox"
+              aria-checked={isSelected}
+              tabIndex={0}
+              onClick={() => toggleCapexLine(contractId, line)}
+              className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm ${isSelected ? "bg-accent" : ""} ${line.hasChildren ? "font-medium" : ""}`}
+              style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+            >
+              <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
+              <span className="flex-1 truncate">{line.name}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
   
   const loadInitialData = async () => {
     setLoadingData(true);
@@ -427,12 +559,37 @@ export const CentralizedOrderCreator = ({
     }
     
     if (isMultiContract && Math.abs(totalAllocated - enteredAmount) > 0.01) {
-      toast({ 
-        title: "Error", 
-        description: `El monto total asignado (${totalAllocated.toLocaleString("es-CL")}) debe ser igual al monto ingresado (${enteredAmount.toLocaleString("es-CL")})`, 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: `El monto total asignado (${totalAllocated.toLocaleString("es-CL")}) debe ser igual al monto ingresado (${enteredAmount.toLocaleString("es-CL")})`,
+        variant: "destructive"
       });
       return;
+    }
+
+    // Reglas para OCs de CAPEX: proveedor obligatorio y al menos una línea
+    // del presupuesto CAPEX de cada local imputado. Aplican solo al crear —
+    // las OCs antiguas que no cumplen no se bloquean.
+    if (budgetType === "capex") {
+      if (!formData.supplier_id) {
+        toast({ title: "Falta el proveedor", description: "Debe seleccionar un proveedor para crear una OC de CAPEX.", variant: "destructive" });
+        return;
+      }
+      if (mode === "order") {
+        const contractsToCheck = isMultiContract
+          ? contractAllocations.map(a => ({ id: a.contractId, name: a.contractName }))
+          : [{ id: singleContractId, name: contracts.find(c => c.id === singleContractId)?.name || "" }];
+        for (const c of contractsToCheck) {
+          if ((capexLineSelections[c.id] || []).length === 0) {
+            toast({
+              title: "Faltan líneas de presupuesto",
+              description: `Debe seleccionar al menos una línea del presupuesto CAPEX${c.name ? ` de ${c.name}` : ""}.`,
+              variant: "destructive"
+            });
+            return;
+          }
+        }
+      }
     }
     
     setLoading(true);
@@ -614,12 +771,14 @@ export const CentralizedOrderCreator = ({
               continue;
             }
             
+            const allocCapexLineIds = budgetType === "capex" ? (capexLineSelections[alloc.contractId] || []) : [];
+
             const { data: poData, error: poError } = await supabase
               .from("purchase_orders")
               .insert({
                 contract_id: alloc.contractId,
-                budget_id: null,
-                budget_line_id: null,
+                budget_id: budgetType === "capex" ? (capexBudgetIdByContract[alloc.contractId] || null) : null,
+                budget_line_id: allocCapexLineIds[0] || null,
                 opex_master_id: masterLine?.id || null,
                 opex_category_id: selectedCategoryId || null,
                 order_number: orderNumber,
@@ -651,6 +810,18 @@ export const CentralizedOrderCreator = ({
                 amount_uf: allocUf,
                 amount_clp: allocClp
               });
+
+              // Save CAPEX budget line associations (amount split evenly, same as budget module)
+              if (allocCapexLineIds.length > 0) {
+                const amountPerLine = allocUf / allocCapexLineIds.length;
+                await supabase.from("purchase_order_budget_lines").insert(
+                  allocCapexLineIds.map(lineId => ({
+                    purchase_order_id: poData.id,
+                    budget_line_id: lineId,
+                    amount_uf: amountPerLine,
+                  }))
+                );
+              }
               
               // Sync maintenance forms with supplier and OC info
               if (alloc.maintenanceFormIds.length > 0) {
@@ -674,10 +845,12 @@ export const CentralizedOrderCreator = ({
             await backupOCFileToRepository(primaryContractId, quotationFile, orderNumber);
           }
           
+          const singleCapexLineIds = budgetType === "capex" ? (capexLineSelections[primaryContractId] || []) : [];
+
           const orderPayload: any = {
             contract_id: primaryContractId,
-            budget_id: null,
-            budget_line_id: null,
+            budget_id: budgetType === "capex" ? (capexBudgetIdByContract[primaryContractId] || null) : null,
+            budget_line_id: singleCapexLineIds[0] || null,
             opex_master_id: masterLine?.id || null,
             opex_category_id: selectedCategoryId || null,
             order_number: orderNumber,
@@ -704,7 +877,19 @@ export const CentralizedOrderCreator = ({
             .single();
           
           if (orderError) throw orderError;
-          
+
+          // Save CAPEX budget line associations (amount split evenly, same as budget module)
+          if (singlePoData && singleCapexLineIds.length > 0) {
+            const amountPerLine = totalAmountUf / singleCapexLineIds.length;
+            await supabase.from("purchase_order_budget_lines").insert(
+              singleCapexLineIds.map(lineId => ({
+                purchase_order_id: singlePoData.id,
+                budget_line_id: lineId,
+                amount_uf: amountPerLine,
+              }))
+            );
+          }
+
           // Sync maintenance forms with supplier and OC info
           if (singlePoData && assignToForm && singleFormIds.length > 0) {
             await (supabase.from("maintenance_forms" as any) as any)
@@ -746,6 +931,9 @@ export const CentralizedOrderCreator = ({
     setQuotationFile(null);
     setDuplicateOCWarning(false);
     setCheckingDuplicate(false);
+    setCapexLinesByContract({});
+    setCapexBudgetIdByContract({});
+    setCapexLineSelections({});
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -903,7 +1091,7 @@ export const CentralizedOrderCreator = ({
                 
                 {/* Supplier */}
                 <div className="space-y-2">
-                  <Label>Proveedor</Label>
+                  <Label>Proveedor{budgetType === "capex" ? " *" : ""}</Label>
                   <SupplierSelect
                     value={formData.supplier_id}
                     onChange={(id, name) => setFormData(prev => ({ 
@@ -1002,6 +1190,19 @@ export const CentralizedOrderCreator = ({
                       )}
                     </div>
                     
+                    {/* CAPEX budget lines for single contract (obligatorio: al menos una) */}
+                    {singleContractId && budgetType === "capex" && (
+                      <div className="space-y-2">
+                        <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
+                        {renderCapexLinePicker(singleContractId)}
+                        {(capexLineSelections[singleContractId] || []).length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {(capexLineSelections[singleContractId] || []).length} línea(s) seleccionada(s)
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Form assignment for single contract (OPEX only) */}
                     {singleContractId && budgetType === "opex" && (
                       <div className="space-y-2 border rounded-md p-3 bg-muted/30">
@@ -1101,6 +1302,7 @@ export const CentralizedOrderCreator = ({
                               <TableHead>Contrato</TableHead>
                               <TableHead>CEBE</TableHead>
                               <TableHead>Monto ({formData.currency})</TableHead>
+                              {budgetType === "capex" && <TableHead>Líneas CAPEX *</TableHead>}
                               {budgetType === "opex" && <TableHead>Form</TableHead>}
                               <TableHead className="w-10"></TableHead>
                             </TableRow>
@@ -1130,6 +1332,22 @@ export const CentralizedOrderCreator = ({
                                       step="1"
                                     />
                                   </TableCell>
+                                  {budgetType === "capex" && (
+                                  <TableCell className="min-w-[220px]">
+                                    {alloc.contractId ? (
+                                      <div className="space-y-1">
+                                        {renderCapexLinePicker(alloc.contractId)}
+                                        {(capexLineSelections[alloc.contractId] || []).length > 0 && (
+                                          <p className="text-[11px] text-muted-foreground">
+                                            {(capexLineSelections[alloc.contractId] || []).length} línea(s) seleccionada(s)
+                                          </p>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">Seleccione contrato</span>
+                                    )}
+                                  </TableCell>
+                                  )}
                                   {budgetType === "opex" && (
                                   <TableCell>
                                     {forms.length > 0 ? (
