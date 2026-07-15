@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -148,6 +149,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   const [editFormData, setEditFormData] = useState({
     order_number: "",
     supplier_name: "",
+    supplier_id: "",
     order_date: "",
     amount: "",
     currency: "CLP" as "UF" | "CLP",
@@ -610,6 +612,23 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
 
   const handleCreateOrder = async () => {
     try {
+      // Reglas obligatorias solo para CREAR una OC de CAPEX (no aplican a
+      // OCs existentes ni a su edición — esas quedan como están, son del
+      // pasado). El botón ya las bloquea vía `disabled`; esta validación es
+      // la misma regla aplicada también acá, para que nunca se pueda crear
+      // una OC de CAPEX sin proveedor ni sin al menos una línea de
+      // presupuesto, sin importar cómo se dispare el submit.
+      if (newOrder.budget_type === "capex") {
+        if (!newOrder.supplier_id) {
+          toast({ variant: "destructive", title: "Falta el proveedor", description: "Debe seleccionar un proveedor para crear una OC de CAPEX." });
+          return;
+        }
+        if (newOrder.budget_line_ids.length === 0) {
+          toast({ variant: "destructive", title: "Faltan líneas de presupuesto", description: "Debe seleccionar al menos una línea del presupuesto CAPEX para crear la OC." });
+          return;
+        }
+      }
+
       const inputAmount = parseFloat(newOrder.amount) || 0;
       let amountUF: number;
       let amountCLP: number;
@@ -844,6 +863,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     setEditFormData({
       order_number: order.order_number,
       supplier_name: order.supplier_name || "",
+      supplier_id: suppliers.find(s => s.name === order.supplier_name)?.id || "",
       order_date: order.order_date,
       amount: displayAmount.toString(),
       currency: "CLP",
@@ -1656,8 +1676,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             {/* Supplier for CAPEX - show all suppliers */}
             {newOrder.budget_type === "capex" && (
               <div className="space-y-2">
-                <Label>Proveedor</Label>
-                <Select 
+                <Label>Proveedor *</Label>
+                <Select
                   value={newOrder.supplier_id} 
                   onValueChange={(v) => {
                     if (v === "__create_new__") {
@@ -1795,8 +1815,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             <Button 
               onClick={handleCreateOrder}
               disabled={
-                !newOrder.order_number || 
+                !newOrder.order_number ||
                 (newOrder.budget_type === "capex" && newOrder.budget_line_ids.length === 0) ||
+                (newOrder.budget_type === "capex" && !newOrder.supplier_id) ||
                 (newOrder.budget_type === "opex" && !newOrder.opex_category_id)
               }
             >
@@ -1974,56 +1995,49 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                   )}
                 </div>
 
-                {/* Supplier selection for OPEX edit */}
+                {/* Supplier selection for OPEX edit — listado desplegable con búsqueda */}
                 {editFormData.opex_category_id && (
                   <div className="space-y-2">
                     <Label>Proveedor *</Label>
-                    <Select 
+                    <SearchableSelect
                       value={suppliers.find(s => s.name === editFormData.supplier_name)?.id || ""}
                       onValueChange={(v) => {
                         const supplier = suppliers.find(s => s.id === v);
-                        setEditFormData({ ...editFormData, supplier_name: supplier?.name || "" });
+                        setEditFormData({ ...editFormData, supplier_id: v, supplier_name: supplier?.name || "" });
                       }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione un proveedor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getSuppliersForOpexCategory(editFormData.opex_category_id).length > 0 && (
-                          <>
-                            <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted">
-                              Sugeridos para esta categoría
-                            </div>
-                            {getSuppliersForOpexCategory(editFormData.opex_category_id).map((supplier) => (
-                              <SelectItem key={supplier.id} value={supplier.id}>
-                                {supplier.name}
-                                {supplier.is_generic && <span className="text-xs text-muted-foreground ml-2">(Genérico)</span>}
-                              </SelectItem>
-                            ))}
-                          </>
-                        )}
-                        <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted">
-                          Todos los proveedores
-                        </div>
-                        {suppliers
-                          .filter(s => !getSuppliersForOpexCategory(editFormData.opex_category_id).some(suggested => suggested.id === s.id))
-                          .map((supplier) => (
-                            <SelectItem key={supplier.id} value={supplier.id}>
-                              {supplier.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                      options={(() => {
+                        const suggested = getSuppliersForOpexCategory(editFormData.opex_category_id);
+                        const suggestedIds = new Set(suggested.map(s => s.id));
+                        const rest = suppliers.filter(s => !suggestedIds.has(s.id));
+                        return [
+                          ...suggested.map(s => ({ value: s.id, label: `${s.name}${s.is_generic ? " (Genérico)" : ""} (Sugerido)` })),
+                          ...rest.map(s => ({ value: s.id, label: s.name })),
+                        ];
+                      })()}
+                      placeholder={editFormData.supplier_name || "Seleccione un proveedor"}
+                      searchPlaceholder="Buscar proveedor..."
+                      emptyMessage="No hay proveedores."
+                    />
                   </div>
                 )}
               </>
             )}
 
-            {/* Supplier for CAPEX edit - show all suppliers */}
+            {/* Supplier for CAPEX edit — listado desplegable con búsqueda (antes era texto libre) */}
             {editFormData.budget_type === "capex" && (
             <div className="space-y-2">
               <Label>Proveedor</Label>
-              <Input value={editFormData.supplier_name} onChange={(e) => setEditFormData({ ...editFormData, supplier_name: e.target.value })} />
+              <SearchableSelect
+                value={editFormData.supplier_id}
+                onValueChange={(v) => {
+                  const supplier = suppliers.find(s => s.id === v);
+                  setEditFormData({ ...editFormData, supplier_id: v, supplier_name: supplier?.name || "" });
+                }}
+                options={suppliers.map(s => ({ value: s.id, label: `${s.name}${s.is_generic ? " (Genérico)" : ""}` }))}
+                placeholder={editFormData.supplier_name || "Seleccione un proveedor"}
+                searchPlaceholder="Buscar proveedor..."
+                emptyMessage="No hay proveedores."
+              />
             </div>
             )}
             <div className="space-y-2">
