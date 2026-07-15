@@ -51,7 +51,13 @@ export function ResolutionDialog({ open, onOpenChange, existingObservations, onR
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className="max-w-md"
+          // Igual que en OTUploadDialog: mientras el flujo de resolución está
+          // en curso, no debe poder cerrarse por accidente vía backdrop/Escape.
+          onPointerDownOutside={e => e.preventDefault()}
+          onEscapeKeyDown={e => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Marcar como Resuelto</DialogTitle>
             <DialogDescription>

@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, X, Loader2 } from "lucide-react";
+import { Upload, FileText, X, Loader2, CheckCircle2, AlertCircle, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+
+type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 interface Props {
   open: boolean;
@@ -46,17 +48,25 @@ async function compressIfImage(file: File): Promise<File> {
 
 export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSuccess }: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState<UploadStatus>("idle");
   const [progress, setProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploading = status === "uploading";
 
+  // La carga comienza de inmediato al elegir/soltar el archivo — no requiere
+  // un clic adicional en un botón separado.
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const dropped = e.dataTransfer.files?.[0];
-    if (dropped) setFile(dropped);
-  }, []);
+    if (dropped) {
+      setFile(dropped);
+      handleUpload(dropped);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formId]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -67,15 +77,20 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
-    if (selected) setFile(selected);
+    if (selected) {
+      setFile(selected);
+      handleUpload(selected);
+    }
   };
 
-  const handleUpload = async () => {
-    if (!file || !formId) return;
-    setUploading(true);
+  const handleUpload = async (fileToUpload?: File) => {
+    const targetFile = fileToUpload || file;
+    if (!targetFile || !formId) return;
+    setStatus("uploading");
     setProgress(0);
+    setErrorMessage(null);
     try {
-      const toUpload = await compressIfImage(file);
+      const toUpload = await compressIfImage(targetFile);
       const sanitized = toUpload.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${new Date().toISOString().slice(0, 10)}/${formId}_OT_${sanitized}`;
 
@@ -127,41 +142,58 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
       if (updateError) throw updateError;
 
       toast({ title: "OT subida correctamente" });
-      setFile(null);
-      onOpenChange(false);
-      onSuccess();
+      setStatus("success");
+      // Deja ver brevemente el estado "completado" dentro del propio modal
+      // antes de cerrarlo, en vez de desaparecer de inmediato al llegar a 100%.
+      setTimeout(() => {
+        setFile(null);
+        onOpenChange(false);
+        onSuccess();
+      }, 700);
     } catch (err: any) {
       console.error(err);
-      toast({ title: "Error al subir OT", description: err.message, variant: "destructive" });
-    } finally {
-      setUploading(false);
-      setProgress(0);
+      const message = err?.message || "Error desconocido al subir el archivo.";
+      setErrorMessage(message);
+      setStatus("error");
+      toast({ title: "Error al subir OT", description: message, variant: "destructive" });
     }
   };
 
   const handleClose = () => {
     setFile(null);
+    setStatus("idle");
+    setErrorMessage(null);
+    setProgress(0);
     onOpenChange(false);
   };
 
+  const locked = status === "uploading" || status === "success";
+
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className="max-w-md"
+        // El modal de subida de OT no debe poder cerrarse por accidente —
+        // ni por clic en el fondo ni con Escape — mientras el flujo de
+        // resolución está en curso. Solo Cancelar (o la X) lo cierran.
+        onPointerDownOutside={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Subir OT Firmada — FORM {formNumber}</DialogTitle>
           <DialogDescription>
-            Suba la Orden de Trabajo firmada por el jefe de sucursal.
+            Suba la Orden de Trabajo firmada por el jefe de sucursal. La carga comienza automáticamente al seleccionar el archivo.
           </DialogDescription>
         </DialogHeader>
 
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-            dragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"
-          }`}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onClick={() => inputRef.current?.click()}
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            locked ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+          } ${dragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"}`}
+          onDrop={locked ? undefined : handleDrop}
+          onDragOver={locked ? undefined : handleDragOver}
+          onDragLeave={locked ? undefined : handleDragLeave}
+          onClick={() => { if (!locked) inputRef.current?.click(); }}
         >
           <input
             ref={inputRef}
@@ -169,22 +201,39 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
             className="hidden"
             accept=".pdf,.xlsx,.xls,.doc,.docx,.png,.jpg,.jpeg"
             onChange={handleFileSelect}
+            disabled={locked}
           />
-          {file ? (
+          {status === "success" ? (
             <div className="flex items-center justify-center gap-3">
-              <FileText className="h-8 w-8 text-primary shrink-0" />
+              <CheckCircle2 className="h-8 w-8 text-green-600 shrink-0" />
+              <div className="text-left min-w-0">
+                <p className="text-sm font-medium truncate">{file?.name}</p>
+                <p className="text-xs text-green-600">Subida completa</p>
+              </div>
+            </div>
+          ) : file ? (
+            <div className="flex items-center justify-center gap-3">
+              {status === "error" ? (
+                <AlertCircle className="h-8 w-8 text-destructive shrink-0" />
+              ) : (
+                <FileText className="h-8 w-8 text-primary shrink-0" />
+              )}
               <div className="text-left min-w-0">
                 <p className="text-sm font-medium truncate">{file.name}</p>
-                <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+                <p className="text-xs text-muted-foreground">
+                  {status === "uploading" ? `Subiendo... ${progress}%` : `${(file.size / 1024).toFixed(1)} KB`}
+                </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0"
-                onClick={e => { e.stopPropagation(); setFile(null); }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              {!locked && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={e => { e.stopPropagation(); setFile(null); setStatus("idle"); setErrorMessage(null); }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -197,7 +246,7 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
           )}
         </div>
 
-        {uploading && (
+        {status === "uploading" && (
           <div className="space-y-1">
             <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
               <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
@@ -206,17 +255,23 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
           </div>
         )}
 
+        {status === "error" && errorMessage && (
+          <p className="text-sm text-destructive">{errorMessage}</p>
+        )}
+
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={handleClose} disabled={uploading}>
             Cancelar
           </Button>
-          <Button onClick={handleUpload} disabled={!file || uploading}>
-            {uploading ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Subiendo... {progress}%</>
-            ) : (
-              <><Upload className="h-4 w-4 mr-2" /> Subir OT</>
-            )}
-          </Button>
+          {status === "error" ? (
+            <Button onClick={() => handleUpload()}>
+              <RotateCcw className="h-4 w-4 mr-2" /> Reintentar
+            </Button>
+          ) : status === "uploading" ? (
+            <Button disabled>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Subiendo... {progress}%
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
