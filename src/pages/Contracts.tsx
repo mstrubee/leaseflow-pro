@@ -1294,25 +1294,27 @@ const Contracts = () => {
                   </Select>
                 </div>
 
-                {/* Atención Especial Filter */}
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-medium text-muted-foreground">Atención Especial</span>
-                  <Select value={atencionEspecialFilter} onValueChange={setAtencionEspecialFilter}>
-                    <SelectTrigger className="h-8 text-xs w-[130px]">
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                      <SelectItem value="si" className="text-xs">
-                        <div className="flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-orange-500" />
-                          Sí
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="no" className="text-xs">No</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Atención Especial Filter — oculto para perfiles sin permiso (ej. PMO) */}
+                {(isAdmin || hasPermission("special_attention", "view")) && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-medium text-muted-foreground">Atención Especial</span>
+                    <Select value={atencionEspecialFilter} onValueChange={setAtencionEspecialFilter}>
+                      <SelectTrigger className="h-8 text-xs w-[130px]">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                        <SelectItem value="si" className="text-xs">
+                          <div className="flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3 text-orange-500" />
+                            Sí
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="no" className="text-xs">No</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* Sort by End Date */}
                 <div className="flex flex-col gap-1">

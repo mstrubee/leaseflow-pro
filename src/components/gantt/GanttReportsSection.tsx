@@ -63,6 +63,9 @@ interface GanttContractData {
   capexCLP: number;
   surfaceM2: number; // superficie_edificada_local for UF/m² metric
   disbursement: Disbursement | null;
+  address: string | null; // calle + número, de contract_addresses
+  commune: string | null;
+  cebe: string | null; // custom field "CEBE" / "Código"
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
@@ -580,6 +583,40 @@ export function GanttReportsSection() {
         companiesByContract.set(cc.contract_id, list);
       });
 
+      // 2c) Dirección/comuna (contract_addresses) y CEBE (custom field) de cada
+      //     contrato, para mostrarlos junto al nombre en la lista.
+      const { data: addressRows } = await supabase
+        .from("contract_addresses")
+        .select("contract_id, street, number, commune")
+        .in("contract_id", contractIds);
+      const addressByContract = new Map<string, { address: string | null; commune: string | null }>();
+      (addressRows || []).forEach((a: any) => {
+        if (addressByContract.has(a.contract_id)) return; // primera dirección encontrada
+        const streetPart = [a.street, a.number].filter(Boolean).join(" ");
+        addressByContract.set(a.contract_id, {
+          address: streetPart || null,
+          commune: a.commune || null,
+        });
+      });
+
+      const { data: cebeFields } = await supabase
+        .from("contract_custom_fields")
+        .select("id, field_name")
+        .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
+        .eq("is_active", true);
+      const cebeField = cebeFields?.find((f: any) => f.field_name.toLowerCase() === "cebe");
+      const cebeByContract = new Map<string, string>();
+      if (cebeField) {
+        const { data: cebeVals } = await supabase
+          .from("contract_custom_field_values")
+          .select("contract_id, field_id, field_value")
+          .in("contract_id", contractIds)
+          .eq("field_id", cebeField.id);
+        (cebeVals || []).forEach((v: any) => {
+          if (v.field_value) cebeByContract.set(v.contract_id, v.field_value);
+        });
+      }
+
       // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
@@ -696,6 +733,9 @@ export function GanttReportsSection() {
           capexCLP,
           surfaceM2: Number(contract.superficie_edificada_local) || 0,
           disbursement,
+          address: addressByContract.get(contractId)?.address ?? null,
+          commune: addressByContract.get(contractId)?.commune ?? null,
+          cebe: cebeByContract.get(contractId) ?? null,
         });
       }
 
@@ -1269,6 +1309,12 @@ export function GanttReportsSection() {
                                 <div className="font-semibold text-sm truncate">
                                   {item.contractName}
                                 </div>
+                                {(item.address || item.commune || item.cebe) && (
+                                  <div className="text-[11px] text-muted-foreground truncate">
+                                    {[item.address, item.commune].filter(Boolean).join(", ")}
+                                    {item.cebe && <> {item.address || item.commune ? "· " : ""}CEBE: {item.cebe}</>}
+                                  </div>
+                                )}
                                 <div className="text-xs text-muted-foreground">
                                   {item.tasks.length === 0 ? (
                                     <span className="italic text-amber-600">Sin carta Gantt cargada</span>

@@ -140,7 +140,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
   const { columnWidths: defaultColumnWidths, getColumnStyle } = useContractColumnWidths();
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
   const [editingVenta, setEditingVenta] = useState<string | null>(null);
   const [ventaMinValue, setVentaMinValue] = useState<string>("");
@@ -818,7 +818,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                             VENCIDO
                           </Badge>
                         )}
-                        {contract.requires_special_attention && (
+                        {contract.requires_special_attention && (isAdmin || hasPermission("special_attention", "view")) && (
                           <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] px-1 py-0 gap-0.5">
                             <AlertTriangle className="h-2.5 w-2.5" />
                             Atención Especial

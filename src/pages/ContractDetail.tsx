@@ -204,7 +204,7 @@ const ContractDetail = () => {
         : "/contracts";
 
   const { toast } = useToast();
-  const { isAdmin, roleLoaded } = useAuth();
+  const { isAdmin, roleLoaded, hasPermission } = useAuth();
   const { isHidden, canEdit: canEditSection, loading: permissionsLoading } = useUserPermissions();
   const {
     sections,
@@ -970,8 +970,9 @@ const ContractDetail = () => {
       </header>
 
       <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Special Attention Section */}
-        {contract.requires_special_attention && (
+        {/* Special Attention Section — oculto para perfiles sin permiso sobre
+            "special_attention" (ej. PMO no debe ver atenciones especiales) */}
+        {contract.requires_special_attention && (isAdmin || hasPermission("special_attention", "view")) && (
           <Card className="border-2 border-destructive/50 bg-destructive/5">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2 text-destructive">
