@@ -710,6 +710,17 @@ export function useGantt(
         }
         start = minStart;
         end = maxEnd;
+      } else if (seedUpdates.get(id)?.start_date !== undefined || seedUpdates.get(id)?.end_date !== undefined) {
+        // Edición manual DIRECTA de esta tarea (date-picker de Inicio/Término
+        // o Plazo) — no es una reprogramación (esa siembra reprog_offset_days,
+        // nunca fechas literales) ni una cascada de otra tarea: es fijar el
+        // plan a mano. Se respeta la fecha sembrada tal cual, sin derivarla de
+        // la dependencia ni del baseline — si no, quedaría descartada en
+        // silencio cada vez que esta tarea ya tuviera algún desfase previo
+        // (ej. venía de haber sido reprogramada antes), mostrando el cambio
+        // como si fuera un atraso en vez de una simple corrección del plan.
+        start = t.start_date;
+        end = t.end_date;
       } else {
         // Leaf: su fecha "natural" (antes de aplicar su propio offset de
         // Reprog.) sale de sus dependencias si las tiene — con 2+, "all" (por
