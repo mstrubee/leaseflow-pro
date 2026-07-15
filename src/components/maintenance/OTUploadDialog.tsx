@@ -85,7 +85,15 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
 
   const handleUpload = async (fileToUpload?: File) => {
     const targetFile = fileToUpload || file;
-    if (!targetFile || !formId) return;
+    if (!targetFile) return;
+    // Nunca fallar en silencio: si falta el ID del formulario, el usuario debe
+    // ver un error explícito y poder reintentar, no quedar con el archivo
+    // "seleccionado" sin ninguna acción disponible.
+    if (!formId) {
+      setErrorMessage("No se pudo identificar el formulario para asociar la OT. Cierre esta ventana y vuelva a intentarlo.");
+      setStatus("error");
+      return;
+    }
     setStatus("uploading");
     setProgress(0);
     setErrorMessage(null);
@@ -270,6 +278,13 @@ export function OTUploadDialog({ open, onOpenChange, formId, formNumber, onSucce
           ) : status === "uploading" ? (
             <Button disabled>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Subiendo... {progress}%
+            </Button>
+          ) : status === "idle" && file ? (
+            // Respaldo: la carga ya se dispara sola al seleccionar el
+            // archivo, pero este botón siempre está disponible para que el
+            // usuario nunca quede sin una acción visible para continuar.
+            <Button onClick={() => handleUpload()}>
+              <Upload className="h-4 w-4 mr-2" /> Cargar
             </Button>
           ) : null}
         </DialogFooter>
