@@ -816,6 +816,31 @@ export function useGantt(
     return result;
   };
 
+  // Cualquier cambio de fecha que NO venga de la columna "Reprog." (edición
+  // directa de Inicio/Plazo/Término, cascada por agregar/quitar/editar una
+  // dependencia, descartar/restaurar, sync de plantilla) resincroniza el
+  // plan original al nuevo valor — nunca debe registrarse como un atraso o
+  // adelanto, eso es exclusivo de una reprogramación explícita vía "Reprog.".
+  // También resetea reprog_offset_days si la tarea traía uno: al fijarse un
+  // plan nuevo, cualquier ajuste manual anterior queda absorbido en él.
+  const resyncBaseline = (
+    currentTasks: GanttTask[],
+    id: string,
+    upd: Partial<GanttTask>,
+  ): Partial<GanttTask> => {
+    if (upd.start_date === undefined && upd.end_date === undefined) return upd;
+    const current = currentTasks.find((t) => t.id === id);
+    if (!current) return upd;
+    const newStart = upd.start_date !== undefined ? upd.start_date : current.start_date;
+    const newEnd = upd.end_date !== undefined ? upd.end_date : current.end_date;
+    if (!newStart && !newEnd) return upd;
+    return {
+      ...upd,
+      baseline_start_date: newStart,
+      baseline_end_date: newEnd,
+      ...(current.reprog_offset_days ? { reprog_offset_days: 0 } : {}),
+    };
+  };
 
   const updateTask = async (
     taskId: string,
@@ -846,26 +871,16 @@ export function useGantt(
     //   cascada disparada por una de estas) NO es una reprogramación: es fijar
     //   o corregir el plan, así que el nuevo valor pasa a ser el plan original.
     const applyBaselinePolicy = (id: string, upd: Partial<GanttTask>): Partial<GanttTask> => {
-      if (upd.start_date === undefined && upd.end_date === undefined) return upd;
-      const current = tasks.find((t) => t.id === id);
-      if (!current) return upd;
-      const newStart = upd.start_date !== undefined ? upd.start_date : current.start_date;
-      const newEnd = upd.end_date !== undefined ? upd.end_date : current.end_date;
-      if (!newStart && !newEnd) return upd;
       if (options?.isReprogram) {
-        if (current.baseline_start_date) return upd;
+        if (upd.start_date === undefined && upd.end_date === undefined) return upd;
+        const current = tasks.find((t) => t.id === id);
+        if (!current || current.baseline_start_date) return upd;
+        const newStart = upd.start_date !== undefined ? upd.start_date : current.start_date;
+        const newEnd = upd.end_date !== undefined ? upd.end_date : current.end_date;
+        if (!newStart && !newEnd) return upd;
         return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
       }
-      // Edición directa (no Reprog.): el nuevo valor ES el plan, así que
-      // cualquier offset de Reprog. que esta tarea traía queda absorbido en
-      // el nuevo baseline — si no, se seguiría sumando por encima del plan
-      // recién fijado, corriendo la fecha sin que nadie lo haya pedido.
-      return {
-        ...upd,
-        baseline_start_date: newStart,
-        baseline_end_date: newEnd,
-        ...(current.reprog_offset_days ? { reprog_offset_days: 0 } : {}),
-      };
+      return resyncBaseline(tasks, id, upd);
     };
 
     const persistedTaskUpdates = applyBaselinePolicy(
@@ -1083,7 +1098,7 @@ export function useGantt(
 
       // Optimistic local update — no loadTimeline needed.
       setTasks(prev => prev.map(t => {
-        const dateUpdates = scheduleDiff.get(t.id) || {};
+        const dateUpdates = resyncBaseline(tasks, t.id, scheduleDiff.get(t.id) || {});
         if (t.id !== taskId) return Object.keys(dateUpdates).length > 0 ? { ...t, ...dateUpdates } : t;
         return { ...t, ...dateUpdates, dependencies: [...(t.dependencies || []), insertedDep] };
       }));
@@ -1091,7 +1106,7 @@ export function useGantt(
       if (scheduleDiff.size > 0) {
         const results = await Promise.all(
           Array.from(scheduleDiff.entries()).map(([id, u]) =>
-            supabase.from("gantt_tasks").update(u as any).eq("id", id),
+            supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id),
           ),
         );
         const failed = results.find((r) => r.error);
@@ -1161,7 +1176,7 @@ export function useGantt(
       // Optimistic local update — remove dep and apply recomputed dates.
       setTasks((prev) =>
         prev.map((t) => {
-          const dateUpdates = scheduleDiff.get(t.id) || {};
+          const dateUpdates = resyncBaseline(tasks, t.id, scheduleDiff.get(t.id) || {});
           return {
             ...t,
             ...dateUpdates,
@@ -1173,7 +1188,7 @@ export function useGantt(
       if (scheduleDiff.size > 0) {
         const results = await Promise.all(
           Array.from(scheduleDiff.entries()).map(([id, u]) =>
-            supabase.from("gantt_tasks").update(u as any).eq("id", id),
+            supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id),
           ),
         );
         const failed = results.find((r) => r.error);
@@ -1219,7 +1234,7 @@ export function useGantt(
         const scheduleDiff = computeScheduleDiff(tasksWithUpdatedDependency, new Map(), tasks, [dependentTask.id]);
 
         setTasks(prev => prev.map(t => {
-          const dateUpdates = scheduleDiff.get(t.id) || {};
+          const dateUpdates = resyncBaseline(tasks, t.id, scheduleDiff.get(t.id) || {});
           return {
             ...t,
             ...dateUpdates,
@@ -1232,7 +1247,7 @@ export function useGantt(
         if (scheduleDiff.size > 0) {
           const results = await Promise.all(
             Array.from(scheduleDiff.entries()).map(([id, u]) =>
-              supabase.from("gantt_tasks").update(u as any).eq("id", id),
+              supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id),
             ),
           );
           const failed = results.find((r) => r.error);
@@ -1281,7 +1296,7 @@ export function useGantt(
         prev.map((t) => {
           const withStatus = applyStatus(t);
           const dateUpd = diff.get(t.id);
-          return dateUpd ? { ...withStatus, ...dateUpd } : withStatus;
+          return dateUpd ? { ...withStatus, ...resyncBaseline(tasks, t.id, dateUpd) } : withStatus;
         }),
       );
 
@@ -1293,7 +1308,7 @@ export function useGantt(
 
       if (diff.size > 0) {
         const results = await Promise.all(
-          Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id)),
+          Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id)),
         );
         const failed = results.find((r) => r.error);
         if (failed?.error) throw failed.error;
@@ -1332,7 +1347,7 @@ export function useGantt(
         prev.map((t) => {
           const withStatus = applyStatus(t);
           const dateUpd = diff.get(t.id);
-          return dateUpd ? { ...withStatus, ...dateUpd } : withStatus;
+          return dateUpd ? { ...withStatus, ...resyncBaseline(tasks, t.id, dateUpd) } : withStatus;
         }),
       );
 
@@ -1344,7 +1359,7 @@ export function useGantt(
 
       if (diff.size > 0) {
         const results = await Promise.all(
-          Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id)),
+          Array.from(diff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id)),
         );
         const failed = results.find((r) => r.error);
         if (failed?.error) throw failed.error;
@@ -1835,7 +1850,7 @@ export function useGantt(
       const scheduleDiff = computeScheduleDiff(nextTasks, seed, tasks, durationOrDepsChangedIds);
       if (scheduleDiff.size > 0) {
         const results = await Promise.all(
-          Array.from(scheduleDiff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id))
+          Array.from(scheduleDiff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id))
         );
         const failed = results.find((r) => r.error);
         if (failed?.error) throw failed.error;
