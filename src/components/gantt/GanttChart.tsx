@@ -387,15 +387,14 @@ export function GanttChart({
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
   const reprogBusyRef = useRef<Set<string>>(new Set());
-  // Fecha de término ANTES de la primera reprogramación de la sesión — se guarda
-  // una sola vez por tarea (no se sobreescribe en reprogramaciones sucesivas) para
-  // poder mostrar "(fecha antigua) ±N días" tanto en la tarea editada como en
-  // cualquier dependiente que se haya movido en cascada.
-  const [reprogOldEnd, setReprogOldEnd] = useState<Map<string, string>>(new Map());
-  // La columna "Término" se ensancha mientras haya alguna reprogramación activa
-  // en la sesión, para que "(fecha antigua) ±N días" entre completo — el ancho
-  // normal (140px) lo recorta. Vuelve al ancho normal cuando no hay nada que mostrar.
-  const endColWidth = reprogOldEnd.size > 0 ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
+  // La columna "Término" se ensancha si ALGUNA tarea quedó con fecha actual
+  // distinta de su baseline (persistido en la base — no depende de la sesión),
+  // para que "(fecha baseline) ±N días" entre completo. Ancho normal si no
+  // hay ninguna reprogramación pendiente que mostrar.
+  const hasAnyReprogDelta = tasks.some(
+    (t) => t.baseline_end_date && t.end_date && t.baseline_end_date !== t.end_date
+  );
+  const endColWidth = hasAnyReprogDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
@@ -1400,20 +1399,11 @@ export function GanttChart({
         const newStart = calculateStartDate(newEnd, task.duration_days, task.duration_type as "calendar" | "business", holidays);
         updates.start_date = format(newStart, "yyyy-MM-dd");
       }
-      const cascade = await onUpdateTask(task.id, updates);
-
-      setReprogOldEnd(prev => {
-        const next = new Map(prev);
-        if (!next.has(task.id)) next.set(task.id, task.end_date!);
-        if (cascade) {
-          for (const [id, upd] of cascade) {
-            if (id === task.id || upd.end_date === undefined || next.has(id)) continue;
-            const original = tasks.find(t => t.id === id);
-            if (original?.end_date) next.set(id, original.end_date);
-          }
-        }
-        return next;
-      });
+      // El indicador "(fecha baseline) ±N días" se deriva directamente de
+      // baseline_end_date vs. end_date (persistido) — no hace falta guardar
+      // nada más acá; se muestra solo, en esta fila y en cualquier
+      // dependiente que se haya movido en cascada.
+      await onUpdateTask(task.id, updates);
     } catch (err) {
       toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -2751,13 +2741,14 @@ export function GanttChart({
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
                       suffix={(() => {
-                        const oldEnd = reprogOldEnd.get(task.id);
-                        if (!oldEnd || !task.end_date) return null;
-                        const delta = differenceInDays(parseISO(task.end_date), parseISO(oldEnd));
+                        const currentEnd = hasChildren ? getEffectiveDates(task).end : task.end_date;
+                        const baselineEnd = hasChildren ? getEffectiveBaselineDates(task).end : task.baseline_end_date;
+                        if (!currentEnd || !baselineEnd) return null;
+                        const delta = differenceInDays(parseISO(currentEnd), parseISO(baselineEnd));
                         if (delta === 0) return null;
                         return (
                           <span className="text-[10px] font-bold text-red-500 leading-none whitespace-nowrap">
-                            ({format(parseISO(oldEnd), "dd/MM/yy")}) {delta > 0 ? "+" : ""}{delta} días
+                            ({format(parseISO(baselineEnd), "dd/MM/yy")}) {delta > 0 ? "+" : ""}{delta} días
                           </span>
                         );
                       })()}
