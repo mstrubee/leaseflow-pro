@@ -97,6 +97,7 @@ import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDial
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
 import { Building2, Store } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
@@ -259,7 +260,9 @@ const PurchaseOrdersDashboard = () => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   
   // CAPEX budgets assigned by admin
-  const [capexBudgets, setCapexBudgets] = useState<{ contract_id: string; contract_name: string; amount_uf: number; year: number }[]>([]);
+  const [capexBudgets, setCapexBudgets] = useState<{ budget_id: string; contract_id: string; contract_name: string; amount_uf: number; year: number }[]>([]);
+  // Total autorizado por presupuesto (solo líneas status="autorizado"); null = aún no calculado
+  const [capexAuthorizedByBudget, setCapexAuthorizedByBudget] = useState<Record<string, number> | null>(null);
   
   // Centralized creator dialogs
   const [showRequestCreator, setShowRequestCreator] = useState(false);
@@ -595,11 +598,12 @@ const PurchaseOrdersDashboard = () => {
       // Load CAPEX budgets assigned by admin (from contract_budgets table)
       const { data: capexBudgetsData } = await supabase
         .from("contract_budgets")
-        .select("contract_id, amount_uf, year, contracts(name)")
+        .select("id, contract_id, amount_uf, year, contracts(name)")
         .eq("budget_type", "capex")
         .gt("amount_uf", 0);
 
       const processedCapexBudgets = (capexBudgetsData || []).map((budget: any) => ({
+        budget_id: budget.id,
         contract_id: budget.contract_id,
         contract_name: budget.contracts?.name || "Sin contrato",
         amount_uf: budget.amount_uf || 0,
@@ -650,22 +654,46 @@ const PurchaseOrdersDashboard = () => {
     setShowConvertDialog(true);
   };
 
-  // Chart data for CAPEX budgets assigned by admin (from contract_budgets)
-  const capexLocalChartData = useMemo(() => {
+  // Total CAPEX autorizado por presupuesto: suma solo líneas status="autorizado",
+  // usando la misma cañería que el módulo de presupuestos (loadBudgetTotals)
+  useEffect(() => {
     const yearNum = parseInt(yearFilter);
-    // Filter CAPEX budgets by year
-    const filtered = capexBudgets.filter(b => b.year === yearNum && b.amount_uf > 0);
-    
-    return filtered
-      .map((budget, index) => ({
+    const budgetIds = capexBudgets.filter(b => b.year === yearNum).map(b => b.budget_id);
+    if (budgetIds.length === 0) {
+      setCapexAuthorizedByBudget({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
+        if (cancelled) return;
+        const map: Record<string, number> = {};
+        totals.forEach((t, id) => { map[id] = t.authorized; });
+        setCapexAuthorizedByBudget(map);
+      } catch {
+        if (!cancelled) setCapexAuthorizedByBudget({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [capexBudgets, yearFilter, ufValue]);
+
+  // Chart data for CAPEX autorizado por local
+  const capexLocalChartData = useMemo(() => {
+    if (!capexAuthorizedByBudget) return [];
+    const yearNum = parseInt(yearFilter);
+    return capexBudgets
+      .filter(b => b.year === yearNum)
+      .map(budget => ({
         id: budget.contract_id,
         name: budget.contract_name,
-        value: budget.amount_uf,
-        color: COLORS[index % COLORS.length],
+        value: capexAuthorizedByBudget[budget.budget_id] ?? 0,
       }))
+      .filter(d => d.value > 0)
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10);
-  }, [capexBudgets, yearFilter]);
+      .slice(0, 10)
+      .map((d, index) => ({ ...d, color: COLORS[index % COLORS.length] }));
+  }, [capexBudgets, capexAuthorizedByBudget, yearFilter]);
 
   // Chart data for OPEX by local
   const opexLocalChartData = useMemo(() => {
@@ -2181,7 +2209,7 @@ const PurchaseOrdersDashboard = () => {
               </CardHeader>
               <CardContent>
                 {capexLocalChartData.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Sin presupuesto CAPEX asignado para {yearFilter}</p>
+                  <p className="text-center text-muted-foreground py-8">Sin CAPEX autorizado para {yearFilter}</p>
                 ) : (
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
