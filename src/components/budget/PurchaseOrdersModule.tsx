@@ -1506,6 +1506,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                   ) : (
                     filterCapexLines(getHierarchicalLinesForBudgetType("capex"), createLineSearch)
                       .filter((line) => {
+                        // Las líneas madre son solo agrupadores: se muestran pero
+                        // no reciben asignaciones. Las hijas con monto $0 se ocultan.
+                        if (!line.hasChildren && line.amount_uf <= 0) return false;
                         // Hide lines whose any ancestor is collapsed — unless a
                         // search is active (matches must always be visible).
                         if (createLineSearch.trim()) return true;
@@ -1518,41 +1521,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                         return true;
                       })
                       .map((line) => {
-                      const available = getAvailableBudgetForLine(line.id);
-                      const isSelected = newOrder.budget_line_ids.includes(line.id);
                       const isCollapsed = collapsedPickerLines.has(line.id);
-                      return (
-                        <div
-                          key={line.id}
-                          role="checkbox"
-                          aria-checked={isSelected}
-                          tabIndex={0}
-                          onClick={() => {
-                            const descendants = getDescendantIds(line.id, "capex");
-                            const affected = [line.id, ...descendants];
-                            const current = newOrder.budget_line_ids;
-                            const willCheck = !isSelected;
-                            const newIds = willCheck
-                              ? Array.from(new Set([...current, ...affected]))
-                              : current.filter(id => !affected.includes(id));
-                            setNewOrder({ ...newOrder, budget_line_ids: newIds });
-                          }}
-                          className={cn(
-                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent select-none",
-                            isSelected && "bg-accent",
-                            line.hasChildren && "font-medium"
-                          )}
-                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            readOnly
-                            tabIndex={-1}
-                            className="h-4 w-4 pointer-events-none"
-                          />
-                          <span className="flex-1 truncate">
-                            {line.hasChildren && (
+                      if (line.hasChildren) {
+                        // Parent line: display-only group header (not selectable, no amount)
+                        return (
+                          <div
+                            key={line.id}
+                            className="flex items-center gap-2 p-2 rounded select-none font-medium text-muted-foreground"
+                            style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
+                          >
+                            <span className="flex-1 truncate">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1571,9 +1549,40 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                               >
                                 ▸
                               </button>
-                            )}
-                            {line.name}
-                          </span>
+                              {line.name}
+                            </span>
+                          </div>
+                        );
+                      }
+                      const available = getAvailableBudgetForLine(line.id);
+                      const isSelected = newOrder.budget_line_ids.includes(line.id);
+                      return (
+                        <div
+                          key={line.id}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onClick={() => {
+                            const current = newOrder.budget_line_ids;
+                            const newIds = isSelected
+                              ? current.filter(id => id !== line.id)
+                              : [...current, line.id];
+                            setNewOrder({ ...newOrder, budget_line_ids: newIds });
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent select-none",
+                            isSelected && "bg-accent"
+                          )}
+                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            readOnly
+                            tabIndex={-1}
+                            className="h-4 w-4 pointer-events-none"
+                          />
+                          <span className="flex-1 truncate">{line.name}</span>
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
                             (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
@@ -1894,6 +1903,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                   ) : (
                     filterCapexLines(getHierarchicalLinesForBudgetType("capex"), editLineSearch)
                       .filter((line) => {
+                        // Las líneas madre son solo agrupadores: se muestran pero
+                        // no reciben asignaciones. Las hijas con monto $0 se ocultan.
+                        if (!line.hasChildren && line.amount_uf <= 0) return false;
                         // Search matches must always be visible even if collapsed
                         if (editLineSearch.trim()) return true;
                         let pid = line.parent_id;
@@ -1905,44 +1917,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                         return true;
                       })
                       .map((line) => {
-                      const usedByOthers = orders
-                        .filter(o => o.budget_line_id === line.id && o.id !== editOrder?.id)
-                        .reduce((sum, o) => sum + o.amount_uf, 0);
-                      const available = line.amount_uf - usedByOthers;
-                      const isSelected = editFormData.budget_line_ids.includes(line.id);
                       const isCollapsed = collapsedPickerLines.has(line.id);
-                      return (
-                        <div
-                          key={line.id}
-                          role="checkbox"
-                          aria-checked={isSelected}
-                          tabIndex={0}
-                          onClick={() => {
-                            const descendants = getDescendantIds(line.id, "capex");
-                            const affected = [line.id, ...descendants];
-                            const current = editFormData.budget_line_ids;
-                            const willCheck = !isSelected;
-                            const newIds = willCheck
-                              ? Array.from(new Set([...current, ...affected]))
-                              : current.filter(id => !affected.includes(id));
-                            setEditFormData({ ...editFormData, budget_line_ids: newIds });
-                          }}
-                          className={cn(
-                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent select-none",
-                            isSelected && "bg-accent",
-                            line.hasChildren && "font-medium"
-                          )}
-                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            readOnly
-                            tabIndex={-1}
-                            className="h-4 w-4 pointer-events-none"
-                          />
-                          <span className="flex-1 truncate">
-                            {line.hasChildren && (
+                      if (line.hasChildren) {
+                        // Parent line: display-only group header (not selectable, no amount)
+                        return (
+                          <div
+                            key={line.id}
+                            className="flex items-center gap-2 p-2 rounded select-none font-medium text-muted-foreground"
+                            style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
+                          >
+                            <span className="flex-1 truncate">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1961,9 +1945,43 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                               >
                                 ▸
                               </button>
-                            )}
-                            {line.name}
-                          </span>
+                              {line.name}
+                            </span>
+                          </div>
+                        );
+                      }
+                      const usedByOthers = orders
+                        .filter(o => o.budget_line_id === line.id && o.id !== editOrder?.id)
+                        .reduce((sum, o) => sum + o.amount_uf, 0);
+                      const available = line.amount_uf - usedByOthers;
+                      const isSelected = editFormData.budget_line_ids.includes(line.id);
+                      return (
+                        <div
+                          key={line.id}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onClick={() => {
+                            const current = editFormData.budget_line_ids;
+                            const newIds = isSelected
+                              ? current.filter(id => id !== line.id)
+                              : [...current, line.id];
+                            setEditFormData({ ...editFormData, budget_line_ids: newIds });
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent select-none",
+                            isSelected && "bg-accent"
+                          )}
+                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            readOnly
+                            tabIndex={-1}
+                            className="h-4 w-4 pointer-events-none"
+                          />
+                          <span className="flex-1 truncate">{line.name}</span>
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
                             (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>

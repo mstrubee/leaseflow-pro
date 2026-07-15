@@ -347,7 +347,9 @@ export const CentralizedOrderCreator = ({
       return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {year}.</p>;
     }
     const search = capexLineSearch[contractId] || "";
-    const visibleLines = filterCapexLines(lines, search);
+    // Las líneas madre son solo agrupadores (visibles, no seleccionables, sin
+    // monto). Las hijas con monto autorizado $0 no se muestran.
+    const visibleLines = filterCapexLines(lines, search).filter(l => l.hasChildren || l.amount_uf > 0);
     return (
       <div className="space-y-1">
         <Input
@@ -360,6 +362,17 @@ export const CentralizedOrderCreator = ({
           {visibleLines.length === 0 ? (
             <p className="text-xs text-muted-foreground p-2">Sin resultados para "{search}".</p>
           ) : visibleLines.map(line => {
+            if (line.hasChildren) {
+              return (
+                <div
+                  key={line.id}
+                  className="flex items-center gap-2 p-1.5 rounded select-none text-sm font-medium text-muted-foreground"
+                  style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                >
+                  <span className="flex-1 truncate">{line.name}</span>
+                </div>
+              );
+            }
             const isSelected = selected.includes(line.id);
             const available = line.amount_uf - (capexLineUsage[line.id] || 0);
             return (
@@ -369,7 +382,7 @@ export const CentralizedOrderCreator = ({
                 aria-checked={isSelected}
                 tabIndex={0}
                 onClick={() => toggleCapexLine(contractId, line)}
-                className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm ${isSelected ? "bg-accent" : ""} ${line.hasChildren ? "font-medium" : ""}`}
+                className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm ${isSelected ? "bg-accent" : ""}`}
                 style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
               >
                 <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />

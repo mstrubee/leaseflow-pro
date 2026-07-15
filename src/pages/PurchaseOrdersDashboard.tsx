@@ -4611,7 +4611,11 @@ const PurchaseOrdersDashboard = () => {
                 const lines = editCapexLinesByContract[c.contract_id];
                 const selected = editCapexSelections[c.contract_id] || [];
                 const search = editCapexLineSearch[c.contract_id] || "";
-                const visibleLines = lines ? filterCapexLines(lines, search) : [];
+                // Las líneas madre son solo agrupadores (visibles, no
+                // seleccionables, sin monto); las hijas con monto $0 se ocultan.
+                const visibleLines = lines
+                  ? filterCapexLines(lines, search).filter(l => l.hasChildren || l.amount_uf > 0)
+                  : [];
                 return (
                   <div key={c.contract_id} className="space-y-1.5 pt-2 border-t">
                     <Label className="text-sm">
@@ -4634,6 +4638,17 @@ const PurchaseOrdersDashboard = () => {
                           {visibleLines.length === 0 ? (
                             <p className="text-xs text-muted-foreground p-2">Sin resultados para "{search}".</p>
                           ) : visibleLines.map(line => {
+                            if (line.hasChildren) {
+                              return (
+                                <div
+                                  key={line.id}
+                                  className="flex items-center gap-2 p-1.5 rounded select-none text-sm font-medium text-muted-foreground"
+                                  style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                                >
+                                  <span className="flex-1 truncate">{line.name}</span>
+                                </div>
+                              );
+                            }
                             const isSelected = selected.includes(line.id);
                             const available = line.amount_uf - (editCapexLineUsage[line.id] || 0);
                             return (
@@ -4645,8 +4660,7 @@ const PurchaseOrdersDashboard = () => {
                                 onClick={() => toggleEditCapexLine(c.contract_id, line)}
                                 className={cn(
                                   "flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm",
-                                  isSelected && "bg-accent",
-                                  line.hasChildren && "font-medium"
+                                  isSelected && "bg-accent"
                                 )}
                                 style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
                               >
