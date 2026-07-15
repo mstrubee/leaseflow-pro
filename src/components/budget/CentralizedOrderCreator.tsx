@@ -68,7 +68,7 @@ interface PaymentPlanItem {
   due_date: string;
 }
 
-interface CapexBudgetLine {
+export interface CapexBudgetLine {
   id: string;
   name: string;
   amount_uf: number;
@@ -81,7 +81,7 @@ interface CapexBudgetLine {
 
 // Flatten budget lines into a hierarchical list (parents first, children
 // indented) — same ordering used by the per-contract budget module picker.
-function buildHierarchicalCapexLines(lines: Omit<CapexBudgetLine, "depth" | "hasChildren">[]): CapexBudgetLine[] {
+export function buildHierarchicalCapexLines(lines: Omit<CapexBudgetLine, "depth" | "hasChildren">[]): CapexBudgetLine[] {
   const byId = new Map(lines.map(l => [l.id, l]));
   const childrenOf = new Map<string | null, typeof lines>();
   lines.forEach(l => {

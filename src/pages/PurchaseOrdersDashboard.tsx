@@ -91,7 +91,7 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
+import { CentralizedOrderCreator, buildHierarchicalCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -340,6 +340,15 @@ const PurchaseOrdersDashboard = () => {
   const [editingOCInitialFormIdsByOrderId, setEditingOCInitialFormIdsByOrderId] = useState<Record<string, string[]>>({});
   const [updatingOC, setUpdatingOC] = useState(false);
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
+
+  // CAPEX budget-line editing for the Edit OC dialog. Permite corregir a mano
+  // las OCs antiguas de CAPEX que quedaron sin líneas — sin bloquear el guardado.
+  const [editOCIsCapex, setEditOCIsCapex] = useState(false);
+  const [editOCCapexYear, setEditOCCapexYear] = useState<number>(new Date().getFullYear());
+  const [editCapexLinesByContract, setEditCapexLinesByContract] = useState<Record<string, CapexBudgetLine[]>>({});
+  const [editCapexBudgetIdByContract, setEditCapexBudgetIdByContract] = useState<Record<string, string | null>>({});
+  const [editCapexSelections, setEditCapexSelections] = useState<Record<string, string[]>>({});
+  const [editCapexInitialSelections, setEditCapexInitialSelections] = useState<Record<string, string[]>>({});
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
   const invoiceFileInputRef = useRef<HTMLInputElement>(null);
@@ -1686,17 +1695,99 @@ const PurchaseOrdersDashboard = () => {
     }
   };
 
+  // Load the CAPEX budget lines of one contract (for the edit dialog picker)
+  const loadCapexLinesForEditOC = async (contractId: string, year: number) => {
+    try {
+      const { data: budgetData } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .eq("budget_type", "capex");
+      const budgetIds = (budgetData || []).map(b => b.id);
+      let lines: CapexBudgetLine[] = [];
+      if (budgetIds.length > 0) {
+        const { data: linesData } = await supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, budget_id, parent_id, display_order")
+          .in("budget_id", budgetIds)
+          .is("deleted_at", null);
+        lines = buildHierarchicalCapexLines(linesData || []);
+      }
+      setEditCapexBudgetIdByContract(prev => ({ ...prev, [contractId]: budgetIds[0] || null }));
+      setEditCapexLinesByContract(prev => ({ ...prev, [contractId]: lines }));
+    } catch (error) {
+      console.error("Error loading CAPEX budget lines:", error);
+    }
+  };
+
+  const toggleEditCapexLine = (contractId: string, line: CapexBudgetLine) => {
+    const contractLines = editCapexLinesByContract[contractId] || [];
+    const descendants: string[] = [];
+    const collect = (id: string) => {
+      contractLines.forEach(l => {
+        if (l.parent_id === id) {
+          descendants.push(l.id);
+          collect(l.id);
+        }
+      });
+    };
+    collect(line.id);
+    const affected = [line.id, ...descendants];
+    setEditCapexSelections(prev => {
+      const current = prev[contractId] || [];
+      const willCheck = !current.includes(line.id);
+      const next = willCheck
+        ? Array.from(new Set([...current, ...affected]))
+        : current.filter(id => !affected.includes(id));
+      return { ...prev, [contractId]: next };
+    });
+  };
+
   const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
     setEditingOCFile(null);
-    
+
     // Fetch full order data including amount_clp, attachment_url and assigned forms for each contract
     const orderIds = groupedOrder.orders.map(o => o.id);
     const { data: fullOrders } = await supabase
       .from("purchase_orders")
       .select("id, contract_id, amount_uf, amount_clp, attachment_url, maintenance_form_ids")
       .in("id", orderIds);
+
+    // CAPEX: load budget lines per contract and preselect the ones already linked
+    const isCapex = groupedOrder.budget_classification === "CAPEX";
+    const ocYear = groupedOrder.year || new Date().getFullYear();
+    setEditOCIsCapex(isCapex);
+    setEditOCCapexYear(ocYear);
+    setEditCapexLinesByContract({});
+    setEditCapexBudgetIdByContract({});
+    setEditCapexSelections({});
+    setEditCapexInitialSelections({});
+    if (isCapex) {
+      groupedOrder.contracts.forEach(c => loadCapexLinesForEditOC(c.contract_id, ocYear));
+
+      const orderIdToContract = new Map(groupedOrder.orders.map(o => [o.id, o.contract_id]));
+      const { data: lineLinks } = await supabase
+        .from("purchase_order_budget_lines")
+        .select("purchase_order_id, budget_line_id")
+        .in("purchase_order_id", orderIds);
+      const selections: Record<string, string[]> = {};
+      (lineLinks || []).forEach(link => {
+        const cid = orderIdToContract.get(link.purchase_order_id);
+        if (!cid) return;
+        selections[cid] = [...(selections[cid] || []), link.budget_line_id];
+      });
+      // Fallback for OCs that only have the legacy single budget_line_id column
+      groupedOrder.orders.forEach(o => {
+        if (!selections[o.contract_id]?.length && o.budget_line_id) {
+          selections[o.contract_id] = [o.budget_line_id];
+        }
+      });
+      setEditCapexSelections(selections);
+      setEditCapexInitialSelections(selections);
+    }
 
     const firstOrderAttachment = fullOrders?.[0]?.attachment_url || null;
     
@@ -1763,6 +1854,9 @@ const PurchaseOrdersDashboard = () => {
       maintenance_form_ids: [],
     }]);
     loadFormsForEditOC(contractId);
+    if (editOCIsCapex) {
+      loadCapexLinesForEditOC(contractId, editOCCapexYear);
+    }
   };
 
   // Handle updating the assigned maintenance forms for a contract in the edit OC dialog
@@ -1931,6 +2025,31 @@ const PurchaseOrdersDashboard = () => {
           amount_uf: contractData.amount_uf,
           amount_clp: contractData.amount_clp,
         }, { onConflict: "purchase_order_id,contract_id" });
+
+        // CAPEX: rewrite budget-line links only if the user changed the selection
+        // (so untouched old OCs keep their original data intact)
+        if (editOCIsCapex) {
+          const sel = editCapexSelections[contractData.contract_id] || [];
+          const initial = editCapexInitialSelections[contractData.contract_id] || [];
+          const changed = sel.length !== initial.length || sel.some(id => !initial.includes(id));
+          if (changed) {
+            await supabase.from("purchase_order_budget_lines").delete().eq("purchase_order_id", existingOrder.id);
+            if (sel.length > 0) {
+              const amountPerLine = contractData.amount_uf / sel.length;
+              await supabase.from("purchase_order_budget_lines").insert(
+                sel.map(lineId => ({
+                  purchase_order_id: existingOrder.id,
+                  budget_line_id: lineId,
+                  amount_uf: amountPerLine,
+                }))
+              );
+            }
+            await supabase.from("purchase_orders").update({
+              budget_line_id: sel[0] || null,
+              budget_id: editCapexBudgetIdByContract[contractData.contract_id] || null,
+            }).eq("id", existingOrder.id);
+          }
+        }
       }
       
       for (const contractData of contractsToAdd) {
@@ -1963,6 +2082,25 @@ const PurchaseOrdersDashboard = () => {
             amount_uf: contractData.amount_uf,
             amount_clp: contractData.amount_clp,
           });
+
+          // CAPEX: link the selected budget lines of the newly-added contract
+          if (editOCIsCapex) {
+            const sel = editCapexSelections[contractData.contract_id] || [];
+            if (sel.length > 0) {
+              const amountPerLine = contractData.amount_uf / sel.length;
+              await supabase.from("purchase_order_budget_lines").insert(
+                sel.map(lineId => ({
+                  purchase_order_id: newOrder.id,
+                  budget_line_id: lineId,
+                  amount_uf: amountPerLine,
+                }))
+              );
+              await supabase.from("purchase_orders").update({
+                budget_line_id: sel[0],
+                budget_id: editCapexBudgetIdByContract[contractData.contract_id] || null,
+              }).eq("id", newOrder.id);
+            }
+          }
 
           if (contractData.maintenance_form_ids.length > 0) {
             await supabase.from("maintenance_forms").update({
@@ -4454,6 +4592,53 @@ const PurchaseOrdersDashboard = () => {
                   </div>
                 </div>
               </div>
+
+              {/* CAPEX budget lines per contract — permite corregir a mano OCs
+                  antiguas sin líneas; el guardado no se bloquea si quedan vacías */}
+              {editOCIsCapex && editingOCContracts.map(c => {
+                const lines = editCapexLinesByContract[c.contract_id];
+                const selected = editCapexSelections[c.contract_id] || [];
+                return (
+                  <div key={c.contract_id} className="space-y-1.5 pt-2 border-t">
+                    <Label className="text-sm">
+                      Líneas de Presupuesto CAPEX ({editOCCapexYear})
+                      {editingOCContracts.length > 1 && ` — ${c.contract_name}`}
+                    </Label>
+                    {lines === undefined ? (
+                      <p className="text-xs text-muted-foreground p-2">Cargando líneas CAPEX...</p>
+                    ) : lines.length === 0 ? (
+                      <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {editOCCapexYear}.</p>
+                    ) : (
+                      <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
+                        {lines.map(line => {
+                          const isSelected = selected.includes(line.id);
+                          return (
+                            <div
+                              key={line.id}
+                              role="checkbox"
+                              aria-checked={isSelected}
+                              tabIndex={0}
+                              onClick={() => toggleEditCapexLine(c.contract_id, line)}
+                              className={cn(
+                                "flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm",
+                                isSelected && "bg-accent",
+                                line.hasChildren && "font-medium"
+                              )}
+                              style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                            >
+                              <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
+                              <span className="flex-1 truncate">{line.name}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selected.length > 0 && (
+                      <p className="text-xs text-muted-foreground">{selected.length} línea(s) seleccionada(s)</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             </div>
           </div>
