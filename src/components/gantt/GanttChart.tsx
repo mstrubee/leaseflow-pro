@@ -396,13 +396,11 @@ export function GanttChart({
   );
   const endColWidth = hasAnyReprogDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
   // Igual criterio para "Inicio": se ensancha si alguna hoja quedó con un
-  // Inicio movido por cascada de dependencia (descontando su propio offset
-  // de Reprog.), para que el indicador de origen entre completo.
-  const hasAnyCascadeDelta = tasks.some((t) => {
-    if (!t.start_date || !t.baseline_start_date) return false;
-    const totalDelta = differenceInDays(parseISO(t.start_date), parseISO(t.baseline_start_date));
-    return totalDelta - (t.reprog_offset_days ?? 0) !== 0;
-  });
+  // Inicio movido por cascada de dependencia, para que el indicador de
+  // origen entre completo.
+  const hasAnyCascadeDelta = tasks.some(
+    (t) => t.start_date && t.baseline_start_date && t.start_date !== t.baseline_start_date
+  );
   const startColWidth = hasAnyCascadeDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
@@ -2707,16 +2705,14 @@ export function GanttChart({
                       placeholder="Inicio"
                       editable={isAdmin && !hasChildren}
                       suffix={hasChildren ? null : (() => {
-                        // Origen del cambio: si el Inicio se movió por CASCADA de una
-                        // dependencia (no por la reprogramación propia de esta fila),
-                        // el motivo se muestra acá — restando su propio offset de
-                        // Reprog. del total, queda solo la parte heredada de aguas
-                        // arriba. Coexiste con el indicador de Término (ese sí es la
-                        // reprogramación manual propia de esta fila).
+                        // Origen del cambio: el Inicio de una hoja NUNCA se mueve por
+                        // su propio Reprog. (eso solo corre el Término) — si difiere de
+                        // su baseline, es 100% porque una dependencia la desplazó en
+                        // cascada (lo que incluye, transitivamente, cualquier Reprog.
+                        // que haya aplicado una predecesora). Coexiste con el indicador
+                        // de Término (esa sí es la reprogramación manual de esta fila).
                         if (!task.start_date || !task.baseline_start_date) return null;
-                        const totalDelta = differenceInDays(parseISO(task.start_date), parseISO(task.baseline_start_date));
-                        const ownOffset = task.reprog_offset_days ?? 0;
-                        const cascadeDelta = totalDelta - ownOffset;
+                        const cascadeDelta = differenceInDays(parseISO(task.start_date), parseISO(task.baseline_start_date));
                         if (cascadeDelta === 0) return null;
                         return (
                           <span className="text-[10px] font-bold text-blue-500 leading-none whitespace-nowrap" title="Se movió porque una tarea de la que depende cambió de fecha">

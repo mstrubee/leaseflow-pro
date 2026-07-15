@@ -759,9 +759,16 @@ export function useGantt(
           naturalEnd = baseE ? parseISO(baseE) : null;
         }
 
+        // El offset propio de Reprog. SOLO corre el Término de esta misma
+        // fila — el Inicio nunca lo toca (queda 100% en manos de su
+        // dependencia, o fijo en su baseline si es un ancla). Así el origen
+        // de cada cambio queda inequívoco: Inicio = lo que le llegó de una
+        // dependencia (incluye, en cascada, cualquier offset que haya sumado
+        // una predecesora); Término = lo que ESTA fila reprogramó por su
+        // cuenta, encima de esa base.
         const offset = t.reprog_offset_days ?? 0;
         if (naturalStart && naturalEnd) {
-          start = format(offset !== 0 ? addDays(naturalStart, offset) : naturalStart, "yyyy-MM-dd");
+          start = format(naturalStart, "yyyy-MM-dd");
           end = format(offset !== 0 ? addDays(naturalEnd, offset) : naturalEnd, "yyyy-MM-dd");
         } else {
           start = t.start_date;
