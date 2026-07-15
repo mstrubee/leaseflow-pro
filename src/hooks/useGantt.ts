@@ -562,6 +562,13 @@ export function useGantt(
     sourceTasks: GanttTask[],
     seedUpdates: Map<string, Partial<GanttTask>> = new Map(),
     compareTasks: GanttTask[] = sourceTasks,
+    // Tareas que cambiaron de una forma que no es un seed de fecha (cambió su
+    // estado, o su propia lista de dependencias) pero que igual pueden
+    // arrastrar cascada hacia adelante — ej. la tarea descartada/restaurada,
+    // o la que recibió/perdió/editó una dependencia. Arrancan el mismo
+    // recorrido hacia adelante que un seed de fecha, sin forzar ellas mismas
+    // una fecha manual.
+    extraAffectedSeeds: string[] = [],
   ): Map<string, Partial<GanttTask>> => {
     const result = new Map<string, Partial<GanttTask>>();
     const workingTasks = sourceTasks.map((t) => ({
@@ -581,6 +588,44 @@ export function useGantt(
     }
     const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
     const taskById = new Map(workingTasks.map((t) => [t.id, t]));
+
+    // El tiempo corre hacia adelante: reprogramar (o editar) una tarea solo
+    // puede mover lo que viene DESPUÉS de ella (sus dependientes, directos o
+    // transitivos, y la línea madre que agrupa sus fechas) — nunca sus
+    // predecesoras. "affected" es el conjunto de tareas que esta edición
+    // puede legítimamente cambiar; todo lo demás conserva la fecha que ya
+    // tenía guardada, SIN volver a derivarla de sus propias dependencias.
+    //
+    // Esto importa porque el motor es capaz de recalcular cualquier tarea a
+    // partir de sus predecesoras en cualquier momento — pero si esa tarea
+    // arrastra un desajuste histórico entre su dependencia declarada y su
+    // fecha realmente guardada (ej. una dependencia agregada después, sin
+    // resincronizar fechas ya fijadas a mano), recalcularla como efecto
+    // colateral de una edición ajena "corregiría" ese desajuste en silencio
+    // y la movería sin que nadie la haya tocado — exactamente lo reportado
+    // ("al reprogramar una fila, se mueven predecesoras que no debían moverse").
+    const dependentsOf = new Map<string, string[]>();
+    for (const t of workingTasks) {
+      for (const dep of t.dependencies || []) {
+        const arr = dependentsOf.get(dep.depends_on_task_id) || [];
+        arr.push(t.id);
+        dependentsOf.set(dep.depends_on_task_id, arr);
+      }
+    }
+    const affected = new Set<string>([...seedUpdates.keys(), ...extraAffectedSeeds]);
+    {
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const id of Array.from(affected)) {
+          for (const depId of dependentsOf.get(id) || []) {
+            if (!affected.has(depId)) { affected.add(depId); grew = true; }
+          }
+          const parentId = taskById.get(id)?.parent_id;
+          if (parentId && !affected.has(parentId)) { affected.add(parentId); grew = true; }
+        }
+      }
+    }
 
     // Effective dates, resolved via a single-pass topological evaluation.
     const effStart = new Map<string, string>();
@@ -641,7 +686,13 @@ export function useGantt(
       let start: string | null = null;
       let end: string | null = null;
 
-      if (hasChildren(id)) {
+      if (!affected.has(id)) {
+        // Fuera del alcance de esta edición (no es la tarea editada, ni su
+        // línea madre, ni algo que dependa de ella en cadena): se deja tal
+        // cual está guardada, sin recalcular desde sus propias dependencias.
+        start = t.start_date;
+        end = t.end_date;
+      } else if (hasChildren(id)) {
         // Parent: roll up from children.
         let minStart: string | null = null;
         let maxEnd: string | null = null;
@@ -984,7 +1035,7 @@ export function useGantt(
           ? { ...t, dependencies: [...(t.dependencies || []), insertedDep] }
           : t,
       );
-      const scheduleDiff = computeScheduleDiff(tasksWithNewDependency, new Map(), tasks);
+      const scheduleDiff = computeScheduleDiff(tasksWithNewDependency, new Map(), tasks, [taskId]);
 
       // Optimistic local update — no loadTimeline needed.
       setTasks(prev => prev.map(t => {
@@ -1057,7 +1108,7 @@ export function useGantt(
       }
 
       // Recalculate the whole schedule from the remaining dependencies.
-      const scheduleDiff = computeScheduleDiff(tasksAfter, seed, tasks);
+      const scheduleDiff = computeScheduleDiff(tasksAfter, seed, tasks, ownerTask ? [ownerTask.id] : []);
       // computeScheduleDiff never emits null clears, so merge them in by hand.
       for (const [id, upd] of forcedClears) {
         scheduleDiff.set(id, { ...(scheduleDiff.get(id) || {}), ...upd });
@@ -1121,7 +1172,7 @@ export function useGantt(
             d.id === dependencyId ? { ...d, ...updates } : d,
           ),
         }));
-        const scheduleDiff = computeScheduleDiff(tasksWithUpdatedDependency, new Map(), tasks);
+        const scheduleDiff = computeScheduleDiff(tasksWithUpdatedDependency, new Map(), tasks, [dependentTask.id]);
 
         setTasks(prev => prev.map(t => {
           const dateUpdates = scheduleDiff.get(t.id) || {};
@@ -1180,7 +1231,7 @@ export function useGantt(
         idsToDiscard.includes(t.id) ? { ...t, status: "discarded", discarded_at: discardedAt } : t;
 
       const nextTasks = tasks.map(applyStatus);
-      const diff = computeScheduleDiff(nextTasks, new Map(), tasks);
+      const diff = computeScheduleDiff(nextTasks, new Map(), tasks, idsToDiscard);
 
       setTasks((prev) =>
         prev.map((t) => {
@@ -1231,7 +1282,7 @@ export function useGantt(
         idsToRestore.includes(t.id) ? { ...t, status: "pending", discarded_at: null } : t;
 
       const nextTasks = tasks.map(applyStatus);
-      const diff = computeScheduleDiff(nextTasks, new Map(), tasks);
+      const diff = computeScheduleDiff(nextTasks, new Map(), tasks, idsToRestore);
 
       setTasks((prev) =>
         prev.map((t) => {
@@ -1731,7 +1782,13 @@ export function useGantt(
       }
 
       // 4) Recalcular fechas y persistir diffs (comparando contra el estado original)
-      const scheduleDiff = computeScheduleDiff(nextTasks, seed, tasks);
+      // Además del seed (anclas sin dependencias), toda tarea cuya duración
+      // cambió por la plantilla o cuyas dependencias se relincaron necesita
+      // entrar al recorrido de "afectados" aunque no traiga un seed de fecha.
+      const durationOrDepsChangedIds = nextTasks
+        .filter((t) => (t.template_task_id && durByTpl.has(t.template_task_id)) || linkedTaskIds.has(t.id))
+        .map((t) => t.id);
+      const scheduleDiff = computeScheduleDiff(nextTasks, seed, tasks, durationOrDepsChangedIds);
       if (scheduleDiff.size > 0) {
         const results = await Promise.all(
           Array.from(scheduleDiff.entries()).map(([id, u]) => supabase.from("gantt_tasks").update(u as any).eq("id", id))
