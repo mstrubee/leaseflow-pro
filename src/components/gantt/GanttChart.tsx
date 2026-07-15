@@ -146,11 +146,14 @@ function TaskNameInput({
 }
 
 
-// Auto-progress based on today's date vs task start/end
-function computeAutoProgress(task: GanttTask): number {
-  if (!task.start_date || !task.end_date) return 0;
-  const start = parseISO(task.start_date).getTime();
-  const end = parseISO(task.end_date).getTime();
+// % de avance implícito por fecha: días transcurridos / duración total, entre
+// un start y un end dados. Compartido por "Avance Real" (fechas ACTUALES,
+// que cambian con Reprog./cascada) y "Avance Prog." (fechas de BASELINE,
+// fijas desde que la tarea nació).
+function computeDateProgress(start_date: string | null, end_date: string | null): number {
+  if (!start_date || !end_date) return 0;
+  const start = parseISO(start_date).getTime();
+  const end = parseISO(end_date).getTime();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const now = today.getTime();
@@ -159,6 +162,18 @@ function computeAutoProgress(task: GanttTask): number {
   const total = end - start;
   if (total <= 0) return 0;
   return Math.round(((now - start) / total) * 100);
+}
+
+// "% Avance Real": usa las fechas ACTUALES de la tarea (las que cambian con
+// Reprog., arrastre de barra o cascada de dependencias).
+function computeAutoProgress(task: GanttTask): number {
+  return computeDateProgress(task.start_date, task.end_date);
+}
+
+// "% Avance Prog.": usa las fechas de BASELINE (el plan original, congelado
+// desde que la tarea nació y nunca modificado después).
+function computeBaselineProgress(task: GanttTask): number {
+  return computeDateProgress(task.baseline_start_date, task.baseline_end_date);
 }
 
 // Predefined color palette for Gantt task bars
@@ -1486,11 +1501,28 @@ export function GanttChart({
     return totalW > 0 ? Math.round(acc / totalW) : 0;
   }, [tasks]);
 
-  // "% Avance Prog.": progreso que DEBERÍA tener la tarea según sus fechas
-  // (100% × días transcurridos / duración total), sin considerar lo que el
-  // usuario haya registrado como avance real. Es de solo lectura — el dato
-  // manual vive en "% Avance Real" (columna al final, ver getEffectiveProgress).
+  // "% Avance Prog.": progreso según el PLAN ORIGINAL (fechas de baseline,
+  // que nunca cambian). Rollup ponderado por duración para líneas madre.
+  // Siempre de solo lectura — no se edita manualmente.
   const getEffectiveScheduledProgress = useCallback((task: GanttTask): number => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return computeBaselineProgress(task);
+    }
+    let totalW = 0;
+    let acc = 0;
+    for (const c of children) {
+      const w = c.duration_days && c.duration_days > 0 ? c.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveScheduledProgress(c);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [tasks]);
+
+  // "% Avance Real": progreso según las fechas ACTUALES (las que cambian con
+  // Reprog., arrastre de barra o cascada de dependencias). También de solo
+  // lectura — refleja directamente el estado vigente del cronograma.
+  const getEffectiveCurrentProgress = useCallback((task: GanttTask): number => {
     const children = tasks.filter((t) => t.parent_id === task.id);
     if (children.length === 0) {
       return computeAutoProgress(task);
@@ -1500,7 +1532,7 @@ export function GanttChart({
     for (const c of children) {
       const w = c.duration_days && c.duration_days > 0 ? c.duration_days : 1;
       totalW += w;
-      acc += w * getEffectiveScheduledProgress(c);
+      acc += w * getEffectiveCurrentProgress(c);
     }
     return totalW > 0 ? Math.round(acc / totalW) : 0;
   }, [tasks]);
@@ -2662,44 +2694,21 @@ export function GanttChart({
                     )}
                   </div>
 
-                  {/* % Avance Prog. — de solo lectura: lo que debería llevar la tarea
-                      según sus fechas (o el agregado de sus hijas). El dato editable
-                      (lo que realmente se avanzó) vive en "% Avance Real", al final. */}
+                  {/* % Avance Prog. — de solo lectura: según el PLAN ORIGINAL (fechas
+                      de baseline, fijas desde que la tarea nació). */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}>
-                    <span className="text-xs text-muted-foreground" title="Avance esperado según el cronograma (no editable)">
-                      {hasChildren ? getEffectiveScheduledProgress(task) : computeAutoProgress(task)}%
+                    <span className="text-xs text-muted-foreground" title="Avance esperado según el plan original (no editable)">
+                      {getEffectiveScheduledProgress(task)}%
                     </span>
                   </div>
 
-                  {/* % Avance Real — el dato manual que alimenta la Curva S. */}
+                  {/* % Avance Real — de solo lectura: según las fechas ACTUALES
+                      (las que cambian con Reprog., arrastre o cascada). Alimenta
+                      la línea real de la Curva S. */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={hasChildren
-                        ? getEffectiveProgress(task)
-                        : (task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task))}
-                      onChange={(e) => {
-                        const str = e.target.value;
-                        if (str === "") {
-                          onUpdateTask(task.id, { progress: null as any }, { skipPropagation: true });
-                          return;
-                        }
-                        const raw = parseInt(str);
-                        const value = isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
-                        const updates: Partial<GanttTask> = { progress: value };
-                        if (value === 100) updates.status = "completed";
-                        else if (task.status === "completed") updates.status = "in_progress";
-                        onUpdateTask(task.id, updates, { skipPropagation: true });
-                      }}
-                      disabled={!isAdmin || hasChildren}
-                      className="h-7 text-xs w-16 text-center px-1"
-                      title={hasChildren
-                        ? "Progreso agregado de las líneas hijas (no editable)."
-                        : "Avance real registrado manualmente. Alimenta la línea real de la Curva S."}
-                    />
-                    <span className="text-xs text-muted-foreground ml-1">%</span>
+                    <span className="text-xs text-muted-foreground" title="Avance según las fechas vigentes hoy (no editable) — cambia con Reprog.">
+                      {getEffectiveCurrentProgress(task)}%
+                    </span>
                   </div>
                   </div>
 

@@ -8,8 +8,7 @@ export interface CurvaSPoint {
   weekLabel: string; // "15-may"
   scheduledProgress: number; // % acumulado 0-100
   // null en semanas futuras: no se puede predecir avance real, así que la
-  // línea roja simplemente no se dibuja ahí (a diferencia de antes, que la
-  // congelaba en el valor de hoy hacia adelante).
+  // línea roja simplemente no se dibuja ahí.
   actualProgress: number | null;
 }
 
@@ -25,26 +24,24 @@ export interface CurvaSData {
  * acumulado por semana) para un cronograma completo o para una rama
  * específica (tarea padre + sus hojas descendientes).
  *
- * Solo se consideran tareas HOJA (sin hijas) con fecha de inicio y término —
- * las tareas madre no tienen peso propio, su avance ya está representado
- * por sus hojas. Las tareas descartadas (discarded_at) se excluyen siempre.
+ * Solo se consideran tareas HOJA (sin hijas) — las tareas madre no tienen
+ * peso propio, su avance ya está representado por sus hojas. Las tareas
+ * descartadas (discarded_at) se excluyen siempre.
  *
- * Peso de cada hoja = su duración / la suma de duraciones de todas las
- * hojas en el alcance elegido (proyecto completo o una rama).
+ * Peso de cada hoja = su duración de PLAN ORIGINAL / la suma de duraciones
+ * de todas las hojas en el alcance elegido — un peso fijo que no cambia si
+ * la tarea se reprograma después.
  *
- * Línea "Programado" (azul): para cada semana, el % de cada tarea que
- * "debería" estar completo según sus fechas (inicio→término lineal),
- * ponderado y sumado.
+ * Línea "Programado" (azul): usa baseline_start_date/baseline_end_date — el
+ * plan original, fijado una sola vez cuando la tarea nació y nunca tocado
+ * después (ni por Reprog., ni por arrastre de barra, ni por cascada de
+ * dependencias). Por eso esta línea es completamente estable en el tiempo.
  *
- * Línea "Real" (naranja): en LeaseFlow-Pro no existe un historial de
- * "cuánto había avanzado cada tarea la semana pasada" — el campo
- * `progress` es solo una fotografía de HOY. Por eso la línea real para
- * semanas pasadas se dibuja con la MISMA forma que la línea programada,
- * pero reescalada para que coincida exactamente con el % real medido hoy
- * (decisión confirmada explícitamente: no inventamos historial que no
- * existe, pero tampoco mostramos una línea "escalonada" poco legible).
- * De hoy en adelante, la línea real se congela en el valor de hoy (no
- * podemos predecir avance futuro).
+ * Línea "Real" (naranja): usa start_date/end_date — las fechas VIGENTES hoy,
+ * que sí cambian con cada reprogramación. Mientras nadie reprograma nada,
+ * coincide exactamente con la línea azul; en cuanto se reprograma una tarea
+ * (días + o -), esta línea se despega de la azul en esa misma medida.
+ * De hoy en adelante no se dibuja (no se puede predecir avance futuro).
  */
 export function useCurvaSData(
   tasks: GanttTask[],
@@ -83,18 +80,29 @@ export function useCurvaSData(
       return { points: [], isEmpty: true, todayScheduled: 0, todayActual: 0 };
     }
 
+    // Fechas de baseline con respaldo: si por alguna razón una tarea no tiene
+    // baseline guardado (no debería pasar — se fija al crear o al recibir su
+    // primera fecha), se usan sus fechas actuales como plan de facto.
+    const baselineStart = (t: GanttTask) => t.baseline_start_date || t.start_date!;
+    const baselineEnd = (t: GanttTask) => t.baseline_end_date || t.end_date!;
+
     const durationOf = (t: GanttTask) => {
-      if (t.duration_days && t.duration_days > 0) return t.duration_days;
-      const days = differenceInCalendarDays(parseISO(t.end_date!), parseISO(t.start_date!)) + 1;
+      const days = differenceInCalendarDays(parseISO(baselineEnd(t)), parseISO(baselineStart(t))) + 1;
       return Math.max(1, days);
     };
 
     const totalDuration = leaves.reduce((sum, t) => sum + durationOf(t), 0) || 1;
     const weightOf = (t: GanttTask) => durationOf(t) / totalDuration;
 
-    let minStart = leaves[0].start_date!;
-    let maxEnd = leaves[0].end_date!;
+    // El rango del gráfico cubre TANTO el plan original como las fechas
+    // actuales, para que se vea completo aunque una tarea se haya
+    // reprogramado fuera del rango original.
+    let minStart = baselineStart(leaves[0]);
+    let maxEnd = baselineEnd(leaves[0]);
     leaves.forEach((t) => {
+      const bs = baselineStart(t), be = baselineEnd(t);
+      if (bs < minStart) minStart = bs;
+      if (be > maxEnd) maxEnd = be;
       if (t.start_date! < minStart) minStart = t.start_date!;
       if (t.end_date! > maxEnd) maxEnd = t.end_date!;
     });
@@ -103,49 +111,32 @@ export function useCurvaSData(
     const rangeEnd = parseISO(maxEnd);
     const loopEnd = isAfter(rangeEnd, today) ? rangeEnd : today;
 
-    // % programado de una tarea "a la fecha" asOf (avance lineal inicio→término).
-    const scheduledPctAt = (t: GanttTask, asOf: Date) => {
-      const s = parseISO(t.start_date!);
-      const e = parseISO(t.end_date!);
+    // % de avance lineal (inicio→término) de una tarea a una fecha de corte dada.
+    const pctAt = (start: string, end: string, asOf: Date) => {
+      const s = parseISO(start);
+      const e = parseISO(end);
       if (asOf < s) return 0;
       if (asOf >= e) return 100;
-      const dur = durationOf(t);
+      const dur = Math.max(1, differenceInCalendarDays(e, s) + 1);
       const elapsed = differenceInCalendarDays(asOf, s) + 1;
       return Math.min(100, Math.max(0, (elapsed / dur) * 100));
     };
 
-    // % real de una tarea — única fotografía disponible (hoy).
-    const actualPctSnapshot = (t: GanttTask) => {
-      if (t.status === "completed" || (t.progress ?? 0) >= 100) return 100;
-      return Math.min(100, Math.max(0, t.progress ?? 0));
-    };
-
     const weightedScheduledAt = (asOf: Date) =>
-      leaves.reduce((sum, t) => sum + scheduledPctAt(t, asOf) * weightOf(t), 0);
+      leaves.reduce((sum, t) => sum + pctAt(baselineStart(t), baselineEnd(t), asOf) * weightOf(t), 0);
 
-    const todayActual = leaves.reduce((sum, t) => sum + actualPctSnapshot(t) * weightOf(t), 0);
+    const weightedActualAt = (asOf: Date) =>
+      leaves.reduce((sum, t) => sum + pctAt(t.start_date!, t.end_date!, asOf) * weightOf(t), 0);
+
     const todayScheduled = weightedScheduledAt(today);
-
-    // Si nada debería haber empezado aún (todayScheduled=0) no se puede
-    // reescalar por proporción (división por cero) — se usa una rampa lineal
-    // simple de 0 a todayActual entre el inicio del rango y hoy.
-    const scaleFactor = todayScheduled > 0 ? todayActual / todayScheduled : null;
-    const daysRangeStartToToday = Math.max(1, differenceInCalendarDays(today, rangeStart));
+    const todayActual = weightedActualAt(today);
 
     const points: CurvaSPoint[] = [];
     let weekStart = rangeStart;
     let guard = 0;
     while (!isAfter(weekStart, loopEnd) && guard < 600) {
       const scheduled = weightedScheduledAt(weekStart);
-      let actual: number | null;
-      if (isAfter(weekStart, today)) {
-        actual = null; // futuro: la línea real no se dibuja más allá de hoy
-      } else if (scaleFactor !== null) {
-        actual = Math.min(100, scheduled * scaleFactor);
-      } else {
-        const elapsed = Math.max(0, differenceInCalendarDays(weekStart, rangeStart));
-        actual = todayActual * Math.min(1, elapsed / daysRangeStartToToday);
-      }
+      const actual = isAfter(weekStart, today) ? null : weightedActualAt(weekStart);
 
       points.push({
         weekStart,

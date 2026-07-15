@@ -13,6 +13,13 @@ export interface GanttTask {
   name: string;
   start_date: string | null;
   end_date: string | null;
+  // Fechas del plan ORIGINAL — se fijan una sola vez al crear la tarea y
+  // nunca se tocan después (ni con Reprog., ni arrastrando la barra, ni por
+  // cascada de dependencias). Alimentan "% Avance Prog." y la línea azul de
+  // la Curva S; start_date/end_date (que sí cambian) alimentan "% Avance
+  // Real" y la línea roja.
+  baseline_start_date: string | null;
+  baseline_end_date: string | null;
   duration_days: number;
   duration_type: "calendar" | "business";
   progress: number;
@@ -492,6 +499,9 @@ export function useGantt(
           duration_type: options.duration_type || "calendar",
           start_date: options.start_date || null,
           end_date: options.end_date || null,
+          // El plan original queda fijado a las fechas con que nace la tarea.
+          baseline_start_date: options.start_date || null,
+          baseline_end_date: options.end_date || null,
           status: options.status || "pending",
           color: assignedColor,
         })
@@ -734,7 +744,26 @@ export function useGantt(
       cascade = computeScheduleDiff(tasks, seed);
     }
 
-    const persistedTaskUpdates = { ...updates, ...(cascade.get(taskId) || {}) } as Partial<GanttTask>;
+    // Si la tarea todavía no tiene un plan original guardado (típico de
+    // tareas copiadas de una plantilla/CAPEX, que nacen sin fechas) y esta
+    // actualización es la PRIMERA vez que recibe fechas reales, esas mismas
+    // fechas quedan fijadas como baseline — de ahí en adelante start_date/
+    // end_date pueden seguir cambiando (Reprog., cascada) sin tocar el plan
+    // original ya capturado.
+    const captureBaselineIfMissing = (id: string, upd: Partial<GanttTask>): Partial<GanttTask> => {
+      if (upd.start_date === undefined && upd.end_date === undefined) return upd;
+      const current = tasks.find((t) => t.id === id);
+      if (!current || current.baseline_start_date) return upd;
+      const newStart = upd.start_date !== undefined ? upd.start_date : current.start_date;
+      const newEnd = upd.end_date !== undefined ? upd.end_date : current.end_date;
+      if (!newStart && !newEnd) return upd;
+      return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
+    };
+
+    const persistedTaskUpdates = captureBaselineIfMissing(
+      taskId,
+      { ...updates, ...(cascade.get(taskId) || {}) } as Partial<GanttTask>,
+    );
 
     // 2) Optimistic local update FIRST — edited task + all dependents at once.
     //    The UI reflects the change immediately; DB writes happen afterwards.
@@ -743,7 +772,7 @@ export function useGantt(
         if (t.id === taskId) {
           return { ...t, ...persistedTaskUpdates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
         }
-        if (cascade.has(t.id)) return { ...t, ...cascade.get(t.id)! };
+        if (cascade.has(t.id)) return { ...t, ...captureBaselineIfMissing(t.id, cascade.get(t.id)!) };
         return t;
       })
     );
@@ -767,7 +796,7 @@ export function useGantt(
       if (cascade.size > 0) {
         const results = await Promise.all(
           Array.from(cascade.entries()).filter(([id]) => id !== taskId).map(([id, u]) =>
-            supabase.from("gantt_tasks").update(u as any).eq("id", id)
+            supabase.from("gantt_tasks").update(captureBaselineIfMissing(id, u) as any).eq("id", id)
           )
         );
         const failed = results.find((r) => r.error);

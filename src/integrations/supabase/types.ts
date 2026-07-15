@@ -2095,6 +2095,8 @@ export type Database = {
       }
       gantt_tasks: {
         Row: {
+          baseline_end_date: string | null
+          baseline_start_date: string | null
           budget_line_id: string | null
           color: string | null
           created_at: string
@@ -2122,6 +2124,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          baseline_end_date?: string | null
+          baseline_start_date?: string | null
           budget_line_id?: string | null
           color?: string | null
           created_at?: string
@@ -2149,6 +2153,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          baseline_end_date?: string | null
+          baseline_start_date?: string | null
           budget_line_id?: string | null
           color?: string | null
           created_at?: string
