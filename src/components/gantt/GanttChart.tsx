@@ -386,6 +386,7 @@ export function GanttChart({
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
+  const reprogBusyRef = useRef<Set<string>>(new Set());
   // Fecha de término ANTES de la primera reprogramación de la sesión — se guarda
   // una sola vez por tarea (no se sobreescribe en reprogramaciones sucesivas) para
   // poder mostrar "(fecha antigua) ±N días" tanto en la tarea editada como en
@@ -1362,9 +1363,19 @@ export function GanttChart({
   // Reprog. es lo opuesto — una reprogramación explícita que SIEMPRE debe
   // aplicarse y cascadear, sin preguntar.
   const commitReprogDelta = async (task: GanttTask) => {
+    // Resguardo anti-reentrada: si por cualquier motivo este mismo commit se
+    // disparara dos veces para la misma tarea (ej. Enter y blur casi
+    // simultáneos), la segunda llamada se ignora en vez de aplicar la
+    // reprogramación por duplicado.
+    if (reprogBusyRef.current.has(task.id)) return;
+    reprogBusyRef.current.add(task.id);
+
     const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
     setReprogValues(prev => new Map(prev).set(task.id, "0"));
-    if (isNaN(delta) || delta === 0 || !task.end_date) return;
+    if (isNaN(delta) || delta === 0 || !task.end_date) {
+      reprogBusyRef.current.delete(task.id);
+      return;
+    }
 
     try {
       const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
@@ -1389,6 +1400,8 @@ export function GanttChart({
       });
     } catch (err) {
       toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      reprogBusyRef.current.delete(task.id);
     }
   };
 
@@ -2684,8 +2697,12 @@ export function GanttChart({
                           const v = e.target.value;
                           setReprogValues(prev => new Map(prev).set(task.id, v));
                         }}
-                        onKeyDown={async (e) => {
-                          if (e.key === "Enter") await commitReprogDelta(task);
+                        onKeyDown={(e) => {
+                          // Enter dispara blur (único punto de commit) en vez de
+                          // llamar a commitReprogDelta acá también — así nunca se
+                          // puede aplicar la misma reprogramación dos veces si el
+                          // Enter también dispara blur.
+                          if (e.key === "Enter") e.currentTarget.blur();
                         }}
                         onBlur={async () => { await commitReprogDelta(task); }}
                         className="h-7 text-xs w-14 text-center border border-gray-200 rounded px-1 focus:outline-none focus:border-amber-400"
