@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, memo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -212,6 +212,52 @@ const calcCostoArriendoUF = (contract: Contract): number => {
   return currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
 };
 
+// Aislado en su propio componente memoizado para que escribir en el buscador
+// NO dispare un re-render de todo Contracts (y su tabla de ~100+ filas) en
+// cada tecla — eso era lo que causaba la escritura errática/trabada. Solo
+// este input pequeño se re-renderiza mientras se tipea; el filtro real (vía
+// URL) se actualiza recién 300ms después de dejar de escribir, igual que antes.
+const ContractsSearchInput = memo(function ContractsSearchInput({
+  urlValue,
+  onDebouncedChange,
+}: {
+  urlValue: string;
+  onDebouncedChange: (value: string) => void;
+}) {
+  const [value, setValue] = useState(urlValue);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sincronizar desde la URL cuando cambia externamente (ej. "Limpiar filtros")
+  useEffect(() => {
+    setValue((prev) => (prev !== urlValue ? urlValue : prev));
+  }, [urlValue]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.value;
+    setValue(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => onDebouncedChange(next), 300);
+  };
+
+  return (
+    <div className="relative flex-1 min-w-[200px]">
+      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Input
+        placeholder="Buscar por nombre, CEBE, código, dirección o comuna..."
+        value={value}
+        onChange={handleChange}
+        className="pl-10"
+      />
+    </div>
+  );
+});
+
 const Contracts = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -235,7 +281,6 @@ const Contracts = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [comiteGPStatuses, setComiteGPStatuses] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [customFieldsByContract, setCustomFieldsByContract] = useState<Record<string, { cebe?: string; codigo?: string }>>({});
-  const [localSearchTerm, setLocalSearchTerm] = useState(searchParams.get("search") || "");
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";
@@ -271,25 +316,6 @@ const Contracts = () => {
 
   const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
   const setComiteGPFilter = (value: string) => updateFilter("comite_gp", value);
-
-  // Debounce: sync local search to URL after 300ms of inactivity
-  useEffect(() => {
-    let cancelled = false;
-    const handler = setTimeout(() => {
-      if (!cancelled && localSearchTerm !== (getFreshParams().get("search") || "")) {
-        updateFilter("search", localSearchTerm);
-      }
-    }, 300);
-    return () => { cancelled = true; clearTimeout(handler); };
-  }, [localSearchTerm]);
-
-  // Sync URL -> local when search param changes externally (e.g. clear filters)
-  useEffect(() => {
-    const urlSearch = searchParams.get("search") || "";
-    if (urlSearch !== localSearchTerm) {
-      setLocalSearchTerm(urlSearch);
-    }
-  }, [searchParams.get("search")]);
   const setOperationFilter = (value: string) => updateFilter("operation", value);
   const setObraFilter = (value: string) => updateFilter("obra", value);
   const setPatenteFilter = (value: string) => updateFilter("patente", value);
@@ -1087,15 +1113,10 @@ const Contracts = () => {
           {/* Search and Filters */}
           <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nombre, CEBE, código, dirección o comuna..."
-                value={localSearchTerm}
-                onChange={(e) => setLocalSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+            <ContractsSearchInput
+              urlValue={searchTerm}
+              onDebouncedChange={(value) => updateFilter("search", value)}
+            />
 
             {/* Negotiation Subcategory Filter - Only for en_negociacion */}
             {isNegociacionView && (
