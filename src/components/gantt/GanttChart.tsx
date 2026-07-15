@@ -770,6 +770,22 @@ export function GanttChart({
     return { start: minStart, end: maxEnd };
   }, [tasks]);
 
+  // Igual que getEffectiveDates pero con las fechas de BASELINE (plan
+  // original, nunca tocado) — para comparar contra las fechas actuales y
+  // calcular el atraso/adelanto total del proyecto en la fila-resumen.
+  const getEffectiveBaselineDates = useCallback((task: GanttTask): { start: string | null; end: string | null } => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) return { start: task.baseline_start_date, end: task.baseline_end_date };
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of children) {
+      const { start, end } = getEffectiveBaselineDates(c);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    return { start: minStart, end: maxEnd };
+  }, [tasks]);
+
   // Get task position - uses dragPreview for the task being dragged
   const getTaskPosition = useCallback((task: GanttTask) => {
     // Use preview state if this task is being dragged
@@ -1550,6 +1566,53 @@ export function GanttChart({
     return totalW > 0 ? Math.round(acc / totalW) : 0;
   }, [tasks]);
 
+  // Término de TODO el cronograma según el plan ORIGINAL (baseline) — se
+  // compara contra overallEnd (fechas actuales) para saber cuántos días de
+  // atraso/adelanto acumula el proyecto completo.
+  const overallBaselineEnd = useMemo(() => {
+    let maxEnd: string | null = null;
+    for (const t of taskTree) {
+      const eff = getEffectiveBaselineDates(t);
+      if (eff.end && (!maxEnd || eff.end > maxEnd)) maxEnd = eff.end;
+    }
+    return maxEnd;
+  }, [taskTree, getEffectiveBaselineDates]);
+
+  // Días de reprogramación TOTALES del proyecto: diferencia entre el término
+  // actual y el término del plan original. Positivo = atraso, negativo =
+  // adelanto. A diferencia del indicador por fila (que es de la sesión y se
+  // resetea al recargar), este es persistente porque sale de fechas guardadas.
+  const overallReprogDays = useMemo(() => {
+    if (!overallEnd || !overallBaselineEnd) return 0;
+    return differenceInDays(parseISO(overallEnd), parseISO(overallBaselineEnd));
+  }, [overallEnd, overallBaselineEnd]);
+
+  // % Avance Prog./Real de TODO el proyecto — mismo criterio de ponderación
+  // por duración que usa cada línea madre, aplicado a las raíces del árbol.
+  const overallScheduledProgress = useMemo(() => {
+    if (taskTree.length === 0) return 0;
+    let totalW = 0;
+    let acc = 0;
+    for (const t of taskTree) {
+      const w = t.duration_days && t.duration_days > 0 ? t.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveScheduledProgress(t);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [taskTree, getEffectiveScheduledProgress]);
+
+  const overallCurrentProgress = useMemo(() => {
+    if (taskTree.length === 0) return 0;
+    let totalW = 0;
+    let acc = 0;
+    for (const t of taskTree) {
+      const w = t.duration_days && t.duration_days > 0 ? t.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveCurrentProgress(t);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [taskTree, getEffectiveCurrentProgress]);
+
   const handleSetColor = async (taskId: string, color: string | null) => {
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
     // Propagar el color a TODAS las líneas de nivel inferior (hijas, nietas, etc.),
@@ -2280,9 +2343,23 @@ export function GanttChart({
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("end", endColWidth) }}>
                     {overallEnd ? format(parseISO(overallEnd), "dd/MM/yy") : "—"}
                   </div>
-                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("reprog", REPROG_COL_WIDTH) }} />
-                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
-                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }} />
+                  <div
+                    className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-semibold text-xs"
+                    style={{ width: cw("reprog", REPROG_COL_WIDTH) }}
+                    title="Días de atraso (+) o adelanto (-) totales del proyecto vs. su plan original"
+                  >
+                    {overallReprogDays !== 0 && (
+                      <span className={overallReprogDays > 0 ? "text-red-500" : "text-emerald-600"}>
+                        {overallReprogDays > 0 ? "+" : ""}{overallReprogDays}d
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}>
+                    {overallScheduledProgress}%
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}>
+                    {overallCurrentProgress}%
+                  </div>
                 </div>
                 <div className="relative flex-1" style={{ width: totalDays * DAY_WIDTH }}>
                   <div className="absolute inset-0 flex pointer-events-none">
