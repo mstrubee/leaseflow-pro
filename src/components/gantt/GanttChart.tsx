@@ -395,6 +395,15 @@ export function GanttChart({
     (t) => t.baseline_end_date && t.end_date && t.baseline_end_date !== t.end_date
   );
   const endColWidth = hasAnyReprogDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
+  // Igual criterio para "Inicio": se ensancha si alguna hoja quedó con un
+  // Inicio movido por cascada de dependencia (descontando su propio offset
+  // de Reprog.), para que el indicador de origen entre completo.
+  const hasAnyCascadeDelta = tasks.some((t) => {
+    if (!t.start_date || !t.baseline_start_date) return false;
+    const totalDelta = differenceInDays(parseISO(t.start_date), parseISO(t.baseline_start_date));
+    return totalDelta - (t.reprog_offset_days ?? 0) !== 0;
+  });
+  const startColWidth = hasAnyCascadeDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
@@ -834,10 +843,10 @@ export function GanttChart({
     const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
     return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
       get("responsible", RESPONSIBLE_COL_WIDTH) +
-      get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
+      get("start", startColWidth) + get("duration", DURATION_COL_WIDTH) +
       get("end", endColWidth) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH) +
       get("progressReal", PROGRESS_REAL_COL_WIDTH);
-  }, [hiddenCols, taskNameColWidth, endColWidth]);
+  }, [hiddenCols, taskNameColWidth, endColWidth, startColWidth]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
@@ -1943,9 +1952,9 @@ export function GanttChart({
             </div>
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
-              style={{ width: cw("start", DATE_COL_WIDTH) }}
+              style={{ width: cw("start", startColWidth) }}
             >
-              {cw("start", DATE_COL_WIDTH) > 0 && (
+              {cw("start", startColWidth) > 0 && (
                 colSelectMode ? (
                   <div
                     className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
@@ -2322,7 +2331,7 @@ export function GanttChart({
                     Cronograma completo
                   </div>
                   <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
-                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("start", DATE_COL_WIDTH) }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("start", startColWidth) }}>
                     {overallStart ? format(parseISO(overallStart), "dd/MM/yy") : "—"}
                   </div>
                   <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("duration", DURATION_COL_WIDTH) }} />
@@ -2690,13 +2699,31 @@ export function GanttChart({
                     )}
                   </div>
 
-                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", startColWidth) }}>
                     {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).start : task.start_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
                       placeholder="Inicio"
                       editable={isAdmin && !hasChildren}
+                      suffix={hasChildren ? null : (() => {
+                        // Origen del cambio: si el Inicio se movió por CASCADA de una
+                        // dependencia (no por la reprogramación propia de esta fila),
+                        // el motivo se muestra acá — restando su propio offset de
+                        // Reprog. del total, queda solo la parte heredada de aguas
+                        // arriba. Coexiste con el indicador de Término (ese sí es la
+                        // reprogramación manual propia de esta fila).
+                        if (!task.start_date || !task.baseline_start_date) return null;
+                        const totalDelta = differenceInDays(parseISO(task.start_date), parseISO(task.baseline_start_date));
+                        const ownOffset = task.reprog_offset_days ?? 0;
+                        const cascadeDelta = totalDelta - ownOffset;
+                        if (cascadeDelta === 0) return null;
+                        return (
+                          <span className="text-[10px] font-bold text-blue-500 leading-none whitespace-nowrap" title="Se movió porque una tarea de la que depende cambió de fecha">
+                            ({format(parseISO(task.baseline_start_date), "dd/MM/yy")}) {cascadeDelta > 0 ? "+" : ""}{cascadeDelta} días
+                          </span>
+                        );
+                      })()}
                     />
                   </div>
 
@@ -2736,15 +2763,30 @@ export function GanttChart({
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
-                      suffix={(() => {
-                        const currentEnd = hasChildren ? getEffectiveDates(task).end : task.end_date;
-                        const baselineEnd = hasChildren ? getEffectiveBaselineDates(task).end : task.baseline_end_date;
+                      suffix={hasChildren ? (() => {
+                        // Línea madre: agrega el total vs. baseline igual que antes
+                        // (rollup de varias hojas, no tiene un origen único que separar).
+                        const currentEnd = getEffectiveDates(task).end;
+                        const baselineEnd = getEffectiveBaselineDates(task).end;
                         if (!currentEnd || !baselineEnd) return null;
                         const delta = differenceInDays(parseISO(currentEnd), parseISO(baselineEnd));
                         if (delta === 0) return null;
                         return (
                           <span className="text-[10px] font-bold text-red-500 leading-none whitespace-nowrap">
                             ({format(parseISO(baselineEnd), "dd/MM/yy")}) {delta > 0 ? "+" : ""}{delta} días
+                          </span>
+                        );
+                      })() : (() => {
+                        // Origen del cambio: acá solo se muestra la reprogramación
+                        // MANUAL propia de esta fila (su reprog_offset_days) — el
+                        // desplazamiento heredado de una dependencia ya se muestra
+                        // en Inicio, para no atribuir a esta fila un motivo que no
+                        // le pertenece. Ambos indicadores coexisten sin pisarse.
+                        const ownOffset = task.reprog_offset_days ?? 0;
+                        if (ownOffset === 0) return null;
+                        return (
+                          <span className="text-[10px] font-bold text-red-500 leading-none whitespace-nowrap" title="Reprogramación manual aplicada directamente en esta fila">
+                            Reprog. {ownOffset > 0 ? "+" : ""}{ownOffset} días
                           </span>
                         );
                       })()}
