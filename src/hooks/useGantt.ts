@@ -147,6 +147,16 @@ export function useGantt(
   const [timelines, setTimelines] = useState<GanttTimeline[]>([]);
   const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<GanttTask[]>([]);
+  // Espejo síncrono del estado de tareas. React no actualiza la variable
+  // `tasks` (ni el `prev` de un setTasks) entre dos `await` consecutivos, así
+  // que cuando el diálogo de dependencias guarda VARIAS dependencias de una
+  // sola vez, cada mutación veía el estado previo a las anteriores — y
+  // recalculaba la fecha del sucesor ignorando las dependencias recién
+  // agregadas (perdiendo la fecha más tardía en modo "esperar todas"). Este
+  // ref se actualiza al instante en cada mutación de dependencias, para que
+  // la siguiente lea el estado ya con los cambios previos aplicados.
+  const tasksRef = useRef<GanttTask[]>([]);
+  useEffect(() => { tasksRef.current = tasks; }, [tasks]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
@@ -856,11 +866,17 @@ export function useGantt(
       updates.dependency_join_mode !== undefined ||
       updates.reprog_offset_days !== undefined;
 
+    // Estado más fresco (ver nota en tasksRef): garantiza que si esta llamada
+    // llega justo después de agregar dependencias en el mismo guardado por
+    // lotes del diálogo (ej. al cambiar además el modo "esperar todas"), el
+    // recálculo vea todas esas dependencias ya aplicadas.
+    const baseTasks = tasksRef.current;
+
     // 1) Compute the full schedule synchronously from in-memory state (instant).
     let cascade = new Map<string, Partial<GanttTask>>();
     if (scheduleRelevant && !options?.skipPropagation) {
       const seed = new Map<string, Partial<GanttTask>>([[taskId, updates]]);
-      cascade = computeScheduleDiff(tasks, seed);
+      cascade = computeScheduleDiff(baseTasks, seed);
     }
 
     // Política de baseline según el origen del cambio de fecha:
@@ -873,14 +889,14 @@ export function useGantt(
     const applyBaselinePolicy = (id: string, upd: Partial<GanttTask>): Partial<GanttTask> => {
       if (options?.isReprogram) {
         if (upd.start_date === undefined && upd.end_date === undefined) return upd;
-        const current = tasks.find((t) => t.id === id);
+        const current = baseTasks.find((t) => t.id === id);
         if (!current || current.baseline_start_date) return upd;
         const newStart = upd.start_date !== undefined ? upd.start_date : current.start_date;
         const newEnd = upd.end_date !== undefined ? upd.end_date : current.end_date;
         if (!newStart && !newEnd) return upd;
         return { ...upd, baseline_start_date: newStart, baseline_end_date: newEnd };
       }
-      return resyncBaseline(tasks, id, upd);
+      return resyncBaseline(baseTasks, id, upd);
     };
 
     const persistedTaskUpdates = applyBaselinePolicy(
@@ -890,15 +906,15 @@ export function useGantt(
 
     // 2) Optimistic local update FIRST — edited task + all dependents at once.
     //    The UI reflects the change immediately; DB writes happen afterwards.
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id === taskId) {
-          return { ...t, ...persistedTaskUpdates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
-        }
-        if (cascade.has(t.id)) return { ...t, ...applyBaselinePolicy(t.id, cascade.get(t.id)!) };
-        return t;
-      })
-    );
+    const nextTasks = baseTasks.map((t) => {
+      if (t.id === taskId) {
+        return { ...t, ...persistedTaskUpdates, ...(options?.breakDependencies ? { dependencies: [] } : {}) };
+      }
+      if (cascade.has(t.id)) return { ...t, ...applyBaselinePolicy(t.id, cascade.get(t.id)!) };
+      return t;
+    });
+    tasksRef.current = nextTasks;
+    setTasks(nextTasks);
 
     // 3) Persist in the background (the edited task + dependents in parallel).
     setSaving(true);
@@ -1063,8 +1079,11 @@ export function useGantt(
   ) => {
     setSaving(true);
     try {
-      const dependentTask = tasks.find(t => t.id === taskId);
-      const parentTask = tasks.find(t => t.id === dependsOnTaskId);
+      // Estado más fresco (incluye dependencias agregadas en llamadas previas
+      // del mismo guardado por lotes del diálogo).
+      const baseTasks = tasksRef.current;
+      const dependentTask = baseTasks.find(t => t.id === taskId);
+      const parentTask = baseTasks.find(t => t.id === dependsOnTaskId);
 
       if (!dependentTask || !parentTask) {
         throw new Error("Tarea no encontrada");
@@ -1089,24 +1108,27 @@ export function useGantt(
       if (error) throw error;
 
       const insertedDep = inserted as GanttTaskDependency;
-      const tasksWithNewDependency = tasks.map((t) =>
+      const tasksWithNewDependency = baseTasks.map((t) =>
         t.id === taskId
           ? { ...t, dependencies: [...(t.dependencies || []), insertedDep] }
           : t,
       );
-      const scheduleDiff = computeScheduleDiff(tasksWithNewDependency, new Map(), tasks, [taskId]);
+      const scheduleDiff = computeScheduleDiff(tasksWithNewDependency, new Map(), baseTasks, [taskId]);
 
-      // Optimistic local update — no loadTimeline needed.
-      setTasks(prev => prev.map(t => {
-        const dateUpdates = resyncBaseline(tasks, t.id, scheduleDiff.get(t.id) || {});
-        if (t.id !== taskId) return Object.keys(dateUpdates).length > 0 ? { ...t, ...dateUpdates } : t;
-        return { ...t, ...dateUpdates, dependencies: [...(t.dependencies || []), insertedDep] };
-      }));
+      // Optimistic local update — no loadTimeline needed. Se actualiza tasksRef
+      // de forma síncrona para que una llamada posterior del mismo lote vea ya
+      // esta dependencia (y su recálculo) aplicados.
+      const nextTasks = tasksWithNewDependency.map(t => {
+        const dateUpdates = resyncBaseline(baseTasks, t.id, scheduleDiff.get(t.id) || {});
+        return Object.keys(dateUpdates).length > 0 ? { ...t, ...dateUpdates } : t;
+      });
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
 
       if (scheduleDiff.size > 0) {
         const results = await Promise.all(
           Array.from(scheduleDiff.entries()).map(([id, u]) =>
-            supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id),
+            supabase.from("gantt_tasks").update(resyncBaseline(baseTasks, id, u) as any).eq("id", id),
           ),
         );
         const failed = results.find((r) => r.error);
@@ -1131,8 +1153,10 @@ export function useGantt(
   const removeDependency = async (dependencyId: string) => {
     setSaving(true);
     try {
+      // Estado más fresco (ver nota en tasksRef).
+      const baseTasks = tasksRef.current;
       // Identify which task owns this dependency before deleting it.
-      const ownerTask = tasks.find((t) =>
+      const ownerTask = baseTasks.find((t) =>
         t.dependencies?.some((d) => d.id === dependencyId),
       );
 
@@ -1145,7 +1169,7 @@ export function useGantt(
 
       // Build the post-deletion state: only the targeted relationship is removed,
       // every other dependency stays intact.
-      const tasksAfter = tasks.map((t) => ({
+      const tasksAfter = baseTasks.map((t) => ({
         ...t,
         dependencies: t.dependencies?.filter((d) => d.id !== dependencyId),
       }));
@@ -1167,28 +1191,26 @@ export function useGantt(
       }
 
       // Recalculate the whole schedule from the remaining dependencies.
-      const scheduleDiff = computeScheduleDiff(tasksAfter, seed, tasks, ownerTask ? [ownerTask.id] : []);
+      const scheduleDiff = computeScheduleDiff(tasksAfter, seed, baseTasks, ownerTask ? [ownerTask.id] : []);
       // computeScheduleDiff never emits null clears, so merge them in by hand.
       for (const [id, upd] of forcedClears) {
         scheduleDiff.set(id, { ...(scheduleDiff.get(id) || {}), ...upd });
       }
 
       // Optimistic local update — remove dep and apply recomputed dates.
-      setTasks((prev) =>
-        prev.map((t) => {
-          const dateUpdates = resyncBaseline(tasks, t.id, scheduleDiff.get(t.id) || {});
-          return {
-            ...t,
-            ...dateUpdates,
-            dependencies: t.dependencies?.filter((d) => d.id !== dependencyId),
-          };
-        }),
-      );
+      // tasksAfter ya tiene la dependencia quitada; se aplican los diffs de
+      // fecha encima y se sincroniza tasksRef para el resto del lote.
+      const nextTasks = tasksAfter.map((t) => {
+        const dateUpdates = resyncBaseline(baseTasks, t.id, scheduleDiff.get(t.id) || {});
+        return Object.keys(dateUpdates).length > 0 ? { ...t, ...dateUpdates } : t;
+      });
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
 
       if (scheduleDiff.size > 0) {
         const results = await Promise.all(
           Array.from(scheduleDiff.entries()).map(([id, u]) =>
-            supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id),
+            supabase.from("gantt_tasks").update(resyncBaseline(baseTasks, id, u) as any).eq("id", id),
           ),
         );
         const failed = results.find((r) => r.error);
@@ -1213,8 +1235,10 @@ export function useGantt(
   ) => {
     setSaving(true);
     try {
+      // Estado más fresco (ver nota en tasksRef).
+      const baseTasks = tasksRef.current;
       // Find the dependency to know which dependent task to recalc
-      const dependentTask = tasks.find(t => t.dependencies?.some(d => d.id === dependencyId));
+      const dependentTask = baseTasks.find(t => t.dependencies?.some(d => d.id === dependencyId));
       const dep = dependentTask?.dependencies?.find(d => d.id === dependencyId);
 
       const { error } = await supabase
@@ -1225,29 +1249,25 @@ export function useGantt(
       if (error) throw error;
 
       if (dep && dependentTask) {
-        const tasksWithUpdatedDependency = tasks.map((t) => ({
+        const tasksWithUpdatedDependency = baseTasks.map((t) => ({
           ...t,
           dependencies: t.dependencies?.map((d) =>
             d.id === dependencyId ? { ...d, ...updates } : d,
           ),
         }));
-        const scheduleDiff = computeScheduleDiff(tasksWithUpdatedDependency, new Map(), tasks, [dependentTask.id]);
+        const scheduleDiff = computeScheduleDiff(tasksWithUpdatedDependency, new Map(), baseTasks, [dependentTask.id]);
 
-        setTasks(prev => prev.map(t => {
-          const dateUpdates = resyncBaseline(tasks, t.id, scheduleDiff.get(t.id) || {});
-          return {
-            ...t,
-            ...dateUpdates,
-            dependencies: t.dependencies?.map(d =>
-              d.id === dependencyId ? { ...d, ...updates } : d
-            ),
-          };
-        }));
+        const nextTasks = tasksWithUpdatedDependency.map(t => {
+          const dateUpdates = resyncBaseline(baseTasks, t.id, scheduleDiff.get(t.id) || {});
+          return Object.keys(dateUpdates).length > 0 ? { ...t, ...dateUpdates } : t;
+        });
+        tasksRef.current = nextTasks;
+        setTasks(nextTasks);
 
         if (scheduleDiff.size > 0) {
           const results = await Promise.all(
             Array.from(scheduleDiff.entries()).map(([id, u]) =>
-              supabase.from("gantt_tasks").update(resyncBaseline(tasks, id, u) as any).eq("id", id),
+              supabase.from("gantt_tasks").update(resyncBaseline(baseTasks, id, u) as any).eq("id", id),
             ),
           );
           const failed = results.find((r) => r.error);
