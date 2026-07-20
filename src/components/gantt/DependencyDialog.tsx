@@ -517,6 +517,7 @@ export function DependencyDialog({
                           type="number"
                           className={cn("h-8 w-20 text-xs", FOCUS_RING)}
                           value={dep.lag_days}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => handleUpdateDraft(dep.id, { lag_days: parseInt(e.target.value) || 0 })}
                           title="Días de desfase (+ retrasa, − adelanta)"
                         />
@@ -569,6 +570,7 @@ export function DependencyDialog({
                   type="number"
                   className={cn("h-9 w-20", FOCUS_RING)}
                   value={lag}
+                  onFocus={(e) => e.currentTarget.select()}
                   onChange={(e) => setLag(parseInt(e.target.value) || 0)}
                   title="Días de desfase (+ retrasa, − adelanta)"
                 />
