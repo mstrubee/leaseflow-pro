@@ -42,6 +42,54 @@ interface DraftDep {
 
 const FOCUS_RING = "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1";
 
+// Campo de "días de desfase". Usa un input de TEXTO con estado propio (no
+// type=number) porque en Safari el .select() no funciona sobre inputs
+// numéricos, así que el 0 por defecto no se reemplazaba al escribir. Con
+// estado de texto local el campo puede quedar vacío mientras se escribe y
+// acepta el signo negativo; el valor numérico se emite al padre en cada
+// cambio válido y se re-sincroniza al perder el foco.
+function LagInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setText(String(value));
+  }, [value]);
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      className={className}
+      value={text}
+      onFocus={(e) => {
+        focused.current = true;
+        e.currentTarget.select();
+      }}
+      onChange={(e) => {
+        const raw = e.target.value;
+        // Permitir vacío o solo "-" mientras se escribe; solo enteros con signo.
+        if (raw === "" || raw === "-" || /^-?\d+$/.test(raw)) {
+          setText(raw);
+          const n = parseInt(raw, 10);
+          onChange(Number.isNaN(n) ? 0 : n);
+        }
+      }}
+      onBlur={() => {
+        focused.current = false;
+        setText(String(value));
+      }}
+      title="Días de desfase (+ retrasa, − adelanta)"
+    />
+  );
+}
+
 export function DependencyDialog({
   open,
   onOpenChange,
@@ -513,13 +561,10 @@ export function DependencyDialog({
                             <SelectItem value="start">al inicio</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Input
-                          type="number"
+                        <LagInput
                           className={cn("h-8 w-20 text-xs", FOCUS_RING)}
                           value={dep.lag_days}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onChange={(e) => handleUpdateDraft(dep.id, { lag_days: parseInt(e.target.value) || 0 })}
-                          title="Días de desfase (+ retrasa, − adelanta)"
+                          onChange={(n) => handleUpdateDraft(dep.id, { lag_days: n })}
                         />
                         <span className="text-xs text-muted-foreground">días</span>
                       </div>
@@ -566,13 +611,10 @@ export function DependencyDialog({
                     <SelectItem value="start">al inicio</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input
-                  type="number"
+                <LagInput
                   className={cn("h-9 w-20", FOCUS_RING)}
                   value={lag}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => setLag(parseInt(e.target.value) || 0)}
-                  title="Días de desfase (+ retrasa, − adelanta)"
+                  onChange={(n) => setLag(n)}
                 />
                 <span className="text-xs text-muted-foreground">días</span>
                 <Button className={cn("ml-auto", FOCUS_RING)} disabled={!predecessorId} onClick={handleAddToDraft}>
