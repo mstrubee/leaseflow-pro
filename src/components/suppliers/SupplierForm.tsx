@@ -507,7 +507,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
                 checked={formData.does_installations}
                 onCheckedChange={checked => setFormData(prev => ({ ...prev, does_installations: !!checked }))}
               />
-              <Label htmlFor="does_installations">Instalaciones</Label>
+              <Label htmlFor="does_installations">Compras</Label>
             </div>
             <div className="flex items-center space-x-2">
               <Checkbox
