@@ -3007,6 +3007,27 @@ export type Database = {
           },
         ]
       }
+      kpi_team_config: {
+        Row: {
+          config: Json
+          key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          config?: Json
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          config?: Json
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       kpis: {
         Row: {
           assigned_user_id: string | null

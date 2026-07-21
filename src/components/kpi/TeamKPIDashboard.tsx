@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown, Search, X } from "lucide-react";
 import { format, parseISO, differenceInBusinessDays } from "date-fns";
+import { toast } from "sonner";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,22 @@ function WeightRow({ label, value, onChange }: { label: string; value: number; o
   );
 }
 
+function SupplierCountRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 text-muted-foreground">{label}</span>
+      <Input
+        type="number" min={0} max={999} step={1}
+        value={value}
+        onFocus={e => e.currentTarget.select()}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-16 h-6 text-xs text-right px-1"
+      />
+      <span className="text-muted-foreground">prov.</span>
+    </div>
+  );
+}
+
 function loadLS<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
 }
@@ -135,11 +152,22 @@ interface BeatrizData {
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
 
-const BEATRIZ_EXCLUDED_KEY = "beatriz_kpi_excluded_cats";
-const BEATRIZ_CFG_KEY      = "beatriz_kpi_cfg";
+// Config de Beatriz: cantidad de proveedores exigibles POR ZONA para el 100%
+// (meta) y el 130% (sobrecumplimiento), diferenciando "Compras"
+// (does_installations) de "Mantenciones" (does_maintenance). Se persiste en la
+// base (tabla kpi_team_config, key 'beatriz') para que la config que fija ADMIN
+// sea global y Beatriz la vea reflejada.
+const BEATRIZ_CFG_DB_KEY = "beatriz";
+const CAT_COMPRAS = "compras";
+const CAT_MANT    = "mantenciones";
 
-interface BeatrizCfg { metaMin: number; metaSobre: number; }
-const BEATRIZ_DEFAULTS: BeatrizCfg = { metaMin: 3, metaSobre: 5 };
+interface BeatrizCfg {
+  metaCompras: number;
+  metaComprasSobre: number;
+  metaMant: number;
+  metaMantSobre: number;
+}
+const BEATRIZ_DEFAULTS: BeatrizCfg = { metaCompras: 3, metaComprasSobre: 5, metaMant: 3, metaMantSobre: 5 };
 
 function cellColor(count: number, metaMin: number, metaSobre: number) {
   if (count >= metaSobre) return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -149,64 +177,90 @@ function cellColor(count: number, metaMin: number, metaSobre: number) {
 }
 
 function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boolean }) {
-  const [excludedIds, setExcludedIds] = useState<Set<string>>(() =>
-    new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
-  );
-  const [savedExcludedIds, setSavedExcludedIds] = useState<Set<string>>(() =>
-    new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
-  );
-  const [cfg, setCfg]           = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
-  const [savedCfg, setSavedCfg] = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
+  const { isAdmin } = useAuth();
+  const [cfg, setCfg]           = useState<BeatrizCfg>(BEATRIZ_DEFAULTS);
+  const [savedCfg, setSavedCfg] = useState<BeatrizCfg>(BEATRIZ_DEFAULTS);
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const [detailOpen, setDetailOpen]     = useState(false);
   const [searchQuery, setSearchQuery]   = useState("");
+  const [savingCfg, setSavingCfg]       = useState(false);
+
+  // Config global desde la base (la fija ADMIN; todos la ven reflejada).
+  useEffect(() => {
+    (async () => {
+      const { data: row } = await supabase
+        .from("kpi_team_config")
+        .select("config")
+        .eq("key", BEATRIZ_CFG_DB_KEY)
+        .maybeSingle();
+      if (row?.config) {
+        const c = { ...BEATRIZ_DEFAULTS, ...(row.config as Partial<BeatrizCfg>) };
+        setCfg(c);
+        setSavedCfg(c);
+      }
+    })();
+  }, []);
 
   const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
-
-  const toggleExclude = (id: string) => {
-    setExcludedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next; // no auto-save — committed on Guardar
-    });
-  };
 
   const updateCfg = (patch: Partial<BeatrizCfg>) => {
     setCfg(prev => ({ ...prev, ...patch })); // no auto-save
   };
 
-  const saveBeatrizAdmin = () => {
-    saveLS(BEATRIZ_CFG_KEY, cfg);
-    saveLS(BEATRIZ_EXCLUDED_KEY, [...excludedIds]);
-    setSavedCfg(cfg);
-    setSavedExcludedIds(new Set(excludedIds));
+  // Umbrales (meta 100% / sobre 130%) según la categoría de servicio de la fila.
+  const threshOf = (catId: string) =>
+    catId === CAT_COMPRAS
+      ? { min: cfg.metaCompras, sobre: cfg.metaComprasSobre }
+      : { min: cfg.metaMant, sobre: cfg.metaMantSobre };
+
+  const saveBeatrizAdmin = async () => {
+    setSavingCfg(true);
+    try {
+      const { error } = await supabase
+        .from("kpi_team_config")
+        .upsert(
+          { key: BEATRIZ_CFG_DB_KEY, config: cfg as unknown as Json, updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      if (error) throw error;
+      setSavedCfg(cfg);
+      toast.success("Configuración guardada");
+    } catch (err) {
+      console.error("Error guardando config KPI:", err);
+      toast.error("Error al guardar la configuración");
+      setCfg(savedCfg);
+    } finally {
+      setSavingCfg(false);
+    }
   };
 
   const cancelBeatrizAdmin = () => {
     setCfg(savedCfg);
-    setExcludedIds(new Set(savedExcludedIds));
   };
 
   if (loading) return <CardSkeleton title="Beatriz Valenzuela" subtitle="Cobertura de Proveedores" />;
 
-  const activeCats  = data ? data.categories.filter(c => !excludedIds.has(c.id)) : [];
+  const cats        = data?.categories ?? [];
   const zones       = data?.zones ?? [];
   const matrix      = data?.matrix ?? {};
-  const totalComb   = activeCats.length * zones.length;
+  const totalComb   = cats.length * zones.length;
 
-  let cubiertas3 = 0, cubiertas5 = 0;
-  activeCats.forEach(c => zones.forEach(z => {
-    const count = matrix[`${c.id}||${z}`] ?? 0;
-    if (count >= cfg.metaMin)   cubiertas3++;
-    if (count >= cfg.metaSobre) cubiertas5++;
-  }));
+  let cubiertas100 = 0, cubiertas130 = 0;
+  cats.forEach(c => {
+    const t = threshOf(c.id);
+    zones.forEach(z => {
+      const count = matrix[`${c.id}||${z}`] ?? 0;
+      if (count >= t.min)   cubiertas100++;
+      if (count >= t.sobre) cubiertas130++;
+    });
+  });
 
-  const score100 = pct(cubiertas3, totalComb);
-  const score130 = pct(cubiertas5, totalComb);
+  const score100 = pct(cubiertas100, totalComb);
+  const score130 = pct(cubiertas130, totalComb);
   const score    = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
 
   // Search filters rows in the matrix (doesn't affect score)
-  const filteredCats = activeCats.filter(c =>
+  const filteredCats = cats.filter(c =>
     !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -229,20 +283,20 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
         <CardContent className="space-y-3">
           <div>
             <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Cobertura ≥{cfg.metaMin} prov. (meta)</span>
+              <span className="text-muted-foreground">Cobertura meta (100%)</span>
               <span className="font-semibold">{score100}%</span>
             </div>
             <Progress value={Math.min(score100, 100)} className="h-2" />
           </div>
           <div>
             <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Cobertura ≥{cfg.metaSobre} prov. (sobre)</span>
+              <span className="text-muted-foreground">Cobertura sobrecumplimiento</span>
               <span className="font-semibold">{score130}%</span>
             </div>
             <Progress value={Math.min(score130, 100)} className="h-2" />
           </div>
           <p className="text-xs text-muted-foreground">
-            {cubiertas3} de {totalComb} combinaciones categoría × zona cubiertas
+            {cubiertas100} de {totalComb} combinaciones categoría × zona cubiertas
           </p>
           <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
             Ver detalle
@@ -262,24 +316,24 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="flex justify-between text-sm mb-1">
-                  <span>Cobertura ≥{cfg.metaMin} proveedores (meta 100%)</span>
+                  <span>Cobertura meta (100%)</span>
                   <span className="font-semibold">{score100}%</span>
                 </div>
                 <Progress value={Math.min(score100, 100)} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">{cubiertas3} de {totalComb} combinaciones</p>
+                <p className="text-xs text-muted-foreground mt-1">{cubiertas100} de {totalComb} combinaciones</p>
               </div>
               <div>
                 <div className="flex justify-between text-sm mb-1">
-                  <span>Cobertura ≥{cfg.metaSobre} proveedores (sobrecumplimiento)</span>
+                  <span>Cobertura sobrecumplimiento (130%)</span>
                   <span className="font-semibold">{score130}%</span>
                 </div>
                 <Progress value={Math.min(score130, 100)} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">{cubiertas5} de {totalComb} combinaciones</p>
+                <p className="text-xs text-muted-foreground mt-1">{cubiertas130} de {totalComb} combinaciones</p>
               </div>
             </div>
 
             {/* Buscador */}
-            {data && activeCats.length > 0 && (
+            {data && cats.length > 0 && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                 <Input
@@ -304,7 +358,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               <div>
                 {searchQuery && (
                   <p className="text-xs text-muted-foreground mb-1">
-                    Mostrando {filteredCats.length} de {activeCats.length} categorías
+                    Mostrando {filteredCats.length} de {cats.length} categorías
                   </p>
                 )}
                 <div className="overflow-x-auto">
@@ -324,6 +378,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                     <tbody>
                       {filteredCats.map(c => {
                         const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
+                        const rowT = threshOf(c.id);
                         return (
                           <>
                             <tr key={c.id} className="border-t">
@@ -337,7 +392,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                                     <button
                                       onClick={() => count > 0 ? toggleCell(key) : undefined}
                                       className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
-                                        ${cellColor(count, cfg.metaMin, cfg.metaSobre)}
+                                        ${cellColor(count, rowT.min, rowT.sobre)}
                                         ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
                                         ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
                                     >
@@ -375,9 +430,9 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                   </table>
                 </div>
                 <div className="flex gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ≥{cfg.metaSobre} óptimo</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> {cfg.metaMin}–{cfg.metaSobre - 1} meta</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 1–{cfg.metaMin - 1} bajo</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> sobrecumplimiento</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> meta</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> bajo la meta</span>
                   <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
                 </div>
               </div>
@@ -389,32 +444,32 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               </p>
             )}
 
-            {/* Admin */}
-            {data && (
+            {/* Admin — solo visible para admin (Beatriz, no-admin, no lo ve) */}
+            {data && isAdmin && (
               <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
+                <p className="text-muted-foreground">
+                  Proveedores exigibles <strong>por zona</strong> para el 100% (meta) y el 130%
+                  (sobrecumplimiento), por categoría de servicio.
+                </p>
                 <div>
-                  <p className="font-medium mb-2">Umbrales de cobertura</p>
+                  <p className="font-medium mb-2">Compras</p>
                   <div className="space-y-2">
-                    <WeightRow label="Meta (≥N proveedores)"              value={cfg.metaMin}   onChange={v => updateCfg({ metaMin: v })}   />
-                    <WeightRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaSobre} onChange={v => updateCfg({ metaSobre: v })} />
+                    <SupplierCountRow label="Meta 100% (≥N proveedores)"        value={cfg.metaCompras}      onChange={v => updateCfg({ metaCompras: v })} />
+                    <SupplierCountRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaComprasSobre} onChange={v => updateCfg({ metaComprasSobre: v })} />
                   </div>
                 </div>
                 <div>
-                  <p className="font-medium mb-2">Excluir categorías de la meta</p>
-                  <div className="space-y-1.5">
-                    {data.categories.map(c => (
-                      <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground">
-                        <Checkbox checked={excludedIds.has(c.id)} onCheckedChange={() => toggleExclude(c.id)} />
-                        <span className={excludedIds.has(c.id) ? "line-through" : ""}>{c.name}</span>
-                      </label>
-                    ))}
+                  <p className="font-medium mb-2">Mantenciones</p>
+                  <div className="space-y-2">
+                    <SupplierCountRow label="Meta 100% (≥N proveedores)"        value={cfg.metaMant}      onChange={v => updateCfg({ metaMant: v })} />
+                    <SupplierCountRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaMantSobre} onChange={v => updateCfg({ metaMantSobre: v })} />
                   </div>
-                  {excludedIds.size > 0 && (
-                    <p className="text-amber-600 mt-1">
-                      {excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""}.
-                    </p>
-                  )}
                 </div>
+                {savingCfg && (
+                  <p className="flex items-center gap-1 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Guardando...
+                  </p>
+                )}
               </AdminSection>
             )}
           </div>
@@ -1093,50 +1148,45 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingBeatriz(true);
       try {
-        const { data: cats, error: catsErr } = await supabase
-          .from("supplier_categories" as any)
-          .select("id, name")
-          .order("name");
-
-        const { data: zones, error: zonesErr } = await supabase
-          .from("supplier_influence_zones" as any)
+        const { data: zones } = await supabase
+          .from("supplier_influence_zones")
           .select("supplier_id, region")
           .limit(5000);
 
-        const { data: suppliers, error: suppsErr } = await supabase
-          .from("suppliers" as any)
-          .select("id, name, category_id")
-          .not("category_id", "is", null)
+        // Categoría de servicio: "Compras" (does_installations) / "Mantenciones"
+        // (does_maintenance). Un proveedor puede tener una, ambas o ninguna.
+        const { data: suppliers } = await supabase
+          .from("suppliers")
+          .select("id, name, does_installations, does_maintenance")
           .limit(5000);
 
-        console.log("[Beatriz] cats:", cats?.length, catsErr);
-        console.log("[Beatriz] zones:", zones?.length, zonesErr);
-        console.log("[Beatriz] suppliers:", suppliers?.length, suppsErr);
-
-        const catList  = (cats     || []) as any[];
-        const zoneList = (zones    || []) as any[];
-        const suppList = (suppliers|| []) as any[];
+        const zoneList = (zones     || []) as Array<{ supplier_id: string; region: string }>;
+        const suppList = (suppliers || []) as Array<{ id: string; name: string; does_installations: boolean; does_maintenance: boolean }>;
 
         const suppZones = new Map<string, Set<string>>();
-        zoneList.forEach((z: any) => {
-          const s = suppZones.get(z.supplier_id) || new Set();
+        zoneList.forEach((z) => {
+          const s = suppZones.get(z.supplier_id) || new Set<string>();
           s.add(z.region);
           suppZones.set(z.supplier_id, s);
         });
 
         const allZones = new Set<string>();
-        zoneList.forEach((z: any) => allZones.add(z.region));
+        zoneList.forEach((z) => allZones.add(z.region));
 
         const matrix: Record<string, number> = {};
         const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
 
-        suppList.forEach((s: any) => {
+        const addTo = (catId: string, zone: string, s: { id: string; name: string }) => {
+          const key = `${catId}||${zone}`;
+          matrix[key] = (matrix[key] || 0) + 1;
+          (suppliersMap[key] ??= []).push({ id: s.id, name: s.name });
+        };
+
+        suppList.forEach((s) => {
           const sZones = suppZones.get(s.id) || new Set<string>();
-          sZones.forEach((z: string) => {
-            const key = `${s.category_id}||${z}`;
-            matrix[key] = (matrix[key] || 0) + 1;
-            if (!suppliersMap[key]) suppliersMap[key] = [];
-            suppliersMap[key].push({ id: s.id, name: s.name });
+          sZones.forEach((z) => {
+            if (s.does_installations) addTo(CAT_COMPRAS, z, s);
+            if (s.does_maintenance)   addTo(CAT_MANT, z, s);
           });
         });
 
@@ -1145,7 +1195,10 @@ export function TeamKPIDashboard() {
         );
 
         setBeatrizData({
-          categories: catList.map((c: any) => ({ id: c.id, name: c.name })),
+          categories: [
+            { id: CAT_COMPRAS, name: "Compras" },
+            { id: CAT_MANT, name: "Mantenciones" },
+          ],
           zones:      [...allZones].sort(),
           matrix,
           suppliersMap,
