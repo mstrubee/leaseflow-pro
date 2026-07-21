@@ -7,6 +7,7 @@ import { SupplierForm } from "./SupplierForm";
 import { SuppliersList } from "./SuppliersList";
 import { SupplierBulkUpload } from "./SupplierBulkUpload";
 import { CategoryManager } from "./CategoryManager";
+import { SupplierCategoryView } from "./SupplierCategoryView";
 import { Supplier } from "./types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { generateSupplierTemplate } from "@/lib/generateSupplierTemplate";
@@ -89,12 +90,16 @@ export const SuppliersModule = () => {
                   <Settings className="h-3 w-3" />
                   Rubros
                 </TabsTrigger>
+                <TabsTrigger value="service-type">Categoría</TabsTrigger>
               </TabsList>
               <TabsContent value="list">
                 <SuppliersList onEdit={handleEdit} refreshKey={refreshKey} />
               </TabsContent>
               <TabsContent value="categories">
                 <CategoryManager />
+              </TabsContent>
+              <TabsContent value="service-type">
+                <SupplierCategoryView refreshKey={refreshKey} />
               </TabsContent>
             </Tabs>
           </CardContent>

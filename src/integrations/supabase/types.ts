@@ -6477,6 +6477,8 @@ export type Database = {
           commune: string | null
           contact_name: string | null
           created_at: string
+          does_installations: boolean
+          does_maintenance: boolean
           email: string | null
           id: string
           is_generic: boolean | null
@@ -6494,6 +6496,8 @@ export type Database = {
           commune?: string | null
           contact_name?: string | null
           created_at?: string
+          does_installations?: boolean
+          does_maintenance?: boolean
           email?: string | null
           id?: string
           is_generic?: boolean | null
@@ -6511,6 +6515,8 @@ export type Database = {
           commune?: string | null
           contact_name?: string | null
           created_at?: string
+          does_installations?: boolean
+          does_maintenance?: boolean
           email?: string | null
           id?: string
           is_generic?: boolean | null

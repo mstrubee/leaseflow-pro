@@ -42,6 +42,8 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
     influence_zones: [],
     is_generic: false,
     is_internal_transfer: false,
+    does_installations: false,
+    does_maintenance: false,
   });
   const [newEmail, setNewEmail] = useState("");
 
@@ -105,6 +107,8 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       influence_zones: zones?.map(z => ({ region: z.region, commune: z.commune })) || [],
       is_generic: supplier.is_generic || false,
       is_internal_transfer: (supplier as any).is_internal_transfer || false,
+      does_installations: supplier.does_installations || false,
+      does_maintenance: supplier.does_maintenance || false,
     });
   };
 
@@ -182,6 +186,8 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         category_id: formData.category_ids[0] || formData.category_id || null,
         is_generic: formData.is_generic,
         is_internal_transfer: formData.is_internal_transfer,
+        does_installations: formData.does_installations,
+        does_maintenance: formData.does_maintenance,
       };
 
       let supplierId: string;
@@ -489,6 +495,30 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
             />
             <p className="text-xs text-muted-foreground">
               Selecciona las regiones y comunas donde el proveedor tiene cobertura.
+            </p>
+          </div>
+
+          {/* Categoría de servicio (independiente de "rubro") — no excluyentes */}
+          <div className="space-y-3">
+            <h4 className="font-medium text-sm border-b pb-2">Categoría de servicio</h4>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="does_installations"
+                checked={formData.does_installations}
+                onCheckedChange={checked => setFormData(prev => ({ ...prev, does_installations: !!checked }))}
+              />
+              <Label htmlFor="does_installations">Instalaciones</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="does_maintenance"
+                checked={formData.does_maintenance}
+                onCheckedChange={checked => setFormData(prev => ({ ...prev, does_maintenance: !!checked }))}
+              />
+              <Label htmlFor="does_maintenance">Mantenciones</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Un proveedor puede prestar servicios de instalaciones, de mantenciones, ambos o ninguno.
             </p>
           </div>
 
