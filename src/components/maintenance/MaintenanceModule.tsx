@@ -8,6 +8,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, CalendarClock, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
@@ -50,6 +60,7 @@ const CommentCell = memo(function CommentCell({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const handleOpen = () => {
     if (form.additional_comments?.trim()) {
@@ -67,10 +78,28 @@ const CommentCell = memo(function CommentCell({
     setEditing(true);
   };
 
+  const handleSave = () => {
+    onSave(form.id, editText);
+    setOpen(false);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
-      onSave(form.id, editText);
+      handleSave();
+    }
+  };
+
+  // Al cancelar, si ya existía un comentario guardado se vuelve a modo
+  // lectura (el popover sigue abierto mostrando lo guardado); si no existía
+  // nada, se cierra directamente.
+  const confirmCancelDiscard = () => {
+    setConfirmCancelOpen(false);
+    if (form.additional_comments?.trim()) {
+      setEditText(form.additional_comments);
+      setEditing(false);
+    } else {
+      setEditText("");
       setOpen(false);
     }
   };
@@ -90,7 +119,12 @@ const CommentCell = memo(function CommentCell({
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-3 space-y-2 z-50 bg-popover border shadow-md">
+      <PopoverContent
+        align="start"
+        className="w-80 p-3 space-y-2 z-50 bg-popover border shadow-md"
+        onInteractOutside={e => { if (editing) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (editing) e.preventDefault(); }}
+      >
         {!editing ? (
           <>
             <p className="text-xs font-semibold text-muted-foreground">Comentarios</p>
@@ -119,13 +153,33 @@ const CommentCell = memo(function CommentCell({
             />
             <div className="flex justify-between items-center">
               <p className="text-[10px] text-muted-foreground">Ctrl + Enter para guardar</p>
-              <Button size="sm" onClick={() => { onSave(form.id, editText); setOpen(false); }}>
-                Guardar
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setConfirmCancelOpen(true)}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={handleSave}>
+                  Guardar
+                </Button>
+              </div>
             </div>
           </>
         )}
       </PopoverContent>
+
+      <AlertDialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Descartar cambios?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se perderá lo escrito en el comentario si no lo guardas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCancelDiscard}>Descartar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Popover>
   );
 });
@@ -940,9 +994,15 @@ export function MaintenanceModule() {
     });
   }, []);
 
-  // Comment save handler (called by CommentCell)
+  // Comment save handler (called by CommentCell) — guardar comentarios avanza
+  // el sub-estado a "Revisado" automáticamente.
   const saveComment = useCallback(async (formId: string, text: string) => {
-    const updates: any = { additional_comments: text || null, updated_at: new Date().toISOString() };
+    const updates: any = {
+      additional_comments: text || null,
+      sub_status: "Revisado",
+      status: "proceso",
+      updated_at: new Date().toISOString(),
+    };
     const { error } = await (supabase as any)
       .from("maintenance_forms")
       .update(updates)
@@ -952,11 +1012,11 @@ export function MaintenanceModule() {
       toast({ title: "Error", description: "No se pudo guardar el comentario", variant: "destructive" });
     } else {
       setForms(prev => {
-        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null } : fm);
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, ...updates } : fm);
         writeCache(CACHE_KEY_FORMS, updated);
         return updated;
       });
-      toast({ title: "Comentario guardado" });
+      toast({ title: "Comentario guardado", description: "Sub-estado actualizado a Revisado" });
     }
   }, []);
 
