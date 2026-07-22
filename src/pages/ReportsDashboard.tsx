@@ -24,6 +24,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { PRIORITY_CONFIG, PatentPriority } from "@/components/patents/types";
+import { PatentPriorityBadge } from "@/components/patents/PatentPriorityBadge";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import jsPDF from "jspdf";
@@ -1150,15 +1151,7 @@ const ReportsDashboard = () => {
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {priority ? (
-                                      <span 
-                                        className="px-2 py-1 rounded text-xs font-medium"
-                                        style={{ 
-                                          backgroundColor: PRIORITY_CONFIG[priority]?.color + "20",
-                                          color: PRIORITY_CONFIG[priority]?.color
-                                        }}
-                                      >
-                                        {PRIORITY_CONFIG[priority]?.label}
-                                      </span>
+                                      <PatentPriorityBadge priority={priority} size="sm" />
                                     ) : (
                                       <span className="text-muted-foreground text-xs">Sin asignar</span>
                                     )}
@@ -1502,15 +1495,7 @@ const ReportsDashboard = () => {
                                       <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
                                       <TableCell className="text-center">
                                         {priority ? (
-                                          <span 
-                                            className="px-2 py-1 rounded text-xs font-medium"
-                                            style={{ 
-                                              backgroundColor: PRIORITY_CONFIG[priority]?.color + "20",
-                                              color: PRIORITY_CONFIG[priority]?.color
-                                            }}
-                                          >
-                                            {PRIORITY_CONFIG[priority]?.label}
-                                          </span>
+                                          <PatentPriorityBadge priority={priority} size="sm" />
                                         ) : (
                                           <span className="text-muted-foreground text-xs">Sin asignar</span>
                                         )}
