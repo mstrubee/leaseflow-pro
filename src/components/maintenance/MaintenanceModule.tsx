@@ -352,6 +352,7 @@ interface FilterState {
   dateFilter: string | null;
   observationsFilter: boolean;
   zonalFilter: string;
+  scheduledFilter: "all" | "with" | "without";
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -367,6 +368,7 @@ const DEFAULT_FILTERS: FilterState = {
   dateFilter: null,
   observationsFilter: false,
   zonalFilter: "all",
+  scheduledFilter: "all",
 };
 
 const PAGE_SIZE = 100;
@@ -733,7 +735,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter } = filters;
+    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter, scheduledFilter } = filters;
     let result = forms.filter(f => {
       if (observationsFilter && !isResueltoObs(f)) return false;
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
@@ -760,6 +762,11 @@ export function MaintenanceModule() {
       }
       if (dateFilter) {
         if (f.created_date !== dateFilter) return false;
+      }
+      if (scheduledFilter !== "all") {
+        const hasSchedule = !!(f.gantt_task_id && scheduledTasks.get(f.gantt_task_id)?.start_date);
+        if (scheduledFilter === "with" && !hasSchedule) return false;
+        if (scheduledFilter === "without" && hasSchedule) return false;
       }
       if (zonalFilter !== "all") {
         const zName = f.contract_id ? zonalMap[f.contract_id] : undefined;
@@ -803,7 +810,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap]);
+  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap, scheduledTasks]);
 
   // Agrupar forms fusionados: cada grupo es un item (el "padre" = nº más alto;
   // los demás son hijos colapsables). Singles quedan como item suelto.
@@ -1447,8 +1454,8 @@ export function MaintenanceModule() {
               </Card>
             );
           })}
-          {/* Sin Criticidad card */}
-          {noCriticalityCount > 0 && (() => {
+          {/* Sin Criticidad card — siempre visible, incluso en cero */}
+          {(() => {
             const isActive = filters.criticalityFilter === "none";
             const ageRange = criticalityAgeRanges["__none__"];
             return (
@@ -1690,6 +1697,17 @@ export function MaintenanceModule() {
               {availableZonals.map(z => (
                 <SelectItem key={z} value={z}>{z}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Programación</Label>
+          <Select value={filters.scheduledFilter} onValueChange={v => updateFilter("scheduledFilter", v as FilterState["scheduledFilter"])}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Programación" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="with">Con Programación</SelectItem>
+              <SelectItem value="without">Sin Programación</SelectItem>
             </SelectContent>
           </Select>
         </div>
