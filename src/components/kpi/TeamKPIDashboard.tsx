@@ -315,6 +315,67 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
           </DialogHeader>
           <div className="max-h-[78vh] overflow-y-auto space-y-4 pr-1">
 
+            {/* Admin — solo visible para admin (Beatriz, no-admin, no lo ve).
+                Va ARRIBA para que, al desplegarse, sea visible sin tener que
+                scrollear pasando la matriz (que puede ser muy larga). */}
+            {data && isAdmin && (
+              <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
+                <p className="text-muted-foreground">
+                  Proveedores exigibles <strong>por zona</strong> para el 100% (meta) y el 130%
+                  (sobrecumplimiento), por rubro. Los rubros sin valor propio usan el default.
+                  Meta 0 ⇒ el rubro no exige nada.
+                </p>
+                <div>
+                  <p className="font-medium mb-2">Meta por defecto</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                    <SupplierCountRow label="Meta 100%"        value={cfg.default.min}   onChange={v => setDefaultMeta({ min: v })} />
+                    <SupplierCountRow label="Sobre 130%"       value={cfg.default.sobre} onChange={v => setDefaultMeta({ sobre: v })} />
+                  </div>
+                </div>
+                <div>
+                  <p className="font-medium mb-2">Meta por rubro</p>
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 border rounded-md p-2">
+                    {cats.map(c => {
+                      const m = metaOf(c.id);
+                      const custom = c.id in cfg.byRubro;
+                      return (
+                        <div key={c.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
+                          <span className={`truncate ${custom ? "text-foreground font-medium" : "text-muted-foreground"}`} title={c.name}>
+                            {c.name}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">100%</span>
+                            <Input
+                              type="number" min={0} max={999} step={1}
+                              value={m.min}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setRubroMeta(c.id, { min: Number(e.target.value) })}
+                              className="w-14 h-6 text-xs text-right px-1"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">130%</span>
+                            <Input
+                              type="number" min={0} max={999} step={1}
+                              value={m.sobre}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setRubroMeta(c.id, { sobre: Number(e.target.value) })}
+                              className="w-14 h-6 text-xs text-right px-1"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {savingCfg && (
+                  <p className="flex items-center gap-1 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Guardando...
+                  </p>
+                )}
+              </AdminSection>
+            )}
+
             {/* Score resumen */}
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -445,65 +506,6 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               <p className="text-sm text-muted-foreground text-center py-4">
                 Sin resultados para "{searchQuery}"
               </p>
-            )}
-
-            {/* Admin — solo visible para admin (Beatriz, no-admin, no lo ve) */}
-            {data && isAdmin && (
-              <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
-                <p className="text-muted-foreground">
-                  Proveedores exigibles <strong>por zona</strong> para el 100% (meta) y el 130%
-                  (sobrecumplimiento), por rubro. Los rubros sin valor propio usan el default.
-                  Meta 0 ⇒ el rubro no exige nada.
-                </p>
-                <div>
-                  <p className="font-medium mb-2">Meta por defecto</p>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                    <SupplierCountRow label="Meta 100%"        value={cfg.default.min}   onChange={v => setDefaultMeta({ min: v })} />
-                    <SupplierCountRow label="Sobre 130%"       value={cfg.default.sobre} onChange={v => setDefaultMeta({ sobre: v })} />
-                  </div>
-                </div>
-                <div>
-                  <p className="font-medium mb-2">Meta por rubro</p>
-                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 border rounded-md p-2">
-                    {cats.map(c => {
-                      const m = metaOf(c.id);
-                      const custom = c.id in cfg.byRubro;
-                      return (
-                        <div key={c.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
-                          <span className={`truncate ${custom ? "text-foreground font-medium" : "text-muted-foreground"}`} title={c.name}>
-                            {c.name}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground">100%</span>
-                            <Input
-                              type="number" min={0} max={999} step={1}
-                              value={m.min}
-                              onFocus={e => e.currentTarget.select()}
-                              onChange={e => setRubroMeta(c.id, { min: Number(e.target.value) })}
-                              className="w-14 h-6 text-xs text-right px-1"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground">130%</span>
-                            <Input
-                              type="number" min={0} max={999} step={1}
-                              value={m.sobre}
-                              onFocus={e => e.currentTarget.select()}
-                              onChange={e => setRubroMeta(c.id, { sobre: Number(e.target.value) })}
-                              className="w-14 h-6 text-xs text-right px-1"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                {savingCfg && (
-                  <p className="flex items-center gap-1 text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Guardando...
-                  </p>
-                )}
-              </AdminSection>
             )}
           </div>
         </DialogContent>
