@@ -37,6 +37,7 @@ const SpecialAttentionPage = lazy(() => import("./pages/SpecialAttentionPage"));
 const GoogleDriveCallback = lazy(() => import("./pages/GoogleDriveCallback"));
 const GeoLocPage = lazy(() => import("./pages/GeoLocPage"));
 const MaintenanceRoutesPage = lazy(() => import("./pages/MaintenanceRoutesPage"));
+const MaintenanceSchedulesPage = lazy(() => import("./pages/MaintenanceSchedulesPage"));
 const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
 const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDashboard"));
 const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
@@ -103,6 +104,7 @@ const App = () => (
                   <Route path="/special-attention" element={<ProtectedRoute resource="special_attention"><SpecialAttentionPage /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
                   <Route path="/maintenance/routes" element={<ProtectedRoute resource="maintenance"><MaintenanceRoutesPage /></ProtectedRoute>} />
+                  <Route path="/maintenance/schedules" element={<ProtectedRoute resource="maintenance"><MaintenanceSchedulesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute><RouteExecutionPage /></ProtectedRoute>} />
                   <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
                   <Route path="/service-contracts" element={<ProtectedRoute resource="service_contracts"><ServiceContractsDashboard /></ProtectedRoute>} />

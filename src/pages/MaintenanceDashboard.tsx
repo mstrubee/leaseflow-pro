@@ -1,6 +1,4 @@
-import { useState } from "react";
 import { MaintenanceModule } from "@/components/maintenance/MaintenanceModule";
-import { MaintenanceSchedulesOverview } from "@/components/maintenance/MaintenanceSchedulesOverview";
 import { Wrench, Navigation, CalendarClock } from "lucide-react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -9,7 +7,6 @@ import { useAuth } from "@/hooks/useAuth";
 const MaintenanceDashboard = () => {
   const navigate = useNavigate();
   const { hasPermission, roleLoaded } = useAuth();
-  const [schedulesOpen, setSchedulesOpen] = useState(false);
 
   // Si el usuario puede ver rutas pero no formularios → solo accede a /maintenance/routes
   const soloRutas = roleLoaded && hasPermission("maintenance_rutas", "view") && !hasPermission("maintenance_formularios", "view");
@@ -29,7 +26,7 @@ const MaintenanceDashboard = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSchedulesOpen(true)}
+                  onClick={() => navigate("/maintenance/schedules")}
                   className="gap-2"
                 >
                   <CalendarClock className="w-4 h-4" />
@@ -51,7 +48,6 @@ const MaintenanceDashboard = () => {
         <main className="max-w-[2112px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <MaintenanceModule />
         </main>
-        <MaintenanceSchedulesOverview open={schedulesOpen} onOpenChange={setSchedulesOpen} />
     </div>
   );
 };

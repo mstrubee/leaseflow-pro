@@ -1,21 +1,17 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, ChevronRight, CalendarClock, Loader2, ExternalLink, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, CalendarClock, Loader2, ExternalLink, XCircle, ArrowLeft, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
+import * as XLSX from "xlsx";
 import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
-import { detectMaintenanceType, MaintenanceType } from "./types";
-
-interface Props {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
+import { detectMaintenanceType, MaintenanceType } from "@/components/maintenance/types";
 
 interface ScheduledRow {
   taskId: string;
@@ -36,19 +32,19 @@ interface ScheduledRow {
 const ALL = "__all__";
 
 /**
- * Vista global "Programaciones": todas las tareas de todos los cronogramas de
+ * Página "Programaciones": todas las tareas de todos los cronogramas de
  * mantenciones (una fila por form ya programado, ver ScheduleMaintenanceDialog),
- * agrupadas por contrato y colapsadas por defecto. Los filtros ocultan
- * CONTRATOS enteros (no forms individuales dentro de un contrato que ya
- * calificó) — así un contrato con un form "Solicitado" y otro "Resuelto"
- * sigue mostrando ambos si el filtro de Sub Estado matchea cualquiera de los
- * dos, tal como se pidió explícitamente.
+ * agrupadas por contrato y colapsadas por defecto. Excluye forms ya resueltos
+ * (status = "solucionado"). Los filtros ocultan CONTRATOS enteros (no forms
+ * individuales dentro de un contrato que ya calificó) — así un contrato con un
+ * form "Solicitado" y otro en otro sub estado sigue mostrando ambos si el
+ * filtro de Sub Estado matchea cualquiera de los dos, tal como se pidió
+ * explícitamente.
  */
-export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
+export default function MaintenanceSchedulesPage() {
   const navigate = useNavigate();
   const { subStatusLabels } = useMaintenanceSubStatuses();
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ScheduledRow[]>([]);
   const [criticalityMap, setCriticalityMap] = useState<Record<string, { name: string; color: string }>>({});
   const [zonalMap, setZonalMap] = useState<Record<string, string>>({});
@@ -68,15 +64,15 @@ export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
   const [fZonal, setFZonal] = useState(ALL);
 
   useEffect(() => {
-    if (!open || loaded) return;
     setLoading(true);
     (async () => {
       const [{ data: forms }, { data: criticalities }, { data: links }, { data: members }, { data: addresses }, { data: companies }] = await Promise.all([
         supabase
           .from("maintenance_forms")
-          .select("id, form_number, contract_id, contract_name, supplier_name, year, sub_status, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, criticality_category_id, gantt_task_id")
+          .select("id, form_number, contract_id, contract_name, supplier_name, year, sub_status, status, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, criticality_category_id, gantt_task_id")
           .is("deleted_at", null)
-          .not("gantt_task_id", "is", null),
+          .not("gantt_task_id", "is", null)
+          .neq("status", "solucionado"),
         supabase.from("maintenance_criticality_categories").select("id, name, color"),
         supabase.from("org_member_contracts").select("contract_id, org_member_id"),
         supabase.rpc("get_org_members_basic"),
@@ -140,10 +136,9 @@ export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
           };
         });
       setRows(built);
-      setLoaded(true);
       setLoading(false);
     })();
-  }, [open, loaded]);
+  }, []);
 
   // Grupos por contrato, ordenados alfabéticamente.
   const groups = useMemo(() => {
@@ -215,6 +210,8 @@ export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
     });
   }, [groups, fContrato, fEmpresa, fZonal, fComuna, fForm, fProveedor, fAnio, fSubEstado, fTipo, fCriticidad, companyMap, zonalMap, communeMap]);
 
+  const visibleRowCount = useMemo(() => visibleGroups.reduce((sum, g) => sum + g.items.length, 0), [visibleGroups]);
+
   const toggle = (contractId: string) => {
     setExpanded(prev => {
       const next = new Set(prev);
@@ -223,111 +220,175 @@ export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
     });
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="h-5 w-5 text-amber-500" />
-            Programaciones — Cronogramas de Mantenciones
-          </DialogTitle>
-          <DialogDescription>
-            Todas las tareas ya programadas, agrupadas por contrato. Los filtros muestran contratos que tengan al menos un form que cumpla la condición, sin ocultar el resto de sus tareas.
-          </DialogDescription>
-        </DialogHeader>
+  const exportExcel = () => {
+    const data = visibleGroups.flatMap(g => g.items.map(r => ({
+      "Contrato": g.contractName,
+      "N° FORM": r.formNumber,
+      "Tarea": r.taskName,
+      "Fecha Inicio": r.startDate || "",
+      "Fecha Fin": r.endDate || "",
+      "Proveedor": r.supplierName || "",
+      "Año": r.year || "",
+      "Sub Estado": subStatusLabels[r.subStatus] || r.subStatus,
+      "Tipo": r.type,
+      "Criticidad": (r.criticalityId && criticalityMap[r.criticalityId]?.name) || "",
+      "Comuna": communeMap[r.contractId] || "",
+      "Gerente Zonal": zonalMap[r.contractId] || "",
+      "Empresa": (companyMap[r.contractId] || []).join(", "),
+    })));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, "Programaciones");
+    XLSX.writeFile(wb, `programaciones_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+  };
 
-        {/* Filtros */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pb-2 border-b">
-          <Select value={fContrato} onValueChange={setFContrato}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Contrato" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todos los contratos</SelectItem>
-              {options.contratos.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Input
-            value={fForm}
-            onChange={(e) => setFForm(e.target.value)}
-            placeholder="N° Form..."
-            className="h-8 text-xs"
-          />
-          <Select value={fProveedor} onValueChange={setFProveedor}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Proveedor" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todos los proveedores</SelectItem>
-              {options.proveedores.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={fAnio} onValueChange={setFAnio}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Año" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todos los años</SelectItem>
-              {options.anios.map(a => <SelectItem key={a} value={String(a)}>{a}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={fEmpresa} onValueChange={setFEmpresa}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Empresa" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todas las empresas</SelectItem>
-              {options.empresas.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={fSubEstado} onValueChange={setFSubEstado}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todos los sub estados</SelectItem>
-              {Array.from(new Set(rows.map(r => r.subStatus))).map(s => (
-                <SelectItem key={s} value={s}>{subStatusLabels[s] || s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={fTipo} onValueChange={setFTipo}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Tipo" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todos los tipos</SelectItem>
-              {(["Eléctrico", "Obra Civil", "Climatización", "Activos Fijos", "General", "Múltiple"] as MaintenanceType[]).map(t => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={fComuna} onValueChange={setFComuna}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Comuna" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todas las comunas</SelectItem>
-              {options.comunas.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={fCriticidad} onValueChange={setFCriticidad}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Criticidad" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todas las criticidades</SelectItem>
-              {options.criticidades.map(([id, c]) => <SelectItem key={id} value={id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={fZonal} onValueChange={setFZonal}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Gerente Zonal" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Todos los gerentes zonales</SelectItem>
-              {options.zonales.map(z => <SelectItem key={z} value={z}>{z}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {activeFilterCount > 0 && (
-            <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={clearFilters}>
-              <XCircle className="h-3.5 w-3.5" />
-              Limpiar ({activeFilterCount})
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-[2112px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" className="h-8 px-2 gap-1 text-xs" onClick={() => navigate("/maintenance")}>
+              <ArrowLeft className="w-3.5 h-3.5" /> Mantenciones
             </Button>
+            <CalendarClock className="h-6 w-6 text-amber-500" />
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">Programaciones</h1>
+              <p className="text-sm text-muted-foreground">Cronogramas de mantenciones — forms ya programados y aún no resueltos</p>
+            </div>
+            <div className="ml-auto">
+              <Button variant="outline" size="sm" className="gap-2" disabled={visibleRowCount === 0} onClick={exportExcel}>
+                <Download className="w-4 h-4" /> Descargar Excel
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-[2112px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+        {/* Filtros */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pb-4 border-b">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Contrato</Label>
+            <Select value={fContrato} onValueChange={setFContrato}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Contrato" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todos los contratos</SelectItem>
+                {options.contratos.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">N° Form</Label>
+            <Input
+              value={fForm}
+              onChange={(e) => setFForm(e.target.value)}
+              placeholder="N° Form..."
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Proveedor</Label>
+            <Select value={fProveedor} onValueChange={setFProveedor}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Proveedor" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todos los proveedores</SelectItem>
+                {options.proveedores.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Año</Label>
+            <Select value={fAnio} onValueChange={setFAnio}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Año" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todos los años</SelectItem>
+                {options.anios.map(a => <SelectItem key={a} value={String(a)}>{a}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Empresa</Label>
+            <Select value={fEmpresa} onValueChange={setFEmpresa}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Empresa" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas las empresas</SelectItem>
+                {options.empresas.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Sub Estado</Label>
+            <Select value={fSubEstado} onValueChange={setFSubEstado}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todos los sub estados</SelectItem>
+                {Array.from(new Set(rows.map(r => r.subStatus))).map(s => (
+                  <SelectItem key={s} value={s}>{subStatusLabels[s] || s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Tipo</Label>
+            <Select value={fTipo} onValueChange={setFTipo}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Tipo" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todos los tipos</SelectItem>
+                {(["Eléctrico", "Obra Civil", "Climatización", "Activos Fijos", "General", "Múltiple"] as MaintenanceType[]).map(t => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Comuna</Label>
+            <Select value={fComuna} onValueChange={setFComuna}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Comuna" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas las comunas</SelectItem>
+                {options.comunas.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Criticidad</Label>
+            <Select value={fCriticidad} onValueChange={setFCriticidad}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Criticidad" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas las criticidades</SelectItem>
+                {options.criticidades.map(([id, c]) => <SelectItem key={id} value={id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Gerente Zonal</Label>
+            <Select value={fZonal} onValueChange={setFZonal}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Gerente Zonal" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todos los gerentes zonales</SelectItem>
+                {options.zonales.map(z => <SelectItem key={z} value={z}>{z}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {activeFilterCount > 0 && (
+            <div className="flex items-end">
+              <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={clearFilters}>
+                <XCircle className="h-3.5 w-3.5" />
+                Limpiar ({activeFilterCount})
+              </Button>
+            </div>
           )}
         </div>
 
         {/* Listado agrupado por contrato */}
-        <div className="flex-1 overflow-y-auto -mx-1 px-1">
+        <div>
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : visibleGroups.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-12">
-              {rows.length === 0 ? "Todavía no hay forms programados en ningún cronograma de mantenciones." : "Ningún contrato coincide con los filtros."}
+              {rows.length === 0 ? "Todavía no hay forms programados y pendientes en ningún cronograma de mantenciones." : "Ningún contrato coincide con los filtros."}
             </p>
           ) : (
             <div className="space-y-1">
@@ -372,7 +433,7 @@ export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
                                   {r.endDate && r.endDate !== r.startDate && ` → ${format(new Date(r.endDate + "T00:00:00"), "dd/MM")}`}
                                 </span>
                                 <Badge variant="secondary" className="text-[10px] shrink-0">FORM {r.formNumber}</Badge>
-                                {r.supplierName && <span className="text-muted-foreground shrink-0 truncate max-w-[140px]">{r.supplierName}</span>}
+                                {r.supplierName && <span className="text-muted-foreground shrink-0 truncate max-w-[180px]">{r.supplierName}</span>}
                                 <Badge variant="outline" className="text-[10px] shrink-0">{subStatusLabels[r.subStatus] || r.subStatus}</Badge>
                               </div>
                             );
@@ -386,7 +447,7 @@ export function MaintenanceSchedulesOverview({ open, onOpenChange }: Props) {
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </main>
+    </div>
   );
 }
