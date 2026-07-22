@@ -152,22 +152,19 @@ interface BeatrizData {
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
 
-// Config de Beatriz: cantidad de proveedores exigibles POR ZONA para el 100%
-// (meta) y el 130% (sobrecumplimiento), diferenciando "Compras"
-// (does_installations) de "Mantenciones" (does_maintenance). Se persiste en la
-// base (tabla kpi_team_config, key 'beatriz') para que la config que fija ADMIN
-// sea global y Beatriz la vea reflejada.
+// Config de Beatriz: cada RUBRO tiene su propia meta de # de proveedores por
+// celda (rubro × zona) para el 100% (min) y el 130% (sobre). Los rubros sin
+// override usan `default`. Se persiste en la base (tabla kpi_team_config,
+// key 'beatriz') para que la config que fija ADMIN sea global y Beatriz la vea
+// reflejada. Meta 0 ⇒ el rubro no exige nada (siempre cubierto).
 const BEATRIZ_CFG_DB_KEY = "beatriz";
-const CAT_COMPRAS = "compras";
-const CAT_MANT    = "mantenciones";
 
+interface RubroMeta { min: number; sobre: number; }
 interface BeatrizCfg {
-  metaCompras: number;
-  metaComprasSobre: number;
-  metaMant: number;
-  metaMantSobre: number;
+  default: RubroMeta;
+  byRubro: Record<string, RubroMeta>;
 }
-const BEATRIZ_DEFAULTS: BeatrizCfg = { metaCompras: 3, metaComprasSobre: 5, metaMant: 3, metaMantSobre: 5 };
+const BEATRIZ_DEFAULTS: BeatrizCfg = { default: { min: 3, sobre: 5 }, byRubro: {} };
 
 function cellColor(count: number, metaMin: number, metaSobre: number) {
   if (count >= metaSobre) return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -194,7 +191,11 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
         .eq("key", BEATRIZ_CFG_DB_KEY)
         .maybeSingle();
       if (row?.config) {
-        const c = { ...BEATRIZ_DEFAULTS, ...(row.config as Partial<BeatrizCfg>) };
+        const raw = row.config as Partial<BeatrizCfg>;
+        const c: BeatrizCfg = {
+          default: { ...BEATRIZ_DEFAULTS.default, ...(raw.default ?? {}) },
+          byRubro: raw.byRubro ?? {},
+        };
         setCfg(c);
         setSavedCfg(c);
       }
@@ -203,15 +204,17 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
   const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
 
-  const updateCfg = (patch: Partial<BeatrizCfg>) => {
-    setCfg(prev => ({ ...prev, ...patch })); // no auto-save
-  };
+  const setDefaultMeta = (patch: Partial<RubroMeta>) =>
+    setCfg(prev => ({ ...prev, default: { ...prev.default, ...patch } }));
 
-  // Umbrales (meta 100% / sobre 130%) según la categoría de servicio de la fila.
-  const threshOf = (catId: string) =>
-    catId === CAT_COMPRAS
-      ? { min: cfg.metaCompras, sobre: cfg.metaComprasSobre }
-      : { min: cfg.metaMant, sobre: cfg.metaMantSobre };
+  const setRubroMeta = (rubroId: string, patch: Partial<RubroMeta>) =>
+    setCfg(prev => {
+      const base = prev.byRubro[rubroId] ?? prev.default;
+      return { ...prev, byRubro: { ...prev.byRubro, [rubroId]: { ...base, ...patch } } };
+    });
+
+  // Meta efectiva (min 100% / sobre 130%) del rubro: su override o el default.
+  const metaOf = (rubroId: string): RubroMeta => cfg.byRubro[rubroId] ?? cfg.default;
 
   const saveBeatrizAdmin = async () => {
     setSavingCfg(true);
@@ -247,7 +250,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
   let cubiertas100 = 0, cubiertas130 = 0;
   cats.forEach(c => {
-    const t = threshOf(c.id);
+    const t = metaOf(c.id);
     zones.forEach(z => {
       const count = matrix[`${c.id}||${z}`] ?? 0;
       if (count >= t.min)   cubiertas100++;
@@ -378,7 +381,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                     <tbody>
                       {filteredCats.map(c => {
                         const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
-                        const rowT = threshOf(c.id);
+                        const rowT = metaOf(c.id);
                         return (
                           <>
                             <tr key={c.id} className="border-t">
@@ -449,20 +452,50 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
                 <p className="text-muted-foreground">
                   Proveedores exigibles <strong>por zona</strong> para el 100% (meta) y el 130%
-                  (sobrecumplimiento), por categoría de servicio.
+                  (sobrecumplimiento), por rubro. Los rubros sin valor propio usan el default.
+                  Meta 0 ⇒ el rubro no exige nada.
                 </p>
                 <div>
-                  <p className="font-medium mb-2">Compras</p>
-                  <div className="space-y-2">
-                    <SupplierCountRow label="Meta 100% (≥N proveedores)"        value={cfg.metaCompras}      onChange={v => updateCfg({ metaCompras: v })} />
-                    <SupplierCountRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaComprasSobre} onChange={v => updateCfg({ metaComprasSobre: v })} />
+                  <p className="font-medium mb-2">Meta por defecto</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                    <SupplierCountRow label="Meta 100%"        value={cfg.default.min}   onChange={v => setDefaultMeta({ min: v })} />
+                    <SupplierCountRow label="Sobre 130%"       value={cfg.default.sobre} onChange={v => setDefaultMeta({ sobre: v })} />
                   </div>
                 </div>
                 <div>
-                  <p className="font-medium mb-2">Mantenciones</p>
-                  <div className="space-y-2">
-                    <SupplierCountRow label="Meta 100% (≥N proveedores)"        value={cfg.metaMant}      onChange={v => updateCfg({ metaMant: v })} />
-                    <SupplierCountRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaMantSobre} onChange={v => updateCfg({ metaMantSobre: v })} />
+                  <p className="font-medium mb-2">Meta por rubro</p>
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 border rounded-md p-2">
+                    {cats.map(c => {
+                      const m = metaOf(c.id);
+                      const custom = c.id in cfg.byRubro;
+                      return (
+                        <div key={c.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
+                          <span className={`truncate ${custom ? "text-foreground font-medium" : "text-muted-foreground"}`} title={c.name}>
+                            {c.name}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">100%</span>
+                            <Input
+                              type="number" min={0} max={999} step={1}
+                              value={m.min}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setRubroMeta(c.id, { min: Number(e.target.value) })}
+                              className="w-14 h-6 text-xs text-right px-1"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">130%</span>
+                            <Input
+                              type="number" min={0} max={999} step={1}
+                              value={m.sobre}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setRubroMeta(c.id, { sobre: Number(e.target.value) })}
+                              className="w-14 h-6 text-xs text-right px-1"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 {savingCfg && (
@@ -1148,20 +1181,27 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingBeatriz(true);
       try {
+        // Rubros activos (supplier_categories). El KPI mide cobertura por
+        // rubro × zona; cada rubro tiene su propia meta (config admin).
+        const { data: cats } = await supabase
+          .from("supplier_categories")
+          .select("id, name, is_active")
+          .order("name");
+
         const { data: zones } = await supabase
           .from("supplier_influence_zones")
           .select("supplier_id, region")
           .limit(5000);
 
-        // Categoría de servicio: "Compras" (does_installations) / "Mantenciones"
-        // (does_maintenance). Un proveedor puede tener una, ambas o ninguna.
         const { data: suppliers } = await supabase
           .from("suppliers")
-          .select("id, name, does_installations, does_maintenance")
+          .select("id, name, category_id")
+          .not("category_id", "is", null)
           .limit(5000);
 
+        const catList  = (cats      || []).filter((c: { is_active: boolean | null }) => c.is_active !== false) as Array<{ id: string; name: string }>;
         const zoneList = (zones     || []) as Array<{ supplier_id: string; region: string }>;
-        const suppList = (suppliers || []) as Array<{ id: string; name: string; does_installations: boolean; does_maintenance: boolean }>;
+        const suppList = (suppliers || []) as Array<{ id: string; name: string; category_id: string }>;
 
         const suppZones = new Map<string, Set<string>>();
         zoneList.forEach((z) => {
@@ -1176,17 +1216,12 @@ export function TeamKPIDashboard() {
         const matrix: Record<string, number> = {};
         const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
 
-        const addTo = (catId: string, zone: string, s: { id: string; name: string }) => {
-          const key = `${catId}||${zone}`;
-          matrix[key] = (matrix[key] || 0) + 1;
-          (suppliersMap[key] ??= []).push({ id: s.id, name: s.name });
-        };
-
         suppList.forEach((s) => {
           const sZones = suppZones.get(s.id) || new Set<string>();
           sZones.forEach((z) => {
-            if (s.does_installations) addTo(CAT_COMPRAS, z, s);
-            if (s.does_maintenance)   addTo(CAT_MANT, z, s);
+            const key = `${s.category_id}||${z}`;
+            matrix[key] = (matrix[key] || 0) + 1;
+            (suppliersMap[key] ??= []).push({ id: s.id, name: s.name });
           });
         });
 
@@ -1195,10 +1230,7 @@ export function TeamKPIDashboard() {
         );
 
         setBeatrizData({
-          categories: [
-            { id: CAT_COMPRAS, name: "Compras" },
-            { id: CAT_MANT, name: "Mantenciones" },
-          ],
+          categories: catList.map((c) => ({ id: c.id, name: c.name })),
           zones:      [...allZones].sort(),
           matrix,
           suppliersMap,
