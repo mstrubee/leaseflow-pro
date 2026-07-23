@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import { CategoryMultiSelect } from "@/components/suppliers/CategoryMultiSelect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown, Search, X } from "lucide-react";
+import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown } from "lucide-react";
 import { format, parseISO, differenceInBusinessDays } from "date-fns";
 import { toast } from "sonner";
 
@@ -143,28 +144,39 @@ interface EvelynData {
   semestreLabel: string;
 }
 
-interface BeatrizData {
-  categories: Array<{ id: string; name: string }>;
-  zones: string[];
+// Cobertura de una categoría de servicio: conteo de proveedores por
+// "<rubroId>||<zona>" y el detalle de proveedores por celda.
+interface CatCoverage {
   matrix: Record<string, number>;
   suppliersMap: Record<string, Array<{ id: string; name: string }>>;
+}
+interface BeatrizData {
+  rubros: Array<{ id: string; name: string }>; // rubros activos (para nombres)
+  zones: string[];
+  compras: CatCoverage;
+  mantenciones: CatCoverage;
 }
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
 
-// Config de Beatriz: cada RUBRO tiene su propia meta de # de proveedores por
-// celda (rubro × zona) para el 100% (min) y el 130% (sobre). Los rubros sin
-// override usan `default`. Se persiste en la base (tabla kpi_team_config,
-// key 'beatriz') para que la config que fija ADMIN sea global y Beatriz la vea
-// reflejada. Meta 0 ⇒ el rubro no exige nada (siempre cubierto).
+// Config de Beatriz: por cada CATEGORÍA de servicio (Compras = does_installations,
+// Mantenciones = does_maintenance) el admin define cuántos proveedores se exigen
+// POR RUBRO y POR ZONA para el 100% (min) y el 130% (sobre), y QUÉ rubros cuentan
+// para esa categoría (rubroIds). Se persiste en kpi_team_config (key 'beatriz')
+// para que la config sea global. El puntaje del bono junta (pooled) todas las
+// celdas rubro×zona de ambas categorías; la visualización es separada por
+// categoría para ver dónde faltan proveedores.
 const BEATRIZ_CFG_DB_KEY = "beatriz";
+type CatKey = "compras" | "mantenciones";
+const CAT_LABEL: Record<CatKey, string> = { compras: "Compras", mantenciones: "Mantenciones" };
+const CAT_KEYS: CatKey[] = ["compras", "mantenciones"];
 
-interface RubroMeta { min: number; sobre: number; }
-interface BeatrizCfg {
-  default: RubroMeta;
-  byRubro: Record<string, RubroMeta>;
-}
-const BEATRIZ_DEFAULTS: BeatrizCfg = { default: { min: 3, sobre: 5 }, byRubro: {} };
+interface CatCfg { min: number; sobre: number; rubroIds: string[]; }
+interface BeatrizCfg { compras: CatCfg; mantenciones: CatCfg; }
+const BEATRIZ_DEFAULTS: BeatrizCfg = {
+  compras:      { min: 2, sobre: 4, rubroIds: [] },
+  mantenciones: { min: 3, sobre: 5, rubroIds: [] },
+};
 
 function cellColor(count: number, metaMin: number, metaSobre: number) {
   if (count >= metaSobre) return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -179,7 +191,6 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
   const [savedCfg, setSavedCfg] = useState<BeatrizCfg>(BEATRIZ_DEFAULTS);
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const [detailOpen, setDetailOpen]     = useState(false);
-  const [searchQuery, setSearchQuery]   = useState("");
   const [savingCfg, setSavingCfg]       = useState(false);
 
   // Config global desde la base (la fija ADMIN; todos la ven reflejada).
@@ -192,9 +203,14 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
         .maybeSingle();
       if (row?.config) {
         const raw = row.config as Partial<BeatrizCfg>;
+        const merge = (d: CatCfg, r?: Partial<CatCfg>): CatCfg => ({
+          min: r?.min ?? d.min,
+          sobre: r?.sobre ?? d.sobre,
+          rubroIds: r?.rubroIds ?? d.rubroIds,
+        });
         const c: BeatrizCfg = {
-          default: { ...BEATRIZ_DEFAULTS.default, ...(raw.default ?? {}) },
-          byRubro: raw.byRubro ?? {},
+          compras: merge(BEATRIZ_DEFAULTS.compras, raw.compras),
+          mantenciones: merge(BEATRIZ_DEFAULTS.mantenciones, raw.mantenciones),
         };
         setCfg(c);
         setSavedCfg(c);
@@ -204,17 +220,8 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
   const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
 
-  const setDefaultMeta = (patch: Partial<RubroMeta>) =>
-    setCfg(prev => ({ ...prev, default: { ...prev.default, ...patch } }));
-
-  const setRubroMeta = (rubroId: string, patch: Partial<RubroMeta>) =>
-    setCfg(prev => {
-      const base = prev.byRubro[rubroId] ?? prev.default;
-      return { ...prev, byRubro: { ...prev.byRubro, [rubroId]: { ...base, ...patch } } };
-    });
-
-  // Meta efectiva (min 100% / sobre 130%) del rubro: su override o el default.
-  const metaOf = (rubroId: string): RubroMeta => cfg.byRubro[rubroId] ?? cfg.default;
+  const updateCat = (catKey: CatKey, patch: Partial<CatCfg>) =>
+    setCfg(prev => ({ ...prev, [catKey]: { ...prev[catKey], ...patch } }));
 
   const saveBeatrizAdmin = async () => {
     setSavingCfg(true);
@@ -237,35 +244,40 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
     }
   };
 
-  const cancelBeatrizAdmin = () => {
-    setCfg(savedCfg);
-  };
+  const cancelBeatrizAdmin = () => setCfg(savedCfg);
 
   if (loading) return <CardSkeleton title="Beatriz Valenzuela" subtitle="Cobertura de Proveedores" />;
 
-  const cats        = data?.categories ?? [];
-  const zones       = data?.zones ?? [];
-  const matrix      = data?.matrix ?? {};
-  const totalComb   = cats.length * zones.length;
+  const zones = data?.zones ?? [];
+  const rubroName = new Map((data?.rubros ?? []).map(r => [r.id, r.name] as const));
 
-  let cubiertas100 = 0, cubiertas130 = 0;
-  cats.forEach(c => {
-    const t = metaOf(c.id);
-    zones.forEach(z => {
-      const count = matrix[`${c.id}||${z}`] ?? 0;
-      if (count >= t.min)   cubiertas100++;
-      if (count >= t.sobre) cubiertas130++;
-    });
-  });
+  // Estadística de cobertura de una categoría: celdas (rubros elegidos × zonas)
+  // cubiertas al 100% (≥min) y al 130% (≥sobre).
+  const catStats = (catKey: CatKey) => {
+    const conf = cfg[catKey];
+    const cov = data ? data[catKey] : null;
+    const cells = conf.rubroIds.length * zones.length;
+    let c100 = 0, c130 = 0;
+    if (cov) {
+      conf.rubroIds.forEach(rid => zones.forEach(z => {
+        const n = cov.matrix[`${rid}||${z}`] ?? 0;
+        if (n >= conf.min)   c100++;
+        if (n >= conf.sobre) c130++;
+      }));
+    }
+    return { cells, c100, c130 };
+  };
+  const stats: Record<CatKey, { cells: number; c100: number; c130: number }> = {
+    compras: catStats("compras"),
+    mantenciones: catStats("mantenciones"),
+  };
 
-  const score100 = pct(cubiertas100, totalComb);
-  const score130 = pct(cubiertas130, totalComb);
+  // Puntaje del bono: pooled sobre ambas categorías.
+  const pooledCells = stats.compras.cells + stats.mantenciones.cells;
+  const score100 = pct(stats.compras.c100 + stats.mantenciones.c100, pooledCells);
+  const score130 = pct(stats.compras.c130 + stats.mantenciones.c130, pooledCells);
   const score    = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
-
-  // Search filters rows in the matrix (doesn't affect score)
-  const filteredCats = cats.filter(c =>
-    !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const sinConfigurar = pooledCells === 0;
 
   return (
     <>
@@ -280,27 +292,35 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                 <p className="text-xs text-muted-foreground">Activos Fijos y Proveedores</p>
               </div>
             </div>
-            {data && scoreBadge(score)}
+            {data && !sinConfigurar && scoreBadge(score)}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Cobertura meta (100%)</span>
-              <span className="font-semibold">{score100}%</span>
-            </div>
-            <Progress value={Math.min(score100, 100)} className="h-2" />
-          </div>
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Cobertura sobrecumplimiento</span>
-              <span className="font-semibold">{score130}%</span>
-            </div>
-            <Progress value={Math.min(score130, 100)} className="h-2" />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {cubiertas100} de {totalComb} combinaciones categoría × zona cubiertas
-          </p>
+          {sinConfigurar ? (
+            <p className="text-xs text-muted-foreground italic">
+              Sin configurar. {isAdmin ? "Definí los rubros por categoría en “Ver detalle → Configuración admin”." : "Pendiente de configuración."}
+            </p>
+          ) : (
+            <>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Cobertura meta (100%)</span>
+                  <span className="font-semibold">{score100}%</span>
+                </div>
+                <Progress value={Math.min(score100, 100)} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Cobertura sobrecumplimiento</span>
+                  <span className="font-semibold">{score130}%</span>
+                </div>
+                <Progress value={Math.min(score130, 100)} className="h-2" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.compras.c100 + stats.mantenciones.c100} de {pooledCells} celdas rubro × zona cubiertas
+              </p>
+            </>
+          )}
           <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
             Ver detalle
           </Button>
@@ -316,58 +336,28 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
           <div className="max-h-[78vh] overflow-y-auto space-y-4 pr-1">
 
             {/* Admin — solo visible para admin (Beatriz, no-admin, no lo ve).
-                Va ARRIBA para que, al desplegarse, sea visible sin tener que
-                scrollear pasando la matriz (que puede ser muy larga). */}
+                Va ARRIBA para que, al desplegarse, sea visible de inmediato. */}
             {data && isAdmin && (
               <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
                 <p className="text-muted-foreground">
-                  Proveedores exigibles <strong>por zona</strong> para el 100% (meta) y el 130%
-                  (sobrecumplimiento), por rubro. Los rubros sin valor propio usan el default.
-                  Meta 0 ⇒ el rubro no exige nada.
+                  Por cada categoría: proveedores exigibles <strong>por rubro y por zona</strong> para
+                  el 100% (meta) y el 130% (sobrecumplimiento), y qué rubros cuentan para esa categoría.
                 </p>
-                <div>
-                  <p className="font-medium mb-2">Meta por defecto</p>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                    <SupplierCountRow label="Meta 100%"        value={cfg.default.min}   onChange={v => setDefaultMeta({ min: v })} />
-                    <SupplierCountRow label="Sobre 130%"       value={cfg.default.sobre} onChange={v => setDefaultMeta({ sobre: v })} />
+                {CAT_KEYS.map(catKey => (
+                  <div key={catKey} className="border rounded-md p-2 space-y-2">
+                    <p className="font-medium">{CAT_LABEL[catKey]}</p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                      <SupplierCountRow label="Meta 100%"  value={cfg[catKey].min}   onChange={v => updateCat(catKey, { min: v })} />
+                      <SupplierCountRow label="Sobre 130%" value={cfg[catKey].sobre} onChange={v => updateCat(catKey, { sobre: v })} />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Rubros que cuentan para {CAT_LABEL[catKey]}:</p>
+                    <CategoryMultiSelect
+                      value={cfg[catKey].rubroIds}
+                      onChange={ids => updateCat(catKey, { rubroIds: ids })}
+                      placeholder="Seleccionar rubros"
+                    />
                   </div>
-                </div>
-                <div>
-                  <p className="font-medium mb-2">Meta por rubro</p>
-                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 border rounded-md p-2">
-                    {cats.map(c => {
-                      const m = metaOf(c.id);
-                      const custom = c.id in cfg.byRubro;
-                      return (
-                        <div key={c.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
-                          <span className={`truncate ${custom ? "text-foreground font-medium" : "text-muted-foreground"}`} title={c.name}>
-                            {c.name}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground">100%</span>
-                            <Input
-                              type="number" min={0} max={999} step={1}
-                              value={m.min}
-                              onFocus={e => e.currentTarget.select()}
-                              onChange={e => setRubroMeta(c.id, { min: Number(e.target.value) })}
-                              className="w-14 h-6 text-xs text-right px-1"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground">130%</span>
-                            <Input
-                              type="number" min={0} max={999} step={1}
-                              value={m.sobre}
-                              onFocus={e => e.currentTarget.select()}
-                              onChange={e => setRubroMeta(c.id, { sobre: Number(e.target.value) })}
-                              className="w-14 h-6 text-xs text-right px-1"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                ))}
                 {savingCfg && (
                   <p className="flex items-center gap-1 text-muted-foreground">
                     <Loader2 className="h-3 w-3 animate-spin" /> Guardando...
@@ -376,136 +366,135 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               </AdminSection>
             )}
 
-            {/* Score resumen */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Cobertura meta (100%)</span>
-                  <span className="font-semibold">{score100}%</span>
-                </div>
-                <Progress value={Math.min(score100, 100)} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">{cubiertas100} de {totalComb} combinaciones</p>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Cobertura sobrecumplimiento (130%)</span>
-                  <span className="font-semibold">{score130}%</span>
-                </div>
-                <Progress value={Math.min(score130, 100)} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">{cubiertas130} de {totalComb} combinaciones</p>
-              </div>
-            </div>
-
-            {/* Buscador */}
-            {data && cats.length > 0 && (
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Buscar categoría..."
-                  className="pl-8 pr-8 h-8 text-sm"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-2 top-1.5 p-0.5 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Matrix */}
-            {data && filteredCats.length > 0 && zones.length > 0 && (
-              <div>
-                {searchQuery && (
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Mostrando {filteredCats.length} de {cats.length} categorías
+            {/* Resumen del bono (pooled) */}
+            {!sinConfigurar && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Cobertura meta (100%)</span>
+                    <span className="font-semibold">{score100}%</span>
+                  </div>
+                  <Progress value={Math.min(score100, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stats.compras.c100 + stats.mantenciones.c100} de {pooledCells} celdas
                   </p>
-                )}
-                <div className="overflow-x-auto">
-                  <table className="text-xs border-collapse w-full">
-                    <thead>
-                      <tr>
-                        <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[160px] sticky left-0 bg-background">
-                          Categoría
-                        </th>
-                        {zones.map(z => (
-                          <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[80px]">
-                            {z}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCats.map(c => {
-                        const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
-                        const rowT = metaOf(c.id);
-                        return (
-                          <>
-                            <tr key={c.id} className="border-t">
-                              <td className="py-1.5 pr-3 font-medium sticky left-0 bg-background">{c.name}</td>
-                              {zones.map(z => {
-                                const key   = `${c.id}||${z}`;
-                                const count = matrix[key] ?? 0;
-                                const isOpen = expandedCell === key;
-                                return (
-                                  <td key={z} className="text-center py-1.5 px-2">
-                                    <button
-                                      onClick={() => count > 0 ? toggleCell(key) : undefined}
-                                      className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
-                                        ${cellColor(count, rowT.min, rowT.sobre)}
-                                        ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
-                                        ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
-                                    >
-                                      {count}
-                                    </button>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                            {openZone && (() => {
-                              const key      = `${c.id}||${openZone}`;
-                              const suppList = data?.suppliersMap?.[key] ?? [];
-                              return (
-                                <tr key={`${c.id}-detail`} className="bg-muted/40">
-                                  <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
-                                    <div className="flex items-center gap-2 mb-1.5 font-medium">
-                                      <span>{c.name}</span>
-                                      <span className="text-muted-foreground">·</span>
-                                      <span className="text-muted-foreground">{openZone}</span>
-                                      <span className="ml-auto text-muted-foreground">
-                                        {suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}
-                                      </span>
-                                    </div>
-                                    <ul className="space-y-0.5 columns-2">
-                                      {suppList.map(s => <li key={s.id} className="text-muted-foreground">• {s.name}</li>)}
-                                    </ul>
-                                  </td>
-                                </tr>
-                              );
-                            })()}
-                          </>
-                        );
-                      })}
-                    </tbody>
-                  </table>
                 </div>
-                <div className="flex gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> sobrecumplimiento</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> meta</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> bajo la meta</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Cobertura sobrecumplimiento (130%)</span>
+                    <span className="font-semibold">{score130}%</span>
+                  </div>
+                  <Progress value={Math.min(score130, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stats.compras.c130 + stats.mantenciones.c130} de {pooledCells} celdas
+                  </p>
                 </div>
               </div>
             )}
 
-            {data && filteredCats.length === 0 && searchQuery && (
+            {sinConfigurar && (
               <p className="text-sm text-muted-foreground text-center py-4">
-                Sin resultados para "{searchQuery}"
+                No hay rubros configurados para ninguna categoría.
+                {isAdmin ? " Usá “Configuración admin” arriba para elegirlos." : ""}
               </p>
+            )}
+
+            {/* Visualización por categoría (separada, para ver dónde faltan proveedores) */}
+            {CAT_KEYS.map(catKey => {
+              const conf = cfg[catKey];
+              const cov = data ? data[catKey] : null;
+              const s = stats[catKey];
+              if (conf.rubroIds.length === 0) return null;
+              const p100 = pct(s.c100, s.cells);
+              return (
+                <div key={catKey}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-sm">{CAT_LABEL[catKey]}</span>
+                    <span className="text-xs text-muted-foreground">
+                      meta ≥{conf.min}/zona · {s.c100} de {s.cells} celdas ({p100}%)
+                    </span>
+                  </div>
+                  {zones.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No hay zonas de influencia registradas.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="text-xs border-collapse w-full">
+                        <thead>
+                          <tr>
+                            <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[160px] sticky left-0 bg-background">
+                              Rubro
+                            </th>
+                            {zones.map(z => (
+                              <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[80px]">
+                                {z}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {conf.rubroIds.map(rid => {
+                            const openZone = zones.find(z => expandedCell === `${catKey}||${rid}||${z}`);
+                            return (
+                              <Fragment key={rid}>
+                                <tr className="border-t">
+                                  <td className="py-1.5 pr-3 font-medium sticky left-0 bg-background">{rubroName.get(rid) ?? rid}</td>
+                                  {zones.map(z => {
+                                    const cellKey = `${catKey}||${rid}||${z}`;
+                                    const count = cov?.matrix[`${rid}||${z}`] ?? 0;
+                                    const isOpen = expandedCell === cellKey;
+                                    return (
+                                      <td key={z} className="text-center py-1.5 px-2">
+                                        <button
+                                          onClick={() => count > 0 ? toggleCell(cellKey) : undefined}
+                                          className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
+                                            ${cellColor(count, conf.min, conf.sobre)}
+                                            ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
+                                            ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                                        >
+                                          {count}
+                                        </button>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                                {openZone && (() => {
+                                  const suppList = cov?.suppliersMap[`${rid}||${openZone}`] ?? [];
+                                  return (
+                                    <tr className="bg-muted/40">
+                                      <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
+                                        <div className="flex items-center gap-2 mb-1.5 font-medium">
+                                          <span>{rubroName.get(rid) ?? rid}</span>
+                                          <span className="text-muted-foreground">·</span>
+                                          <span className="text-muted-foreground">{openZone}</span>
+                                          <span className="ml-auto text-muted-foreground">
+                                            {suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}
+                                          </span>
+                                        </div>
+                                        <ul className="space-y-0.5 columns-2">
+                                          {suppList.map(sp => <li key={sp.id} className="text-muted-foreground">• {sp.name}</li>)}
+                                        </ul>
+                                      </td>
+                                    </tr>
+                                  );
+                                })()}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {!sinConfigurar && (
+              <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> sobrecumplimiento</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> meta</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> bajo la meta</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
+              </div>
             )}
           </div>
         </DialogContent>
@@ -1183,8 +1172,7 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingBeatriz(true);
       try {
-        // Rubros activos (supplier_categories). El KPI mide cobertura por
-        // rubro × zona; cada rubro tiene su propia meta (config admin).
+        // Rubros activos (supplier_categories), para nombres y selectores.
         const { data: cats } = await supabase
           .from("supplier_categories")
           .select("id, name, is_active")
@@ -1195,15 +1183,23 @@ export function TeamKPIDashboard() {
           .select("supplier_id, region")
           .limit(5000);
 
+        // Categoría de servicio del proveedor: Compras (does_installations) /
+        // Mantenciones (does_maintenance).
         const { data: suppliers } = await supabase
           .from("suppliers")
-          .select("id, name, category_id")
-          .not("category_id", "is", null)
+          .select("id, name, category_id, does_installations, does_maintenance")
           .limit(5000);
 
-        const catList  = (cats      || []).filter((c: { is_active: boolean | null }) => c.is_active !== false) as Array<{ id: string; name: string }>;
-        const zoneList = (zones     || []) as Array<{ supplier_id: string; region: string }>;
-        const suppList = (suppliers || []) as Array<{ id: string; name: string; category_id: string }>;
+        // Rubros de cada proveedor (multi vía assignments; fallback a category_id).
+        const { data: assignments } = await supabase
+          .from("supplier_category_assignments")
+          .select("supplier_id, category_id")
+          .limit(10000);
+
+        const catList  = (cats || []).filter((c: { is_active: boolean | null }) => c.is_active !== false) as Array<{ id: string; name: string }>;
+        const zoneList = (zones || []) as Array<{ supplier_id: string; region: string }>;
+        const suppList = (suppliers || []) as Array<{ id: string; name: string; category_id: string | null; does_installations: boolean; does_maintenance: boolean }>;
+        const assignList = (assignments || []) as Array<{ supplier_id: string; category_id: string }>;
 
         const suppZones = new Map<string, Set<string>>();
         zoneList.forEach((z) => {
@@ -1212,30 +1208,48 @@ export function TeamKPIDashboard() {
           suppZones.set(z.supplier_id, s);
         });
 
+        const suppRubros = new Map<string, Set<string>>();
+        assignList.forEach((a) => {
+          const s = suppRubros.get(a.supplier_id) || new Set<string>();
+          s.add(a.category_id);
+          suppRubros.set(a.supplier_id, s);
+        });
+
         const allZones = new Set<string>();
         zoneList.forEach((z) => allZones.add(z.region));
 
-        const matrix: Record<string, number> = {};
-        const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
+        const emptyCov = (): CatCoverage => ({ matrix: {}, suppliersMap: {} });
+        const cov: Record<CatKey, CatCoverage> = { compras: emptyCov(), mantenciones: emptyCov() };
+
+        const addTo = (catKey: CatKey, rubroId: string, zone: string, s: { id: string; name: string }) => {
+          const key = `${rubroId}||${zone}`;
+          const c = cov[catKey];
+          c.matrix[key] = (c.matrix[key] || 0) + 1;
+          (c.suppliersMap[key] ??= []).push({ id: s.id, name: s.name });
+        };
 
         suppList.forEach((s) => {
+          const rubros = suppRubros.get(s.id) ?? (s.category_id ? new Set([s.category_id]) : new Set<string>());
+          if (rubros.size === 0) return;
           const sZones = suppZones.get(s.id) || new Set<string>();
-          sZones.forEach((z) => {
-            const key = `${s.category_id}||${z}`;
-            matrix[key] = (matrix[key] || 0) + 1;
-            (suppliersMap[key] ??= []).push({ id: s.id, name: s.name });
-          });
+          if (sZones.size === 0) return;
+          rubros.forEach((rid) => sZones.forEach((z) => {
+            if (s.does_installations) addTo("compras", rid, z, s);
+            if (s.does_maintenance)   addTo("mantenciones", rid, z, s);
+          }));
         });
 
-        Object.values(suppliersMap).forEach(list =>
-          list.sort((a, b) => a.name.localeCompare(b.name, "es"))
+        [cov.compras, cov.mantenciones].forEach(c =>
+          Object.values(c.suppliersMap).forEach(list =>
+            list.sort((a, b) => a.name.localeCompare(b.name, "es"))
+          )
         );
 
         setBeatrizData({
-          categories: catList.map((c) => ({ id: c.id, name: c.name })),
-          zones:      [...allZones].sort(),
-          matrix,
-          suppliersMap,
+          rubros: catList.map((c) => ({ id: c.id, name: c.name })),
+          zones:  [...allZones].sort(),
+          compras: cov.compras,
+          mantenciones: cov.mantenciones,
         });
       } finally {
         setLoadingBeatriz(false);
