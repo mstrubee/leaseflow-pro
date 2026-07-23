@@ -2,7 +2,7 @@ import { useEffect, useState, Fragment } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { CategoryMultiSelect } from "@/components/suppliers/CategoryMultiSelect";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -92,21 +92,6 @@ function WeightRow({ label, value, onChange }: { label: string; value: number; o
   );
 }
 
-function SupplierCountRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="flex-1 text-muted-foreground">{label}</span>
-      <Input
-        type="number" min={0} max={999} step={1}
-        value={value}
-        onFocus={e => e.currentTarget.select()}
-        onChange={e => onChange(Number(e.target.value))}
-        className="w-16 h-6 text-xs text-right px-1"
-      />
-      <span className="text-muted-foreground">prov.</span>
-    </div>
-  );
-}
 
 function loadLS<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
@@ -171,18 +156,90 @@ type CatKey = "compras" | "mantenciones";
 const CAT_LABEL: Record<CatKey, string> = { compras: "Compras", mantenciones: "Mantenciones" };
 const CAT_KEYS: CatKey[] = ["compras", "mantenciones"];
 
-interface CatCfg { min: number; sobre: number; rubroIds: string[]; }
+// Umbrales de proveedores por rubro×zona para cada nivel de la escala de bono.
+interface CatCfg { n70: number; n100: number; n130: number; rubroIds: string[]; }
 interface BeatrizCfg { compras: CatCfg; mantenciones: CatCfg; }
 const BEATRIZ_DEFAULTS: BeatrizCfg = {
-  compras:      { min: 2, sobre: 4, rubroIds: [] },
-  mantenciones: { min: 3, sobre: 5, rubroIds: [] },
+  compras:      { n70: 1, n100: 2, n130: 4, rubroIds: [] },
+  mantenciones: { n70: 2, n100: 3, n130: 5, rubroIds: [] },
 };
 
-function cellColor(count: number, metaMin: number, metaSobre: number) {
-  if (count >= metaSobre) return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  if (count >= metaMin)   return "bg-blue-50 text-blue-800 border-blue-200";
-  if (count >= 1)         return "bg-amber-50 text-amber-800 border-amber-200";
+function cellColor(count: number, n70: number, n100: number, n130: number) {
+  if (count >= n130) return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (count >= n100) return "bg-blue-50 text-blue-800 border-blue-200";
+  if (count >= n70)  return "bg-amber-50 text-amber-800 border-amber-200";
   return "bg-red-50 text-red-700 border-red-200";
+}
+
+// Selector de rubros por ventana emergente (más amigable que un desplegable):
+// abre un modal con la lista completa de rubros como casillas + buscador.
+function RubroPickerModal({
+  title, rubros, value, onChange,
+}: {
+  title: string;
+  rubros: Array<{ id: string; name: string }>;
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const selected = new Set(value);
+  const filtered = rubros.filter(r => !q.trim() || r.name.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (id: string) =>
+    onChange(selected.has(id) ? value.filter(v => v !== id) : [...value, id]);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full justify-between h-8 text-xs font-normal"
+        onClick={() => setOpen(true)}
+      >
+        {value.length === 0 ? "Seleccionar rubros…" : `${value.length} rubro(s) seleccionado(s)`}
+        <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rubros — {title}</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Buscar rubro…"
+            className="h-8 text-sm"
+          />
+          <div className="max-h-[50vh] overflow-y-auto space-y-0.5 border rounded-md p-2">
+            {filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic px-1 py-2">Sin resultados</p>
+            ) : (
+              filtered.map(r => (
+                <label key={r.id} className="flex items-center gap-2 py-1 px-1 hover:bg-muted/50 rounded cursor-pointer text-sm">
+                  <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggle(r.id)} />
+                  <span>{r.name}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex gap-1">
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onChange(rubros.map(r => r.id))}>
+                Todos
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onChange([])}>
+                Ninguno
+              </Button>
+            </div>
+            <Button type="button" size="sm" className="h-7 text-xs" onClick={() => setOpen(false)}>
+              Listo ({value.length})
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boolean }) {
@@ -202,10 +259,11 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
         .eq("key", BEATRIZ_CFG_DB_KEY)
         .maybeSingle();
       if (row?.config) {
-        const raw = row.config as Partial<BeatrizCfg>;
-        const merge = (d: CatCfg, r?: Partial<CatCfg>): CatCfg => ({
-          min: r?.min ?? d.min,
-          sobre: r?.sobre ?? d.sobre,
+        const raw = row.config as Partial<Record<CatKey, Partial<CatCfg> & { min?: number; sobre?: number }>>;
+        const merge = (d: CatCfg, r?: Partial<CatCfg> & { min?: number; sobre?: number }): CatCfg => ({
+          n70: r?.n70 ?? d.n70,
+          n100: r?.n100 ?? r?.min ?? d.n100,   // migra shape viejo {min,sobre}
+          n130: r?.n130 ?? r?.sobre ?? d.n130,
           rubroIds: r?.rubroIds ?? d.rubroIds,
         });
         const c: BeatrizCfg = {
@@ -257,17 +315,18 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
     const conf = cfg[catKey];
     const cov = data ? data[catKey] : null;
     const cells = conf.rubroIds.length * zones.length;
-    let c100 = 0, c130 = 0;
+    let c70 = 0, c100 = 0, c130 = 0;
     if (cov) {
       conf.rubroIds.forEach(rid => zones.forEach(z => {
         const n = cov.matrix[`${rid}||${z}`] ?? 0;
-        if (n >= conf.min)   c100++;
-        if (n >= conf.sobre) c130++;
+        if (n >= conf.n70)  c70++;
+        if (n >= conf.n100) c100++;
+        if (n >= conf.n130) c130++;
       }));
     }
-    return { cells, c100, c130 };
+    return { cells, c70, c100, c130 };
   };
-  const stats: Record<CatKey, { cells: number; c100: number; c130: number }> = {
+  const stats: Record<CatKey, { cells: number; c70: number; c100: number; c130: number }> = {
     compras: catStats("compras"),
     mantenciones: catStats("mantenciones"),
   };
@@ -341,20 +400,40 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
               <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
                 <p className="text-muted-foreground">
                   Por cada categoría: proveedores exigibles <strong>por rubro y por zona</strong> para
-                  el 100% (meta) y el 130% (sobrecumplimiento), y qué rubros cuentan para esa categoría.
+                  cada nivel de la escala de bono, y qué rubros cuentan para esa categoría.
                 </p>
                 {CAT_KEYS.map(catKey => (
                   <div key={catKey} className="border rounded-md p-2 space-y-2">
                     <p className="font-medium">{CAT_LABEL[catKey]}</p>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                      <SupplierCountRow label="Meta 100%"  value={cfg[catKey].min}   onChange={v => updateCat(catKey, { min: v })} />
-                      <SupplierCountRow label="Sobre 130%" value={cfg[catKey].sobre} onChange={v => updateCat(catKey, { sobre: v })} />
+                    <p className="text-[11px] text-muted-foreground">
+                      Proveedores exigidos por rubro y zona
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { pct: "70%",  key: "n70"  as const, hint: "mínimo" },
+                        { pct: "100%", key: "n100" as const, hint: "meta" },
+                        { pct: "130%", key: "n130" as const, hint: "sobre" },
+                      ]).map(({ pct, key, hint }) => (
+                        <div key={key} className="flex flex-col items-center gap-1 rounded-md border p-2">
+                          <span className="text-sm font-semibold leading-none">{pct}</span>
+                          <span className="text-[10px] text-muted-foreground leading-none">{hint}</span>
+                          <Input
+                            type="number" min={0} max={999} step={1}
+                            value={cfg[catKey][key]}
+                            onFocus={e => e.currentTarget.select()}
+                            onChange={e => updateCat(catKey, { [key]: Number(e.target.value) })}
+                            className="w-14 h-7 text-sm text-center px-1 mt-0.5"
+                          />
+                          <span className="text-[10px] text-muted-foreground leading-none">prov.</span>
+                        </div>
+                      ))}
                     </div>
-                    <p className="text-[11px] text-muted-foreground">Rubros que cuentan para {CAT_LABEL[catKey]}:</p>
-                    <CategoryMultiSelect
+                    <p className="text-[11px] text-muted-foreground mt-1">Rubros que cuentan para {CAT_LABEL[catKey]}:</p>
+                    <RubroPickerModal
+                      title={CAT_LABEL[catKey]}
+                      rubros={data?.rubros ?? []}
                       value={cfg[catKey].rubroIds}
                       onChange={ids => updateCat(catKey, { rubroIds: ids })}
-                      placeholder="Seleccionar rubros"
                     />
                   </div>
                 ))}
@@ -411,7 +490,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-medium text-sm">{CAT_LABEL[catKey]}</span>
                     <span className="text-xs text-muted-foreground">
-                      meta ≥{conf.min}/zona · {s.c100} de {s.cells} celdas ({p100}%)
+                      meta ≥{conf.n100}/zona · {s.c100} de {s.cells} celdas ({p100}%)
                     </span>
                   </div>
                   {zones.length === 0 ? (
@@ -447,7 +526,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                                         <button
                                           onClick={() => count > 0 ? toggleCell(cellKey) : undefined}
                                           className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
-                                            ${cellColor(count, conf.min, conf.sobre)}
+                                            ${cellColor(count, conf.n70, conf.n100, conf.n130)}
                                             ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
                                             ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
                                         >
@@ -490,10 +569,10 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
 
             {!sinConfigurar && (
               <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> sobrecumplimiento</span>
-                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> meta</span>
-                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> bajo la meta</span>
-                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> 130% sobrecumplimiento</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> 100% meta</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 70% mínimo</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> bajo mínimo</span>
               </div>
             )}
           </div>
