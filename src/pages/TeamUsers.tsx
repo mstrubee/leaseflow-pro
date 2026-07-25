@@ -52,6 +52,7 @@ const TeamUsers = () => {
 
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nombreGerencia, setNombreGerencia] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<TeamMember | null>(null);
@@ -91,6 +92,25 @@ const TeamUsers = () => {
   }, [user, toast]);
 
   useEffect(() => { loadMembers(); }, [loadMembers]);
+
+  // nombre_gerencia = position del nodo del organigrama vinculado a MI propio
+  // perfil (org_member_id) -- así se llama el rol de los usuarios que invito:
+  // "Equipo Gerencia {nombre_gerencia}". org_members no es de lectura directa
+  // (columnas sensibles), se accede vía la función get_org_members_basic().
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("org_member_id")
+        .eq("id", user.id)
+        .single();
+      if (!profile?.org_member_id) return;
+      const { data: orgMembers } = await supabase.rpc("get_org_members_basic");
+      const mine = (orgMembers as any[] | null)?.find((m) => m.id === profile.org_member_id);
+      setNombreGerencia(mine?.position || null);
+    })();
+  }, [user]);
 
   const openCreate = () => {
     setEditing(null);
@@ -241,7 +261,15 @@ const TeamUsers = () => {
       <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base">Equipo Gerencia</CardTitle>
+            <div>
+              <CardTitle className="text-base">Equipo Gerencia</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Rol mostrado a los usuarios que invites: <span className="font-medium">
+                  Equipo Gerencia {nombreGerencia || "(sin asignar)"}
+                </span>
+                {!nombreGerencia && " — pídele al administrador que te vincule a un nodo del organigrama."}
+              </p>
+            </div>
             <Button size="sm" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-1.5" />
               Nuevo usuario

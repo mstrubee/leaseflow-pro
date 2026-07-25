@@ -27,6 +27,7 @@ interface TeamMember {
 interface GerenteGroup {
   gerenteId: string;
   gerenteLabel: string;
+  nombreGerencia: string | null;
   members: TeamMember[];
 }
 
@@ -98,13 +99,16 @@ export function TeamUsersAdminManager() {
     const gerenteIds = (gerenteRoles || []).map((r) => r.user_id);
     const equipoIds = (equipoRoles || []).map((r) => r.user_id);
 
-    const [{ data: gerenteProfiles }, { data: equipoProfiles }] = await Promise.all([
+    const [{ data: gerenteProfiles }, { data: equipoProfiles }, { data: orgMembers }] = await Promise.all([
       gerenteIds.length
-        ? supabase.from("profiles").select("id, email, full_name").in("id", gerenteIds)
+        ? supabase.from("profiles").select("id, email, full_name, org_member_id").in("id", gerenteIds)
         : Promise.resolve({ data: [] as any[] }),
       equipoIds.length
         ? supabase.from("profiles").select("id, email, full_name, invitation_status, created_at, created_by").in("id", equipoIds)
         : Promise.resolve({ data: [] as any[] }),
+      // org_members no es de lectura directa (columnas sensibles); position
+      // se obtiene vía esta función (mismo patrón que TeamUsers.tsx).
+      supabase.rpc("get_org_members_basic"),
     ]);
 
     const gerenteIdSet = new Set(gerenteIds);
@@ -112,13 +116,14 @@ export function TeamUsersAdminManager() {
       .map((g: any) => ({
         gerenteId: g.id,
         gerenteLabel: g.full_name || g.email,
+        nombreGerencia: (orgMembers as any[] | null)?.find((m) => m.id === g.org_member_id)?.position || null,
         members: (equipoProfiles || []).filter((m: any) => m.created_by === g.id) as TeamMember[],
       }))
       .sort((a, b) => a.gerenteLabel.localeCompare(b.gerenteLabel));
 
     const orphans = (equipoProfiles || []).filter((m: any) => !gerenteIdSet.has(m.created_by)) as TeamMember[];
     if (orphans.length > 0) {
-      result.push({ gerenteId: ORPHAN_GROUP_ID, gerenteLabel: "Sin gerente asignado", members: orphans });
+      result.push({ gerenteId: ORPHAN_GROUP_ID, gerenteLabel: "Sin gerente asignado", nombreGerencia: null, members: orphans });
     }
 
     setGroups(result);
@@ -285,7 +290,11 @@ export function TeamUsersAdminManager() {
         <CollapsibleCard
           key={group.gerenteId}
           title={group.gerenteLabel}
-          description={`${group.members.length} usuario${group.members.length === 1 ? "" : "s"}`}
+          description={
+            group.gerenteId === ORPHAN_GROUP_ID
+              ? `${group.members.length} usuario${group.members.length === 1 ? "" : "s"}`
+              : `${group.members.length} usuario${group.members.length === 1 ? "" : "s"} · Rol mostrado: Equipo Gerencia ${group.nombreGerencia || "(sin asignar)"}`
+          }
           headerActions={
             group.gerenteId !== ORPHAN_GROUP_ID && (
               <Button size="sm" variant="outline" onClick={() => openCreate({ id: group.gerenteId, label: group.gerenteLabel })}>

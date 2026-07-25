@@ -108,6 +108,17 @@ function useProvideAuth(): AuthContextValue {
           if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
             maybeFetch(session.user.id);
           }
+          // Registro para el historial de "Uso" (equipo_gerencia). Solo en
+          // SIGNED_IN real -- INITIAL_SESSION dispara en cada carga de página
+          // con una sesión ya existente, no es un inicio de sesión nuevo.
+          if (event === 'SIGNED_IN') {
+            supabase.from('login_events').insert({
+              user_id: session.user.id,
+              user_agent: navigator.userAgent,
+            }).then(({ error }) => {
+              if (error) console.error('Error registrando login_event:', error.message);
+            });
+          }
         } else {
           // User signed out — clear derived state
           loadedForUserId.current = null;
