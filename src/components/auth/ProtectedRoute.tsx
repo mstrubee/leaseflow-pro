@@ -9,10 +9,13 @@ interface ProtectedRouteProps {
    *  visibilidad puede otorgarse a través de un permiso general o de
    *  cualquiera de sus sub-secciones. */
   resource?: string | string[];
+  /** Rol exigido a nivel de ruta (no solo ocultar la card) -- p.ej. /usuarios
+   *  es exclusivo de gerente, igual que /admin ya lo era para admin. */
+  requireRole?: "admin" | "gerente";
 }
 
-export function ProtectedRoute({ children, resource }: ProtectedRouteProps) {
-  const { user, loading, roleLoaded, hasPermission } = useAuth();
+export function ProtectedRoute({ children, resource, requireRole }: ProtectedRouteProps) {
+  const { user, loading, roleLoaded, hasPermission, isAdmin, isGerente } = useAuth();
 
   // Show loading spinner while checking authentication
   if (loading || !roleLoaded) {
@@ -27,6 +30,9 @@ export function ProtectedRoute({ children, resource }: ProtectedRouteProps) {
   if (!user) {
     return <Navigate to="/auth" replace />;
   }
+
+  if (requireRole === "admin" && !isAdmin) return <Navigate to="/" replace />;
+  if (requireRole === "gerente" && !isGerente) return <Navigate to="/" replace />;
 
   // Redirect to dashboard if user lacks permission for this resource
   if (resource) {

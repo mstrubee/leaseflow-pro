@@ -41,6 +41,7 @@ const MaintenanceSchedulesPage = lazy(() => import("./pages/MaintenanceSchedules
 const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
 const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDashboard"));
 const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
+const TeamUsers = lazy(() => import("./pages/TeamUsers"));
 
 const queryClient = new QueryClient();
 
@@ -86,6 +87,7 @@ const App = () => (
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                   <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+                  <Route path="/usuarios" element={<ProtectedRoute requireRole="gerente"><TeamUsers /></ProtectedRoute>} />
                   <Route path="/contracts" element={<ProtectedRoute resource="contracts"><Contracts /></ProtectedRoute>} />
                   <Route path="/contracts/new" element={<ProtectedRoute resource="contracts"><NewContract /></ProtectedRoute>} />
                   <Route path="/contracts/bulk-upload" element={<ProtectedRoute resource="contracts"><BulkContractUpload /></ProtectedRoute>} />

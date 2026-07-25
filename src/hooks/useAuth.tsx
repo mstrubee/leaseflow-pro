@@ -13,6 +13,8 @@ interface AuthContextValue {
   loading: boolean;
   isAdmin: boolean;
   isOperador: boolean;
+  isGerente: boolean;
+  isEquipoGerencia: boolean;
   roleLoaded: boolean;
   permissions: UserPermission[];
   hasPermission: (resource: string, requiredPermission: "view" | "edit" | "all") => boolean;
@@ -27,6 +29,8 @@ function useProvideAuth(): AuthContextValue {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isOperador, setIsOperador] = useState(false);
+  const [isGerente, setIsGerente] = useState(false);
+  const [isEquipoGerencia, setIsEquipoGerencia] = useState(false);
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [roleLoaded, setRoleLoaded] = useState(false);
   const loadingUserDataRef = useRef(false);
@@ -53,6 +57,8 @@ function useProvideAuth(): AuthContextValue {
 
       setIsAdmin(roleRes.data?.role === "admin");
       setIsOperador(roleRes.data?.role === "operador_terreno");
+      setIsGerente(roleRes.data?.role === "gerente");
+      setIsEquipoGerencia(roleRes.data?.role === "equipo_gerencia");
       setPermissions(permRes.data || []);
     } catch (error) {
       console.error("Error loading user data:", error);
@@ -107,6 +113,8 @@ function useProvideAuth(): AuthContextValue {
           loadedForUserId.current = null;
           setIsAdmin(false);
           setIsOperador(false);
+          setIsGerente(false);
+          setIsEquipoGerencia(false);
           setPermissions([]);
           setRoleLoaded(true);
           setLoading(false);
@@ -184,11 +192,13 @@ function useProvideAuth(): AuthContextValue {
     loading,
     isAdmin,
     isOperador,
+    isGerente,
+    isEquipoGerencia,
     roleLoaded,
     permissions,
     hasPermission,
     signOut,
-  }), [user, session, loading, isAdmin, isOperador, roleLoaded, permissions]);
+  }), [user, session, loading, isAdmin, isOperador, isGerente, isEquipoGerencia, roleLoaded, permissions]);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

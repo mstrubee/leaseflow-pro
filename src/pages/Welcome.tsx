@@ -10,7 +10,7 @@ import { ServiceContractApprovalBanner } from "@/components/serviceContracts/Ser
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
-  BarChart3, Wrench, Shield, Users, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle,
+  BarChart3, Wrench, Shield, Users, UserCog, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -44,7 +44,7 @@ const ALL_MODULES: ModuleItem[] = [
 
 const Welcome = () => {
   const navigate = useNavigate();
-  const { user, loading, isAdmin, isOperador, roleLoaded, hasPermission, signOut } = useAuth();
+  const { user, loading, isAdmin, isOperador, isGerente, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -164,6 +164,23 @@ const Welcome = () => {
                 <div>
                   <p className="font-medium text-foreground">Admin</p>
                   <p className="text-sm text-muted-foreground">Panel de administración</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {isGerente && (
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+              onClick={() => navigate("/usuarios")}
+            >
+              <CardContent className="p-5 flex items-start gap-4">
+                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                  <UserCog className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Usuarios</p>
+                  <p className="text-sm text-muted-foreground">Gestiona el acceso de tu equipo</p>
                 </div>
               </CardContent>
             </Card>

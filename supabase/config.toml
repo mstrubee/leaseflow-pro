@@ -50,3 +50,9 @@ verify_jwt = false
 
 [functions.complete-invitation]
 verify_jwt = false
+
+[functions.update-team-user-email]
+verify_jwt = false
+
+[functions.delete-team-user]
+verify_jwt = false
