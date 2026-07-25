@@ -24,11 +24,12 @@ export interface UserFormData {
   firstName: string;
   lastName: string;
   email: string;
-  role: "admin" | "user" | "operador_terreno";
+  role: "admin" | "user" | "operador_terreno" | "gerente";
   isActive: boolean;
   profileTemplateId: string | null;
   permissions: PermissionsMap;
   supplierIds: string[];
+  orgMemberId: string | null;
 }
 
 interface UserFormDialogProps {
@@ -37,7 +38,15 @@ interface UserFormDialogProps {
   initialData?: Partial<UserFormData>;
   onSaved: () => void;
   suppliers: { id: string; name: string }[];
+  orgMembers: { id: string; name: string; position: string | null }[];
 }
+
+const ROLE_LABELS: Record<UserFormData["role"], string> = {
+  admin: "Admin",
+  user: "Usuario",
+  operador_terreno: "Operador de Terreno",
+  gerente: "Gerente",
+};
 
 function initAllNone(): PermissionsMap {
   const m: PermissionsMap = {};
@@ -45,19 +54,20 @@ function initAllNone(): PermissionsMap {
   return m;
 }
 
-export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppliers }: UserFormDialogProps) {
+export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppliers, orgMembers }: UserFormDialogProps) {
   const { toast } = useToast();
   const isEditing = !!initialData?.userId;
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "user" | "operador_terreno">("user");
+  const [role, setRole] = useState<UserFormData["role"]>("user");
   const [isActive, setIsActive] = useState(true);
   const [profileTemplateId, setProfileTemplateId] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PermissionsMap>(initAllNone());
   const [supplierIds, setSupplierIds] = useState<string[]>([]);
   const [supplierSearch, setSupplierSearch] = useState("");
+  const [orgMemberId, setOrgMemberId] = useState<string | null>(null);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -84,6 +94,7 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
       setIsActive(initialData.isActive ?? true);
       setProfileTemplateId(initialData.profileTemplateId ?? null);
       setSupplierIds(initialData.supplierIds ?? []);
+      setOrgMemberId(initialData.orgMemberId ?? null);
       // Si hay un rol asignado, cargamos los permisos ACTUALES de la plantilla
       // (no los permisos individuales del usuario, que pueden estar desactualizados)
       if (initialData.profileTemplateId) {
@@ -112,6 +123,7 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
     setPermissions(initAllNone());
     setSupplierIds([]);
     setSupplierSearch("");
+    setOrgMemberId(null);
     setPassword("");
     setConfirmPassword("");
     setShowPassword(false);
@@ -191,10 +203,15 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Error al actualizar usuario");
 
-        // Update is_active + profile_template_id in profiles
+        // Update is_active + profile_template_id + org_member_id (solo relevante
+        // para gerente -- nombre_gerencia de su equipo se deriva de este vínculo)
         await supabase
           .from("profiles")
-          .update({ is_active: isActive, profile_template_id: profileTemplateId } as any)
+          .update({
+            is_active: isActive,
+            profile_template_id: profileTemplateId,
+            org_member_id: role === "gerente" ? orgMemberId : null,
+          } as any)
           .eq("id", initialData.userId);
 
         // Sync operator suppliers
@@ -229,12 +246,16 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Error al crear usuario");
 
-        // Set is_active + profile_template_id (user was just created)
+        // Set is_active + profile_template_id + org_member_id (user was just created)
         if (result.userId || result.user?.id) {
           const newUserId = result.userId ?? result.user?.id;
           await supabase
             .from("profiles")
-            .update({ is_active: isActive, profile_template_id: profileTemplateId } as any)
+            .update({
+              is_active: isActive,
+              profile_template_id: profileTemplateId,
+              org_member_id: role === "gerente" ? orgMemberId : null,
+            } as any)
             .eq("id", newUserId);
         }
 
@@ -342,6 +363,48 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
               </label>
             </div>
           </div>
+
+          {/* Rol de acceso (admin/user/operador_terreno/gerente) -- distinto de
+              la "plantilla de permisos" de más abajo. Determina isAdmin/
+              isGerente/isOperador en el resto de la app. */}
+          <div className="space-y-1.5">
+            <Label>Rol de acceso</Label>
+            <Select value={role} onValueChange={(v) => setRole(v as UserFormData["role"])}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(ROLE_LABELS) as UserFormData["role"][]).map((r) => (
+                  <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Vínculo al organigrama -- solo para gerente. De acá se deriva el
+              "nombre_gerencia" (position) que ven los usuarios Equipo Gerencia
+              que este gerente invite. */}
+          {role === "gerente" && (
+            <div className="space-y-1.5">
+              <Label>Gerencia (organigrama)</Label>
+              <Select value={orgMemberId ?? "none"} onValueChange={(v) => setOrgMemberId(v === "none" ? null : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin asignar" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin asignar</SelectItem>
+                  {orgMembers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}{m.position ? ` — ${m.position}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Si no se asigna, los usuarios que este gerente invite mostrarán "Equipo Gerencia (sin asignar)".
+              </p>
+            </div>
+          )}
 
           {/* Supplier assignment for operador_terreno */}
           {role === "operador_terreno" && (

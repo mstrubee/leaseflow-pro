@@ -35,6 +35,7 @@ import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubSt
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
 import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
 import { DataExportDialog } from "@/components/admin/DataExportDialog";
+import { TeamUsersAdminManager } from "@/components/admin/TeamUsersAdminManager";
 interface Profile {
   id: string;
   email: string;
@@ -44,6 +45,7 @@ interface Profile {
   last_seen_at: string | null;
   activity_status: string | null;
   current_section: string | null;
+  org_member_id?: string | null;
 }
 
 interface UserRole {
@@ -323,6 +325,7 @@ const AdminPanel = () => {
       profileTemplateId: (profile as any).profile_template_id ?? null,
       permissions: userPerms,
       supplierIds: [],
+      orgMemberId: profile.org_member_id ?? null,
     });
 
     // Async: load supplier IDs
@@ -346,11 +349,12 @@ const AdminPanel = () => {
   }
 
   const [roleTemplates, setRoleTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [orgMembers, setOrgMembers] = useState<{ id: string; name: string; position: string | null }[]>([]);
 
   const loadData = async () => {
     setLoading(true);
 
-    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes, roleTemplatesRes] = await Promise.all([
+    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes, roleTemplatesRes, orgMembersRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
       supabase.from("user_permissions").select("*"),
@@ -358,15 +362,23 @@ const AdminPanel = () => {
       supabase.from("user_activity_thresholds").select("*" as any),
       supabase.from("suppliers").select("id,name").order("name"),
       supabase.from("user_profile_templates" as any).select("id, name").order("name"),
+      supabase.rpc("get_org_members_admin"),
     ]);
 
-    setProfiles(profilesRes.data || []);
+    // Equipo Gerencia se administra desde su propia sección (agrupada por
+    // gerente, más abajo), no en el listado genérico de Usuarios -- ese
+    // diálogo (UserFormDialog) no sabe manejar invitaciones con token.
+    const equipoGerenciaIds = new Set(
+      (rolesRes.data || []).filter((r: any) => r.role === "equipo_gerencia").map((r: any) => r.user_id)
+    );
+    setProfiles((profilesRes.data || []).filter((p: any) => !equipoGerenciaIds.has(p.id)));
     setUserRoles(rolesRes.data || []);
     setUserPermissions(permissionsRes.data || []);
     setFolderTemplates(templatesRes.data || []);
     setActivityThresholds((thresholdsRes.data as any) || []);
     setAllSuppliers(suppliersRes.data || []);
     setRoleTemplates((roleTemplatesRes.data as any) || []);
+    setOrgMembers(((orgMembersRes.data as any[]) || []).map((m) => ({ id: m.id, name: m.name, position: m.position })));
     setLoading(false);
   };
 
@@ -806,6 +818,7 @@ const AdminPanel = () => {
               initialData={userFormInitialData}
               onSaved={() => { loadData(); setRoleManagerKey(k => k + 1); }}
               suppliers={allSuppliers}
+              orgMembers={orgMembers}
             />
 
             {/* "Ver Credenciales" modal */}
@@ -829,6 +842,14 @@ const AdminPanel = () => {
               </DialogContent>
             </Dialog>
 
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Usuarios (Equipo Gerencia)"
+          description="Agrupados por el gerente que los invitó"
+          icon={<UserCog className="h-5 w-5 text-indigo-600" />}
+        >
+          <TeamUsersAdminManager />
         </CollapsibleCard>
 
         {/* ── Grupo: Empresas ── */}
