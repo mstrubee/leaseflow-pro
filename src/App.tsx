@@ -85,8 +85,8 @@ const App = () => (
 
                   {/* Protected routes - require authentication */}
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                  <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+                  <Route path="/dashboard" element={<ProtectedRoute resource={["dashboard_stats", "dashboard_map", "dashboard_economic", "dashboard_patents"]}><Dashboard /></ProtectedRoute>} />
+                  <Route path="/admin" element={<ProtectedRoute requireRole="admin"><AdminPanel /></ProtectedRoute>} />
                   <Route path="/usuarios" element={<ProtectedRoute requireRole="gerente"><TeamUsers /></ProtectedRoute>} />
                   <Route path="/contracts" element={<ProtectedRoute resource="contracts"><Contracts /></ProtectedRoute>} />
                   <Route path="/contracts/new" element={<ProtectedRoute resource="contracts"><NewContract /></ProtectedRoute>} />
@@ -107,7 +107,7 @@ const App = () => (
                   <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
                   <Route path="/maintenance/routes" element={<ProtectedRoute resource="maintenance"><MaintenanceRoutesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/schedules" element={<ProtectedRoute resource="maintenance"><MaintenanceSchedulesPage /></ProtectedRoute>} />
-                  <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute><RouteExecutionPage /></ProtectedRoute>} />
+                  <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute resource="maintenance_ejecutar_rutas"><RouteExecutionPage /></ProtectedRoute>} />
                   <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
                   <Route path="/service-contracts" element={<ProtectedRoute resource="service_contracts"><ServiceContractsDashboard /></ProtectedRoute>} />
                   <Route path="/service-contracts/:id" element={<ProtectedRoute resource="service_contracts"><ServiceContractDetail /></ProtectedRoute>} />
