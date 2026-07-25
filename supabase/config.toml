@@ -41,3 +41,12 @@ verify_jwt = false
 
 [functions.delete-user]
 verify_jwt = false
+
+[functions.create-team-invitation]
+verify_jwt = false
+
+[functions.reset-team-user-password]
+verify_jwt = false
+
+[functions.complete-invitation]
+verify_jwt = false
