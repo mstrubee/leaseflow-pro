@@ -204,7 +204,7 @@ const ContractDetail = () => {
         : "/contracts";
 
   const { toast } = useToast();
-  const { isAdmin, roleLoaded, hasPermission } = useAuth();
+  const { isAdmin, isEquipoGerencia, roleLoaded, hasPermission } = useAuth();
   const { isHidden, canEdit: canEditSection, loading: permissionsLoading } = useUserPermissions();
   const {
     sections,
@@ -837,7 +837,7 @@ const ContractDetail = () => {
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>
-              {(companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
+              {!isEquipoGerencia && (companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
                 <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
                   {companyNames.length > 0 && (
                     <span>
@@ -856,6 +856,10 @@ const ContractDetail = () => {
                 </div>
               )}
             </div>
+            {/* Acciones del header: ninguna es de solo-lectura (generan documentos,
+                muestran datos financieros/comerciales, o navegan a otros módulos) --
+                equipo_gerencia solo debe ver el Cronograma, nada del header. */}
+            {!isEquipoGerencia && (
             <div className="flex items-center gap-2">
               {contract.status === "en_negociacion" && (
                 <Button
@@ -965,6 +969,7 @@ const ContractDetail = () => {
                 </Button>
               )}
             </div>
+            )}
           </div>
         </div>
       </header>
@@ -987,7 +992,7 @@ const ContractDetail = () => {
         )}
 
         {/* Closing Process Banner - for contracts with termination notices */}
-        {(contract.termination_notices?.length || 0) > 0 && (
+        {!isEquipoGerencia && (contract.termination_notices?.length || 0) > 0 && (
           <ClosingProcessBanner
             contractId={contract.id}
             contractName={contract.name}
@@ -997,7 +1002,7 @@ const ContractDetail = () => {
         )}
 
         {/* Negotiation Notes Banner - only for contracts in negotiation */}
-        {contract.status === "en_negociacion" && (
+        {!isEquipoGerencia && contract.status === "en_negociacion" && (
           <NegotiationNotesCard
             contractId={contract.id}
             notes={contract.negotiation_notes || null}

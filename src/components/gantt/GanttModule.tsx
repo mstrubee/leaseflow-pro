@@ -34,12 +34,13 @@ interface GanttModuleProps {
 
 export function GanttModule({ contractId, serviceContractId, category = "general" }: GanttModuleProps) {
   const isMaintenance = category === "maintenance";
-  const { isAdmin, hasPermission } = useAuth();
+  const { isAdmin, isEquipoGerencia, hasPermission } = useAuth();
   const { toast } = useToast();
   const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
   // Usuarios que solo pueden VER: pueden reprogramar y marcar completado,
-  // pero no editar plazos ni estructura de tareas.
-  const canInteract = canEdit || hasPermission("contract_gantt", "view");
+  // pero no editar plazos ni estructura de tareas. equipo_gerencia es la
+  // única excepción: su "view" es 100% solo-lectura, sin ninguna interacción.
+  const canInteract = !isEquipoGerencia && (canEdit || hasPermission("contract_gantt", "view"));
   const {
     timeline,
     timelines,
@@ -438,7 +439,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
   // mismo contrato, independiente del principal — solo se renderiza desde la
   // instancia "general" (evita anidar recursivamente sobre sí misma), y solo
   // para contratos de arriendo (no aplica a contratos de servicio).
-  const maintenanceSection = !isMaintenance && contractId && !serviceContractId && (
+  const maintenanceSection = !isMaintenance && !isEquipoGerencia && contractId && !serviceContractId && (
     <CollapsibleCard
       title="Cronogramas de Mantenciones"
       description="Cronograma de mantenciones de este local, independiente del cronograma principal del contrato."
@@ -504,7 +505,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               Línea de tiempo del proyecto con {tasks.length} tareas
               {baseTemplate && <> · Plantilla base: <span className="font-medium">{baseTemplate.name}</span></>}
             </CardDescription>
-            {timelines.length > 1 && (
+            {!isEquipoGerencia && timelines.length > 1 && (
               <div className="mt-2">
                 <Select value={timeline.id} onValueChange={selectTimeline}>
                   <SelectTrigger className="h-8 w-[300px] text-xs">

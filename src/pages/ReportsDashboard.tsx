@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { SupplierReports } from "@/components/suppliers/SupplierReports";
 import { GanttReportsSection } from "@/components/gantt/GanttReportsSection";
+import { EquipoGerenciaGanttSummary } from "@/components/gantt/EquipoGerenciaGanttSummary";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -1577,7 +1578,14 @@ const ReportsDashboard = () => {
         )}
 
         {/* Gantt Charts General View */}
-        {(isAdmin || hasPermission("capex", "view")) && <GanttReportsSection />}
+        {/* GanttReportsSection arranca desde contract_budgets (bloqueado por
+            RLS para equipo_gerencia) -- para ese rol se usa una vista
+            simplificada que solo lee contracts/gantt_timelines/gantt_tasks. */}
+        {(isAdmin || hasPermission("capex", "view"))
+          ? <GanttReportsSection />
+          : hasPermission("gantt_reports", "view")
+            ? <EquipoGerenciaGanttSummary />
+            : null}
 
         {/* Maintenance Reports Section */}
         {(isAdmin || hasPermission("maintenance", "view")) && (

@@ -144,6 +144,21 @@ Deno.serve(async (req) => {
         .insert({ user_id: newUserId, role: 'equipo_gerencia' })
       if (roleError) throw roleError
 
+      // Permisos fijos del rol equipo_gerencia (no configurables por diseño):
+      // contracts:view para poder listar/abrir un proyecto, contract_gantt:view
+      // para ver la sección Cronograma (solo lectura -- forzado por isEquipoGerencia
+      // en GanttModule, no por el nivel de este permiso), gantt_reports:view para
+      // la subsección "Cartas Gantt" de Informes (recurso propio, no reutiliza
+      // "capex" para no filtrar esa card en el Home).
+      const { error: permError } = await supabaseAdmin
+        .from('user_permissions')
+        .insert([
+          { user_id: newUserId, resource: 'contracts', permission: 'view' },
+          { user_id: newUserId, resource: 'contract_gantt', permission: 'view' },
+          { user_id: newUserId, resource: 'gantt_reports', permission: 'view' },
+        ])
+      if (permError) throw permError
+
       const { error: invitationError } = await supabaseAdmin
         .from('invitations')
         .insert({ user_id: newUserId, invited_by: requestingUser.id, status: 'pending' })

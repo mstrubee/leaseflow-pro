@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 
 interface ProtectedRouteProps {
@@ -14,8 +14,21 @@ interface ProtectedRouteProps {
   requireRole?: "admin" | "gerente";
 }
 
+// Allowlist de rutas para equipo_gerencia: default-deny, no depende de que
+// cada ruta nueva recuerde declarar el `resource` correcto (así se coló antes
+// /dashboard, sin ningún gate, exponiendo estadísticas globales). Solo puede
+// llegar a Home, listado/detalle de Contratos (nunca /new, /edit ni
+// /bulk-upload) e Informes.
+const EQUIPO_GERENCIA_ALLOWED_PATHS = [
+  /^\/$/,
+  /^\/contracts$/,
+  /^\/contracts\/(?!new$|bulk-upload$)[^/]+$/,
+  /^\/reports$/,
+];
+
 export function ProtectedRoute({ children, resource, requireRole }: ProtectedRouteProps) {
-  const { user, loading, roleLoaded, hasPermission, isAdmin, isGerente } = useAuth();
+  const { user, loading, roleLoaded, hasPermission, isAdmin, isGerente, isEquipoGerencia } = useAuth();
+  const location = useLocation();
 
   // Show loading spinner while checking authentication
   if (loading || !roleLoaded) {
@@ -29,6 +42,10 @@ export function ProtectedRoute({ children, resource, requireRole }: ProtectedRou
   // Redirect to auth if not authenticated
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  if (isEquipoGerencia && !EQUIPO_GERENCIA_ALLOWED_PATHS.some((re) => re.test(location.pathname))) {
+    return <Navigate to="/" replace />;
   }
 
   if (requireRole === "admin" && !isAdmin) return <Navigate to="/" replace />;

@@ -32,7 +32,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "opex",           label: "OPEX",                     desc: "Gastos operacionales",                         icon: Wallet,      path: "/opex",             resource: "opex",            color: "text-emerald-600 bg-emerald-100" },
   { id: "capex",          label: "CAPEX",                    desc: "Inversiones de capital",                       icon: HardHat,     path: "/capex",            resource: "capex",           color: "text-amber-600 bg-amber-100" },
   { id: "alerts",         label: "Alertas",                  desc: "Notificaciones y vencimientos",                icon: Bell,        path: "/alerts",           resource: "alerts",          color: "text-red-600 bg-red-100" },
-  { id: "reports",        label: "Informes",                  desc: "Reportes y análisis",                          icon: BarChart3,   path: "/reports",          resource: ["reports", "patents", "suppliers", "capex", "maintenance"], color: "text-cyan-600 bg-cyan-100" },
+  { id: "reports",        label: "Informes",                  desc: "Reportes y análisis",                          icon: BarChart3,   path: "/reports",          resource: ["reports", "patents", "suppliers", "capex", "maintenance", "gantt_reports"], color: "text-cyan-600 bg-cyan-100" },
   { id: "kpi",            label: "KPI",                      desc: "Indicadores de gestión",                       icon: BarChart3,   path: "/kpi",              resource: "kpi",             color: "text-indigo-600 bg-indigo-100" },
   { id: "suppliers",      label: "Proveedores",              desc: "Gestión de proveedores",                       icon: Users,       path: "/suppliers",        resource: "suppliers",       color: "text-teal-600 bg-teal-100" },
   { id: "maintenance",    label: "Mantenciones",             desc: "Mantenciones preventivas y correctivas",       icon: Wrench,      path: "/maintenance",      resource: "maintenance",     color: "text-rose-600 bg-rose-100" },
@@ -44,7 +44,7 @@ const ALL_MODULES: ModuleItem[] = [
 
 const Welcome = () => {
   const navigate = useNavigate();
-  const { user, loading, isAdmin, isOperador, isGerente, roleLoaded, hasPermission, signOut } = useAuth();
+  const { user, loading, isAdmin, isOperador, isGerente, isEquipoGerencia, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -69,11 +69,14 @@ const Welcome = () => {
 
   const visibleModules = useMemo(
     () => ALL_MODULES.filter(m => {
-      if (m.resource === null) return true;
+      // "Revisor de Contratos (IA)" (resource: null) es visible para cualquier
+      // autenticado por diseño -- pero equipo_gerencia solo debe ver Contratos
+      // e Informes, nada más, así que se excluye explícitamente acá.
+      if (m.resource === null) return !isEquipoGerencia;
       const resources = Array.isArray(m.resource) ? m.resource : [m.resource];
       return resources.some(r => hasPermission(r, "view"));
     }),
-    [hasPermission],
+    [hasPermission, isEquipoGerencia],
   );
 
   if (loading || !roleLoaded) {
