@@ -244,9 +244,13 @@ export function PatentAdminPanel({
       const foldersWithPaths = data.map(folder => {
         let path = folder.name;
         let current = folder;
+        // visited guards against cyclic/corrupt parent_id data (self- or
+        // circular references) that would otherwise loop forever and freeze.
+        const visited = new Set<string>([current.id]);
         while (current.parent_id) {
           const parent = folderMap.get(current.parent_id);
-          if (parent) {
+          if (parent && !visited.has(parent.id)) {
+            visited.add(parent.id);
             path = `${parent.name} / ${path}`;
             current = parent;
           } else {
