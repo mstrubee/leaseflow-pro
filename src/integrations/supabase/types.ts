@@ -6822,6 +6822,12 @@ export type Database = {
         Returns: string
       }
       can_access_gantt: { Args: { _user_id: string }; Returns: boolean }
+      delete_repository_folder_tree: {
+        Args: { p_folder_id: string }
+        Returns: {
+          deleted_url: string
+        }[]
+      }
       get_cloud_storage_token: {
         Args: { p_connection_id: string }
         Returns: {
