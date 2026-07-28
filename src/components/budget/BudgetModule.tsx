@@ -463,6 +463,49 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
   const [focusNewLineId, setFocusNewLineId] = useState<string | null>(null);
 
+  // Monto consumido (CLP) por línea de gasto — suma de OC del año en curso,
+  // agrupada por budget_line_id. Alimenta el "disponible por línea" que se
+  // muestra debajo del monto autorizado en cada línea de gasto de CAPEX.
+  // Solo se calcula para contratos regulares (contractId) — los contratos de
+  // servicio no comparten el mismo modelo de OC por línea.
+  const [consumedByLineClp, setConsumedByLineClp] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    if (budgetType !== "capex" || !contractId) {
+      setConsumedByLineClp(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("budget_line_id, amount_uf, amount_clp, uf_value_at_entry, opex_master_id, opex_category_id, budget_classification")
+        .eq("contract_id", contractId)
+        .eq("year", selectedYear)
+        .is("deleted_at", null)
+        .not("budget_line_id", "is", null);
+      if (cancelled) return;
+      if (error) {
+        console.error("Error loading consumido por línea:", error);
+        setConsumedByLineClp({});
+        return;
+      }
+      const resolveClp = (rec: { amount_clp?: number | null; amount_uf: number; uf_value_at_entry?: number | null }): number => {
+        if (rec.amount_clp != null && rec.amount_clp !== 0) return rec.amount_clp;
+        if (rec.uf_value_at_entry) return Math.round(rec.amount_uf * rec.uf_value_at_entry);
+        return Math.round(rec.amount_uf * (ufValue || 1));
+      };
+      const map: Record<string, number> = {};
+      (data || []).forEach((o) => {
+        const isOpex = o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX";
+        if (isOpex || !o.budget_line_id) return;
+        map[o.budget_line_id] = (map[o.budget_line_id] || 0) + resolveClp(o);
+      });
+      setConsumedByLineClp(map);
+    })();
+    return () => { cancelled = true; };
+  }, [budgetType, contractId, selectedYear, ufValue]);
+
   useEffect(() => {
     loadBudgets();
   }, [contractId, budgetType]);
@@ -1959,6 +2002,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 setShowMoveDialog(true);
               }}
               onReorderLine={!(isClosed || forceReadOnly) && canEditLines ? handleReorderLines : undefined}
+              consumedByLineClp={consumedByLineClp ?? undefined}
             />
 
             <MoveLinesDialog

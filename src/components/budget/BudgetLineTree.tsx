@@ -234,6 +234,10 @@ interface BudgetLineTreeProps {
   onMoveLine?: (lineId: string) => void;
   /** Id of a newly created line to focus/scroll into view. */
   focusNewLineId?: string | null;
+  /** Monto consumido (CLP) por línea de gasto — suma de OC del año, por budget_line_id.
+   *  Solo se calcula para CAPEX; si está presente, cada línea de gasto muestra su
+   *  disponible (autorizado - consumido) debajo del monto autorizado. */
+  consumedByLineClp?: Record<string, number>;
 }
 export const BudgetLineTree = ({
   lines,
@@ -260,6 +264,7 @@ export const BudgetLineTree = ({
   onToggleSelect,
   onReload,
   onMoveLine,
+  consumedByLineClp,
 }: BudgetLineTreeProps) => {
   const { isAdmin, hasPermission } = useAuth();
   // Build linesMap only at root level (level === 0), pass down to children
@@ -358,6 +363,7 @@ export const BudgetLineTree = ({
         onToggleSelect={onToggleSelect}
         onReload={onReload}
         onMoveLine={onMoveLine}
+        consumedByLineClp={consumedByLineClp}
       />)}
       {level === 0 && !readOnly && (isAdmin || hasPermission("budget_editar_lineas", "edit")) && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -390,6 +396,7 @@ interface BudgetLineItemProps {
   onToggleSelect?: (id: string) => void;
   onReload?: () => void;
   onMoveLine?: (lineId: string) => void;
+  consumedByLineClp?: Record<string, number>;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -422,6 +429,7 @@ const BudgetLineItemInner = ({
   onToggleSelect,
   onReload,
   onMoveLine,
+  consumedByLineClp,
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
@@ -1281,18 +1289,36 @@ const BudgetLineItemInner = ({
               return formatUF(isParent ? calculatedAmountWithSurcharges : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
           </span>
-          <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
+          <div className="flex flex-col items-center min-w-[100px]">
             {(() => {
-              if (isCalcPercentage) return formatCLP(convertUFToPesos(calculatedAmount));
-              if (!isParent && line.currency === "CLP") {
-                const qty = line.quantity || 0;
-                const localP = line.unit_price || 0;
-                const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
-                return formatCLP(qty * price);
-              }
-              return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
+              const lineAuthorizedClp = (() => {
+                if (isCalcPercentage) return convertUFToPesos(calculatedAmount);
+                if (!isParent && line.currency === "CLP") {
+                  const qty = line.quantity || 0;
+                  const localP = line.unit_price || 0;
+                  const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
+                  return qty * price;
+                }
+                return convertUFToPesos(calculatedAmountWithSurcharges);
+              })();
+              return (
+                <>
+                  <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap text-center">
+                    {formatCLP(lineAuthorizedClp)}
+                  </span>
+                  {/* Disponible por línea (autorizado - consumido en OC): solo en
+                      líneas de gasto (no madre), y solo cuando el mapa de consumo
+                      está disponible (hoy, CAPEX de contratos regulares). Centrado
+                      con el monto de arriba, dentro de la misma columna. */}
+                  {!isParent && consumedByLineClp && (
+                    <span className="text-[10px] text-muted-foreground/80 font-mono whitespace-nowrap text-center">
+                      ({`Disp. ${formatCLP(lineAuthorizedClp - (consumedByLineClp[line.id] ?? 0))}`})
+                    </span>
+                  )}
+                </>
+              );
             })()}
-          </span>
+          </div>
           {(
             (!isParent && mergedSurcharges.length > 0) ||
             (!isParent && !isSurchargeRow && line.status === "autorizado" && !effectiveReadOnly)
@@ -1498,7 +1524,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
@@ -1660,6 +1686,7 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   }
   if (prev.parentCategoryId !== next.parentCategoryId) return false;
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
+  if (prev.consumedByLineClp !== next.consumedByLineClp) return false;
   // Callbacks are stable (useCallback in parent), skip comparing
   return true;
 });
