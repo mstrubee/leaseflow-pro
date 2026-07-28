@@ -11,6 +11,7 @@ import { generateOfferLetter } from "@/lib/generateOfferLetter";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
@@ -473,7 +474,8 @@ const ContractDetail = () => {
         description: `El contrato ha sido enviado a ${email}`
       });
     } catch (error: any) {
-      throw error;
+      const message = await getFunctionErrorMessage(error, error.message || "No se pudo enviar el email.");
+      throw new Error(message);
     }
   };
   const handleMarkAsSigned = async (docId: string) => {

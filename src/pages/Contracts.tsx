@@ -36,6 +36,7 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths, DEFAULT_COLUMN_WIDTHS } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -908,8 +909,9 @@ const Contracts = () => {
       }
     } catch (error: any) {
       console.error('Error syncing to Drive:', error);
+      const message = await getFunctionErrorMessage(error, 'Verifica la configuración de la cuenta de servicio');
       toast.error('Error al sincronizar con Google Drive', {
-        description: error.message || 'Verifica la configuración de la cuenta de servicio'
+        description: message
       });
     } finally {
       setIsSyncing(false);

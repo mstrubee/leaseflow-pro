@@ -19,6 +19,7 @@ import {
   Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 // Storage limits for Supabase Free tier
 const DATABASE_LIMIT_MB = 500;
@@ -406,7 +407,8 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
                   }
                   alert(msg);
                 } catch (err: any) {
-                  alert(`Error: ${err.message}`);
+                  const message = await getFunctionErrorMessage(err, "No se pudieron sincronizar los archivos de patentes pendientes.");
+                  alert(`Error: ${message}`);
                 } finally {
                   setSyncingPatents(false);
                 }

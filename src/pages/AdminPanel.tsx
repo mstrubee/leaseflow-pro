@@ -18,6 +18,7 @@ import { UserFormDialog, UserFormData } from "@/components/admin/UserFormDialog"
 import { PermissionTreeEditor, PermissionsMap, getAllResources } from "@/components/admin/PermissionTreeEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
 import { CompanyManager } from "@/components/admin/CompanyManager";
@@ -461,7 +462,8 @@ const AdminPanel = () => {
       toast({ title: "Usuario eliminado completamente" });
       loadData();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      const message = await getFunctionErrorMessage(error, error.message || "No se pudo eliminar el usuario.");
+      toast({ variant: "destructive", title: "Error", description: message });
     }
   };
 

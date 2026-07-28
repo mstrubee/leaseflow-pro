@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, ShieldAlert, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface LoginEntry {
   user_id: string;
@@ -29,7 +30,8 @@ export function SecuritySessionsPanel() {
       if (error) throw error;
       setLogins(data?.logins ?? []);
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      const message = await getFunctionErrorMessage(e, "No se pudieron cargar los inicios de sesión recientes.");
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -54,7 +56,8 @@ export function SecuritySessionsPanel() {
         description: `Se cerraron ${data?.signed_out ?? 0} sesiones. Todos deberán volver a iniciar sesión.`,
       });
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      const message = await getFunctionErrorMessage(e, "No se pudieron cerrar todas las sesiones.");
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setForcing(false);
     }

@@ -26,6 +26,7 @@ import { MoveFilesDialog } from "./MoveFilesDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 import { deleteFileFromStorage, isStorageUrl } from "@/lib/storageUtils";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import {
   Dialog,
   DialogContent,
@@ -532,10 +533,11 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         loadFolderContents(currentFolder?.id || null);
       }
     } catch (error: any) {
+      const message = await getFunctionErrorMessage(error, "No se pudo sincronizar con Google Drive");
       toast({
         variant: "destructive",
         title: "Error de sincronización",
-        description: error.message || "No se pudo sincronizar con Google Drive",
+        description: message,
       });
     } finally {
       setSyncing(false);

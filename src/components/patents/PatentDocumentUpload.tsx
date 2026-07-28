@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 import { backupPatentFileToDestinations } from "@/lib/patentBackup";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface PatentDocumentUploadProps {
   open: boolean;
@@ -147,7 +148,7 @@ export function PatentDocumentUpload({
           });
 
           if (driveError || !driveData?.id) {
-            const errMsg = driveData?.error || driveError?.message || 'Error desconocido';
+            const errMsg = driveData?.error || (driveError ? await getFunctionErrorMessage(driveError, 'Error desconocido') : 'Error desconocido');
             console.error(`Error uploading ${file.name} to Drive:`, errMsg);
             // Cleanup temp file
             await supabase.storage.from('repository-files').remove([uploadPath]).catch(() => {});
@@ -160,7 +161,8 @@ export function PatentDocumentUpload({
           uploadedFiles.push({ url: driveUrl, name: file.name, file });
         } catch (driveErr: any) {
           console.error(`Drive upload failed for ${file.name}:`, driveErr);
-          toast.error(`${file.name}: ${driveErr?.message || 'Error de conexión'}`);
+          const errMsg = await getFunctionErrorMessage(driveErr, 'Error de conexión');
+          toast.error(`${file.name}: ${errMsg}`);
           failedFiles.push(file.name);
         }
       }

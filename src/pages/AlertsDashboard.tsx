@@ -16,6 +16,7 @@ import { AlertsList } from "@/components/alerts/AlertsList";
 import { FinalizedAlertsList } from "@/components/alerts/FinalizedAlertsList";
 import { UpcomingAlertsPanel } from "@/components/alerts/UpcomingAlertsPanel";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import {
@@ -184,9 +185,10 @@ export default function AlertsDashboard() {
 
       setRefreshKey((k) => k + 1);
     } catch (error: any) {
+      const message = await getFunctionErrorMessage(error, "No se pudieron procesar las alertas");
       toast({
         title: "Error",
-        description: error.message || "No se pudieron procesar las alertas",
+        description: message,
         variant: "destructive",
       });
     } finally {
