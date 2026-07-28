@@ -141,13 +141,27 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { error: emailError } = await supabaseAdmin.auth.resetPasswordForEmail(target.email, {
-      redirectTo: `${SITE_URL}/auth`,
+    // La plataforma todavía no tiene capacidad de envío de email -- en vez de
+    // disparar un correo que nunca llegaría (resetPasswordForEmail), se
+    // genera el enlace de recovery y se devuelve para que el gerente/admin
+    // lo comparta manualmente (WhatsApp/Email) desde el diálogo de Compartir.
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email: target.email,
+      options: { redirectTo: `${SITE_URL}/auth` },
     })
+
+    if (linkError || !linkData?.properties?.action_link) {
+      console.error('reset-team-user-password: generateLink failed', linkError?.message)
+      return new Response(JSON.stringify({ error: 'No se pudo generar el enlace de reset. Intenta nuevamente.' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     return new Response(JSON.stringify({
       success: true,
-      email_warning: emailError ? emailError.message : null,
+      reset_link: linkData.properties.action_link,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

@@ -47,8 +47,15 @@ const STATUS_VARIANT: Record<TeamMember["invitation_status"], "secondary" | "def
   reset: "outline",
 };
 
-function buildShareMessage(displayName: string) {
-  return `Estimad@ ${displayName}.\nUsted ha sido invitado a visualizar los programas de apertura de Grupo Planet. Para acceder solo debe ingresar a ${window.location.origin} y seguir las instrucciones. Bienvenido`;
+// La plataforma todavía no envía email automáticamente -- el enlace de
+// activación/reset se comparte a mano (WhatsApp/Email) con el mensaje
+// pre-cargado. Por eso el mensaje incluye el enlace real, no solo el dominio.
+function buildInviteMessage(displayName: string, link: string) {
+  return `Estimad@ ${displayName}.\nUsted ha sido invitado a visualizar los programas de apertura de Grupo Planet. Para acceder ingrese al siguiente enlace y siga las instrucciones:\n${link}\nBienvenido`;
+}
+
+function buildResetMessage(displayName: string, link: string) {
+  return `Estimad@ ${displayName}.\nSe generó un nuevo enlace para crear tu contraseña de acceso a Grupo Planet. Ingresa al siguiente enlace y sigue las instrucciones:\n${link}`;
 }
 
 const ORPHAN_GROUP_ID = "__sin_gerente__";
@@ -74,7 +81,7 @@ export function TeamUsersAdminManager() {
   // problema evitado en TeamUsers.tsx / DependencyDialog.tsx).
   const [pendingAction, setPendingAction] = useState<"save" | "cancel" | null>(null);
 
-  const [shareTarget, setShareTarget] = useState<{ email: string; full_name: string | null } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ email: string; full_name: string | null; link: string; kind: "invite" | "reset" } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TeamMember | null>(null);
   const [resetTarget, setResetTarget] = useState<TeamMember | null>(null);
 
@@ -169,22 +176,32 @@ export function TeamUsersAdminManager() {
     setSubmitting(true);
     try {
       if (editing) {
-        const { error } = await supabase.functions.invoke("update-team-user-email", {
+        const { data, error } = await supabase.functions.invoke("update-team-user-email", {
           body: { user_id: editing.id, email: emailInput.trim() },
         });
         if (error) throw error;
         toast({ title: "Usuario actualizado" });
         setFormOpen(false);
         await loadAll();
+        if (data?.activation_link) {
+          setShareTarget({ email: emailInput.trim(), full_name: editing.full_name, link: data.activation_link, kind: "invite" });
+        }
       } else if (createForGerente) {
         const { data, error } = await supabase.functions.invoke("create-team-invitation", {
           body: { email: emailInput.trim(), on_behalf_of_gerente_id: createForGerente.id },
         });
         if (error) throw error;
-        toast({ title: "Usuario invitado", description: "Se envió un correo de activación." });
+        toast({ title: "Usuario invitado" });
         setFormOpen(false);
         await loadAll();
-        setShareTarget({ email: data?.user?.email || emailInput.trim(), full_name: data?.user?.full_name || null });
+        if (data?.activation_link) {
+          setShareTarget({
+            email: data?.user?.email || emailInput.trim(),
+            full_name: data?.user?.full_name || null,
+            link: data.activation_link,
+            kind: "invite",
+          });
+        }
       }
       setEditing(null);
       setCreateForGerente(null);
@@ -216,10 +233,13 @@ export function TeamUsersAdminManager() {
     if (!resetTarget) return;
     setSubmitting(true);
     try {
-      const { error } = await supabase.functions.invoke("reset-team-user-password", { body: { user_id: resetTarget.id } });
+      const { data, error } = await supabase.functions.invoke("reset-team-user-password", { body: { user_id: resetTarget.id } });
       if (error) throw error;
-      toast({ title: "Reset enviado", description: "Se envió un correo para crear una nueva contraseña." });
+      toast({ title: "Reset generado" });
       await loadAll();
+      if (data?.reset_link) {
+        setShareTarget({ email: resetTarget.email, full_name: resetTarget.full_name, link: data.reset_link, kind: "reset" });
+      }
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message || "No se pudo resetear la contraseña." });
     } finally {
@@ -251,19 +271,23 @@ export function TeamUsersAdminManager() {
     setUsoLoading(false);
   };
 
-  const openShareDialog = (member: TeamMember) => setShareTarget({ email: member.email, full_name: member.full_name });
-
   const shareViaWhatsApp = () => {
     if (!shareTarget) return;
     const displayName = shareTarget.full_name || shareTarget.email;
-    window.open(`https://wa.me/?text=${encodeURIComponent(buildShareMessage(displayName))}`, "_blank", "noopener,noreferrer");
+    const message = shareTarget.kind === "invite"
+      ? buildInviteMessage(displayName, shareTarget.link)
+      : buildResetMessage(displayName, shareTarget.link);
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
   const shareViaEmail = () => {
     if (!shareTarget) return;
     const displayName = shareTarget.full_name || shareTarget.email;
-    const subject = encodeURIComponent("Invitación - Grupo Planet");
-    const body = encodeURIComponent(buildShareMessage(displayName));
+    const message = shareTarget.kind === "invite"
+      ? buildInviteMessage(displayName, shareTarget.link)
+      : buildResetMessage(displayName, shareTarget.link);
+    const subject = encodeURIComponent(shareTarget.kind === "invite" ? "Invitación - Grupo Planet" : "Nueva contraseña - Grupo Planet");
+    const body = encodeURIComponent(message);
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
@@ -325,9 +349,6 @@ export function TeamUsersAdminManager() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{format(new Date(m.created_at), "dd-MM-yyyy")}</TableCell>
                     <TableCell className="text-right space-x-1">
-                      <Button variant="ghost" size="icon" title="Compartir" aria-label={`Compartir invitación con ${m.email}`} onClick={() => openShareDialog(m)}>
-                        <MessageCircle className="h-4 w-4" />
-                      </Button>
                       <Button variant="ghost" size="icon" title="Uso" aria-label={`Ver uso de ${m.email}`} onClick={() => openUso(m)}>
                         <History className="h-4 w-4" />
                       </Button>
@@ -433,12 +454,16 @@ export function TeamUsersAdminManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Compartir */}
+      {/* Compartir -- la plataforma no envía email automáticamente, el enlace
+          se entrega a mano por WhatsApp o Email. */}
       <Dialog open={!!shareTarget} onOpenChange={(open) => { if (!open) setShareTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Compartir invitación</DialogTitle>
-            <DialogDescription>Elige por dónde enviar el acceso a {shareTarget?.email}.</DialogDescription>
+            <DialogTitle>{shareTarget?.kind === "invite" ? "Compartir invitación" : "Compartir enlace de reset"}</DialogTitle>
+            <DialogDescription>
+              Elige por dónde enviar el acceso a {shareTarget?.email}. El enlace es de un solo uso —
+              compártelo solo con esta persona, no lo reenvíes ni lo publiques.
+            </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3">
             <Button className="flex-1" variant="outline" onClick={shareViaWhatsApp}>
@@ -495,7 +520,8 @@ export function TeamUsersAdminManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Resetear contraseña?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se cerrará la sesión activa de {resetTarget?.email} y se le enviará un correo para crear una nueva contraseña.
+              Se cerrará la sesión activa de {resetTarget?.email} y se generará un enlace nuevo para crear una contraseña,
+              que vas a poder compartir por WhatsApp o Email.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

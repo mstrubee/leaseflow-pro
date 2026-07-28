@@ -144,17 +144,28 @@ Deno.serve(async (req) => {
     }
 
     // Si la cuenta todavía no fue activada, la corrección de email invalida
-    // cualquier enlace enviado a la dirección anterior -- se reenvía a la
-    // dirección corregida. Si ya estaba activa, no forzamos reactivación.
-    let emailWarning: string | null = null
+    // cualquier enlace generado para la dirección anterior -- se genera uno
+    // nuevo para la dirección corregida, a compartir manualmente (la
+    // plataforma no envía email todavía). Si ya estaba activa, no forzamos
+    // reactivación.
+    let activationLink: string | null = null
     if (target.invitation_status !== 'active') {
-      const { error: emailError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-        redirectTo: `${SITE_URL}/auth`,
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${SITE_URL}/auth` },
       })
-      emailWarning = emailError ? emailError.message : null
+      if (linkError || !linkData?.properties?.action_link) {
+        console.error('update-team-user-email: generateLink failed', linkError?.message)
+        return new Response(JSON.stringify({ error: 'El correo se actualizó, pero no se pudo generar el enlace de activación. Usa "Reset Password" para reintentar.' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      activationLink = linkData.properties.action_link
     }
 
-    return new Response(JSON.stringify({ success: true, email_warning: emailWarning }), {
+    return new Response(JSON.stringify({ success: true, activation_link: activationLink }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

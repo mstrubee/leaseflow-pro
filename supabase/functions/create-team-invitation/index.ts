@@ -173,14 +173,31 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { error: emailError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-      redirectTo: `${SITE_URL}/auth`,
+    // La plataforma todavía no tiene capacidad de envío de email -- en vez de
+    // disparar un correo que nunca llegaría (resetPasswordForEmail), se
+    // genera el enlace de activación y se devuelve para que quien invita lo
+    // comparta manualmente (WhatsApp/Email) desde el diálogo de Compartir.
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo: `${SITE_URL}/auth` },
     })
+
+    if (linkError || !linkData?.properties?.action_link) {
+      // Sin enlace la invitación es inutilizable -- se limpia el usuario
+      // recién creado, igual que en el catch de arriba.
+      console.error('create-team-invitation: generateLink failed', linkError?.message)
+      await supabaseAdmin.auth.admin.deleteUser(newUserId)
+      return new Response(JSON.stringify({ error: 'No se pudo generar el enlace de activación. Intenta nuevamente.' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     return new Response(JSON.stringify({
       success: true,
       user: { id: newUserId, email, full_name: full_name || null },
-      email_warning: emailError ? emailError.message : null,
+      activation_link: linkData.properties.action_link,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
