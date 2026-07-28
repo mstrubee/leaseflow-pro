@@ -14,23 +14,40 @@ type AuthMode = "login" | "forgot" | "reset";
 // "used": la invitación ya fue consumida -> bloquear.
 type InvitationGate = "checking" | "none" | "activatable" | "used";
 
+// Supabase a veces dispara INITIAL_SESSION/SIGNED_IN antes que
+// PASSWORD_RECOVERY al aterrizar en un enlace de recovery en una carga en
+// frío (condición de carrera conocida de supabase-js) -- si eso pasa, el
+// listener de abajo redirigiría a "/" antes de llegar a mostrar el
+// formulario de nueva contraseña, dejando al usuario "logueado" sin haber
+// fijado contraseña nunca. Se detecta el hash de la URL de forma síncrona,
+// en el estado inicial, para blindar contra esa carrera sin importar qué
+// evento llegue primero.
+const isRecoveryLink = () => window.location.hash.includes("type=recovery");
+
 const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>(() => (isRecoveryLink() ? "reset" : "login"));
   const [invitationGate, setInvitationGate] = useState<InvitationGate>("none");
-  const recoveryRef = useRef(false);
+  const recoveryRef = useRef(isRecoveryLink());
+  // Evita repetir la consulta a `invitations` si llegan varios eventos
+  // (PASSWORD_RECOVERY, INITIAL_SESSION, TOKEN_REFRESHED...) para la misma sesión.
+  const invitationCheckedRef = useRef(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY" && session) {
+      if (event === "PASSWORD_RECOVERY") {
         recoveryRef.current = true;
         setMode("reset");
+      }
+
+      if (recoveryRef.current && session && !invitationCheckedRef.current) {
+        invitationCheckedRef.current = true;
         setInvitationGate("checking");
         supabase
           .from("invitations")
