@@ -12,6 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Plus, Pencil, Trash2, KeyRound, History, Loader2, Mail, MessageCircle } from "lucide-react";
 
@@ -207,7 +208,8 @@ export function TeamUsersAdminManager() {
       setCreateForGerente(null);
       setEmailInput("");
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "No se pudo guardar el usuario." });
+      const message = await getFunctionErrorMessage(err, "No se pudo guardar el usuario.");
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setSubmitting(false);
     }
@@ -222,7 +224,8 @@ export function TeamUsersAdminManager() {
       toast({ title: "Usuario eliminado" });
       await loadAll();
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "No se pudo eliminar el usuario." });
+      const message = await getFunctionErrorMessage(err, "No se pudo eliminar el usuario.");
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setSubmitting(false);
       setDeleteTarget(null);
@@ -241,7 +244,8 @@ export function TeamUsersAdminManager() {
         setShareTarget({ email: resetTarget.email, full_name: resetTarget.full_name, link: data.reset_link, kind: "reset" });
       }
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "No se pudo resetear la contraseña." });
+      const message = await getFunctionErrorMessage(err, "No se pudo resetear la contraseña.");
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setSubmitting(false);
       setResetTarget(null);

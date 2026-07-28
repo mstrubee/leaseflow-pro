@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { Loader2 } from "lucide-react";
 
 type AuthMode = "login" | "forgot" | "reset";
@@ -133,13 +134,15 @@ const Auth = () => {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
       if (invitationGate === "activatable") {
-        await supabase.functions.invoke("complete-invitation");
+        const { error: completeError } = await supabase.functions.invoke("complete-invitation");
+        if (completeError) throw completeError;
       }
       recoveryRef.current = false;
       toast({ title: "Contraseña actualizada", description: "Tu contraseña fue cambiada exitosamente." });
       navigate("/");
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      const message = await getFunctionErrorMessage(error, error.message || "No se pudo actualizar la contraseña.");
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setLoading(false);
     }
