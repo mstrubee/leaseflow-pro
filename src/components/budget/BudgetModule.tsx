@@ -1598,22 +1598,36 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     setLoadingLineDetails(true);
 
     try {
-      // Fetch OCs for this budget line
-      const { data: ocs, error: ocsError } = await supabase
+      // Además del vínculo directo budget_line_id, una OC/solicitud puede estar
+      // asignada a esta línea vía las tablas puente (asignación a múltiples
+      // líneas) — hay que incluir ambos casos o "Ver OC/Fact." queda incompleto.
+      const [{ data: poJunction }, { data: reqJunction }] = await Promise.all([
+        supabase.from("purchase_order_budget_lines").select("purchase_order_id").eq("budget_line_id", budgetLineId),
+        supabase.from("oc_budget_lines").select("oc_request_id").eq("budget_line_id", budgetLineId),
+      ]);
+      const junctionPoIds = Array.from(new Set((poJunction || []).map(r => r.purchase_order_id).filter(Boolean)));
+      const junctionReqIds = Array.from(new Set((reqJunction || []).map(r => r.oc_request_id).filter(Boolean)));
+
+      // Fetch OCs for this budget line (directo + vía tabla puente)
+      const ocsBaseQuery = supabase
         .from("purchase_orders")
         .select("id, order_number, supplier_name, amount_uf, amount_clp, uf_value_at_entry, status")
-        .eq("budget_line_id", budgetLineId)
         .order("order_date", { ascending: false });
+      const { data: ocs, error: ocsError } = junctionPoIds.length > 0
+        ? await ocsBaseQuery.or(`budget_line_id.eq.${budgetLineId},id.in.(${junctionPoIds.join(",")})`)
+        : await ocsBaseQuery.eq("budget_line_id", budgetLineId);
 
       if (ocsError) throw ocsError;
 
-      // Fetch OC Requests for this line
-      const { data: requests } = await supabase
+      // Fetch OC Requests for this line (directo + vía tabla puente)
+      const requestsBaseQuery = supabase
         .from("oc_requests")
         .select("id, request_number, amount_uf, amount_clp, uf_value_at_entry, status, supplier_name, request_date")
-        .eq("budget_line_id", budgetLineId)
         .order("created_at", { ascending: false });
-      
+      const { data: requests } = junctionReqIds.length > 0
+        ? await requestsBaseQuery.or(`budget_line_id.eq.${budgetLineId},id.in.(${junctionReqIds.join(",")})`)
+        : await requestsBaseQuery.eq("budget_line_id", budgetLineId);
+
       setLineDetailsRequests((requests || []) as any);
 
       // For each OC, fetch invoices and credit notes
