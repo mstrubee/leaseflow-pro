@@ -143,26 +143,28 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Si la cuenta todavía no fue activada, la corrección de email invalida
-    // cualquier enlace generado para la dirección anterior -- se genera uno
-    // nuevo para la dirección corregida, a compartir manualmente (la
-    // plataforma no envía email todavía). Si ya estaba activa, no forzamos
-    // reactivación.
+    // Si la cuenta todavía no fue activada, se reenvía el enlace corto
+    // propio (`/activar?t=<token>`, resuelto al vuelo por
+    // resolve-activation-link con el email ya corregido) para que se
+    // comparta manualmente. Si ya estaba activa, no forzamos reactivación.
     let activationLink: string | null = null
     if (target.invitation_status !== 'active') {
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
-        email,
-        options: { redirectTo: `${SITE_URL}/auth` },
-      })
-      if (linkError || !linkData?.properties?.action_link) {
-        console.error('update-team-user-email: generateLink failed', linkError?.message)
-        return new Response(JSON.stringify({ error: 'El correo se actualizó, pero no se pudo generar el enlace de activación. Usa "Reset Password" para reintentar.' }), {
+      const { data: invitationRow } = await supabaseAdmin
+        .from('invitations')
+        .select('token')
+        .eq('user_id', user_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!invitationRow?.token) {
+        console.error('update-team-user-email: no invitation token found for user', user_id)
+        return new Response(JSON.stringify({ error: 'El correo se actualizó, pero no se encontró la invitación. Usa "Reset Password" para generar un enlace nuevo.' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
-      activationLink = linkData.properties.action_link
+      activationLink = `${SITE_URL}/activar?t=${invitationRow.token}`
     }
 
     return new Response(JSON.stringify({ success: true, activation_link: activationLink }), {

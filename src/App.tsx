@@ -42,6 +42,7 @@ const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
 const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDashboard"));
 const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
 const TeamUsers = lazy(() => import("./pages/TeamUsers"));
+const ActivateAccount = lazy(() => import("./pages/ActivateAccount"));
 
 const queryClient = new QueryClient();
 
@@ -82,6 +83,7 @@ const App = () => (
                 <Routes>
                   {/* Public routes */}
                   <Route path="/auth" element={<Auth />} />
+                  <Route path="/activar" element={<ActivateAccount />} />
 
                   {/* Protected routes - require authentication */}
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />

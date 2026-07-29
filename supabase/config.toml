@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.delete-team-user]
 verify_jwt = false
+
+[functions.resolve-activation-link]
+verify_jwt = false

@@ -98,10 +98,10 @@ Deno.serve(async (req) => {
       console.error('reset-team-user-password: signOut failed', signOutError.message)
     }
 
-    // invitations.token es bookkeeping/auditoría (queda registrado cuándo se
-    // regeneró), NO el control de seguridad real -- ese es el enlace de
-    // recovery de Supabase Auth + el gate de invitations.status en el
-    // frontend/complete-invitation.
+    // invitations.token ahora SÍ es el control de acceso real: es la única
+    // credencial que exige resolve-activation-link para generar un enlace de
+    // recovery fresco (ver ese archivo) -- por eso se regenera acá en cada
+    // reset, invalidando cualquier enlace corto compartido antes.
     const newToken = crypto.randomUUID()
     const { data: existingInvitation } = await supabaseAdmin
       .from('invitations')
@@ -141,27 +141,15 @@ Deno.serve(async (req) => {
       })
     }
 
-    // La plataforma todavía no tiene capacidad de envío de email -- en vez de
-    // disparar un correo que nunca llegaría (resetPasswordForEmail), se
-    // genera el enlace de recovery y se devuelve para que el gerente/admin
-    // lo comparta manualmente (WhatsApp/Email) desde el diálogo de Compartir.
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recovery',
-      email: target.email,
-      options: { redirectTo: `${SITE_URL}/auth` },
-    })
-
-    if (linkError || !linkData?.properties?.action_link) {
-      console.error('reset-team-user-password: generateLink failed', linkError?.message)
-      return new Response(JSON.stringify({ error: 'No se pudo generar el enlace de reset. Intenta nuevamente.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
+    // La plataforma todavía no tiene capacidad de envío de email -- el enlace
+    // se comparte a mano (WhatsApp/Email). En vez de exponer la URL técnica
+    // cruda de Supabase (.../auth/v1/verify?token=...&type=recovery&...,
+    // que a un destinatario le parece sospechosa/rota), se devuelve un
+    // enlace corto y propio (`/activar?t=<token>`); resolve-activation-link
+    // genera el enlace real de Supabase recién cuando lo clickean.
     return new Response(JSON.stringify({
       success: true,
-      reset_link: linkData.properties.action_link,
+      reset_link: `${SITE_URL}/activar?t=${newToken}`,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
