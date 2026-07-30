@@ -477,13 +477,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     }
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
+      const { data: pos, error } = await supabase
         .from("purchase_orders")
-        .select("budget_line_id, amount_uf, amount_clp, uf_value_at_entry, opex_master_id, opex_category_id, budget_classification")
+        .select("id, budget_line_id, amount_uf, amount_clp, uf_value_at_entry, opex_master_id, opex_category_id, budget_classification")
         .eq("contract_id", contractId)
         .eq("year", selectedYear)
-        .is("deleted_at", null)
-        .not("budget_line_id", "is", null);
+        .is("deleted_at", null);
       if (cancelled) return;
       if (error) {
         console.error("Error loading consumido por línea:", error);
@@ -495,10 +494,46 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         if (rec.uf_value_at_entry) return Math.round(rec.amount_uf * rec.uf_value_at_entry);
         return Math.round(rec.amount_uf * (ufValue || 1));
       };
-      const map: Record<string, number> = {};
-      (data || []).forEach((o) => {
+      // Las OC creadas sobre varias líneas a la vez quedan con budget_line_id =
+      // la primera línea elegida y amount_uf/amount_clp = el TOTAL de todas.
+      // El reparto real por línea vive en purchase_order_budget_lines (una fila
+      // por línea con su amount_uf individual) — mismo patrón que
+      // loadCapexLineUsage en CentralizedOrderCreator.tsx. Solo se usa el monto
+      // completo de la OC como fallback cuando no tiene ninguna fila asociada
+      // (OC legado de una sola línea).
+      const capexPos = (pos || []).filter((o) => {
         const isOpex = o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX";
-        if (isOpex || !o.budget_line_id) return;
+        return !isOpex;
+      });
+      const capexPoIds = capexPos.map((o) => o.id);
+      const poById = new Map(capexPos.map((o) => [o.id, o]));
+
+      let assocRows: { purchase_order_id: string; budget_line_id: string | null; amount_uf: number }[] = [];
+      if (capexPoIds.length > 0) {
+        const { data: assoc, error: assocError } = await supabase
+          .from("purchase_order_budget_lines")
+          .select("purchase_order_id, budget_line_id, amount_uf")
+          .in("purchase_order_id", capexPoIds);
+        if (cancelled) return;
+        if (assocError) {
+          console.error("Error loading purchase_order_budget_lines:", assocError);
+        } else {
+          assocRows = assoc || [];
+        }
+      }
+      const assocOrderIdSet = new Set(assocRows.map((a) => a.purchase_order_id));
+
+      const map: Record<string, number> = {};
+      assocRows.forEach((a) => {
+        const po = poById.get(a.purchase_order_id);
+        if (!po || !a.budget_line_id) return;
+        const splitClp = po.uf_value_at_entry
+          ? Math.round((a.amount_uf || 0) * po.uf_value_at_entry)
+          : Math.round((a.amount_uf || 0) * (ufValue || 1));
+        map[a.budget_line_id] = (map[a.budget_line_id] || 0) + splitClp;
+      });
+      capexPos.forEach((o) => {
+        if (!o.budget_line_id || assocOrderIdSet.has(o.id)) return;
         map[o.budget_line_id] = (map[o.budget_line_id] || 0) + resolveClp(o);
       });
       setConsumedByLineClp(map);

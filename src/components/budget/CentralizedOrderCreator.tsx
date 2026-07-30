@@ -151,6 +151,25 @@ export async function loadCapexLineUsage(lineIds: string[], excludeOrderIds: str
   return usage;
 }
 
+// Reparte un monto total (UF) entre las líneas de presupuesto seleccionadas en
+// una OC multi-línea, en proporción al monto autorizado de cada línea — no en
+// partes iguales. Reparto parejo hacía que una línea chica (ej. autorizada en
+// 1,76 UF) recibiera la misma porción que una línea grande (ej. 68 UF),
+// dejándola con "disponible por línea" absurdamente negativo. Si la suma de
+// los autorizados es 0 (todas las líneas en 0), cae a partes iguales.
+function splitAmountProportionally(totalUf: number, lines: { id: string; amount_uf: number }[]): Record<string, number> {
+  const split: Record<string, number> = {};
+  if (lines.length === 0) return split;
+  const sum = lines.reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+  if (sum > 0) {
+    lines.forEach(l => { split[l.id] = totalUf * ((l.amount_uf || 0) / sum); });
+  } else {
+    const equalShare = totalUf / lines.length;
+    lines.forEach(l => { split[l.id] = equalShare; });
+  }
+  return split;
+}
+
 // Filter hierarchical lines by a typed search term. A line stays visible if
 // its name matches, or an ancestor matches (children of a matched parent),
 // or a descendant matches (parents kept for hierarchy context).
@@ -922,14 +941,17 @@ export const CentralizedOrderCreator = ({
                 amount_clp: allocClp
               });
 
-              // Save CAPEX budget line associations (amount split evenly, same as budget module)
+              // Save CAPEX budget line associations (amount split proportionally
+              // to each line's own authorized amount, not evenly)
               if (allocCapexLineIds.length > 0) {
-                const amountPerLine = allocUf / allocCapexLineIds.length;
+                const allocSelectedLines = (capexLinesByContract[alloc.contractId] || [])
+                  .filter(l => allocCapexLineIds.includes(l.id));
+                const allocSplit = splitAmountProportionally(allocUf, allocSelectedLines);
                 await supabase.from("purchase_order_budget_lines").insert(
                   allocCapexLineIds.map(lineId => ({
                     purchase_order_id: poData.id,
                     budget_line_id: lineId,
-                    amount_uf: amountPerLine,
+                    amount_uf: allocSplit[lineId] ?? (allocUf / allocCapexLineIds.length),
                   }))
                 );
               }
@@ -989,14 +1011,17 @@ export const CentralizedOrderCreator = ({
           
           if (orderError) throw orderError;
 
-          // Save CAPEX budget line associations (amount split evenly, same as budget module)
+          // Save CAPEX budget line associations (amount split proportionally
+          // to each line's own authorized amount, not evenly)
           if (singlePoData && singleCapexLineIds.length > 0) {
-            const amountPerLine = totalAmountUf / singleCapexLineIds.length;
+            const singleSelectedLines = (capexLinesByContract[primaryContractId] || [])
+              .filter(l => singleCapexLineIds.includes(l.id));
+            const singleSplit = splitAmountProportionally(totalAmountUf, singleSelectedLines);
             await supabase.from("purchase_order_budget_lines").insert(
               singleCapexLineIds.map(lineId => ({
                 purchase_order_id: singlePoData.id,
                 budget_line_id: lineId,
-                amount_uf: amountPerLine,
+                amount_uf: singleSplit[lineId] ?? (totalAmountUf / singleCapexLineIds.length),
               }))
             );
           }
