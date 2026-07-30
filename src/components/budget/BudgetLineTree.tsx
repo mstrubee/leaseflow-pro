@@ -620,6 +620,34 @@ const BudgetLineItemInner = ({
     return calculatedAmount + surcharges;
   }, [isParent, linesMap, line.id, calculatedAmount]);
 
+  // Para líneas madre: el estado y el monto no son uno solo, dependen de sus
+  // hijas. "Autorizado" se muestra si al menos una hija (a cualquier
+  // profundidad) está autorizada; "No Autorizado" si al menos una no lo está.
+  // Cada badge lleva su propio monto (suma de las hijas en ese estado), en vez
+  // de un solo total que mezcla ambos.
+  const { parentHasAuthorized, parentHasUnauthorized, parentAuthorizedUf, parentUnauthorizedUf } = useMemo(() => {
+    if (!isParent) return { parentHasAuthorized: false, parentHasUnauthorized: false, parentAuthorizedUf: 0, parentUnauthorizedUf: 0 };
+    let hasAuthorized = false;
+    let hasUnauthorized = false;
+    const walk = (items: BudgetLine[]) => {
+      items.forEach(item => {
+        if (item.children && item.children.length > 0) {
+          walk(item.children);
+          return;
+        }
+        if (item.status === "autorizado") hasAuthorized = true;
+        else hasUnauthorized = true;
+      });
+    };
+    walk(line.children || []);
+    return {
+      parentHasAuthorized: hasAuthorized,
+      parentHasUnauthorized: hasUnauthorized,
+      parentAuthorizedUf: calculateAuthorizedTotal(line.children || [], templatePricesMap, ufValue, internalTransferSupplierIds),
+      parentUnauthorizedUf: calculateUnauthorizedTotal(line.children || [], templatePricesMap, ufValue, internalTransferSupplierIds),
+    };
+  }, [isParent, line.children, templatePricesMap, ufValue, internalTransferSupplierIds]);
+
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
     if (qty <= 0 || price <= 0) return 0;
@@ -1387,18 +1415,33 @@ const BudgetLineItemInner = ({
               )}
             </div>
           )}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", isAdmin && "cursor-pointer", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
-                  {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
+          {isParent ? (
+            <div className="flex items-center gap-1">
+              {parentHasAuthorized && (
+                <Badge className="text-[10px] px-2.5 py-0 whitespace-nowrap bg-green-500 hover:bg-green-600">
+                  {`Autorizado ${formatCLP(convertUFToPesos(parentAuthorizedUf))}`}
                 </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                {!isAdmin ? "Solo administradores pueden cambiar el estado" : line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              )}
+              {parentHasUnauthorized && (
+                <Badge className="text-[10px] px-2.5 py-0 whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white">
+                  {`No Autorizado ${formatCLP(convertUFToPesos(parentUnauthorizedUf))}`}
+                </Badge>
+              )}
+            </div>
+          ) : (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", isAdmin && "cursor-pointer", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
+                    {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {!isAdmin ? "Solo administradores pueden cambiar el estado" : line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
