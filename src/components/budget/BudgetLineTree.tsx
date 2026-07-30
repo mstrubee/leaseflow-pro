@@ -1301,18 +1301,37 @@ const BudgetLineItemInner = ({
                 }
                 return convertUFToPesos(calculatedAmountWithSurcharges);
               })();
+              // Consumido de esta línea: para líneas de gasto, su propio
+              // consumo; para líneas madre, la suma real (sin topar) del
+              // consumo de todos sus descendientes — así una línea hija
+              // sobregastada sí reduce el disponible visible de la madre.
+              const lineConsumedClp = (() => {
+                if (!consumedByLineClp) return 0;
+                if (!isParent) return consumedByLineClp[line.id] ?? 0;
+                const collectIds = (l: BudgetLine): string[] => {
+                  const ids = [l.id];
+                  (l.children || []).forEach(child => { ids.push(...collectIds(child)); });
+                  return ids;
+                };
+                return collectIds(line).reduce((sum, id) => sum + (consumedByLineClp[id] ?? 0), 0);
+              })();
+              // El disponible real nunca es negativo: si el consumo supera lo
+              // autorizado, el mínimo disponible es $0 (no se le puede "sacar
+              // plata" a una línea que ya no tiene margen).
+              const lineAvailableClp = Math.max(0, lineAuthorizedClp - lineConsumedClp);
               return (
                 <>
                   <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap text-center">
                     {formatCLP(lineAuthorizedClp)}
                   </span>
-                  {/* Disponible por línea (autorizado - consumido en OC): solo en
-                      líneas de gasto (no madre), y solo cuando el mapa de consumo
-                      está disponible (hoy, CAPEX de contratos regulares). Centrado
+                  {/* Disponible por línea (autorizado - consumido en OC, piso
+                      $0): en líneas de gasto y en líneas madre (agregado de
+                      sus hijas), solo cuando el mapa de consumo está
+                      disponible (hoy, CAPEX de contratos regulares). Centrado
                       con el monto de arriba, dentro de la misma columna. */}
-                  {!isParent && consumedByLineClp && (
+                  {consumedByLineClp && (
                     <span className="text-[10px] text-muted-foreground/80 font-mono whitespace-nowrap text-center">
-                      ({`Disp. ${formatCLP(lineAuthorizedClp - (consumedByLineClp[line.id] ?? 0))}`})
+                      ({`Disp. ${formatCLP(lineAvailableClp)}`})
                     </span>
                   )}
                 </>

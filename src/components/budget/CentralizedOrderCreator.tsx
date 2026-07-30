@@ -152,11 +152,13 @@ export async function loadCapexLineUsage(lineIds: string[], excludeOrderIds: str
 }
 
 // Reparte un monto total (UF) entre las líneas de presupuesto seleccionadas en
-// una OC multi-línea, en proporción al monto autorizado de cada línea — no en
-// partes iguales. Reparto parejo hacía que una línea chica (ej. autorizada en
-// 1,76 UF) recibiera la misma porción que una línea grande (ej. 68 UF),
-// dejándola con "disponible por línea" absurdamente negativo. Si la suma de
-// los autorizados es 0 (todas las líneas en 0), cae a partes iguales.
+// una OC multi-línea, en proporción al peso de cada línea (quien llama pasa el
+// disponible de cada línea como `amount_uf`) — no en partes iguales. Reparto
+// parejo hacía que una línea chica (ej. disponible en 1,76 UF) recibiera la
+// misma porción que una línea grande (ej. 68 UF), dejándola con "disponible
+// por línea" negativo. El llamador debe validar antes que totalUf no supere
+// la suma de los pesos — así ninguna línea recibe más de su propio disponible.
+// Si la suma de los pesos es 0, cae a partes iguales.
 function splitAmountProportionally(totalUf: number, lines: { id: string; amount_uf: number }[]): Record<string, number> {
   const split: Record<string, number> = {};
   if (lines.length === 0) return split;
@@ -854,6 +856,40 @@ export const CentralizedOrderCreator = ({
         
         toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
       } else {
+        // El disponible por línea es real: nunca se puede asignar a una línea
+        // más de lo que le queda disponible (autorizado - ya consumido). Se
+        // valida ANTES de crear nada — si el monto ingresado supera el
+        // disponible conjunto de las líneas elegidas, se bloquea la OC.
+        if (budgetType === "capex") {
+          const contractsToValidate = isMultiContract
+            ? contractAllocations.map(a => ({
+                contractId: a.contractId,
+                contractName: a.contractName,
+                amountUf: formData.currency === "CLP"
+                  ? Math.round((a.amount / ufValue) * 10000) / 10000
+                  : Math.round(a.amount * 10000) / 10000,
+              }))
+            : [{
+                contractId: primaryContractId,
+                contractName: contracts.find(c => c.id === primaryContractId)?.name || "",
+                amountUf: totalAmountUf,
+              }];
+
+          for (const c of contractsToValidate) {
+            const lineIds = capexLineSelections[c.contractId || ""] || [];
+            const selectedLines = (capexLinesByContract[c.contractId || ""] || []).filter(l => lineIds.includes(l.id));
+            const availableSum = selectedLines.reduce(
+              (sum, l) => sum + Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)),
+              0
+            );
+            if (c.amountUf > availableSum + 0.01) {
+              throw new Error(
+                `El monto a asignar${c.contractName ? ` en ${c.contractName}` : ""} (UF ${c.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}) supera el disponible de las líneas seleccionadas (UF ${availableSum.toLocaleString("es-CL", { minimumFractionDigits: 2 })}). Seleccione más líneas o reduzca el monto.`
+              );
+            }
+          }
+        }
+
         // Create Purchase Order directly
         const { number } = await generateNumber();
         const orderNumber = formData.order_number || number;
@@ -942,10 +978,12 @@ export const CentralizedOrderCreator = ({
               });
 
               // Save CAPEX budget line associations (amount split proportionally
-              // to each line's own authorized amount, not evenly)
+              // to each line's own DISPONIBLE — not its full authorized amount,
+              // and not evenly — so ninguna línea queda con disponible negativo)
               if (allocCapexLineIds.length > 0) {
                 const allocSelectedLines = (capexLinesByContract[alloc.contractId] || [])
-                  .filter(l => allocCapexLineIds.includes(l.id));
+                  .filter(l => allocCapexLineIds.includes(l.id))
+                  .map(l => ({ id: l.id, amount_uf: Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)) }));
                 const allocSplit = splitAmountProportionally(allocUf, allocSelectedLines);
                 await supabase.from("purchase_order_budget_lines").insert(
                   allocCapexLineIds.map(lineId => ({
@@ -1012,10 +1050,12 @@ export const CentralizedOrderCreator = ({
           if (orderError) throw orderError;
 
           // Save CAPEX budget line associations (amount split proportionally
-          // to each line's own authorized amount, not evenly)
+          // to each line's own DISPONIBLE — not its full authorized amount,
+          // and not evenly — so ninguna línea queda con disponible negativo)
           if (singlePoData && singleCapexLineIds.length > 0) {
             const singleSelectedLines = (capexLinesByContract[primaryContractId] || [])
-              .filter(l => singleCapexLineIds.includes(l.id));
+              .filter(l => singleCapexLineIds.includes(l.id))
+              .map(l => ({ id: l.id, amount_uf: Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)) }));
             const singleSplit = splitAmountProportionally(totalAmountUf, singleSelectedLines);
             await supabase.from("purchase_order_budget_lines").insert(
               singleCapexLineIds.map(lineId => ({
