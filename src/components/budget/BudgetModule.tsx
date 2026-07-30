@@ -8,7 +8,6 @@ import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLineTreeWithDrag, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
-import { useGantt } from "@/hooks/useGantt";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -55,9 +54,6 @@ interface BudgetModuleProps {
 }
 
 export const BudgetModule = ({ contractId, serviceContractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
-  // Sync new CAPEX lines to Gantt timelines that were created from CAPEX (only for regular contracts)
-  const { syncNewCapexLine } = useGantt(contractId ?? null);
-
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
@@ -675,10 +671,6 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       if (error) throw error;
       setFocusNewLineId(newLine?.id ?? null);
       await loadLines(budget.id);
-      // Sync to any Gantt timeline that was created from CAPEX (only for capex budgets)
-      if (budgetType === "capex" && newLine) {
-        await syncNewCapexLine({ id: newLine.id, name: "Nueva línea", parent_id: newLine.parent_id ?? null, display_order: newLine.display_order ?? 0 });
-      }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
