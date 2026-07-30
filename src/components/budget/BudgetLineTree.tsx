@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useContext } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 /**
  * Parse a user-entered numeric string supporting Chilean and international formats.
@@ -165,40 +184,67 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
 
 const EMPTY_LINES_MAP = new Map<string, BudgetLine>();
 
-// ── Drag-to-reorder context ────────────────────────────────────────────────
-interface BudgetDragCtxValue {
-  sourceId: string | null;
-  overId: string | null;
-  overPos: "above" | "below" | null;
-  setDragSource: (id: string | null) => void;
-  setDragOver: (id: string | null, pos: "above" | "below" | null) => void;
-  onReorderLine?: (lineId: string, siblingIds: string[]) => Promise<void>;
-}
-const BudgetDragCtx = React.createContext<BudgetDragCtxValue | null>(null);
+// Objeto estable (fuera del componente) para el activationConstraint del
+// PointerSensor. Si se pasa un literal inline, useSensor() lo memoiza por
+// referencia y una nueva referencia en cada render hace que dnd-kit
+// reinicie sus listeners internos — abortando un arrastre en curso.
+const POINTER_ACTIVATION_CONSTRAINT = { distance: 5 };
 
-// Wrapper that provides drag context — use this in BudgetModule instead of BudgetLineTree
+// ── Drag-to-reorder (dnd-kit) ──────────────────────────────────────────────
+// Un solo DndContext para todo el árbol; cada nivel agrupa a sus hermanos
+// (separando autorizados de no-autorizados, ver BudgetLineTree más abajo) en
+// su propio SortableContext, así el reordenamiento por arrastre solo es
+// válido dentro del mismo grupo — igual que ya exigía la lógica anterior,
+// pero ahora es imposible soltar en un grupo inválido en vez de fallar en
+// silencio. Cada fila expone su grupo de hermanos vía `data.siblingIds`.
 export const BudgetLineTreeWithDrag = ({
   onReorderLine,
   ...props
 }: BudgetLineTreeProps & { onReorderLine?: (lineId: string, siblingIds: string[]) => Promise<void> }) => {
-  const [sourceId, setDragSource] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-  const [overPos, setOverPos] = useState<"above" | "below" | null>(null);
+  const [activeLine, setActiveLine] = useState<BudgetLine | null>(null);
 
-  const setDragOver = useCallback((id: string | null, pos: "above" | "below" | null) => {
-    setOverId(id);
-    setOverPos(pos);
-  }, []);
-
-  const ctxValue = useMemo<BudgetDragCtxValue>(
-    () => ({ sourceId, overId, overPos, setDragSource, setDragOver, onReorderLine }),
-    [sourceId, overId, overPos, setDragOver, onReorderLine]
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: POINTER_ACTIVATION_CONSTRAINT }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const data = event.active.data.current as { line?: BudgetLine } | undefined;
+    setActiveLine(data?.line ?? null);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveLine(null);
+    if (!over || active.id === over.id || !onReorderLine) return;
+    const siblingIds = (over.data.current as { siblingIds?: string[] } | undefined)?.siblingIds;
+    if (!siblingIds || !siblingIds.includes(active.id as string)) return;
+    const oldIndex = siblingIds.indexOf(active.id as string);
+    const newIndex = siblingIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorderLine(active.id as string, arrayMove(siblingIds, oldIndex, newIndex));
+  }, [onReorderLine]);
+
+  const handleDragCancel = useCallback(() => setActiveLine(null), []);
+
   return (
-    <BudgetDragCtx.Provider value={ctxValue}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
       <BudgetLineTree {...props} />
-    </BudgetDragCtx.Provider>
+      <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+        {activeLine ? (
+          <div className="flex items-center gap-2 py-1.5 px-3 rounded-md bg-background border-2 border-primary shadow-xl">
+            <GripVertical className="h-4 w-4 text-primary flex-shrink-0" />
+            <span className="text-sm font-medium truncate max-w-xs">{activeLine.name}</span>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 };
 
@@ -306,65 +352,64 @@ export const BudgetLineTree = ({
     });
   }, [lines, compactView]);
 
-  const dragCtx = useContext(BudgetDragCtx);
+  // "No Autorizado" siempre va al final (ver sortedLines) — se agrupan en su
+  // propio SortableContext para que el arrastre solo pueda reordenar dentro
+  // del mismo grupo (autorizadas entre sí, no-autorizadas entre sí). Antes
+  // era posible arrastrar una línea no-autorizada entre autorizadas y el
+  // drop parecía funcionar, pero el orden se revertía en silencio al
+  // re-renderizar; ahora esa combinación no es un destino de drop válido.
+  const { authorizedSiblings, unauthorizedSiblings, authorizedIds, unauthorizedIds } = useMemo(() => {
+    const authorizedSiblings = sortedLines.filter(l => l.status !== "no_autorizado");
+    const unauthorizedSiblings = sortedLines.filter(l => l.status === "no_autorizado");
+    return {
+      authorizedSiblings,
+      unauthorizedSiblings,
+      authorizedIds: authorizedSiblings.map(l => l.id),
+      unauthorizedIds: unauthorizedSiblings.map(l => l.id),
+    };
+  }, [sortedLines]);
 
-  const handleLevelDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!dragCtx?.sourceId || !dragCtx?.overId) {
-      dragCtx?.setDragSource(null);
-      dragCtx?.setDragOver(null, null);
-      return;
-    }
-    const sibIds = sortedLines.map((l) => l.id);
-    if (!sibIds.includes(dragCtx.sourceId) || !sibIds.includes(dragCtx.overId)) {
-      dragCtx.setDragSource(null);
-      dragCtx.setDragOver(null, null);
-      return;
-    }
-    const newOrder = [...sibIds];
-    newOrder.splice(sibIds.indexOf(dragCtx.sourceId), 1);
-    let tgtIdx = newOrder.indexOf(dragCtx.overId);
-    if (dragCtx.overPos === "below") tgtIdx++;
-    newOrder.splice(tgtIdx, 0, dragCtx.sourceId);
-    dragCtx.onReorderLine?.(dragCtx.sourceId, newOrder);
-    dragCtx.setDragSource(null);
-    dragCtx.setDragOver(null, null);
-  }, [dragCtx, sortedLines]);
+  const renderItem = (line: BudgetLine, siblingIds: string[]) => (
+    <BudgetLineItem
+      key={line.id}
+      line={line}
+      level={level}
+      linesMap={effectiveLinesMap}
+      onAddLine={onAddLine}
+      onUpdateLine={onUpdateLine}
+      onDeleteLine={onDeleteLine}
+      onCreateOC={onCreateOC}
+      onCreateOCRequest={onCreateOCRequest}
+      onCreateInvoice={onCreateInvoice}
+      onViewLineDetails={onViewLineDetails}
+      readOnly={readOnly}
+      compactView={compactView}
+      parentCategoryId={line.category_id || parentCategoryId}
+      globalExpandState={globalExpandState}
+      templatePricesMap={templatePricesMap}
+      collapsedIds={collapsedIds}
+      onToggleExpand={onToggleExpand}
+      superficieEdificada={superficieEdificada}
+      internalTransferSupplierIds={internalTransferSupplierIds}
+      selectionMode={selectionMode}
+      selectedIds={selectedIds}
+      onToggleSelect={onToggleSelect}
+      onReload={onReload}
+      onMoveLine={onMoveLine}
+      consumedByLineClp={consumedByLineClp}
+      siblingIds={siblingIds}
+    />
+  );
 
-  return <div
-    className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}
-    onDrop={dragCtx ? handleLevelDrop : undefined}
-    onDragOver={dragCtx ? (e) => e.preventDefault() : undefined}
-  >
-    {sortedLines.map(line => <BudgetLineItem
-        key={line.id} 
-        line={line} 
-        level={level} 
-        linesMap={effectiveLinesMap}
-        onAddLine={onAddLine} 
-        onUpdateLine={onUpdateLine} 
-        onDeleteLine={onDeleteLine} 
-        onCreateOC={onCreateOC} 
-        onCreateOCRequest={onCreateOCRequest}
-        onCreateInvoice={onCreateInvoice} 
-        onViewLineDetails={onViewLineDetails} 
-        readOnly={readOnly}
-        compactView={compactView}
-        parentCategoryId={line.category_id || parentCategoryId}
-        globalExpandState={globalExpandState}
-        templatePricesMap={templatePricesMap}
-        collapsedIds={collapsedIds}
-        onToggleExpand={onToggleExpand}
-        superficieEdificada={superficieEdificada}
-        internalTransferSupplierIds={internalTransferSupplierIds}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        onToggleSelect={onToggleSelect}
-        onReload={onReload}
-        onMoveLine={onMoveLine}
-        consumedByLineClp={consumedByLineClp}
-      />)}
+  return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
+    <SortableContext items={authorizedIds} strategy={verticalListSortingStrategy}>
+      {authorizedSiblings.map(line => renderItem(line, authorizedIds))}
+    </SortableContext>
+    {unauthorizedSiblings.length > 0 && (
+      <SortableContext items={unauthorizedIds} strategy={verticalListSortingStrategy}>
+        {unauthorizedSiblings.map(line => renderItem(line, unauthorizedIds))}
+      </SortableContext>
+    )}
       {level === 0 && !readOnly && (isAdmin || hasPermission("budget_editar_lineas", "edit")) && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
@@ -397,6 +442,10 @@ interface BudgetLineItemProps {
   onReload?: () => void;
   onMoveLine?: (lineId: string) => void;
   consumedByLineClp?: Record<string, number>;
+  /** Ids ordenados del grupo de hermanos al que pertenece esta línea (mismo
+   *  padre y mismo estado autorizado/no-autorizado) — define hasta dónde
+   *  puede reordenarse por arrastre. */
+  siblingIds?: string[];
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -430,6 +479,7 @@ const BudgetLineItemInner = ({
   onReload,
   onMoveLine,
   consumedByLineClp,
+  siblingIds = [],
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
@@ -486,11 +536,6 @@ const BudgetLineItemInner = ({
 
   const descendantCount = countDescendants(line);
 
-  // Drag-to-reorder
-  const dragCtx = useContext(BudgetDragCtx);
-  const isDragSource = dragCtx?.sourceId === line.id;
-  const isDragOver = dragCtx?.overId === line.id;
-
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
   const isCalcPercentage = line.calc_type === "percentage";
@@ -499,6 +544,19 @@ const BudgetLineItemInner = ({
   // via the dedicated surcharge "+" button (kept accessible via originalReadOnly below).
   const isAuthorizedLockedForUser = line.status === "autorizado" && !canAutorizar && !isSurchargeRow;
   const effectiveReadOnly = readOnly || isAuthorizedLockedForUser;
+
+  // Drag-to-reorder (dnd-kit) — el handle real es el ícono GripVertical (ver
+  // más abajo), no toda la fila, para no competir con botones/inputs.
+  const canDragLine = !effectiveReadOnly && !selectionMode && !compactView;
+  const {
+    attributes: dragAttributes,
+    listeners: dragListeners,
+    setNodeRef: setDragNodeRef,
+    transform: dragTransform,
+    transition: dragTransition,
+    isDragging,
+  } = useSortable({ id: line.id, data: { line, siblingIds }, disabled: !canDragLine });
+  const dragStyle = { transform: CSS.Transform.toString(dragTransform), transition: dragTransition };
 
   // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
   const pendingSurcharges = useMemo(() => {
@@ -964,8 +1022,9 @@ const BudgetLineItemInner = ({
 
   return <div>
       <div
+        ref={setDragNodeRef}
+        style={dragStyle}
         data-line-id={line.id}
-        draggable={!!dragCtx && !effectiveReadOnly && !selectionMode && !compactView}
         onClick={selectionMode ? (e) => {
           // Ignore clicks on interactive children (inputs, buttons, dropdowns, etc.)
           const target = e.target as HTMLElement;
@@ -973,25 +1032,6 @@ const BudgetLineItemInner = ({
           e.preventDefault();
           e.stopPropagation();
           onToggleSelect?.(line.id);
-        } : undefined}
-        onDragStart={dragCtx ? (e) => {
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", line.id);
-          dragCtx.setDragSource(line.id);
-        } : undefined}
-        onDragOver={dragCtx ? (e) => {
-          e.preventDefault();
-          if (isDragSource) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          const pos = e.clientY - rect.top < rect.height / 2 ? "above" : "below";
-          dragCtx.setDragOver(line.id, pos);
-        } : undefined}
-        onDragLeave={dragCtx ? () => {
-          if (dragCtx.overId === line.id) dragCtx.setDragOver(null, null);
-        } : undefined}
-        onDragEnd={dragCtx ? () => {
-          dragCtx.setDragSource(null);
-          dragCtx.setDragOver(null, null);
         } : undefined}
         className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
@@ -1006,10 +1046,8 @@ const BudgetLineItemInner = ({
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
         selectionMode && "cursor-pointer select-none",
-        // Drag-to-reorder visual state
-        isDragSource && "opacity-40",
-        isDragOver && dragCtx?.overPos === "above" && "border-t-2 border-primary",
-        isDragOver && dragCtx?.overPos === "below" && "border-b-2 border-primary",
+        // Drag-to-reorder visual state: dim the source, dnd-kit slides the rest
+        isDragging && "opacity-40 z-10 relative",
       )}>
         {selectionMode && (
           <Checkbox
@@ -1020,8 +1058,17 @@ const BudgetLineItemInner = ({
             className="flex-shrink-0"
           />
         )}
-        {dragCtx && !effectiveReadOnly && !selectionMode && !compactView && (
-          <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-50 cursor-grab flex-shrink-0 active:cursor-grabbing" />
+        {canDragLine && (
+          <button
+            type="button"
+            {...dragAttributes}
+            {...dragListeners}
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 -m-1 rounded cursor-grab active:cursor-grabbing hover:bg-accent flex-shrink-0 touch-none"
+            title="Arrastrar para reordenar"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground/50 group-hover:text-muted-foreground" />
+          </button>
         )}
         <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
@@ -1749,6 +1796,7 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   if (prev.parentCategoryId !== next.parentCategoryId) return false;
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
   if (prev.consumedByLineClp !== next.consumedByLineClp) return false;
+  if (prev.siblingIds !== next.siblingIds) return false;
   // Callbacks are stable (useCallback in parent), skip comparing
   return true;
 });
