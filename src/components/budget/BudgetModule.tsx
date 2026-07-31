@@ -810,7 +810,42 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     try {
       const { error } = await supabase.from("budget_lines").update(data).eq("id", id);
       if (error) throw error;
-      
+
+      // Un cambio de status dispara triggers en la DB que recalculan
+      // progress_status_id (badge "Sin Cotización"/"Con OC"/etc.); el update
+      // optimista de arriba no conoce ese valor nuevo, así que hay que
+      // releerlo para que el badge se actualice sin recargar la página.
+      if (data.status) {
+        const { data: refreshed } = await supabase
+          .from("budget_lines")
+          .select("progress_status_id")
+          .eq("id", id)
+          .maybeSingle();
+        if (refreshed) {
+          setLines(prev => {
+            const updateInTree = (items: BudgetLine[]): BudgetLine[] => {
+              let changed = false;
+              const result = items.map(item => {
+                if (item.id === id) {
+                  changed = true;
+                  return { ...item, progress_status_id: refreshed.progress_status_id };
+                }
+                if (item.children?.length) {
+                  const newChildren = updateInTree(item.children);
+                  if (newChildren !== item.children) {
+                    changed = true;
+                    return { ...item, children: newChildren };
+                  }
+                }
+                return item;
+              });
+              return changed ? result : items;
+            };
+            return updateInTree(prev);
+          });
+        }
+      }
+
       // 3. Recalculate percentage lines in background, update local state only
       if (budget && (data.amount_uf !== undefined || data.quantity !== undefined || data.unit_price !== undefined || data.currency !== undefined)) {
         recalcPercentageLinesLocally(budget.id);
