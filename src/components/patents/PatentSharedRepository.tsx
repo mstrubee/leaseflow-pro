@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,11 +59,18 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'folder' | 'file'; id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Search & bulk upload
   const [folderSearchQuery, setFolderSearchQuery] = useState("");
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  const filteredFolders = useMemo(() => {
+    if (!folderSearchQuery) return folders;
+    const q = folderSearchQuery.toLowerCase();
+    return folders.filter((folder) => folder.name.toLowerCase().includes(q));
+  }, [folders, folderSearchQuery]);
 
   const handleDownloadEmptyFolders = useCallback(() => {
     const emptyFolders = folders.filter((f) => (f.fileCount ?? 0) === 0);
@@ -188,30 +195,53 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
   const handleDeleteFolder = async (folderId: string) => {
     try {
-      // Delete files in folder first
+      // 1. Collect the folder + all descendant folder ids iteratively (BFS).
+      //    A visited Set + iteration cap guards against cyclic/corrupt
+      //    parent_id data that would otherwise cause infinite recursion.
+      const allFolderIds: string[] = [];
+      const visited = new Set<string>();
+      let queue: string[] = [folderId];
+      let guard = 0;
+      const MAX_ITERATIONS = 10000;
+
+      while (queue.length > 0 && guard < MAX_ITERATIONS) {
+        guard++;
+        const current = queue.filter((id) => !visited.has(id));
+        if (current.length === 0) break;
+        current.forEach((id) => {
+          visited.add(id);
+          allFolderIds.push(id);
+        });
+
+        const { data: children } = await supabase
+          .from("repository_folders")
+          .select("id")
+          .in("parent_id", current);
+
+        queue = (children || []).map((c: any) => c.id).filter((id: string) => !visited.has(id));
+      }
+
+      // 2. Delete all files within those folders (storage + DB) in bulk.
       const { data: folderFiles } = await supabase
         .from("repository_files")
         .select("id, url")
-        .eq("folder_id", folderId);
+        .in("folder_id", allFolderIds);
 
-      for (const f of folderFiles || []) {
-        if (isStorageUrl(f.url)) {
-          await deleteFileFromStorage(f.url);
-        }
-        await supabase.from("repository_files").delete().eq("id", f.id);
+      await Promise.all(
+        (folderFiles || [])
+          .filter((f: any) => isStorageUrl(f.url))
+          .map((f: any) => deleteFileFromStorage(f.url).catch(() => undefined))
+      );
+
+      if ((folderFiles || []).length > 0) {
+        await supabase
+          .from("repository_files")
+          .delete()
+          .in("id", (folderFiles || []).map((f: any) => f.id));
       }
 
-      // Delete subfolders recursively
-      const { data: subfolders } = await supabase
-        .from("repository_folders")
-        .select("id")
-        .eq("parent_id", folderId);
-
-      for (const sub of subfolders || []) {
-        await handleDeleteFolder(sub.id);
-      }
-
-      await supabase.from("repository_folders").delete().eq("id", folderId);
+      // 3. Delete all folders in bulk.
+      await supabase.from("repository_folders").delete().in("id", allFolderIds);
     } catch (error) {
       console.error("Error deleting folder:", error);
       throw error;
@@ -233,6 +263,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
+    setDeleting(true);
     try {
       if (deleteTarget.type === 'folder') {
         await handleDeleteFolder(deleteTarget.id);
@@ -244,8 +275,10 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
       }
     } catch {
       toast.error("Error al eliminar");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
-    setDeleteTarget(null);
   };
 
   const uploadFiles = async (fileList: FileList | File[]) => {
@@ -460,10 +493,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
                 )}
 
                 {/* Folders - filtered */}
-                {folders
-                  .filter((folder) =>
-                    !folderSearchQuery || folder.name.toLowerCase().includes(folderSearchQuery.toLowerCase())
-                  )
+                {filteredFolders
                   .map((folder) => (
                   <div
                     key={folder.id}
@@ -575,7 +605,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
       </Dialog>
 
       {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o && !deleting) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -587,8 +617,13 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>Eliminar</AlertDialogAction>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleConfirmDelete(); }}
+              disabled={deleting}
+            >
+              {deleting ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -32,6 +32,7 @@ import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubSt
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
 import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
 import { DataExportDialog } from "@/components/admin/DataExportDialog";
+import { CustomRolesManager, useCustomRoles } from "@/components/admin/CustomRolesManager";
 interface Profile {
   id: string;
   email: string;
@@ -297,6 +298,7 @@ const AdminPanel = () => {
   const [editUserSupplierIds, setEditUserSupplierIds] = useState<string[]>([]);
   const [updatingUser, setUpdatingUser] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const { customRoles, getPermissionsForRole, reload: reloadCustomRoles } = useCustomRoles();
 
   // Activity thresholds
   interface ActivityThreshold { user_id: string; idle_minutes: number; inactive_minutes: number; }
@@ -950,6 +952,28 @@ const AdminPanel = () => {
                       onChange={(e) => setNewUserPassword(e.target.value)}
                     />
                   </div>
+                  {customRoles.length > 0 && (
+                    <div className="space-y-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                      <Label className="text-sm">Tipo de Rol (plantilla)</Label>
+                      <Select
+                        value=""
+                        onValueChange={(roleId) => {
+                          if (roleId) setNewUserPermissions(getPermissionsForRole(roleId));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar plantilla de permisos…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {customRoles.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground">Al seleccionar una plantilla se pre-rellenan los permisos. Puedes ajustarlos después.</p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label>Rol</Label>
                     <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "user" | "operador_terreno")}>
@@ -1234,6 +1258,15 @@ const AdminPanel = () => {
                 ))}
               </TableBody>
             </Table>
+        </CollapsibleCard>
+
+        {/* ── Tipos de Rol Personalizados ── */}
+        <CollapsibleCard
+          title="Tipos de Rol"
+          description="Plantillas de permisos para asignar rápidamente a nuevos usuarios"
+          icon={<Shield className="h-5 w-5 text-violet-600" />}
+        >
+          <CustomRolesManager onRolesChange={reloadCustomRoles} />
         </CollapsibleCard>
 
         {/* ── Grupo: Empresas ── */}
@@ -1561,6 +1594,28 @@ const AdminPanel = () => {
                       <SelectItem value="admin">Administrador</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {customRoles.length > 0 && (editUserRole === "user" || editUserRole === "operador_terreno") && (
+                <div className="space-y-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                  <Label className="text-sm">Aplicar plantilla de permisos</Label>
+                  <Select
+                    value=""
+                    onValueChange={(roleId) => {
+                      if (roleId) setEditUserPermissions(getPermissionsForRole(roleId));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar plantilla…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customRoles.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">Reemplaza los permisos actuales con los de la plantilla seleccionada.</p>
                 </div>
               )}
 
