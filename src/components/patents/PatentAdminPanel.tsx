@@ -1588,7 +1588,10 @@ export function PatentAdminPanel({
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <AlertDialogContent>
+        {/* z-index por encima del diálogo del panel (z-[1101]); si no, el
+            confirm queda DETRÁS y solo se ve el fondo oscuro, sin poder
+            confirmar ni cancelar. Mismo criterio que PatentSharedRepository. */}
+        <AlertDialogContent className="z-[1300]">
           <AlertDialogHeader>
             <AlertDialogTitle>
               ¿Eliminar {deleteConfirm?.type === 'item' ? 'ítem' : 
