@@ -567,10 +567,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o && !deleting) setDeleteTarget(null); }}>
-        {/* z-index por encima del diálogo del repositorio (z-[1101]); si no, el
-            confirm quedaba DETRÁS y solo se veía el fondo oscuro, sin poder
-            confirmar el borrado. */}
-        <AlertDialogContent className="z-[1300]">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Eliminar {deleteTarget?.type === 'folder' ? 'carpeta' : 'archivo'}
