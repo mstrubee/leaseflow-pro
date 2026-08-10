@@ -2,6 +2,7 @@ import { useEffect, useState, Fragment } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import { BEATRIZ_CFG_DB_KEY, BEATRIZ_DEFAULTS, mergeBeatrizCfg, type BeatrizCfg, type CatCfg } from "@/lib/beatrizRubroConfig";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -151,18 +152,12 @@ interface BeatrizData {
 // para que la config sea global. El puntaje del bono junta (pooled) todas las
 // celdas rubro×zona de ambas categorías; la visualización es separada por
 // categoría para ver dónde faltan proveedores.
-const BEATRIZ_CFG_DB_KEY = "beatriz";
+// Tipos/config/merge compartidos con CategoryManager.tsx (pestaña Rubros de
+// Proveedores), que también lee y edita esta misma fila — ver
+// src/lib/beatrizRubroConfig.ts.
 type CatKey = "compras" | "mantenciones";
 const CAT_LABEL: Record<CatKey, string> = { compras: "Compras", mantenciones: "Mantenciones" };
 const CAT_KEYS: CatKey[] = ["compras", "mantenciones"];
-
-// Umbrales de proveedores por rubro×zona para cada nivel de la escala de bono.
-interface CatCfg { n70: number; n100: number; n130: number; rubroIds: string[]; }
-interface BeatrizCfg { compras: CatCfg; mantenciones: CatCfg; }
-const BEATRIZ_DEFAULTS: BeatrizCfg = {
-  compras:      { n70: 1, n100: 2, n130: 4, rubroIds: [] },
-  mantenciones: { n70: 2, n100: 3, n130: 5, rubroIds: [] },
-};
 
 function cellColor(count: number, n70: number, n100: number, n130: number) {
   if (count >= n130) return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -259,17 +254,7 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
         .eq("key", BEATRIZ_CFG_DB_KEY)
         .maybeSingle();
       if (row?.config) {
-        const raw = row.config as Partial<Record<CatKey, Partial<CatCfg> & { min?: number; sobre?: number }>>;
-        const merge = (d: CatCfg, r?: Partial<CatCfg> & { min?: number; sobre?: number }): CatCfg => ({
-          n70: r?.n70 ?? d.n70,
-          n100: r?.n100 ?? r?.min ?? d.n100,   // migra shape viejo {min,sobre}
-          n130: r?.n130 ?? r?.sobre ?? d.n130,
-          rubroIds: r?.rubroIds ?? d.rubroIds,
-        });
-        const c: BeatrizCfg = {
-          compras: merge(BEATRIZ_DEFAULTS.compras, raw.compras),
-          mantenciones: merge(BEATRIZ_DEFAULTS.mantenciones, raw.mantenciones),
-        };
+        const c = mergeBeatrizCfg(row.config as Partial<Record<CatKey, Partial<CatCfg> & { min?: number; sobre?: number }>>);
         setCfg(c);
         setSavedCfg(c);
       }

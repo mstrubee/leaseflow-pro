@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { useSuppliersNavigation } from "./SuppliersReturnButton";
 import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
+import { BEATRIZ_CFG_DB_KEY, BEATRIZ_DEFAULTS, mergeBeatrizCfg, type BeatrizCfg } from "@/lib/beatrizRubroConfig";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search, Loader2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { SupplierForm } from "./SupplierForm";
@@ -198,6 +202,8 @@ const SortableCategoryRow = ({
   getMoveTargets,
   dragDisabled,
   rubroBadge,
+  onSetRubroBadge,
+  canEditRubroBadge,
 }: {
   item: FlatVisibleItem;
   editingId: string | null;
@@ -219,6 +225,8 @@ const SortableCategoryRow = ({
   getMoveTargets: (catId: string) => { id: string | null; name: string; level: number }[];
   dragDisabled: boolean;
   rubroBadge: RubroBadgeKey | null;
+  onSetRubroBadge: (catId: string, next: RubroBadgeKey | null) => void;
+  canEditRubroBadge: boolean;
 }) => {
   const {
     attributes,
@@ -312,16 +320,61 @@ const SortableCategoryRow = ({
               {cat.name}
             </span>
 
-            {rubroBadge && (
-              <span
-                className={cn(
-                  "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none",
-                  RUBRO_BADGE[rubroBadge].className
-                )}
-                title="Clasificación KPI Beatriz (Cobertura de Proveedores)"
-              >
-                {RUBRO_BADGE[rubroBadge].label}
-              </span>
+            {canEditRubroBadge ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={e => e.stopPropagation()}
+                    className={cn(
+                      "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none transition-opacity",
+                      rubroBadge
+                        ? RUBRO_BADGE[rubroBadge].className
+                        : "opacity-0 group-hover:opacity-100 border border-dashed border-muted-foreground/40 text-muted-foreground"
+                    )}
+                    title="Clasificación KPI Beatriz (Cobertura de Proveedores) — click para editar"
+                  >
+                    {rubroBadge ? RUBRO_BADGE[rubroBadge].label : "Sin clasificar"}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-44 p-1">
+                  <div className="space-y-0.5">
+                    {(Object.keys(RUBRO_BADGE) as RubroBadgeKey[]).map(key => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => onSetRubroBadge(cat.id, key)}
+                        className={cn(
+                          "w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent flex items-center gap-2",
+                          rubroBadge === key && "bg-accent"
+                        )}
+                      >
+                        <span className={cn("h-2 w-2 rounded-full", RUBRO_BADGE[key].className)} />
+                        {RUBRO_BADGE[key].label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => onSetRubroBadge(cat.id, null)}
+                      className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent text-muted-foreground"
+                    >
+                      Sin clasificar
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              rubroBadge && (
+                <span
+                  className={cn(
+                    "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none",
+                    RUBRO_BADGE[rubroBadge].className
+                  )}
+                  title="Clasificación KPI Beatriz (Cobertura de Proveedores)"
+                >
+                  {RUBRO_BADGE[rubroBadge].label}
+                </span>
+              )
             )}
 
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
@@ -443,6 +496,7 @@ const ReassignCategoryPicker = ({
 };
 
 export const CategoryManager = () => {
+  const { isAdmin } = useAuth();
   const [categories, setCategories] = useState<CategoryWithChildren[]>([]);
   const [flatCategories, setFlatCategories] = useState<SupplierCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -520,13 +574,14 @@ export const CategoryManager = () => {
     loadCategories();
   }, []);
 
-  // Clasificación Compras/Mantenciones por rubro, leída de la misma fuente
-  // que administra el KPI "Beatriz Valenzuela — Cobertura de Proveedores"
-  // (kpi_team_config, key='beatriz'). Solo lectura: la edición sigue
-  // ocurriendo en el modal admin del KPI. Fallo silencioso — es un badge
-  // decorativo, no debe romper la pestaña si la fila aún no existe o no
-  // hay permiso de lectura.
-  const [beatrizRubroIds, setBeatrizRubroIds] = useState<{ compras: string[]; mantenciones: string[] } | null>(null);
+  // Clasificación Compras/Mantenciones por rubro — misma fuente que administra
+  // el KPI "Beatriz Valenzuela — Cobertura de Proveedores" (kpi_team_config,
+  // key='beatriz'). Editable desde acá (además del modal admin del KPI): se
+  // guarda la config completa para no pisar los umbrales (n70/n100/n130) que
+  // administra esa otra pantalla. Fallo silencioso al cargar — es un badge
+  // decorativo, no debe romper la pestaña si la fila aún no existe o no hay
+  // permiso de lectura.
+  const [beatrizCfg, setBeatrizCfg] = useState<BeatrizCfg | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -534,15 +589,9 @@ export const CategoryManager = () => {
         const { data: row } = await supabase
           .from("kpi_team_config")
           .select("config")
-          .eq("key", "beatriz")
+          .eq("key", BEATRIZ_CFG_DB_KEY)
           .maybeSingle();
-        const raw = row?.config as
-          | { compras?: { rubroIds?: string[] }; mantenciones?: { rubroIds?: string[] } }
-          | undefined;
-        setBeatrizRubroIds({
-          compras: raw?.compras?.rubroIds ?? [],
-          mantenciones: raw?.mantenciones?.rubroIds ?? [],
-        });
+        setBeatrizCfg(mergeBeatrizCfg(row?.config as Parameters<typeof mergeBeatrizCfg>[0]));
       } catch (err) {
         console.error("Error loading Beatriz rubro classification:", err);
       }
@@ -551,11 +600,41 @@ export const CategoryManager = () => {
 
   const rubroBadgeMap = useMemo(() => {
     const map = new Map<string, RubroBadgeKey>();
-    if (!beatrizRubroIds) return map;
-    for (const id of beatrizRubroIds.compras) map.set(id, "compras");
-    for (const id of beatrizRubroIds.mantenciones) map.set(id, map.has(id) ? "ambas" : "mantenciones");
+    if (!beatrizCfg) return map;
+    for (const id of beatrizCfg.compras.rubroIds) map.set(id, "compras");
+    for (const id of beatrizCfg.mantenciones.rubroIds) map.set(id, map.has(id) ? "ambas" : "mantenciones");
     return map;
-  }, [beatrizRubroIds]);
+  }, [beatrizCfg]);
+
+  // Guarda la clasificación de un rubro (Compras / Mantenciones / Ambas / sin
+  // clasificar) directamente desde su badge, sin tener que ir al modal admin
+  // del KPI. Solo se tocan los rubroIds — n70/n100/n130 quedan intactos.
+  const handleSetRubroBadge = async (catId: string, next: RubroBadgeKey | null) => {
+    const base = beatrizCfg ?? BEATRIZ_DEFAULTS;
+    const nextCfg: BeatrizCfg = {
+      compras: { ...base.compras, rubroIds: base.compras.rubroIds.filter(id => id !== catId) },
+      mantenciones: { ...base.mantenciones, rubroIds: base.mantenciones.rubroIds.filter(id => id !== catId) },
+    };
+    if (next === "compras" || next === "ambas") nextCfg.compras.rubroIds = [...nextCfg.compras.rubroIds, catId];
+    if (next === "mantenciones" || next === "ambas") nextCfg.mantenciones.rubroIds = [...nextCfg.mantenciones.rubroIds, catId];
+
+    const previous = beatrizCfg;
+    setBeatrizCfg(nextCfg);
+    try {
+      const { error } = await supabase
+        .from("kpi_team_config")
+        .upsert(
+          { key: BEATRIZ_CFG_DB_KEY, config: nextCfg as unknown as Json, updated_at: new Date().toISOString() },
+          { onConflict: "key" }
+        );
+      if (error) throw error;
+      toast.success("Clasificación actualizada");
+    } catch (err) {
+      console.error("Error updating rubro classification:", err);
+      toast.error("Error al actualizar la clasificación");
+      setBeatrizCfg(previous);
+    }
+  };
 
   const buildTree = (flatCats: SupplierCategory[]): CategoryWithChildren[] => {
     const map = new Map<string, CategoryWithChildren>();
@@ -1100,6 +1179,8 @@ export const CategoryManager = () => {
                 getMoveTargets={getMoveTargets}
                 dragDisabled={editingId !== null}
                 rubroBadge={rubroBadgeMap.get(item.id) ?? null}
+                onSetRubroBadge={handleSetRubroBadge}
+                canEditRubroBadge={isAdmin}
               />
             ))}
           </div>
