@@ -22,6 +22,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Plus, Trash2, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
 import {
   LineChart,
   Line,
@@ -140,14 +141,33 @@ const EscalationMonthInput = ({
   const [startUnit, setStartUnit] = useState<DurationUnit>("months");
   const [endUnit, setEndUnit] = useState<DurationUnit>("months");
 
+  // Un input vacío debe propagarse como "" y NO como "0": el string "0" es
+  // truthy, así que dejaba el botón "+" habilitado mientras handleAdd rechazaba
+  // el mes 0 en silencio — el botón parecía roto.
   const handleStartChange = (value: string) => {
-    const numValue = parseFloat(value) || 0;
+    if (value.trim() === "") {
+      onStartMonthChange("");
+      return;
+    }
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) {
+      onStartMonthChange("");
+      return;
+    }
     const months = startUnit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
     onStartMonthChange(months.toString());
   };
 
   const handleEndChange = (value: string) => {
-    const numValue = parseFloat(value) || 0;
+    if (value.trim() === "") {
+      onEndMonthChange("");
+      return;
+    }
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) {
+      onEndMonthChange("");
+      return;
+    }
     const months = endUnit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
     onEndMonthChange(months.toString());
   };
@@ -386,18 +406,44 @@ export const RentEscalations = ({
     const endMonth = parseInt(newEndMonth) || startMonth;
     const amount = parseFloat(newAmount);
 
-    // Validate months are greater than grace months
-    if (isNaN(startMonth) || isNaN(amount) || startMonth <= graceMonths || startMonth > durationMonths) {
+    // Cada rechazo avisa por qué. Antes eran `return` silenciosos: el botón "+"
+    // no hacía nada y no había forma de saber qué estaba mal.
+    if (isNaN(startMonth)) {
+      toast.error("Indica el mes de inicio del escalonado");
       return;
     }
 
-    // Validate end month is >= start month
-    if (endMonth < startMonth || endMonth > durationMonths) {
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Indica un monto mayor a 0");
       return;
     }
 
-    // Check if start month already exists
+    if (startMonth <= graceMonths) {
+      toast.error(
+        graceMonths > 0
+          ? `El mes de inicio debe ser posterior a los ${graceMonths} mes(es) de gracia: usa el mes ${graceMonths + 1} o siguiente`
+          : "El mes de inicio debe ser 1 o mayor"
+      );
+      return;
+    }
+
+    if (startMonth > durationMonths) {
+      toast.error(`El mes de inicio no puede exceder la duración del contrato (${durationMonths} meses)`);
+      return;
+    }
+
+    if (endMonth < startMonth) {
+      toast.error("El mes de fin no puede ser anterior al mes de inicio");
+      return;
+    }
+
+    if (endMonth > durationMonths) {
+      toast.error(`El mes de fin no puede exceder la duración del contrato (${durationMonths} meses)`);
+      return;
+    }
+
     if (escalations.some((e) => e.month_number === startMonth)) {
+      toast.error(`Ya existe un escalonado que comienza en el mes ${startMonth}`);
       return;
     }
 
