@@ -644,9 +644,18 @@ export const CategoryManager = () => {
         .select()
         .single();
       if (error) throw error;
-      const finalFlat = updatedFlat.map(c => c.id === tempId ? { ...c, id: data.id } : c);
-      setFlatCategories(finalFlat);
-      setCategories(buildTree(finalFlat));
+
+      // Ubicar el rubro recién creado en su posición alfabética entre sus
+      // hermanos (no siempre al final) — así el listado nace ordenado sin
+      // depender de arrastrarlo manualmente después.
+      const finalSiblings = [...siblings, { ...newCat, id: data.id }]
+        .sort((a, b) => a.name.localeCompare(b.name, "es"));
+      await Promise.all(
+        finalSiblings.map((cat, index) =>
+          supabase.from("supplier_categories").update({ display_order: index + 1 }).eq("id", cat.id)
+        )
+      );
+      await loadCategories();
       toast.success(parentId ? "Sub-rubro creado" : "Rubro creado");
     } catch (error: any) {
       setFlatCategories(flatCategories);
@@ -783,20 +792,43 @@ export const CategoryManager = () => {
     setLoadingSuppliers(true);
     try {
       const allCatIds = [catId, ...getDescendants(catId)];
-      const { data, error } = await supabase
-        .from("suppliers")
-        .select("id, name, rut, category:supplier_categories(name)")
-        .in("category_id", allCatIds)
-        .order("name");
-      if (error) throw error;
-      setCategorySuppliers(
-        (data || []).map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          rut: s.rut,
-          category_name: s.category?.name || null,
-        }))
-      );
+
+      // Un proveedor puede quedar asociado a un rubro de dos formas: como su
+      // rubro principal (suppliers.category_id) o vía el selector múltiple
+      // (supplier_category_assignments). Hay que consultar ambas — si no,
+      // un proveedor con el rubro asignado SOLO por el selector múltiple
+      // nunca aparece acá, aunque el rubro sí esté correctamente asignado.
+      const [primaryRes, assignedRes] = await Promise.all([
+        supabase
+          .from("suppliers")
+          .select("id, name, rut, category:supplier_categories(name)")
+          .in("category_id", allCatIds),
+        supabase
+          .from("supplier_category_assignments")
+          .select("category:supplier_categories(name), supplier:suppliers(id, name, rut)")
+          .in("category_id", allCatIds),
+      ]);
+      if (primaryRes.error) throw primaryRes.error;
+      if (assignedRes.error) throw assignedRes.error;
+
+      const byId = new Map<string, { id: string; name: string; rut: string | null; category_name: string | null }>();
+      (primaryRes.data || []).forEach((s: { id: string; name: string; rut: string | null; category: { name: string } | null }) => {
+        byId.set(s.id, { id: s.id, name: s.name, rut: s.rut, category_name: s.category?.name || null });
+      });
+      // Para los que solo vienen por el selector múltiple, se muestra el
+      // nombre del rubro que causó la coincidencia (no su rubro principal,
+      // que sería irrelevante acá).
+      (assignedRes.data || []).forEach((a: { category: { name: string } | null; supplier: { id: string; name: string; rut: string | null } | null }) => {
+        if (!a.supplier || byId.has(a.supplier.id)) return;
+        byId.set(a.supplier.id, {
+          id: a.supplier.id,
+          name: a.supplier.name,
+          rut: a.supplier.rut,
+          category_name: a.category?.name || null,
+        });
+      });
+
+      setCategorySuppliers(Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, "es")));
     } catch {
       toast.error("Error al cargar proveedores");
       setCategorySuppliers([]);
