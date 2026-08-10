@@ -165,6 +165,18 @@ const LEVEL_COLORS = [
   { bg: "bg-primary/5", border: "border-primary/10", text: "text-primary/70" },
 ];
 
+// Clasificación Compras/Mantenciones por rubro, tal como la administra el KPI
+// "Beatriz Valenzuela — Cobertura de Proveedores" (kpi_team_config, key='beatriz').
+// Colores tomados 1:1 de BTN.active en SupplierCategoryView.tsx para consistencia
+// visual con la pestaña "Categoría".
+type RubroBadgeKey = "compras" | "mantenciones" | "ambas";
+
+const RUBRO_BADGE: Record<RubroBadgeKey, { label: string; className: string }> = {
+  compras: { label: "Compras", className: "bg-green-700 text-white" },
+  mantenciones: { label: "Mantenciones", className: "bg-sky-400 text-white" },
+  ambas: { label: "Ambas", className: "bg-orange-500 text-white" },
+};
+
 const SortableCategoryRow = ({
   item,
   editingId,
@@ -185,6 +197,7 @@ const SortableCategoryRow = ({
   onPromote,
   getMoveTargets,
   dragDisabled,
+  rubroBadge,
 }: {
   item: FlatVisibleItem;
   editingId: string | null;
@@ -205,6 +218,7 @@ const SortableCategoryRow = ({
   onPromote: (catId: string) => void;
   getMoveTargets: (catId: string) => { id: string | null; name: string; level: number }[];
   dragDisabled: boolean;
+  rubroBadge: RubroBadgeKey | null;
 }) => {
   const {
     attributes,
@@ -297,7 +311,19 @@ const SortableCategoryRow = ({
             >
               {cat.name}
             </span>
-            
+
+            {rubroBadge && (
+              <span
+                className={cn(
+                  "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none",
+                  RUBRO_BADGE[rubroBadge].className
+                )}
+                title="Clasificación KPI Beatriz (Cobertura de Proveedores)"
+              >
+                {RUBRO_BADGE[rubroBadge].label}
+              </span>
+            )}
+
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleActive(cat)} title={cat.is_active ? "Desactivar" : "Activar"}>
                 {cat.is_active ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -493,6 +519,43 @@ export const CategoryManager = () => {
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Clasificación Compras/Mantenciones por rubro, leída de la misma fuente
+  // que administra el KPI "Beatriz Valenzuela — Cobertura de Proveedores"
+  // (kpi_team_config, key='beatriz'). Solo lectura: la edición sigue
+  // ocurriendo en el modal admin del KPI. Fallo silencioso — es un badge
+  // decorativo, no debe romper la pestaña si la fila aún no existe o no
+  // hay permiso de lectura.
+  const [beatrizRubroIds, setBeatrizRubroIds] = useState<{ compras: string[]; mantenciones: string[] } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: row } = await supabase
+          .from("kpi_team_config")
+          .select("config")
+          .eq("key", "beatriz")
+          .maybeSingle();
+        const raw = row?.config as
+          | { compras?: { rubroIds?: string[] }; mantenciones?: { rubroIds?: string[] } }
+          | undefined;
+        setBeatrizRubroIds({
+          compras: raw?.compras?.rubroIds ?? [],
+          mantenciones: raw?.mantenciones?.rubroIds ?? [],
+        });
+      } catch (err) {
+        console.error("Error loading Beatriz rubro classification:", err);
+      }
+    })();
+  }, []);
+
+  const rubroBadgeMap = useMemo(() => {
+    const map = new Map<string, RubroBadgeKey>();
+    if (!beatrizRubroIds) return map;
+    for (const id of beatrizRubroIds.compras) map.set(id, "compras");
+    for (const id of beatrizRubroIds.mantenciones) map.set(id, map.has(id) ? "ambas" : "mantenciones");
+    return map;
+  }, [beatrizRubroIds]);
 
   const buildTree = (flatCats: SupplierCategory[]): CategoryWithChildren[] => {
     const map = new Map<string, CategoryWithChildren>();
@@ -1004,6 +1067,7 @@ export const CategoryManager = () => {
                 onPromote={handlePromote}
                 getMoveTargets={getMoveTargets}
                 dragDisabled={editingId !== null}
+                rubroBadge={rubroBadgeMap.get(item.id) ?? null}
               />
             ))}
           </div>
