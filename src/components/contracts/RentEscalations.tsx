@@ -722,10 +722,20 @@ export const RentEscalations = ({
               showUfM2Toggle={currency === "UF"}
             />
             <p className="text-xs text-muted-foreground">
-              {graceMonths > 0 
+              {graceMonths > 0
                 ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
                 : "Indica el mes inicial, mes final y el canon para ese período."
               }
+            </p>
+            {/* El rango válido depende de la duración del contrato. Mostrarlo evita
+                el caso en que se carga un mes fuera de rango y el "+" lo rechaza:
+                si la duración está mal cargada, se detecta acá y no probando. */}
+            <p className="text-xs text-muted-foreground">
+              Rango válido según la duración del contrato:{" "}
+              <span className="font-medium text-foreground">
+                mes {graceMonths + 1} a {durationMonths}
+              </span>
+              .
             </p>
           </CollapsibleContent>
         </Collapsible>
