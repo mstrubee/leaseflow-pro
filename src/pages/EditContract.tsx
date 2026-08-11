@@ -236,10 +236,10 @@ const EditContract = () => {
       const address = data.contract_addresses?.[0];
       if (address) {
         setAddressId(address.id);
-        setStreet(address.street);
-        setNumber(address.number);
-        setCommune(address.commune);
-        setRegion(address.region);
+        setStreet(address.street || "");
+        setNumber(address.number || "");
+        setCommune(address.commune || "");
+        setRegion(address.region || "");
         setRolSii(address.rol_sii || "");
         setAddrLat(address.lat != null ? String(address.lat) : "");
         setAddrLng(address.lng != null ? String(address.lng) : "");
