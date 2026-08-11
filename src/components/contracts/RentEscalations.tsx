@@ -117,6 +117,7 @@ const EscalationMonthInput = ({
   onAdd,
   graceMonths,
   durationMonths,
+  durationSet,
   currency,
   isUfM2,
   onUfM2Change,
@@ -132,6 +133,7 @@ const EscalationMonthInput = ({
   onAdd: () => void;
   graceMonths: number;
   durationMonths: number;
+  durationSet: boolean;
   currency: "UF" | "CLP";
   isUfM2: boolean;
   onUfM2Change: (value: boolean) => void;
@@ -272,7 +274,7 @@ const EscalationMonthInput = ({
         <Button
           type="button"
           onClick={onAdd}
-          disabled={!startMonth || !amount}
+          disabled={!durationSet || !startMonth || !amount}
           size="icon"
         >
           <Plus className="h-4 w-4" />
@@ -296,6 +298,14 @@ interface RentEscalationsProps {
   initialRent: number;
   regimeRent: number;
   durationMonths: number;
+  /**
+   * Si la duración del contrato está realmente cargada. Los llamadores usan
+   * `parseInt(duration) || 12` como fallback para la lógica interna y el
+   * gráfico, así que `durationMonths` no distingue "12 meses" de "sin definir".
+   * Sin este flag, el formulario anunciaba un rango válido de 12 meses que el
+   * usuario nunca cargó. Default true para no cambiar los llamadores existentes.
+   */
+  durationSet?: boolean;
   readOnly?: boolean;
   currency?: "UF" | "CLP";
   graceMonths?: number;
@@ -344,6 +354,7 @@ export const RentEscalations = ({
   initialRent,
   regimeRent,
   durationMonths,
+  durationSet = true,
   readOnly = false,
   currency = "UF",
   graceMonths = 0,
@@ -408,6 +419,11 @@ export const RentEscalations = ({
 
     // Cada rechazo avisa por qué. Antes eran `return` silenciosos: el botón "+"
     // no hacía nada y no había forma de saber qué estaba mal.
+    if (!durationSet) {
+      toast.error("Primero indica la duración del contrato");
+      return;
+    }
+
     if (isNaN(startMonth)) {
       toast.error("Indica el mes de inicio del escalonado");
       return;
@@ -715,6 +731,7 @@ export const RentEscalations = ({
               onAdd={handleAdd}
               graceMonths={graceMonths}
               durationMonths={durationMonths}
+              durationSet={durationSet}
               currency={currency}
               isUfM2={newIsUfM2}
               onUfM2Change={setNewIsUfM2}
@@ -731,11 +748,19 @@ export const RentEscalations = ({
                 el caso en que se carga un mes fuera de rango y el "+" lo rechaza:
                 si la duración está mal cargada, se detecta acá y no probando. */}
             <p className="text-xs text-muted-foreground">
-              Rango válido según la duración del contrato:{" "}
-              <span className="font-medium text-foreground">
-                mes {graceMonths + 1} a {durationMonths}
-              </span>
-              .
+              {durationSet ? (
+                <>
+                  Rango válido según la duración del contrato:{" "}
+                  <span className="font-medium text-foreground">
+                    mes {graceMonths + 1} a {durationMonths}
+                  </span>
+                  .
+                </>
+              ) : (
+                <span className="font-medium text-destructive">
+                  Primero indica la duración del contrato.
+                </span>
+              )}
             </p>
           </CollapsibleContent>
         </Collapsible>

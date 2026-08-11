@@ -466,6 +466,7 @@ export function RenegotiationDraftForm({
                           initialRent={parseFloat(initialRent) || 0}
                           regimeRent={parseFloat(regimeRent) || 0}
                           durationMonths={parseInt(durationMonths) || 12}
+                          durationSet={parseInt(durationMonths) > 0}
                           currency={currency}
                           graceMonths={graceMonths}
                           onGraceMonthsChange={setGraceMonths}

@@ -636,6 +636,7 @@ const NewContract = () => {
                         initialRent={parseFloat(initialRent) || 0}
                         regimeRent={0}
                         durationMonths={parseInt(duration) || 12}
+                        durationSet={parseInt(duration) > 0}
                         currency={currency}
                         graceMonths={graceMonths}
                         onGraceMonthsChange={setGraceMonths}
