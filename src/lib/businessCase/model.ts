@@ -296,10 +296,20 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const margenCtrib = ingresos.map((x, i) => round(x + costoVentas[i] + otrosCostos[i] + costosVar[i], 2));
 
   // Costos
-  const perCr = (inputs.personalCrec || 0) / 100;
-  const personalCostoY1 = (inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0); // personas × MM/persona
-  const personal = [0];
-  for (let i = 1; i < 6; i++) personal.push(i === 1 ? -round(personalCostoY1, 2) : round(personal[i - 1] * (1 + perCr), 2));
+  // Personal — mismo modelo que la planilla oficial del business case:
+  //   · Año 1: se prorratea por los meses de operación (mesesY1, derivado del
+  //     mes de inicio de renta del contrato), no se cobra el año completo.
+  //   · Años 2..5: costo base × 12 reajustado por la variación de UF del año
+  //     anterior, SIN acumular año contra año.
+  // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
+  const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
+  const personal = [0, -round(personalMensual * mesesY1, 2)];
+  for (let i = 2; i < 6; i++) {
+    const ufPrev = starts[i - 2] || 0;
+    const ufCur = starts[i - 1] || 0;
+    const varUf = ufCur ? (ufCur - ufPrev) / ufCur : 0; // = (Cn-Cn-1)/Cn de la planilla
+    personal.push(-round(personalMensual * 12 * (1 + varUf), 2));
+  }
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
   const ocupPct = (inputs.ocupPct || 0) / 100;

@@ -299,12 +299,15 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                     <NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></FieldConv>
                   <FieldConv label="Ocupación %" conv={`A1: $${fmtMM(Math.abs(result.ocupacion[1]))} MM`}>
                     <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></FieldConv>
-                  <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM/año`}>
+                  <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM (${result.mesesY1} ${result.mesesY1 === 1 ? "mes" : "meses"})`}>
                     <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
                   <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
                     <NumCell value={inputs.costoPersonaMM} disabled={ro} w="w-full" onChange={(v) => update("costoPersonaMM", v)} /></FieldConv>
-                  <FieldConv label="Crec. personal %" conv={`A5: $${fmtMM(Math.abs(result.personal[5]))} MM`}>
-                    <NumCell value={inputs.personalCrec} disabled={ro} w="w-full" onChange={(v) => update("personalCrec", v)} /></FieldConv>
+                  {/* El crecimiento de personal ya no es un input: los años 2..5
+                      se reajustan por la variación de UF del año anterior, igual
+                      que la planilla oficial. Se muestra el resultado del año 5. */}
+                  <FieldConv label="Personal Año 5" conv="Reajustado por variación UF">
+                    <Input value={`$${fmtMM(Math.abs(result.personal[5]))} MM`} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
                   <FieldConv label="CAPEX depreciable (MM)" conv="Se lee desde Inversión (física)">
                     <Input value={fmtMM(result.inv.fisica)} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
                   <FieldConv label="Años depreciación" conv={`Depr. anual: $${fmtMM(Math.abs(result.depreciacion[1]))} MM`}>

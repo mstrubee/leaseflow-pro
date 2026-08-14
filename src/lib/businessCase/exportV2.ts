@@ -227,6 +227,11 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
   const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
   res.getCell("B17").value = +personalMensual.toFixed(4);
+  // A17 = meses de operación del año 1. La plantilla lo derivaba de
+  // =Datos!B21+1, que ignora los meses de gracia; usamos el valor que ya calcula
+  // la app (sí considera la gracia) para que la planilla y la pantalla no se
+  // separen. También alimenta el gasto común del año 1 (E23).
+  res.getCell("A17").value = r.mesesY1;
   res.getCell("E17").value = { formula: `-A17*B17` } as ExcelJS.CellFormulaValue;
   // año 2→Supuestos!C4, año 3→D4, año 4→E4, año 5→F4
   ([["F", "C"], ["G", "D"], ["H", "E"], ["I", "F"]] as const).forEach(([col, supCol]) => {
