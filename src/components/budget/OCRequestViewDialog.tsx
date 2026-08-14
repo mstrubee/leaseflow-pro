@@ -15,10 +15,13 @@ import { es } from "date-fns/locale";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCLP } from "@/lib/utils";
+import { MultipleLinesSelector } from "./MultipleLinesSelector";
 
 interface OCRequest {
   id: string;
   contract_id: string;
+  budget_id: string | null;
+  budget_line_id: string | null;
   request_number: string;
   request_date: string;
   line_name: string;
@@ -34,6 +37,13 @@ interface OCRequest {
   quotation_url?: string | null;
   quotation_file_name?: string | null;
   uf_value_at_entry?: number;
+}
+
+interface EditableLine {
+  lineId: string;
+  lineName: string;
+  amount: number;
+  maxAmount: number;
 }
 
 interface BudgetLineAssignment {
@@ -144,6 +154,11 @@ export const OCRequestViewDialog = ({
   const [editableAllocations, setEditableAllocations] = useState<EditableAllocation[]>([]);
   const [availableContracts, setAvailableContracts] = useState<Contract[]>([]);
   const [savingAllocations, setSavingAllocations] = useState(false);
+
+  // Budget line assignment edit state
+  const [isEditingLines, setIsEditingLines] = useState(false);
+  const [editableLines, setEditableLines] = useState<EditableLine[]>([]);
+  const [savingLines, setSavingLines] = useState(false);
 
   // Form assignments state
   const [formAssignments, setFormAssignments] = useState<FormAssignment[]>([]);
@@ -393,6 +408,96 @@ export const OCRequestViewDialog = ({
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSavingAllocations(false);
+    }
+  };
+
+  // Start editing the budget line assignment — precarga la asignación actual,
+  // sea simple (budget_line_id directo) o múltiple (oc_budget_lines), con su
+  // monto actual. MultipleLinesSelector corrige maxAmount apenas calcula el
+  // disponible real (excluyendo el consumo de esta misma solicitud).
+  const handleStartEditLines = () => {
+    if (!request) return;
+    if (budgetLines.length > 0) {
+      setEditableLines(budgetLines.map(l => ({
+        lineId: l.budget_line_id,
+        lineName: l.line_name || "Línea desconocida",
+        amount: l.amount_uf,
+        maxAmount: l.amount_uf,
+      })));
+    } else if (request.budget_line_id) {
+      setEditableLines([{
+        lineId: request.budget_line_id,
+        lineName: request.line_name,
+        amount: request.amount_uf,
+        maxAmount: request.amount_uf,
+      }]);
+    } else {
+      setEditableLines([]);
+    }
+    setIsEditingLines(true);
+  };
+
+  const handleCancelEditLines = () => {
+    setIsEditingLines(false);
+    setEditableLines([]);
+  };
+
+  const handleSaveLines = async () => {
+    if (!request) return;
+
+    const validLines = editableLines.filter(l => l.lineId && l.amount > 0);
+    if (validLines.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe asignar al menos una línea de presupuesto" });
+      return;
+    }
+
+    const totalAssigned = validLines.reduce((sum, l) => sum + l.amount, 0);
+    const tolerance = 0.01;
+    if (Math.abs(totalAssigned - request.amount_uf) > tolerance) {
+      toast({
+        variant: "destructive",
+        title: "Error de distribución",
+        description: `El total asignado (${formatUF(totalAssigned)}) no coincide con el monto total de la solicitud (${formatUF(request.amount_uf)})`,
+      });
+      return;
+    }
+
+    setSavingLines(true);
+    try {
+      // Limpiar siempre la tabla puente primero — evita dejar filas residuales
+      // sin importar si el resultado final es asignación simple o múltiple.
+      await supabase.from("oc_budget_lines").delete().eq("oc_request_id", request.id);
+
+      if (validLines.length === 1) {
+        const { error } = await supabase
+          .from("oc_requests")
+          .update({ budget_line_id: validLines[0].lineId, line_name: validLines[0].lineName })
+          .eq("id", request.id);
+        if (error) throw error;
+      } else {
+        const { error: clearError } = await supabase
+          .from("oc_requests")
+          .update({ budget_line_id: null, line_name: validLines.map(l => l.lineName).join(" + ") })
+          .eq("id", request.id);
+        if (clearError) throw clearError;
+
+        const inserts = validLines.map(l => ({
+          oc_request_id: request.id,
+          budget_line_id: l.lineId,
+          amount_uf: Math.round(l.amount * 10000) / 10000,
+        }));
+        const { error: insertError } = await supabase.from("oc_budget_lines").insert(inserts);
+        if (insertError) throw insertError;
+      }
+
+      toast({ title: "Asignación de líneas actualizada" });
+      setIsEditingLines(false);
+      loadRequest();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSavingLines(false);
     }
   };
 
@@ -687,6 +792,10 @@ export const OCRequestViewDialog = ({
   const remainingClp = totalRequestClp - totalPlannedClp;
 
   const isMultiContract = contractAllocations.length > 0;
+  // budgetLines solo cubre la asignación múltiple (oc_budget_lines); la
+  // asignación simple vive directo en oc_requests.budget_line_id y no
+  // aparece ahí, así que sin este fallback el contador siempre mostraba (0).
+  const assignedLinesCount = budgetLines.length > 0 ? budgetLines.length : (request?.budget_line_id ? 1 : 0);
 
   if (!open) return null;
 
@@ -726,7 +835,7 @@ export const OCRequestViewDialog = ({
                 <Wrench className="h-3 w-3" />
                 FORMs ({formAssignments.length})
               </TabsTrigger>
-              <TabsTrigger value="lines">Líneas ({budgetLines.length})</TabsTrigger>
+              <TabsTrigger value="lines">Líneas ({assignedLinesCount})</TabsTrigger>
               <TabsTrigger value="payments">Pagos ({paymentPlans.length})</TabsTrigger>
             </TabsList>
 
@@ -1073,7 +1182,48 @@ export const OCRequestViewDialog = ({
             )}
 
             <TabsContent value="lines" className="space-y-4 mt-4">
-              {budgetLines.length > 0 ? (
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium">Asignación a Línea(s) de Presupuesto</span>
+                {!readOnly && request.status === "pending" && !isEditingLines && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleStartEditLines}
+                    disabled={!request.budget_id}
+                    title={!request.budget_id ? "Esta solicitud no está asociada a un presupuesto CAPEX" : undefined}
+                    className="gap-1"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Editar
+                  </Button>
+                )}
+                {isEditingLines && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={handleCancelEditLines} className="gap-1">
+                      <X className="h-3 w-3" />
+                      Cancelar
+                    </Button>
+                    <Button size="sm" onClick={handleSaveLines} disabled={savingLines} className="gap-1">
+                      {savingLines ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Guardar
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {isEditingLines ? (
+                request.budget_id ? (
+                  <MultipleLinesSelector
+                    budgetId={request.budget_id}
+                    selectedLines={editableLines}
+                    onSelectionChange={setEditableLines}
+                    formatUF={formatUF}
+                    formatCLP={formatCLP}
+                    ufValue={ufValue}
+                    excludeRequestId={request.id}
+                  />
+                ) : null
+              ) : budgetLines.length > 0 ? (
                 <div className="space-y-2">
                   {budgetLines.map((line) => (
                     <div key={line.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
