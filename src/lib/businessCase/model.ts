@@ -107,8 +107,8 @@ export const defaultAdminConfig: AdminConfig = {
 export const FORMATOS_LOCAL = ["Tradicional", "Express"] as const;
 export type FormatoLocal = (typeof FORMATOS_LOCAL)[number];
 export const FORMATO_PRESETS: Record<FormatoLocal, { personalY1: number; inventarioMM: number }> = {
-  Tradicional: { personalY1: 8, inventarioMM: 100 },
-  Express: { personalY1: 6, inventarioMM: 60 },
+  Tradicional: { personalY1: 8.5, inventarioMM: 100 },
+  Express: { personalY1: 6.5, inventarioMM: 60 },
 };
 
 // ---------- Inputs editables del business case (por contrato) ----------
