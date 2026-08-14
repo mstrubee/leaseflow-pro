@@ -10,6 +10,8 @@ const CHARTS = {
 };
 import { formatCLP } from "@/lib/utils";
 import logosHeader from "@/assets/logos-header.png";
+import { supabase } from "@/integrations/supabase/client";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 
 interface ContractData {
   contract_id: string;
@@ -38,7 +40,7 @@ interface CompanyGroup {
   };
 }
 
-interface CapexPPTData {
+export interface CapexPPTData {
   year: string;
   ufValue: number;
   totalCapexUF: number;
@@ -52,13 +54,160 @@ interface CapexPPTData {
   companyGroups: CompanyGroup[];
 }
 
+interface RawBudget {
+  contract_id: string;
+  contract_name: string;
+  clasificacion: string | null;
+  year: number;
+  amount_uf: number;
+  budget_id: string;
+  superficie: number;
+  company_names: string[];
+}
+
+/**
+ * Reconstruye el mismo CapexPPTData que arma CapexDashboard.tsx para el botón
+ * "PPT general", pero de forma standalone (sin depender del estado de esa
+ * página) — usado por el Informe Directorio para poder generarse desde
+ * /reports sin tener /capex abierto. Replica: query de contract_budgets,
+ * loadBudgetTotals (misma agregación que "Control de Presupuesto"), y el
+ * agrupamiento por empresa (Autoplanet/Agroplanet/Grupo Planet/Otra).
+ */
+export async function buildCapexPPTData(year: string, ufValue: number): Promise<CapexPPTData> {
+  const { data, error } = await supabase
+    .from("contract_budgets")
+    .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
+    .eq("budget_type", "capex")
+    .eq("year", parseInt(year))
+    .is("contracts.deleted_at", null);
+  if (error) throw error;
+
+  const budgets: RawBudget[] = (data || []).map((b: any) => ({
+    contract_id: b.contract_id,
+    contract_name: b.contracts?.name || "Sin nombre",
+    clasificacion: b.contracts?.clasificacion || null,
+    year: b.year,
+    amount_uf: b.amount_uf,
+    budget_id: b.id,
+    superficie: b.contracts?.superficie_edificada_local || 0,
+    company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
+  }));
+
+  const budgetIds = budgets.map((b) => b.budget_id);
+  const totals = await loadBudgetTotals(budgetIds, ufValue);
+
+  const getEffectiveTotal = (b: RawBudget): number => {
+    const t = totals.get(b.budget_id);
+    const cardAmount = b.amount_uf || 0;
+    const linesTotal = t?.grand || 0;
+    return cardAmount > 0 ? cardAmount : linesTotal;
+  };
+
+  // Agrupar por contrato
+  const contractMap = new Map<string, RawBudget[]>();
+  budgets.forEach((b) => {
+    const existing = contractMap.get(b.contract_id) || [];
+    existing.push(b);
+    contractMap.set(b.contract_id, existing);
+  });
+  const contractGroups = Array.from(contractMap.entries());
+
+  const authByContract: Record<string, number> = {};
+  contractGroups.forEach(([contractId, cBudgets]) => {
+    authByContract[contractId] = cBudgets.reduce((s, b) => s + getEffectiveTotal(b), 0);
+  });
+
+  // Agrupar por empresa (misma heurística que CapexDashboard.tsx)
+  const companyMap = new Map<string, [string, RawBudget[]][]>();
+  contractGroups.forEach((entry) => {
+    const [, cBudgets] = entry;
+    const names = cBudgets[0].company_names;
+    const hasAgroplanet = names.some((n) => n.toLowerCase().includes("agroplanet"));
+    const hasAutoplanet = names.some((n) => n.toLowerCase().includes("autoplanet"));
+    const hasGrupoPlanet = names.some((n) => /grupo\s*planet/.test(n.toLowerCase()));
+    const companyKey = (hasAgroplanet && hasAutoplanet) ? "Agroplanet"
+      : hasAutoplanet ? "Autoplanet"
+      : hasAgroplanet ? "Agroplanet"
+      : hasGrupoPlanet ? "Grupo Planet"
+      : "Otra";
+    const existing = companyMap.get(companyKey) || [];
+    existing.push(entry);
+    companyMap.set(companyKey, existing);
+  });
+  const order = ["Autoplanet", "Agroplanet", "Grupo Planet", "Otra"];
+  const orderedCompanyGroups = order
+    .filter((k) => companyMap.has(k))
+    .map((k) => ({ company: k, contracts: companyMap.get(k)! }));
+
+  let totalNuevoUF = 0, totalReemplazoUF = 0, totalRegularizacionUF = 0;
+  let countNuevo = 0, countReemplazo = 0, countRegularizacion = 0;
+
+  const pptCompanyGroups: CompanyGroup[] = orderedCompanyGroups.map(({ company, contracts }) => {
+    let nuevo = 0, reemplazo = 0, regularizacion = 0;
+    let cNuevo = 0, cReemplazo = 0, cRegularizacion = 0;
+    const seen = new Set<string>();
+
+    const contractsData: ContractData[] = contracts.map(([contractId, cBudgets]) => {
+      const totalUf = authByContract[contractId] || 0;
+      const superficie = cBudgets[0].superficie || 0;
+      if (!seen.has(contractId)) {
+        seen.add(contractId);
+        const cl = cBudgets[0].clasificacion;
+        if (cl === "nuevo") { nuevo += totalUf; cNuevo++; }
+        else if (cl === "reemplazo") { reemplazo += totalUf; cReemplazo++; }
+        else if (cl === "regularizacion") { regularizacion += totalUf; cRegularizacion++; }
+      }
+      return {
+        contract_id: contractId,
+        contract_name: cBudgets[0].contract_name,
+        clasificacion: cBudgets[0].clasificacion,
+        superficie,
+        company_names: cBudgets[0].company_names,
+        authorized: 0,
+        unauthorized: totalUf,
+        total_uf: totalUf,
+        total_clp: totalUf * (ufValue || 0),
+        uf_m2: superficie > 0 ? totalUf / superficie : 0,
+      };
+    });
+
+    totalNuevoUF += nuevo; totalReemplazoUF += reemplazo; totalRegularizacionUF += regularizacion;
+    countNuevo += cNuevo; countReemplazo += cReemplazo; countRegularizacion += cRegularizacion;
+
+    return {
+      company,
+      contracts: contractsData,
+      totals: {
+        nuevo, reemplazo, regularizacion, cNuevo, cReemplazo, cRegularizacion,
+        total: nuevo + reemplazo + regularizacion,
+      },
+    };
+  });
+
+  const totalCapexUF = Object.values(authByContract).reduce((s, v) => s + v, 0);
+
+  return {
+    year,
+    ufValue,
+    totalCapexUF,
+    totalNuevoUF,
+    totalReemplazoUF,
+    totalRegularizacionUF,
+    countNuevo,
+    countReemplazo,
+    countRegularizacion,
+    totalLocales: contractGroups.length,
+    companyGroups: pptCompanyGroups,
+  };
+}
+
 // Colors
-const PRIMARY = "1E2761";
-const ACCENT = "DC2626";
-const WHITE = "FFFFFF";
-const LIGHT_BG = "F8FAFC";
-const MUTED = "64748B";
-const DARK = "1E293B";
+export const PRIMARY = "1E2761";
+export const ACCENT = "DC2626";
+export const WHITE = "FFFFFF";
+export const LIGHT_BG = "F8FAFC";
+export const MUTED = "64748B";
+export const DARK = "1E293B";
 const CHART_1 = "2563EB"; // Nuevos
 const CHART_2 = "D97706"; // Reemplazo
 const CHART_3 = "059669"; // Regularización
@@ -76,7 +225,7 @@ const clasificacionLabel = (c: string | null) => {
   return "Sin clasificar";
 };
 
-async function loadImageAsBase64(src: string): Promise<string> {
+export async function loadImageAsBase64(src: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -93,12 +242,21 @@ async function loadImageAsBase64(src: string): Promise<string> {
   });
 }
 
-export async function generateCapexPPT(data: CapexPPTData) {
+export interface GenerateCapexPPTOptions {
+  /** Instancia existente de PptxGenJS a la que agregar las slides, en vez de crear una nueva. */
+  pres?: PptxGenJS;
+  /** Omite la slide de portada propia (usada cuando el llamador ya agregó la suya). */
+  skipCover?: boolean;
+  /** Omite el guardado/descarga del archivo, retornando el `pres` para seguir agregando slides. */
+  skipSave?: boolean;
+}
+
+export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPPTOptions = {}): Promise<PptxGenJS> {
   const fileName = `CAPEX_${data.year}_${new Date().toISOString().slice(0, 10)}.pptx`;
 
   type FileHandle = { createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> };
   let saveHandle: FileHandle | null = null;
-  const canPick = typeof (window as any).showSaveFilePicker === "function";
+  const canPick = !opts.skipSave && typeof (window as any).showSaveFilePicker === "function";
   if (canPick) {
     try {
       saveHandle = await (window as any).showSaveFilePicker({
@@ -111,16 +269,11 @@ export async function generateCapexPPT(data: CapexPPTData) {
     }
   }
 
-  const pres = new PptxGenJS();
-  pres.layout = "LAYOUT_16x9";
-  pres.author = "GPlanet";
-  pres.title = `Presupuesto CAPEX ${data.year}`;
-
-  let logoBase64: string | null = null;
-  try {
-    logoBase64 = await loadImageAsBase64(logosHeader);
-  } catch {
-    console.log("Could not load logo for PPT");
+  const pres = opts.pres ?? new PptxGenJS();
+  if (!opts.pres) {
+    pres.layout = "LAYOUT_16x9";
+    pres.author = "GPlanet";
+    pres.title = `Presupuesto CAPEX ${data.year}`;
   }
 
   const addFooter = (slide: PptxGenJS.Slide, pageNum: number) => {
@@ -135,32 +288,41 @@ export async function generateCapexPPT(data: CapexPPTData) {
   };
 
   // ═══════════ SLIDE 1: Title ═══════════
-  const s1 = pres.addSlide();
-  s1.background = { color: PRIMARY };
+  if (!opts.skipCover) {
+    let logoBase64: string | null = null;
+    try {
+      logoBase64 = await loadImageAsBase64(logosHeader);
+    } catch {
+      console.log("Could not load logo for PPT");
+    }
 
-  if (logoBase64) {
-    s1.addImage({ data: logoBase64, x: 0.5, y: 0.4, w: 2.5, h: 1 });
+    const s1 = pres.addSlide();
+    s1.background = { color: PRIMARY };
+
+    if (logoBase64) {
+      s1.addImage({ data: logoBase64, x: 0.5, y: 0.4, w: 2.5, h: 1 });
+    }
+
+    s1.addText("Presupuesto CAPEX", {
+      x: 0.5, y: 1.8, w: 9, h: 1,
+      fontSize: 40, fontFace: "Arial", color: WHITE, bold: true,
+    });
+    s1.addText(`Año ${data.year}`, {
+      x: 0.5, y: 2.7, w: 9, h: 0.6,
+      fontSize: 24, fontFace: "Arial", color: "CADCFC",
+    });
+
+    s1.addShape(SHAPES.LINE, {
+      x: 0.5, y: 3.5, w: 3, h: 0,
+      line: { color: ACCENT, width: 3 },
+    });
+
+    const today = new Date().toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
+    s1.addText(today, {
+      x: 0.5, y: 4.0, w: 9, h: 0.4,
+      fontSize: 14, fontFace: "Arial", color: "8899BB",
+    });
   }
-
-  s1.addText("Presupuesto CAPEX", {
-    x: 0.5, y: 1.8, w: 9, h: 1,
-    fontSize: 40, fontFace: "Arial", color: WHITE, bold: true,
-  });
-  s1.addText(`Año ${data.year}`, {
-    x: 0.5, y: 2.7, w: 9, h: 0.6,
-    fontSize: 24, fontFace: "Arial", color: "CADCFC",
-  });
-
-  s1.addShape(SHAPES.LINE, {
-    x: 0.5, y: 3.5, w: 3, h: 0,
-    line: { color: ACCENT, width: 3 },
-  });
-
-  const today = new Date().toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
-  s1.addText(today, {
-    x: 0.5, y: 4.0, w: 9, h: 0.4,
-    fontSize: 14, fontFace: "Arial", color: "8899BB",
-  });
 
   // ═══════════ SLIDE 2: Resumen General ═══════════
   let pageNum = 1;
@@ -398,6 +560,8 @@ export async function generateCapexPPT(data: CapexPPTData) {
     });
   }
 
+  if (opts.skipSave) return pres;
+
   // Save
   const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
   const blob = new Blob([arrBuf], {
@@ -420,5 +584,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
       URL.revokeObjectURL(url);
     }, 1000);
   }
+  return pres;
 }
 

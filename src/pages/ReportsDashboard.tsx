@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { SupplierReports } from "@/components/suppliers/SupplierReports";
+import { InformeDirectorioReport } from "@/components/reports/InformeDirectorioReport";
 import { GanttReportsSection } from "@/components/gantt/GanttReportsSection";
 import { EquipoGerenciaGanttSummary } from "@/components/gantt/EquipoGerenciaGanttSummary";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
@@ -106,6 +107,12 @@ const ReportsDashboard = () => {
   // Collapsible state for suppliers section
   const { isOpen: isSupplierSectionOpen, setIsOpen: setSupplierSectionOpen } = useSingleCollapsible(
     "reports-supplier-section",
+    true
+  );
+
+  // Collapsible state for Informe Directorio section
+  const { isOpen: isDirectorioSectionOpen, setIsOpen: setDirectorioSectionOpen } = useSingleCollapsible(
+    "reports-directorio-section",
     true
   );
 
@@ -1602,6 +1609,27 @@ const ReportsDashboard = () => {
               <CollapsibleContent>
                 <CardContent>
                   <MaintenanceReports />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
+
+        {/* Informe Directorio Section */}
+        {(isAdmin || hasPermission("capex", "view")) && (
+          <Collapsible open={isDirectorioSectionOpen} onOpenChange={setDirectorioSectionOpen}>
+            <Card className="mt-6">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {isDirectorioSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <CardTitle>Informe Directorio</CardTitle>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <InformeDirectorioReport />
                 </CardContent>
               </CollapsibleContent>
             </Card>
