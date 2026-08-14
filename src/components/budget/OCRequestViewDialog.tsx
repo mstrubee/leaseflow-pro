@@ -2,6 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -140,6 +149,9 @@ export const OCRequestViewDialog = ({
   // asignada(s) (excluyendo el consumo de esta misma solicitud). null = sin
   // línea asignada aún, no se puede acotar.
   const [maxTotalUf, setMaxTotalUf] = useState<number | null>(null);
+  // Ventana emergente de error cuando el monto ingresado supera lo autorizado
+  // — el toast pasaba desapercibido, esto exige un click explícito.
+  const [amountLimitError, setAmountLimitError] = useState<{ enteredClp: number; maxClp: number } | null>(null);
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
   const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([]);
   const [activeTab, setActiveTab] = useState("info");
@@ -664,11 +676,7 @@ export const OCRequestViewDialog = ({
     const newUf = newClp / effectiveUf;
 
     if (maxTotalUf !== null && newUf > maxTotalUf + 0.01) {
-      toast({
-        variant: "destructive",
-        title: "Monto excede lo autorizado",
-        description: `El monto (${formatCLP(newClp)}) supera el disponible en la(s) línea(s) asignada(s) (${formatCLP(Math.round(maxTotalUf * effectiveUf))})`,
-      });
+      setAmountLimitError({ enteredClp: Math.round(newClp), maxClp: Math.round(maxTotalUf * effectiveUf) });
       return;
     }
 
@@ -839,6 +847,7 @@ export const OCRequestViewDialog = ({
   if (!open) return null;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -1676,5 +1685,25 @@ export const OCRequestViewDialog = ({
         )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={!!amountLimitError} onOpenChange={(v) => { if (!v) setAmountLimitError(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Monto excede lo autorizado</AlertDialogTitle>
+          <AlertDialogDescription>
+            {amountLimitError && (
+              <>
+                El monto ingresado ({formatCLP(amountLimitError.enteredClp)}) supera el máximo autorizado
+                para la(s) línea(s) de presupuesto asignada(s): <strong>{formatCLP(amountLimitError.maxClp)}</strong>.
+              </>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction onClick={() => setAmountLimitError(null)}>Entendido</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 };
