@@ -36,7 +36,7 @@ function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { valu
 }
 
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, update, updateArr, setFormato, setInvOverride } =
+  const { config, inputs, result, loading, saving, update, updateArr, updateVentaConCrecimiento, setFormato, setInvOverride } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
@@ -81,7 +81,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
             {/* ───────── RESUMEN ───────── */}
             <TabsContent value="resumen" className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Kpi label="TIR" value={result.tir != null ? fmtPct(result.tir) : "N/A"} sub={`Hurdle ${inputs.waccRate}%`} good={result.tir != null && result.tir > inputs.waccRate / 100} />
+                <Kpi label="TIR" value={result.tir != null ? fmtPct(result.tir) : "N/A"} good={result.tir != null && result.tir > inputs.waccRate / 100} />
                 <Kpi label="VAN (MM CLP)" value={`$${fmtMM(result.van)}`} good={result.van > 0} />
                 <Kpi label="Payback" value={result.paybackAnio > 0 ? `${result.paybackAnio} año${result.paybackAnio === 1 ? "" : "s"}` : ">5 años"} />
                 <Kpi label="Inversión (MM)" value={`$${fmtMM(result.totalCapex)}`} />
@@ -288,7 +288,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <tr>
                         <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Venta (MM/mes)</td>
                         {inputs.ventaMes.map((v, i) => (
-                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} onChange={(val) => updateArr("ventaMes", i, val)} /></td>
+                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} onChange={(val) => updateVentaConCrecimiento(i, val)} /></td>
                         ))}
                       </tr>
                       <tr>

@@ -940,8 +940,15 @@ const ContractDetail = () => {
                   const empresa = contract.contract_companies?.[0]?.companies?.name ?? "";
                   const tipo = /agro/i.test(empresa) ? "Agroplanet" : /auto/i.test(empresa) ? "Autoplanet" : undefined;
                   const superficie = contract.superficie_edificada_local ?? null;
+                  // El canon puede estar guardado como monto total (UF) o ya como UF/m²
+                  // (flag initial_rent_is_uf_m2 / regime_rent_is_uf_m2, ver EditContract.tsx).
+                  // Dividir de nuevo por superficie cuando ya viene en UF/m² lo reducía a un
+                  // valor artificialmente diminuto (ej. Arica: 0,300 UF/m² → 0,00075).
+                  const canonIsUfM2 = displayVersion?.initial_rent
+                    ? !!(displayVersion as any).initial_rent_is_uf_m2
+                    : !!(displayVersion as any)?.regime_rent_is_uf_m2;
                   const canonUf = displayVersion?.initial_rent || displayVersion?.regime_rent || null;
-                  const ufM2 = superficie && canonUf ? +(canonUf / superficie).toFixed(4) : null;
+                  const ufM2 = canonUf == null ? null : canonIsUfM2 ? canonUf : (superficie ? +(canonUf / superficie).toFixed(4) : null);
                   return {
                     nombre: contract.name,
                     direccion: address ? `${address.street} ${address.number}`.trim() : "",

@@ -141,6 +141,10 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   datos.getCell("B21").value = r.mesesOperacion;
   datos.getCell("E29").value = 0;                          // Cobro por instalaciones
   datos.getCell("E30").value = (inputs.waccRate || 0) / 100; // Tasa de descuento
+  // Notas sueltas de la plantilla de referencia (gracia / cláusula de salida
+  // de ESE contrato en particular) que no aportan al modelo genérico.
+  datos.getCell("F15").value = null;
+  datos.getCell("F16").value = null;
 
   // ── Inversión ──────────────────────────────────────────────────────────────
   // Clasifica cada línea en las 5 filas de la plantilla, respetando cualquier
@@ -225,19 +229,21 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   cols.forEach((c) => { res.getCell(`${c}38`).value = (inputs.taxRate || 0) / 100; });    // Impuesto %
 
   // ── Personal ────────────────────────────────────────────────────────────────
-  // Se replica el modelo de la planilla de referencia (Business Case AP
-  // Villarrica): B17 = costo MENSUAL de personal; el año 1 se prorratea por los
-  // meses reales de operación (A17) y los años 2..5 son base × 12 reajustada por
-  // la variación de UF del año anterior (Supuestos fila 4), sin acumular.
-  // Quedan como fórmulas vivas para que la planilla recalcule si se edita B17.
-  // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
-  const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
-  res.getCell("B17").value = +personalMensual.toFixed(4);
-  res.getCell("E17").value = { formula: `-A17*B17` } as ExcelJS.CellFormulaValue;
+  // B17 muestra la DOTACIÓN (n° de trabajadores) tal como se ingresó en el
+  // Business Case; D17 es una celda de apoyo con el costo por persona (MM
+  // CLP/mes) para que las fórmulas de costo (en MM CLP) sigan siendo válidas.
+  // El año 1 se prorratea por los meses reales de operación (A17) y los años
+  // 2..5 son dotación × costo × 12 reajustado por la variación de UF del año
+  // anterior (Supuestos fila 4), sin acumular año contra año (mismo modelo que
+  // computeBC en model.ts). costoPersonaMM viene en MM CLP/año → /12 = mensual.
+  const costoPersonaMensual = (inputs.costoPersonaMM || 0) / 12;
+  res.getCell("B17").value = +(inputs.personalY1 || 0).toFixed(2);
+  res.getCell("D17").value = +costoPersonaMensual.toFixed(4);
+  res.getCell("E17").value = { formula: `-A17*B17*D17` } as ExcelJS.CellFormulaValue;
   // año 2→Supuestos!C4, año 3→D4, año 4→E4, año 5→F4
   ([["F", "C"], ["G", "D"], ["H", "E"], ["I", "F"]] as const).forEach(([col, supCol]) => {
     res.getCell(`${col}17`).value = {
-      formula: `-$B$17*12*(1+Supuestos!${supCol}4)`,
+      formula: `-$B$17*$D$17*12*(1+Supuestos!${supCol}4)`,
     } as ExcelJS.CellFormulaValue;
   });
 
@@ -252,6 +258,18 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
     formula: `-((Datos!$E$18*Supuestos!C$3)*${r.mesesY1})/1000000`,
   } as ExcelJS.CellFormulaValue;
 
+  // ── Años calendario (fila 8) ─────────────────────────────────────────────
+  // La plantilla trae años fijos (2025-2030). Los reemplazamos por los años
+  // reales, contados desde el primer año en que efectivamente se vende (año
+  // de apertura al público, mismo cálculo que "mesesOperacion" en model.ts).
+  // La columna "Año 0" (pre-apertura, sin ventas) se deja en blanco: no hay un
+  // año de venta real que mostrar ahí.
+  const anoApertura = r.anoApertura || new Date(inputs.inicio || new Date().toISOString().slice(0, 10) + "T00:00:00").getFullYear();
+  res.getCell("D8").value = null;
+  res.getCell("M8").value = null;
+  (["E", "F", "G", "H", "I"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoApertura + i; });
+  (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoApertura + i; });
+
   // ── Limpieza ────────────────────────────────────────────────────────────────
   // La plantilla arrastra anotaciones sueltas "Corregido" (columnas J y S) que
   // no aportan nada al informe final.
@@ -262,6 +280,15 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
       }
     });
   });
+
+  // Mini-encabezados "Año" redundantes de un bloque auxiliar (filas 12, 19, 26)
+  // que ninguna fórmula usa — solo repetían los años fijos de la plantilla.
+  [12, 19, 26].forEach((rowNum) => {
+    res.getCell(`L${rowNum}`).value = null;
+    (["M", "N", "O", "P", "Q", "R"] as const).forEach((col) => { res.getCell(`${col}${rowNum}`).value = null; });
+  });
+  res.getCell("D24").value = null;
+  res.getCell("M24").value = null;
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
   wb.calcProperties.fullCalcOnLoad = true;
