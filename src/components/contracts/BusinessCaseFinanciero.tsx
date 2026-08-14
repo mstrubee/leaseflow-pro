@@ -12,7 +12,8 @@ import {
   XAxis, YAxis, Tooltip as RTooltip, Legend, CartesianGrid,
 } from "recharts";
 import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
-import type { BCSeed, BCInputs } from "@/lib/businessCase/model";
+import type { BCSeed, BCInputs, FormatoLocal } from "@/lib/businessCase/model";
+import { FORMATOS_LOCAL, FORMATO_PRESETS } from "@/lib/businessCase/model";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 
 interface Props {
@@ -35,7 +36,7 @@ function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { valu
 }
 
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, update, updateArr, setInvOverride } =
+  const { config, inputs, result, loading, saving, update, updateArr, setFormato, setInvOverride } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
@@ -103,6 +104,15 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <SelectContent>{config.categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
+                  <FieldConv
+                    label="Formato de local"
+                    conv={`Precarga ${FORMATO_PRESETS[inputs.formato].personalY1} trabajadores y $${FORMATO_PRESETS[inputs.formato].inventarioMM} MM de inventario (editables)`}
+                  >
+                    <Select value={inputs.formato} disabled={ro} onValueChange={(v) => setFormato(v as FormatoLocal)}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>{FORMATOS_LOCAL.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FieldConv>
                 </div>
               </Card>
 

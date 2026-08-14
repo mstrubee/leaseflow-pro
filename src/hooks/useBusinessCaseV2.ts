@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
-import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC } from "@/lib/businessCase/model";
+import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal } from "@/lib/businessCase/model";
 
 interface Args {
   contractId: string;
@@ -62,6 +62,22 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     setDirty(true);
   }, []);
 
+  // Cambiar de formato precarga dotación e inventario en una sola operación.
+  // Ambos quedan editables a mano después (son inputs normales).
+  const setFormato = useCallback((formato: FormatoLocal) => {
+    setInputs((p) => {
+      if (!p) return p;
+      const preset = FORMATO_PRESETS[formato];
+      return {
+        ...p,
+        formato,
+        personalY1: preset.personalY1,
+        invOverrides: { ...p.invOverrides, inv: preset.inventarioMM },
+      };
+    });
+    setDirty(true);
+  }, []);
+
   const setInvOverride = useCallback((lineId: string, value: number | null) => {
     setInputs((p) => {
       if (!p) return p;
@@ -106,6 +122,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     dirty,
     update,
     updateArr,
+    setFormato,
     setInvOverride,
   };
 }

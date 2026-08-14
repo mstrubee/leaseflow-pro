@@ -100,6 +100,17 @@ export const defaultAdminConfig: AdminConfig = {
   ],
 };
 
+// ---------- Formato de local ----------
+// Tradicional y Express se diferencian sólo en la dotación y en el capital de
+// trabajo (inventario). Elegir un formato precarga esos dos valores; después
+// quedan editables a mano como cualquier otro input.
+export const FORMATOS_LOCAL = ["Tradicional", "Express"] as const;
+export type FormatoLocal = (typeof FORMATOS_LOCAL)[number];
+export const FORMATO_PRESETS: Record<FormatoLocal, { personalY1: number; inventarioMM: number }> = {
+  Tradicional: { personalY1: 8, inventarioMM: 100 },
+  Express: { personalY1: 6, inventarioMM: 60 },
+};
+
 // ---------- Inputs editables del business case (por contrato) ----------
 export interface BCInputs {
   // Proyecto
@@ -107,6 +118,7 @@ export interface BCInputs {
   direccion: string;
   comuna: string;
   tipo: string; // Autoplanet / Agroplanet
+  formato: FormatoLocal; // Tradicional / Express (dotación + capital de trabajo)
   categoria: string; // Nuevo / Ampliación / ...
   descripcion: string;
 
@@ -399,6 +411,7 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     direccion: seed.direccion ?? "",
     comuna: seed.comuna ?? "",
     tipo,
+    formato: "Tradicional",
     categoria: admin.categorias[0],
     descripcion: "",
     superficie: seed.superficie ?? 0,
@@ -417,7 +430,9 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     margenDir: d.margenDir,
     otrosCostosDir: 0.3,
     costosVar: 5,
-    personalY1: d.personalY1,
+    // Dotación inicial: la del formato por defecto (Tradicional). El default por
+    // tipo de proyecto sigue rigiendo margen y años de depreciación.
+    personalY1: FORMATO_PRESETS.Tradicional.personalY1,
     costoPersonaMM: 9.6, // ~$800k CLP/mes por persona (costo empresa)
     personalCrec: 3.4,
     gralPct: 1.03,
