@@ -242,6 +242,19 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                   <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
                   <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
                   <Field label="Inicio"><Input type="date" value={inputs.inicio} disabled={ro} onChange={(e) => update("inicio", e.target.value)} className="h-8 text-sm" /></Field>
+                  <FieldConv
+                    label="Apertura al público"
+                    conv={`Opera ${result.mesesOperacion} ${result.mesesOperacion === 1 ? "mes" : "meses"} el año 1 · personal desde 1 mes antes (${result.mesesPersonal})`}
+                  >
+                    <Input
+                      type="date"
+                      value={inputs.apertura || ""}
+                      disabled={ro}
+                      onChange={(e) => update("apertura", e.target.value)}
+                      placeholder="Inicio de pago de renta"
+                      className="h-8 text-sm"
+                    />
+                  </FieldConv>
                 </div>
               </Card>
 

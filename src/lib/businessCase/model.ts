@@ -116,6 +116,11 @@ export interface BCInputs {
   graciaMeses: number;
   durContratoAnios: number;
   inicio: string; // ISO date (entrega/inicio)
+  /** ISO date del mes de apertura al público. Puede diferir del inicio de pago
+   *  de renta (inicio + gracia). Define los meses de operación del año 1
+   *  (ingresos) y, un mes antes, el inicio del pago de personal.
+   *  Si viene vacío se asume el inicio de pago de renta. */
+  apertura: string;
   gastoComunUf: number; // UF/mes
 
   // UF
@@ -154,8 +159,10 @@ export interface BCInvRow { id: string; nombre: string; metodo: InvMethod; monto
 export interface BCResult {
   canonUF: number;
   garantiaUF: number;
-  mesesY1: number;
+  mesesY1: number; // meses de RENTA del año 1 (desde inicio + gracia)
   mesesArr: number[]; // [0, mesesY1, 12,12,12,12]
+  mesesOperacion: number; // meses de OPERACIÓN del año 1 (desde la apertura) → ingresos
+  mesesPersonal: number; // meses de PERSONAL del año 1 (= operación + 1, se contrata antes)
   ufStarts: number[]; // 5
   ufAvgs: number[]; // 5 (promedio geométrico)
   inv: { rows: BCInvRow[]; total: number; fisica: number; kt: number };
@@ -242,17 +249,39 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const canonUF = round(superficie * ufM2, 2);
   const garantiaUF = canonUF;
   const gracia = inputs.graciaMeses || 0;
-  let mesesY1 = 3;
+  // Meses que quedan del año calendario contando el mes de la fecha dada:
+  // diciembre → 1, agosto → 5, enero → 12.
+  const mesesHastaFinDeAno = (iso: string): number => {
+    const d = new Date(iso + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return 12;
+    return Math.min(12, Math.max(0, 12 - d.getMonth()));
+  };
+
+  // Meses de RENTA del año 1: desde el inicio de pago de canon (inicio + gracia).
+  let dtCanonIso = inputs.inicio || "";
   if (inputs.inicio) {
-    const dtInicio = new Date(inputs.inicio + "T00:00:00");
-    const dtCanon = new Date(dtInicio);
+    const dtCanon = new Date(inputs.inicio + "T00:00:00");
     dtCanon.setMonth(dtCanon.getMonth() + gracia);
-    const anoInicio = dtCanon.getFullYear();
-    const finAno = new Date(anoInicio, 11, 31);
-    const diffMs = finAno.getTime() - dtCanon.getTime();
-    mesesY1 = Math.min(12, Math.max(1, Math.round(diffMs / (30.44 * 24 * 3600 * 1000)) + 1));
+    dtCanonIso = dtCanon.toISOString().slice(0, 10);
   }
+  const mesesY1 = dtCanonIso ? mesesHastaFinDeAno(dtCanonIso) : 3;
   const mesesArr = [0, mesesY1, 12, 12, 12, 12];
+
+  // Meses de OPERACIÓN del año 1 (desde la apertura al público) y meses de
+  // PERSONAL (empieza un mes antes de abrir). Son calendarios distintos al de
+  // la renta: un local puede abrir antes o después de empezar a pagar canon.
+  // Si no hay fecha de apertura cargada, se asume el inicio de pago de renta.
+  const aperturaIso = inputs.apertura || dtCanonIso;
+  const anoRenta = dtCanonIso ? new Date(dtCanonIso + "T00:00:00").getFullYear() : 0;
+  const dApertura = new Date(aperturaIso + "T00:00:00");
+  const anoApertura = Number.isNaN(dApertura.getTime()) ? anoRenta : dApertura.getFullYear();
+  // Si abre en un año posterior al del inicio de renta, el año 1 no tiene
+  // operación (pero sí puede tener el mes previo de personal); si abrió antes,
+  // el año 1 opera completo.
+  const mesesOperacion =
+    anoApertura > anoRenta ? 0 : anoApertura < anoRenta ? 12 : mesesHastaFinDeAno(aperturaIso);
+  const mesesPersonal = Math.min(12, mesesOperacion + 1);
+  const mesesOperArr = [0, mesesOperacion, 12, 12, 12, 12];
 
   // Inversión (por categoría)
   const lineas = (admin.invLineas[inputs.categoria] || admin.invLineas["Nuevo"]).filter((l) => l.activo);
@@ -284,7 +313,9 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const sf = inputs.scenario === "opt" ? 1.1 : inputs.scenario === "cons" ? 0.85 : 1.0;
   const v = inputs.ventaMes || [];
   const ventaMes = [0, v[0] ?? 60, v[1] ?? 80, v[2] ?? 90, v[3] ?? 95, v[4] ?? 99.75];
-  const ingresos = ventaMes.map((vv, i) => round(vv * mesesArr[i] * sf, 2));
+  // Los ingresos del año 1 se prorratean por los meses de OPERACIÓN (desde la
+  // apertura), no por los de renta.
+  const ingresos = ventaMes.map((vv, i) => round(vv * mesesOperArr[i] * sf, 2));
 
   // Márgenes
   const mDir = (inputs.margenDir || 0) / 100;
@@ -297,13 +328,13 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
 
   // Costos
   // Personal — mismo modelo que la planilla oficial del business case:
-  //   · Año 1: se prorratea por los meses de operación (mesesY1, derivado del
-  //     mes de inicio de renta del contrato), no se cobra el año completo.
+  //   · Año 1: se prorratea por los meses de personal (= meses de operación + 1,
+  //     porque se contrata un mes antes de abrir), no se cobra el año completo.
   //   · Años 2..5: costo base × 12 reajustado por la variación de UF del año
   //     anterior, SIN acumular año contra año.
   // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
   const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
-  const personal = [0, -round(personalMensual * mesesY1, 2)];
+  const personal = [0, -round(personalMensual * mesesPersonal, 2)];
   for (let i = 2; i < 6; i++) {
     const ufPrev = starts[i - 2] || 0;
     const ufCur = starts[i - 1] || 0;
@@ -343,7 +374,8 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const ebitdaMargin5 = ingresos[5] ? ebitda[5] / ingresos[5] : 0;
 
   return {
-    canonUF, garantiaUF, mesesY1, mesesArr, ufStarts: starts, ufAvgs: avgs,
+    canonUF, garantiaUF, mesesY1, mesesArr, mesesOperacion, mesesPersonal,
+    ufStarts: starts, ufAvgs: avgs,
     inv: { rows: invRows, total, fisica, kt },
     ingresos, costoVentas, otrosCostos, costosVar, margenCtrib,
     personal, publicidad, gastosGral, tecnologia, ocupacion, canonArr, gastoComun,
@@ -374,6 +406,7 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     graciaMeses: 2,
     durContratoAnios: seed.durContratoAnios ?? 10,
     inicio: seed.inicio ?? new Date().toISOString().slice(0, 10),
+    apertura: "", // vacío = se asume el inicio de pago de renta (inicio + gracia)
     gastoComunUf: seed.gastoComunUf ?? 0,
     ufBase: seed.ufBase ?? 39485.65,
     ufRates: [3.8, 3.3, 3.0, 3.0, 3.0],

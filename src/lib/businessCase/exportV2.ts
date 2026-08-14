@@ -133,6 +133,12 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   datos.getCell("B18").value = superficie > 0 ? (inputs.gastoComunUf || 0) / superficie : 0; // E18 = E14*B18 = gasto común UF
   datos.getCell("E19").value = isoToDate(inputs.inicio);   // Inicio
   datos.getCell("E20").value = inputs.graciaMeses || 0;    // Gracia (meses)
+  // B21 = meses de OPERACIÓN del año 1 (desde la apertura). La plantilla lo
+  // derivaba de =(12-MONTH(E19))-1, que ignora tanto la gracia como la fecha de
+  // apertura; se escribe el valor que ya calcula la app para que planilla y
+  // pantalla coincidan. De B21 cuelgan los ingresos del año 1 (N9) y, vía
+  // A17 = B21+1, los meses de personal (que parte un mes antes de abrir).
+  datos.getCell("B21").value = r.mesesOperacion;
   datos.getCell("E29").value = 0;                          // Cobro por instalaciones
   datos.getCell("E30").value = (inputs.waccRate || 0) / 100; // Tasa de descuento
 
@@ -227,11 +233,6 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
   const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
   res.getCell("B17").value = +personalMensual.toFixed(4);
-  // A17 = meses de operación del año 1. La plantilla lo derivaba de
-  // =Datos!B21+1, que ignora los meses de gracia; usamos el valor que ya calcula
-  // la app (sí considera la gracia) para que la planilla y la pantalla no se
-  // separen. También alimenta el gasto común del año 1 (E23).
-  res.getCell("A17").value = r.mesesY1;
   res.getCell("E17").value = { formula: `-A17*B17` } as ExcelJS.CellFormulaValue;
   // año 2→Supuestos!C4, año 3→D4, año 4→E4, año 5→F4
   ([["F", "C"], ["G", "D"], ["H", "E"], ["I", "F"]] as const).forEach(([col, supCol]) => {
@@ -239,6 +240,17 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
       formula: `-$B$17*12*(1+Supuestos!${supCol}4)`,
     } as ExcelJS.CellFormulaValue;
   });
+
+  // ── Canon y gasto común del año 1 ───────────────────────────────────────────
+  // Siguen el calendario de RENTA (inicio + gracia), que puede ser distinto al
+  // de apertura. La plantilla los colgaba de B21/A17 (meses de operación y de
+  // personal), lo que los desalineaba con la app cuando ambas fechas difieren.
+  res.getCell("E22").value = {
+    formula: `-((Datos!$E$17*Supuestos!C3)/1000000)*${r.mesesY1}`,
+  } as ExcelJS.CellFormulaValue;
+  res.getCell("E23").value = {
+    formula: `-((Datos!$E$18*Supuestos!C$3)*${r.mesesY1})/1000000`,
+  } as ExcelJS.CellFormulaValue;
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
   wb.calcProperties.fullCalcOnLoad = true;
