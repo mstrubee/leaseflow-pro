@@ -136,6 +136,10 @@ export const OCRequestViewDialog = ({
   const [saving, setSaving] = useState(false);
   const [request, setRequest] = useState<OCRequest | null>(null);
   const [budgetLines, setBudgetLines] = useState<BudgetLineAssignment[]>([]);
+  // Techo para "Monto Total": suma del disponible real de la(s) línea(s)
+  // asignada(s) (excluyendo el consumo de esta misma solicitud). null = sin
+  // línea asignada aún, no se puede acotar.
+  const [maxTotalUf, setMaxTotalUf] = useState<number | null>(null);
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
   const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([]);
   const [activeTab, setActiveTab] = useState("info");
@@ -237,6 +241,32 @@ export const OCRequestViewDialog = ({
         })));
       } else {
         setBudgetLines([]);
+      }
+
+      // Techo del monto total: suma del disponible real de la(s) línea(s)
+      // asignada(s), excluyendo el consumo de esta misma solicitud (si no,
+      // se restaría a sí misma y el techo quedaría subestimado).
+      const assignedLineIds = linesData && linesData.length > 0
+        ? linesData.map(l => l.budget_line_id)
+        : (reqData.budget_line_id ? [reqData.budget_line_id] : []);
+
+      if (assignedLineIds.length > 0) {
+        const [{ data: lineRows }, { data: poRows }, { data: reqRows }] = await Promise.all([
+          supabase.from("budget_lines").select("id, amount_uf").in("id", assignedLineIds),
+          supabase.from("purchase_orders").select("amount_uf, budget_line_id").in("budget_line_id", assignedLineIds).is("deleted_at", null),
+          supabase.from("oc_requests").select("id, amount_uf, budget_line_id").in("budget_line_id", assignedLineIds).eq("status", "pending"),
+        ]);
+        let ceiling = 0;
+        for (const line of lineRows || []) {
+          const usedByOC = (poRows || []).filter(p => p.budget_line_id === line.id).reduce((s, p) => s + p.amount_uf, 0);
+          const usedByOtherRequests = (reqRows || [])
+            .filter(r => r.budget_line_id === line.id && r.id !== requestId)
+            .reduce((s, r) => s + r.amount_uf, 0);
+          ceiling += Math.max(0, line.amount_uf - usedByOC - usedByOtherRequests);
+        }
+        setMaxTotalUf(Math.round(ceiling * 10000) / 10000);
+      } else {
+        setMaxTotalUf(null);
       }
 
       // Load contract allocations (multi-contract)
@@ -633,6 +663,15 @@ export const OCRequestViewDialog = ({
     const effectiveUf = getEffectiveUf(request, ufValue);
     const newUf = newClp / effectiveUf;
 
+    if (maxTotalUf !== null && newUf > maxTotalUf + 0.01) {
+      toast({
+        variant: "destructive",
+        title: "Monto excede lo autorizado",
+        description: `El monto (${formatCLP(newClp)}) supera el disponible en la(s) línea(s) asignada(s) (${formatCLP(Math.round(maxTotalUf * effectiveUf))})`,
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from("oc_requests")
@@ -876,11 +915,17 @@ export const OCRequestViewDialog = ({
                             setEditingTotalValue("");
                           }
                         }}
+                        max={maxTotalUf !== null ? Math.round(maxTotalUf * getEffectiveUf(request, ufValue)) : undefined}
                         className="h-7 text-sm font-mono w-[140px]"
                       />
                       <p className="text-[10px] text-muted-foreground mt-0.5">
                         ≈ {formatUF((parseFloat(editingTotalValue) || 0) / getEffectiveUf(request, ufValue))}
                       </p>
+                      {maxTotalUf !== null && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Disponible en la línea: {formatCLP(Math.round(maxTotalUf * getEffectiveUf(request, ufValue)))}
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div
