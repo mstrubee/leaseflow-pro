@@ -252,6 +252,17 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
     formula: `-((Datos!$E$18*Supuestos!C$3)*${r.mesesY1})/1000000`,
   } as ExcelJS.CellFormulaValue;
 
+  // ── Limpieza ────────────────────────────────────────────────────────────────
+  // La plantilla arrastra anotaciones sueltas "Corregido" (columnas J y S) que
+  // no aportan nada al informe final.
+  res.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (typeof cell.value === "string" && cell.value.trim().toLowerCase() === "corregido") {
+        cell.value = null;
+      }
+    });
+  });
+
   // Forzar recálculo de todas las fórmulas al abrir el archivo
   wb.calcProperties.fullCalcOnLoad = true;
 
