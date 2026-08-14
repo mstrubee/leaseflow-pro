@@ -180,10 +180,14 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   //   - Excluye E25 (inventario, no depreciable)
   //   - Usa el n° de años de depreciación del proyecto (deprAnos)
   const deprAnos = inputs.deprAnos || 1;
-  const deprFormula = `=-(Datos!E23+Datos!E24+Datos!E26+Datos!E27)/(${deprAnos}*1000000)`;
-  // N35..R35 (los 5 años de depreciación)
-  ["N", "O", "P", "Q", "R"].forEach((col) => {
-    res.getCell(`${col}35`).value = { formula: deprFormula } as ExcelJS.CellFormulaValue;
+  // OJO: ExcelJS antepone el "=" al escribir { formula }. Si el string ya lo
+  // trae, la celda queda con "==" y Excel no puede evaluarla.
+  const deprFormula = `-((Datos!E23+Datos!E24+Datos!E26+Datos!E27)/1000000)/${deprAnos}`;
+  // N35 lleva el cálculo; O35..R35 encadenan al año anterior (igual que la
+  // planilla de referencia), así queda un solo punto de edición.
+  res.getCell("N35").value = { formula: deprFormula } as ExcelJS.CellFormulaValue;
+  ([["O", "N"], ["P", "O"], ["Q", "P"], ["R", "Q"]] as const).forEach(([col, prev]) => {
+    res.getCell(`${col}35`).value = { formula: `${prev}35` } as ExcelJS.CellFormulaValue;
   });
 
   // ── Supuestos: UF base + crecimiento anual por año del proyecto ────────────
@@ -193,6 +197,9 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
     const prev = i === 0 ? "B3" : `${ufCols[i - 1]}3`;
     const factor = +(1 + (inputs.ufRates[i] ?? 0) / 100).toFixed(6);
     sup.getCell(`${col}3`).value = { formula: `${prev}*${factor}` } as ExcelJS.CellFormulaValue;
+    // Fila 4: variación de la UF de cada año — la usan las fórmulas de
+    // "Gastos Personal" (fila 17 del Resumen) para reajustar el sueldo base.
+    sup.getCell(`${col}4`).value = { formula: `(${col}3-${prev})/${col}3` } as ExcelJS.CellFormulaValue;
   });
 
   // ── Resumen business case ───────────────────────────────────────────────────
@@ -211,15 +218,21 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   cols.forEach((c) => { res.getCell(`${c}31`).value = -((inputs.ocupPct || 0) / 100); }); // Ocupación %
   cols.forEach((c) => { res.getCell(`${c}38`).value = (inputs.taxRate || 0) / 100; });    // Impuesto %
 
-  // ── Personal: inyectamos los valores calculados por la app ──────────────────
-  // La plantilla tiene fórmulas con ×1.032 hardcodeado. Las sobreescribimos
-  // con los valores exactos de result.personal (que usa personalCrec del proyecto).
-  // r.personal[0] = 0 (año 0, pre-apertura); [1]..[5] = años 1..5
-  // La planilla espera E17..I17 en MM CLP (negativo).
-  // E17 tiene la fórmula =-B17*(A17) donde A17 = meses año 1 → inyectamos valor directo.
-  const persYearCols = ["E", "F", "G", "H", "I"];
-  persYearCols.forEach((col, i) => {
-    res.getCell(`${col}17`).value = +(r.personal[i + 1] ?? 0).toFixed(4); // ya es negativo
+  // ── Personal ────────────────────────────────────────────────────────────────
+  // Se replica el modelo de la planilla de referencia (Business Case AP
+  // Villarrica): B17 = costo MENSUAL de personal; el año 1 se prorratea por los
+  // meses reales de operación (A17) y los años 2..5 son base × 12 reajustada por
+  // la variación de UF del año anterior (Supuestos fila 4), sin acumular.
+  // Quedan como fórmulas vivas para que la planilla recalcule si se edita B17.
+  // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
+  const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
+  res.getCell("B17").value = +personalMensual.toFixed(4);
+  res.getCell("E17").value = { formula: `-A17*B17` } as ExcelJS.CellFormulaValue;
+  // año 2→Supuestos!C4, año 3→D4, año 4→E4, año 5→F4
+  ([["F", "C"], ["G", "D"], ["H", "E"], ["I", "F"]] as const).forEach(([col, supCol]) => {
+    res.getCell(`${col}17`).value = {
+      formula: `-$B$17*12*(1+Supuestos!${supCol}4)`,
+    } as ExcelJS.CellFormulaValue;
   });
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
