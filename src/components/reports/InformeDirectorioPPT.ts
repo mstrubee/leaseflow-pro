@@ -38,13 +38,6 @@ export interface InformeDirectorioParams {
   contractSlides: ContractSlideData[];
 }
 
-function addFooter(slide: PptxGenJS.Slide, pageNum: number) {
-  slide.addText(`${pageNum}`, {
-    x: 9.3, y: 5.3, w: 0.5, h: 0.3,
-    fontSize: 9, color: MUTED, fontFace: "Arial", align: "right",
-  });
-}
-
 export async function generateInformeDirectorioPPT(params: InformeDirectorioParams): Promise<void> {
   const { year, capexData, contractSlides } = params;
   const fileName = `Informe_Directorio_${year}_${new Date().toISOString().slice(0, 10)}.pptx`;
@@ -96,7 +89,6 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
   await generateCapexPPT(capexData, { pres, skipCover: true, skipSave: true });
 
   // ═══════════ SLIDES 5+: una por contrato en revisión ═══════════
-  let pageNum = pres.slides.length + 1;
   for (const c of contractSlides) {
     const s = pres.addSlide();
     s.background = { color: PAGE_BG };
@@ -146,17 +138,17 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
       colW: [2.55, 0.65, 1.1],
       autoPageCharWeight: undefined,
       border: { pt: 0, color: BORDER },
-      margin: [1, 3, 1, 3],
+      margin: [0, 2, 0, 2],
     });
 
     // ── Tabla derecha: P&L completo ──
     const pnlRows = buildPnlRows(c.inputs, c.result);
     const pnlTableRows: PptxGenJS.TableRow[] = [
       [
-        { text: "Año", options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 8, fontFace: "Arial", align: "left" } },
+        { text: "Año", options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 7, fontFace: "Arial", align: "left" } },
         ...[1, 2, 3, 4, 5].map((n, i) => ({
           text: `${n}\n${new Date(c.inputs.inicio || Date.now()).getFullYear() + i}`,
-          options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 8, fontFace: "Arial", align: "center" as const },
+          options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 7, fontFace: "Arial", align: "center" as const },
         })),
       ],
     ];
@@ -169,22 +161,20 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
       const textColor = r.maroonHighlight ? WHITE : DARK;
       const labelCell: PptxGenJS.TableCell = {
         text: r.label,
-        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 7.5, fontFace: "Arial", align: "left" },
+        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 7, fontFace: "Arial", align: "left" },
       };
       const valueCells: PptxGenJS.TableCell[] = r.values.map((v, i) => ({
         text: i === 0 && r.col0 ? r.col0 : v,
-        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 7.5, fontFace: "Arial", align: "right" as const },
+        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 7, fontFace: "Arial", align: "right" as const },
       }));
       pnlTableRows.push([labelCell, ...valueCells]);
     });
     s.addTable(pnlTableRows, {
-      x: 4.85, y: 1.25, w: 4.75,
+      x: 4.85, y: 1.2, w: 4.75,
       colW: [1.75, 0.6, 0.6, 0.6, 0.6, 0.6],
       border: { pt: 0.25, color: BORDER },
-      margin: [1, 3, 1, 3],
+      margin: [0, 2, 0, 2],
     });
-
-    addFooter(s, pageNum++);
   }
 
   if (saveHandle) {
