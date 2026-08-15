@@ -94,47 +94,47 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
     s.background = { color: PAGE_BG };
 
     s.addText("DETALLE CAPEX PLAN EXPANSIÓN", {
-      x: 0.4, y: 0.25, w: 9, h: 0.4,
-      fontSize: 18, fontFace: "Arial", color: KICKER_RED, bold: true,
+      x: 0.4, y: 0.2, w: 9, h: 0.3,
+      fontSize: 14, fontFace: "Arial", color: KICKER_RED, bold: true,
     });
     s.addText(c.subtitle, {
-      x: 0.4, y: 0.65, w: 9.2, h: 0.45,
-      fontSize: 18, fontFace: "Arial", color: DARK, bold: true,
+      x: 0.4, y: 0.5, w: 9.2, h: 0.35,
+      fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
     });
     s.addShape("line" as const, {
-      x: 0.4, y: 1.15, w: 9.2, h: 0,
+      x: 0.4, y: 0.87, w: 9.2, h: 0,
       line: { color: BORDER, width: 1 },
     });
 
     s.addText(`Local ${c.contractName}`, {
-      x: 0.4, y: 1.25, w: 4.3, h: 0.3,
-      fontSize: 13, fontFace: "Arial", color: DARK, bold: true,
+      x: 0.4, y: 0.95, w: 4.3, h: 0.25,
+      fontSize: 11, fontFace: "Arial", color: DARK, bold: true,
     });
     s.addText("Aspectos clave:", {
-      x: 0.4, y: 1.55, w: 4.3, h: 0.25,
-      fontSize: 11, fontFace: "Arial", color: DARK,
+      x: 0.4, y: 1.2, w: 4.3, h: 0.2,
+      fontSize: 9, fontFace: "Arial", color: DARK,
     });
     s.addText(
       c.bullets.map((b) => ({ text: b, options: { bullet: { code: "2022" }, breakLine: true } })),
-      { x: 0.5, y: 1.8, w: 4.1, h: 0.85, fontSize: 11, fontFace: "Arial", color: DARK, valign: "top" },
+      { x: 0.5, y: 1.4, w: 4.1, h: 0.55, fontSize: 9, fontFace: "Arial", color: DARK, valign: "top" },
     );
 
     // ── Tabla izquierda: Resumen Ejecutivo NUEVO LOCAL ──
     const infoRows = buildResumenEjecutivoRows(c.inputs, c.result);
     const infoTableRows: PptxGenJS.TableRow[] = [
-      [{ text: "Resumen Ejecutivo NUEVO LOCAL", options: { colspan: 3, bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 9, fontFace: "Arial", align: "left" } }],
+      [{ text: "Resumen Ejecutivo NUEVO LOCAL", options: { colspan: 3, bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 7, fontFace: "Arial", align: "left" } }],
     ];
     infoRows.forEach((r) => {
       const fill = r.highlight ? MAROON_LIGHT : WHITE;
       const topBorder = r.divider ? { pt: 1, color: MAROON } : { pt: 0.25, color: BORDER };
       infoTableRows.push([
-        { text: r.label, options: { fontSize: 7.5, fontFace: "Arial", color: DARK, fill: { color: fill }, align: "left", border: [topBorder, { pt: 0.25, color: BORDER }, { pt: 0.25, color: BORDER }, { pt: 0.25, color: BORDER }] } },
-        { text: r.unit, options: { fontSize: 7.5, fontFace: "Arial", color: MUTED, fill: { color: fill }, align: "left" } },
-        { text: r.value, options: { fontSize: 7.5, fontFace: "Arial", color: DARK, fill: { color: fill }, align: "right" } },
+        { text: r.label, options: { fontSize: 5.5, fontFace: "Arial", color: DARK, fill: { color: fill }, align: "left", border: [topBorder, { pt: 0.25, color: BORDER }, { pt: 0.25, color: BORDER }, { pt: 0.25, color: BORDER }] } },
+        { text: r.unit, options: { fontSize: 5.5, fontFace: "Arial", color: MUTED, fill: { color: fill }, align: "left" } },
+        { text: r.value, options: { fontSize: 5.5, fontFace: "Arial", color: DARK, fill: { color: fill }, align: "right" } },
       ]);
     });
     s.addTable(infoTableRows, {
-      x: 0.4, y: 2.75, w: 4.3,
+      x: 0.4, y: 2.0, w: 4.3,
       colW: [2.55, 0.65, 1.1],
       autoPage: false,
       border: { pt: 0, color: BORDER },
@@ -145,10 +145,10 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
     const pnlRows = buildPnlRows(c.inputs, c.result);
     const pnlTableRows: PptxGenJS.TableRow[] = [
       [
-        { text: "Año", options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 7, fontFace: "Arial", align: "left" } },
+        { text: "Año", options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 5.5, fontFace: "Arial", align: "left" } },
         ...[1, 2, 3, 4, 5].map((n, i) => ({
           text: `${n}\n${new Date(c.inputs.inicio || Date.now()).getFullYear() + i}`,
-          options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 7, fontFace: "Arial", align: "center" as const },
+          options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 5.5, fontFace: "Arial", align: "center" as const },
         })),
       ],
     ];
@@ -161,16 +161,16 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
       const textColor = r.maroonHighlight ? WHITE : DARK;
       const labelCell: PptxGenJS.TableCell = {
         text: r.label,
-        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 7, fontFace: "Arial", align: "left" },
+        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 5.5, fontFace: "Arial", align: "left" },
       };
       const valueCells: PptxGenJS.TableCell[] = r.values.map((v, i) => ({
         text: i === 0 && r.col0 ? r.col0 : v,
-        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 7, fontFace: "Arial", align: "right" as const },
+        options: { bold: !!r.bold, color: textColor, fill: { color: fill }, fontSize: 5.5, fontFace: "Arial", align: "right" as const },
       }));
       pnlTableRows.push([labelCell, ...valueCells]);
     });
     s.addTable(pnlTableRows, {
-      x: 4.85, y: 1.2, w: 4.75,
+      x: 4.85, y: 0.95, w: 4.75,
       colW: [1.75, 0.6, 0.6, 0.6, 0.6, 0.6],
       autoPage: false,
       border: { pt: 0.25, color: BORDER },
