@@ -136,9 +136,9 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
     s.addTable(infoTableRows, {
       x: 0.4, y: 2.75, w: 4.3,
       colW: [2.55, 0.65, 1.1],
-      autoPageCharWeight: undefined,
+      autoPage: false,
       border: { pt: 0, color: BORDER },
-      margin: [0, 2, 0, 2],
+      margin: [1, 2, 1, 2],
     });
 
     // ── Tabla derecha: P&L completo ──
@@ -172,8 +172,9 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
     s.addTable(pnlTableRows, {
       x: 4.85, y: 1.2, w: 4.75,
       colW: [1.75, 0.6, 0.6, 0.6, 0.6, 0.6],
+      autoPage: false,
       border: { pt: 0.25, color: BORDER },
-      margin: [0, 2, 0, 2],
+      margin: [1, 2, 1, 2],
     });
   }
 

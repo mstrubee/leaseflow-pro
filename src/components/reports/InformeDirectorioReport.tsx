@@ -11,6 +11,7 @@ import { buildResumenEjecutivoRows, buildPnlRows } from "@/lib/businessCase/repo
 import { buildCapexPPTData } from "@/components/budget/CapexPPTExport";
 import { generateInformeDirectorioPPT, type ContractSlideData } from "@/components/reports/InformeDirectorioPPT";
 import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
+import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ interface ContractEligible {
   inputs: BCInputs | null;
   result: BCResult | null;
   seed: BCSeed;
+  companyNames: string[];
   durationMonths: number | null;
   noticeType: string | null;
   noticeValue: string | null;
@@ -222,6 +224,7 @@ export function InformeDirectorioReport() {
           inputs,
           result: computed,
           seed,
+          companyNames: getCompanyNames(c.contract_companies as any),
           durationMonths: version?.duration_months ?? null,
           noticeType: version?.notice_type ?? null,
           noticeValue: version?.notice_value ?? null,
@@ -373,6 +376,7 @@ export function InformeDirectorioReport() {
                     <span className="w-4" />
                   )}
                   {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                  <CompanyLogo companyNames={c.companyNames} size="sm" />
                   <h4 className="font-semibold flex-1">{c.name}</h4>
                   <Button
                     variant="outline"
