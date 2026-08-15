@@ -402,6 +402,13 @@ export interface BCSeed {
   nombre?: string; direccion?: string; comuna?: string; tipo?: string;
   superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null;
   durContratoAnios?: number | null; inicio?: string | null; ufBase?: number;
+  // Metadatos para la sincronización bidireccional Business Case ↔ Contrato:
+  // al abrir, estos 5 campos siempre reflejan el contrato (no lo guardado en
+  // el BC); al editarlos en el BC, se escriben de vuelta al contrato/versión.
+  contractVersionId?: string;
+  rentField?: "initial_rent" | "regime_rent";
+  rentIsUfM2?: boolean;
+  gastoComunSyncable?: boolean; // true solo si la metodología de gasto común es "uf_m2"
 }
 
 export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = defaultAdminConfig): BCInputs {

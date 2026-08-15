@@ -27,6 +27,16 @@ interface Props {
 const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#64748b", "#f43f5e", "#06b6d4"];
 const yearCols = [0, 1, 2, 3, 4, 5];
 
+// Default de "Apertura al público" = inicio + gracia (mismo cálculo que dtCanonIso
+// en computeBC), mostrado en el campo hasta que el usuario lo modifique a mano.
+function addMonthsIso(iso: string, months: number): string {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return "";
+  d.setMonth(d.getMonth() + (months || 0));
+  return d.toISOString().slice(0, 10);
+}
+
 function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
   return (
     <Input type="number" step={step} value={Number.isFinite(value) ? value : 0}
@@ -128,45 +138,66 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
 
             {/* ───────── INVERSIÓN ───────── */}
             <TabsContent value="inversion" className="space-y-4">
-              <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — las líneas dependen de la categoría (config global). Los montos son editables por proyecto.">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-xs text-muted-foreground border-b">
-                    <th className="py-1 text-left">Línea</th><th className="text-left">Método</th><th className="text-center">Monto (MM)</th><th className="text-right">% · UF/m²</th>
-                  </tr></thead>
-                  <tbody>
-                    {result.inv.rows.map((r) => {
-                      const ufM2eq = inputs.superficie && inputs.ufBase ? (r.monto * 1e6) / inputs.ufBase / inputs.superficie : 0;
-                      return (
-                        <tr key={r.id} className="border-b border-gray-100">
-                          <td className="py-1">{r.nombre}</td>
-                          <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
-                          <td className="text-center"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
-                          <td className="text-right text-muted-foreground whitespace-nowrap">
-                            {r.pct.toFixed(1)}% · {ufM2eq.toFixed(1).replace(".", ",")} UF/m²
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    <tr className="font-semibold">
-                      <td className="py-1.5">Total</td><td />
-                      <td className="text-center">{fmtMM(result.inv.total)}</td>
-                      <td className="text-right">100% · {(inputs.superficie && inputs.ufBase ? (result.inv.total * 1e6) / inputs.ufBase / inputs.superficie : 0).toFixed(1).replace(".", ",")} UF/m²</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </Card>
-              <Card title="Composición del CAPEX">
-                <div style={{ height: 260 }}>
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={result.inv.rows.filter((r) => r.monto > 0)} dataKey="monto" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={(e: { nombre: string }) => e.nombre}>
-                        {result.inv.rows.filter((r) => r.monto > 0).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <RTooltip formatter={(v: number) => `${fmtMM(v)} MM`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
+              {(() => {
+                // El inventario es capital de trabajo, no CAPEX físico: se muestra
+                // aparte y no participa del % ni del UF/m² del plan de inversión.
+                const capexRows = result.inv.rows.filter((r) => r.id !== "inv");
+                const inventarioRow = result.inv.rows.find((r) => r.id === "inv");
+                const capexTotal = capexRows.reduce((s, r) => s + r.monto, 0);
+                const ufM2total = inputs.superficie && inputs.ufBase ? (capexTotal * 1e6) / inputs.ufBase / inputs.superficie : 0;
+                return (
+                  <>
+                    <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — CAPEX físico (sin inventario). Los montos son editables por proyecto.">
+                      <table className="w-full text-sm">
+                        <thead><tr className="text-xs text-muted-foreground border-b">
+                          <th className="py-1 text-left">Línea</th><th className="text-left">Método</th><th className="text-center">Monto (MM)</th><th className="text-right">% · UF/m²</th>
+                        </tr></thead>
+                        <tbody>
+                          {capexRows.map((r) => {
+                            const pct = capexTotal > 0 ? (r.monto / capexTotal) * 100 : 0;
+                            const ufM2eq = inputs.superficie && inputs.ufBase ? (r.monto * 1e6) / inputs.ufBase / inputs.superficie : 0;
+                            return (
+                              <tr key={r.id} className="border-b border-gray-100">
+                                <td className="py-1">{r.nombre}</td>
+                                <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
+                                <td className="text-center"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
+                                <td className="text-right text-muted-foreground whitespace-nowrap">
+                                  {pct.toFixed(1)}% · {ufM2eq.toFixed(1).replace(".", ",")} UF/m²
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="font-semibold">
+                            <td className="py-1.5">Total CAPEX</td><td />
+                            <td className="text-center">{fmtMM(capexTotal)}</td>
+                            <td className="text-right">100% · {ufM2total.toFixed(1).replace(".", ",")} UF/m²</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </Card>
+                    {inventarioRow && (
+                      <Card title="Inventario" sub="Capital de trabajo — no es CAPEX, no participa del cálculo de UF/m².">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Monto (MM CLP)</span>
+                          <NumCell value={inventarioRow.monto} disabled={ro} w="w-28" onChange={(v) => setInvOverride(inventarioRow.id, v)} />
+                        </div>
+                      </Card>
+                    )}
+                    <Card title="Composición del CAPEX">
+                      <div style={{ height: 260 }}>
+                        <ResponsiveContainer>
+                          <PieChart>
+                            <Pie data={capexRows.filter((r) => r.monto > 0)} dataKey="monto" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={(e: { nombre: string }) => e.nombre}>
+                              {capexRows.filter((r) => r.monto > 0).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                            </Pie>
+                            <RTooltip formatter={(v: number) => `${fmtMM(v)} MM`} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Card>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             {/* ───────── PROYECCIONES ───────── */}
@@ -258,7 +289,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                   >
                     <Input
                       type="date"
-                      value={inputs.apertura || ""}
+                      value={inputs.apertura || addMonthsIso(inputs.inicio, inputs.graciaMeses)}
                       disabled={ro}
                       onChange={(e) => update("apertura", e.target.value)}
                       placeholder="Inicio de pago de renta"

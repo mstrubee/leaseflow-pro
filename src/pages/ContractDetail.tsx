@@ -38,6 +38,7 @@ import { SpecialAttentionReturnButton } from "@/components/special-attention/Spe
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
@@ -205,6 +206,7 @@ const ContractDetail = () => {
         : "/contracts";
 
   const { toast } = useToast();
+  const { ufValue } = useEconomicIndicators();
   const { isAdmin, isEquipoGerencia, roleLoaded, hasPermission } = useAuth();
   const { isHidden, canEdit: canEditSection, loading: permissionsLoading } = useUserPermissions();
   const {
@@ -944,7 +946,8 @@ const ContractDetail = () => {
                   // (flag initial_rent_is_uf_m2 / regime_rent_is_uf_m2, ver EditContract.tsx).
                   // Dividir de nuevo por superficie cuando ya viene en UF/m² lo reducía a un
                   // valor artificialmente diminuto (ej. Arica: 0,300 UF/m² → 0,00075).
-                  const canonIsUfM2 = displayVersion?.initial_rent
+                  const rentField: "initial_rent" | "regime_rent" = displayVersion?.initial_rent ? "initial_rent" : "regime_rent";
+                  const canonIsUfM2 = rentField === "initial_rent"
                     ? !!(displayVersion as any).initial_rent_is_uf_m2
                     : !!(displayVersion as any)?.regime_rent_is_uf_m2;
                   const canonUf = displayVersion?.initial_rent || displayVersion?.regime_rent || null;
@@ -959,6 +962,12 @@ const ContractDetail = () => {
                     gastoComunUf: displayVersion?.gastos_comunes_fixed_admin_uf ?? null,
                     durContratoAnios: displayVersion?.duration_months ? Math.round(displayVersion.duration_months / 12) : null,
                     inicio: displayVersion?.effective_date ?? null,
+                    ufBase: ufValue > 0 ? ufValue : undefined,
+                    // Metadatos de sincronización bidireccional (ver BCSeed en model.ts)
+                    contractVersionId: displayVersion?.id,
+                    rentField,
+                    rentIsUfM2: canonIsUfM2,
+                    gastoComunSyncable: (displayVersion as any)?.gastos_comunes_methodology === "uf_m2",
                   };
                 })()}
               />

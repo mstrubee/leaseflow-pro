@@ -149,6 +149,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
+  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, number>>({});
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
@@ -246,6 +247,24 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     };
     loadCapex();
   }, [ufValue]);
+
+  // "CAPEX Est." = inversión total estimada en el Business Case Financiero,
+  // sin el inventario (capital de trabajo, no es CAPEX). Independiente de la
+  // columna "CAPEX" (presupuesto real del año en curso, contract_budgets).
+  useEffect(() => {
+    const loadCapexEst = async () => {
+      const { data } = await supabase.from("contract_business_cases").select("contract_id, computed");
+      const map: Record<string, number> = {};
+      (data || []).forEach((row: { contract_id: string; computed: unknown }) => {
+        const computed = row.computed as { inv?: { total?: number; rows?: { id: string; monto: number }[] } } | null;
+        const total = computed?.inv?.total || 0;
+        const inventario = computed?.inv?.rows?.find((r) => r.id === "inv")?.monto || 0;
+        map[row.contract_id] = total - inventario;
+      });
+      setCapexEstByContract(map);
+    };
+    loadCapexEst();
+  }, []);
 
   const handleComiteGPChange = async (contractId: string, value: string) => {
     const { error } = await supabase
@@ -692,6 +711,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               style={getColStyle("venta_estimada")}
             />
             <TableHead className="font-semibold text-center" style={getColStyle("capex")}>CAPEX</TableHead>
+            <TableHead className="font-semibold text-center" style={getColStyle("capex_est")}>CAPEX Est.</TableHead>
             <SortableTableHead
               label={<div className="leading-tight">Costo<br/>Arriendo</div>}
               sortKey="costo_arriendo"
@@ -1103,6 +1123,17 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           </span>
                         )}
                       </div>
+                    );
+                  })()}
+                </TableCell>
+                <TableCell className="text-center" style={getColStyle("capex_est")}>
+                  {(() => {
+                    const capexEst = capexEstByContract[contract.id];
+                    if (!capexEst || capexEst <= 0) return <span className="text-muted-foreground">-</span>;
+                    return (
+                      <span className="font-medium text-xs" title="Inversión estimada del Business Case Financiero, sin inventario">
+                        {capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$
+                      </span>
                     );
                   })()}
                 </TableCell>

@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
 import { computeBC, type BCInputs, type BCResult } from "@/lib/businessCase/model";
 import { fmtMM } from "@/lib/businessCase/format";
+import { buildResumenEjecutivoRows, buildPnlRows } from "@/lib/businessCase/reportRows";
 import { buildCapexPPTData } from "@/components/budget/CapexPPTExport";
-import { generateInformeDirectorioPPT, type ContractSlideData, type ContractSlideImage } from "@/components/reports/InformeDirectorioPPT";
-import { DatosRegionA, DatosRegionB, ResumenBusinessCase, captureSnapshot } from "@/components/reports/BusinessCaseSnapshots";
+import { generateInformeDirectorioPPT, type ContractSlideData } from "@/components/reports/InformeDirectorioPPT";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Download, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+
+const MAROON = "#C0003F";
+const MAROON_LIGHT = "#FBE4EA";
+const GRAY_HIGHLIGHT = "#D9D9D9";
 
 interface NoticeRange {
   start_month: number;
@@ -33,15 +37,6 @@ interface ContractEligible {
 }
 
 const COMITE_GP_STATUS = "En Revisión";
-
-function loadImageDims(dataUrl: string): Promise<{ w: number; h: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
 
 /** "con salida durante el año X", o null si no aplica una ventana de salida real. */
 function deriveSalidaAnio(c: ContractEligible): number | null {
@@ -72,23 +67,73 @@ function deriveSalidaAnio(c: ContractEligible): number | null {
 function buildBullets(c: ContractEligible): string[] {
   if (!c.result) return [];
   const bullets: string[] = [];
-  bullets.push(`CAPEX: ${fmtMM(c.result.totalCapex, 0)} MM$`);
+  bullets.push(`CAPEX ${fmtMM(c.result.totalCapex, 0)} mm$`);
   const ventasProyectadas = (c.result.ingresos[4] + c.result.ingresos[5]) / 2;
-  bullets.push(`Ventas Proyectadas: ${fmtMM(ventasProyectadas, 0)} MM$`);
+  bullets.push(`Ventas Proyectadas: ${fmtMM(ventasProyectadas, 0)} mm$`);
+  const anio = deriveSalidaAnio(c);
   if (c.durationMonths) {
     const years = Math.round(c.durationMonths / 12);
-    bullets.push(`Contrato ${years} Año${years === 1 ? "" : "s"}`);
-  }
-  const anio = deriveSalidaAnio(c);
-  if (anio !== null) {
-    bullets.push(`Con salida durante el año ${anio}`);
+    bullets.push(`Contrato ${years} Año${years === 1 ? "" : "s"}${anio !== null ? `, con salida durante el año ${anio}` : ""}`);
   }
   return bullets;
 }
 
+// Mismo separador ("→") que usa la plantilla de referencia (PPT Directorio.pptx).
 function buildSubtitle(name: string, inputs: BCInputs | null): string {
   const isExpress = inputs?.formato === "Express";
-  return `Nuevo Local ${name}${isExpress ? " - Formato Express" : ""}`;
+  return `Nuevo Local ${name}${isExpress ? " → Formato Express" : ""}`;
+}
+
+function InfoTablePreview({ inputs, result }: { inputs: BCInputs; result: BCResult }) {
+  const rows = buildResumenEjecutivoRows(inputs, result);
+  return (
+    <table className="text-[11px] border-collapse w-full max-w-xs">
+      <thead>
+        <tr><th colSpan={3} className="text-left text-white px-2 py-1" style={{ background: MAROON }}>Resumen Ejecutivo NUEVO LOCAL</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i} style={{ background: r.highlight ? MAROON_LIGHT : undefined, borderTop: r.divider ? `2px solid ${MAROON}` : "1px solid #e5e5e5" }}>
+            <td className="px-2 py-0.5">{r.label}</td>
+            <td className="px-2 py-0.5 text-muted-foreground">{r.unit}</td>
+            <td className="px-2 py-0.5 text-right font-medium">{r.value}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PnlTablePreview({ inputs, result }: { inputs: BCInputs; result: BCResult }) {
+  const rows = buildPnlRows(inputs, result);
+  const startYear = inputs.inicio ? new Date(inputs.inicio).getFullYear() : new Date().getFullYear();
+  return (
+    <table className="text-[11px] border-collapse w-full">
+      <thead>
+        <tr>
+          <th className="text-left text-white px-2 py-1" style={{ background: MAROON }}>Año</th>
+          {[1, 2, 3, 4, 5].map((n, i) => (
+            <th key={n} className="text-white px-2 py-1 text-center" style={{ background: MAROON }}>
+              {n}<br /><span className="font-normal text-[10px]">{startYear + i}</span>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => {
+          if (!r.label) return <tr key={i}><td colSpan={6} className="h-2" /></tr>;
+          const bg = r.maroonHighlight ? MAROON : r.grayHighlight ? GRAY_HIGHLIGHT : undefined;
+          const color = r.maroonHighlight ? "white" : undefined;
+          return (
+            <tr key={i} style={{ background: bg, color, fontWeight: r.bold ? 600 : 400 }}>
+              <td className="px-2 py-0.5">{r.label}</td>
+              {r.values.map((v, vi) => <td key={vi} className="px-2 py-0.5 text-right">{vi === 0 && r.col0 ? r.col0 : v}</td>)}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
 }
 
 export function InformeDirectorioReport() {
@@ -99,7 +144,6 @@ export function InformeDirectorioReport() {
   const [generating, setGenerating] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const refsMap = useRef<Map<string, { a: HTMLDivElement | null; b: HTMLDivElement | null; c: HTMLDivElement | null }>>(new Map());
 
   const year = new Date().getFullYear().toString();
 
@@ -220,32 +264,13 @@ export function InformeDirectorioReport() {
       toast.info("Generando Informe Directorio...");
       const capexData = await buildCapexPPTData(year, ufValue || 0);
 
-      const contractSlides: ContractSlideData[] = [];
-      for (const c of selectedContracts) {
-        const refs = refsMap.current.get(c.id);
-        const [aDataUrl, bcDataUrl, bDataUrl] = await Promise.all([
-          captureSnapshot(refs?.a ?? null),
-          captureSnapshot(refs?.b ?? null),
-          captureSnapshot(refs?.c ?? null),
-        ]);
-        const toImg = async (dataUrl: string | null): Promise<ContractSlideImage | null> => {
-          if (!dataUrl) return null;
-          try {
-            const dims = await loadImageDims(dataUrl);
-            return { dataUrl, w: dims.w, h: dims.h };
-          } catch {
-            return null;
-          }
-        };
-        const [imgA, imgBC, imgB] = await Promise.all([toImg(aDataUrl), toImg(bcDataUrl), toImg(bDataUrl)]);
-
-        contractSlides.push({
-          contractName: c.name,
-          subtitle: buildSubtitle(c.name, c.inputs),
-          bullets: buildBullets(c),
-          images: [imgA, imgBC, imgB],
-        });
-      }
+      const contractSlides: ContractSlideData[] = selectedContracts.map((c) => ({
+        contractName: c.name,
+        subtitle: buildSubtitle(c.name, c.inputs),
+        bullets: buildBullets(c),
+        inputs: c.inputs!,
+        result: c.result!,
+      }));
 
       await generateInformeDirectorioPPT({ year, capexData, contractSlides });
       toast.success("Informe Directorio descargado");
@@ -311,12 +336,10 @@ export function InformeDirectorioReport() {
       ) : (
         <div className="space-y-3">
           {withBC.map((c) => {
-            if (!refsMap.current.has(c.id)) refsMap.current.set(c.id, { a: null, b: null, c: null });
-            const refs = refsMap.current.get(c.id)!;
             const isExpanded = expandedIds.has(c.id);
             const isSelected = selectedIds.has(c.id);
             return (
-              <Card key={c.id} className="p-0 overflow-hidden relative">
+              <Card key={c.id} className="p-0 overflow-hidden">
                 <div
                   className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => toggleExpanded(c.id)}
@@ -329,27 +352,25 @@ export function InformeDirectorioReport() {
                   {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
                   <h4 className="font-semibold">{c.name}</h4>
                 </div>
-                {/* El contenido queda siempre montado (solo movido fuera de pantalla
-                    cuando está colapsado, nunca con display:none) para que las 3
-                    imágenes del Business Case se puedan capturar con html-to-image
-                    aunque la tarjeta esté colapsada al momento de generar el PPT. */}
-                <div
-                  className="px-4 pb-4 space-y-3"
-                  style={isExpanded ? undefined : { position: "absolute", left: -99999, top: 0, visibility: "hidden" }}
-                >
-                  <p className="text-sm text-muted-foreground italic">{buildSubtitle(c.name, c.inputs)}</p>
-                  <div className="flex flex-wrap gap-4 overflow-x-auto">
-                    <ResumenBusinessCase ref={(el) => (refs.b = el)} result={c.result!} />
-                    <DatosRegionA ref={(el) => (refs.a = el)} inputs={c.inputs!} result={c.result!} />
-                    <DatosRegionB ref={(el) => (refs.c = el)} inputs={c.inputs!} result={c.result!} />
-                    <div className="border rounded p-3 bg-muted/30 min-w-[220px]">
+                {isExpanded && (
+                  <div className="px-4 pb-4 space-y-3">
+                    <p className="text-sm text-muted-foreground italic">{buildSubtitle(c.name, c.inputs)}</p>
+                    <div className="border rounded p-3 bg-muted/30">
                       <p className="text-xs font-semibold text-muted-foreground mb-1">Aspectos Clave</p>
                       <ul className="text-sm list-disc list-inside space-y-0.5">
                         {buildBullets(c).map((b) => <li key={b}>{b}</li>)}
                       </ul>
                     </div>
+                    <div className="flex flex-wrap gap-4 overflow-x-auto">
+                      <div className="border rounded overflow-hidden">
+                        <InfoTablePreview inputs={c.inputs!} result={c.result!} />
+                      </div>
+                      <div className="border rounded overflow-hidden flex-1 min-w-[500px]">
+                        <PnlTablePreview inputs={c.inputs!} result={c.result!} />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </Card>
             );
           })}
