@@ -39,6 +39,7 @@ import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { buildBCSeed } from "@/lib/businessCase/buildSeed";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
@@ -938,38 +939,7 @@ const ContractDetail = () => {
                 onOpenChange={setBusinessCaseFinOpen}
                 contractId={contract.id}
                 canEdit={isAdmin}
-                seed={(() => {
-                  const empresa = contract.contract_companies?.[0]?.companies?.name ?? "";
-                  const tipo = /agro/i.test(empresa) ? "Agroplanet" : /auto/i.test(empresa) ? "Autoplanet" : undefined;
-                  const superficie = contract.superficie_edificada_local ?? null;
-                  // El canon puede estar guardado como monto total (UF) o ya como UF/m²
-                  // (flag initial_rent_is_uf_m2 / regime_rent_is_uf_m2, ver EditContract.tsx).
-                  // Dividir de nuevo por superficie cuando ya viene en UF/m² lo reducía a un
-                  // valor artificialmente diminuto (ej. Arica: 0,300 UF/m² → 0,00075).
-                  const rentField: "initial_rent" | "regime_rent" = displayVersion?.initial_rent ? "initial_rent" : "regime_rent";
-                  const canonIsUfM2 = rentField === "initial_rent"
-                    ? !!(displayVersion as any).initial_rent_is_uf_m2
-                    : !!(displayVersion as any)?.regime_rent_is_uf_m2;
-                  const canonUf = displayVersion?.initial_rent || displayVersion?.regime_rent || null;
-                  const ufM2 = canonUf == null ? null : canonIsUfM2 ? canonUf : (superficie ? +(canonUf / superficie).toFixed(4) : null);
-                  return {
-                    nombre: contract.name,
-                    direccion: address ? `${address.street} ${address.number}`.trim() : "",
-                    comuna: address?.commune ?? "",
-                    tipo,
-                    superficie,
-                    ufM2,
-                    gastoComunUf: displayVersion?.gastos_comunes_fixed_admin_uf ?? null,
-                    durContratoAnios: displayVersion?.duration_months ? Math.round(displayVersion.duration_months / 12) : null,
-                    inicio: displayVersion?.effective_date ?? null,
-                    ufBase: ufValue > 0 ? ufValue : undefined,
-                    // Metadatos de sincronización bidireccional (ver BCSeed en model.ts)
-                    contractVersionId: displayVersion?.id,
-                    rentField,
-                    rentIsUfM2: canonIsUfM2,
-                    gastoComunSyncable: (displayVersion as any)?.gastos_comunes_methodology === "uf_m2",
-                  };
-                })()}
+                seed={buildBCSeed({ contract, version: displayVersion as any, address, ufValue })}
               />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               <Button

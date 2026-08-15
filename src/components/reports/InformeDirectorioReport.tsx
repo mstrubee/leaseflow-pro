@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
-import { computeBC, type BCInputs, type BCResult } from "@/lib/businessCase/model";
+import { computeBC, type BCInputs, type BCResult, type BCSeed } from "@/lib/businessCase/model";
+import { buildBCSeed } from "@/lib/businessCase/buildSeed";
 import { fmtMM } from "@/lib/businessCase/format";
 import { buildResumenEjecutivoRows, buildPnlRows } from "@/lib/businessCase/reportRows";
 import { buildCapexPPTData } from "@/components/budget/CapexPPTExport";
 import { generateInformeDirectorioPPT, type ContractSlideData } from "@/components/reports/InformeDirectorioPPT";
+import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
+import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Download, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink } from "lucide-react";
 
 const MAROON = "#C0003F";
 const MAROON_LIGHT = "#FBE4EA";
@@ -29,6 +33,7 @@ interface ContractEligible {
   hasBusinessCase: boolean;
   inputs: BCInputs | null;
   result: BCResult | null;
+  seed: BCSeed;
   durationMonths: number | null;
   noticeType: string | null;
   noticeValue: string | null;
@@ -137,100 +142,114 @@ function PnlTablePreview({ inputs, result }: { inputs: BCInputs; result: BCResul
 }
 
 export function InformeDirectorioReport() {
+  const { isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
   const { config, loading: cfgLoading } = useBusinessCaseAdminConfig();
+  const { navigateToContractFromReports } = useReportsNavigation();
   const [contracts, setContracts] = useState<ContractEligible[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bcDialogContractId, setBcDialogContractId] = useState<string | null>(null);
 
   const year = new Date().getFullYear().toString();
 
+  const loadContracts = async () => {
+    setLoading(true);
+    try {
+      const { data: contractRows, error } = await supabase
+        .from("contracts")
+        .select("id, name, superficie_edificada_local, contract_companies(companies(name)), contract_addresses(street, number, commune)")
+        .eq("status", "en_negociacion")
+        .eq("comite_gp_status", COMITE_GP_STATUS)
+        .is("deleted_at", null);
+      if (error) throw error;
+
+      const ids = (contractRows || []).map((c) => c.id);
+      if (ids.length === 0) {
+        setContracts([]);
+        return;
+      }
+
+      const { data: bcRows } = await supabase
+        .from("contract_business_cases")
+        .select("contract_id, inputs")
+        .in("contract_id", ids);
+      const bcByContract = new Map<string, BCInputs>();
+      (bcRows || []).forEach((r) => {
+        if (r.inputs) bcByContract.set(r.contract_id, r.inputs as unknown as BCInputs);
+      });
+
+      const { data: versionRows } = await supabase
+        .from("contract_versions")
+        .select("id, contract_id, duration_months, notice_type, notice_value, effective_date, initial_rent, regime_rent, initial_rent_is_uf_m2, regime_rent_is_uf_m2, gastos_comunes_fixed_admin_uf, gastos_comunes_methodology")
+        .in("contract_id", ids)
+        .eq("is_current", true);
+      const versionByContract = new Map<string, typeof versionRows[number]>();
+      (versionRows || []).forEach((v) => versionByContract.set(v.contract_id, v));
+
+      const rangosVersionIds = (versionRows || [])
+        .filter((v) => v.notice_type === "rangos")
+        .map((v) => v.id);
+      const rangesByVersion = new Map<string, NoticeRange[]>();
+      if (rangosVersionIds.length > 0) {
+        const { data: rangeRows } = await supabase
+          .from("notice_ranges")
+          .select("version_id, start_month, end_month")
+          .in("version_id", rangosVersionIds);
+        (rangeRows || []).forEach((r) => {
+          const existing = rangesByVersion.get(r.version_id) || [];
+          existing.push({ start_month: r.start_month, end_month: r.end_month });
+          rangesByVersion.set(r.version_id, existing);
+        });
+      }
+
+      const result: ContractEligible[] = (contractRows || []).map((c) => {
+        const inputs = bcByContract.get(c.id) || null;
+        const version = versionByContract.get(c.id);
+        const computed = inputs ? computeBC(inputs, config) : null;
+        const seed = buildBCSeed({
+          contract: c,
+          version: version as any,
+          address: c.contract_addresses?.[0] || null,
+          ufValue,
+        });
+        return {
+          id: c.id,
+          name: c.name,
+          hasBusinessCase: !!inputs,
+          inputs,
+          result: computed,
+          seed,
+          durationMonths: version?.duration_months ?? null,
+          noticeType: version?.notice_type ?? null,
+          noticeValue: version?.notice_value ?? null,
+          effectiveDate: version?.effective_date ?? null,
+          noticeRanges: version ? rangesByVersion.get(version.id) || [] : [],
+        };
+      });
+      setContracts(result);
+      setSelectedIds(new Set(result.filter((c) => c.hasBusinessCase).map((c) => c.id)));
+    } catch (err) {
+      console.error("Error cargando contratos para Informe Directorio:", err);
+      toast.error("Error al cargar contratos en revisión");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (cfgLoading) return;
-    (async () => {
-      setLoading(true);
-      try {
-        const { data: contractRows, error } = await supabase
-          .from("contracts")
-          .select("id, name")
-          .eq("status", "en_negociacion")
-          .eq("comite_gp_status", COMITE_GP_STATUS)
-          .is("deleted_at", null);
-        if (error) throw error;
-
-        const ids = (contractRows || []).map((c) => c.id);
-        if (ids.length === 0) {
-          setContracts([]);
-          return;
-        }
-
-        const { data: bcRows } = await supabase
-          .from("contract_business_cases")
-          .select("contract_id, inputs")
-          .in("contract_id", ids);
-        const bcByContract = new Map<string, BCInputs>();
-        (bcRows || []).forEach((r) => {
-          if (r.inputs) bcByContract.set(r.contract_id, r.inputs as unknown as BCInputs);
-        });
-
-        const { data: versionRows } = await supabase
-          .from("contract_versions")
-          .select("id, contract_id, duration_months, notice_type, notice_value, effective_date")
-          .in("contract_id", ids)
-          .eq("is_current", true);
-        const versionByContract = new Map<string, typeof versionRows[number]>();
-        (versionRows || []).forEach((v) => versionByContract.set(v.contract_id, v));
-
-        const rangosVersionIds = (versionRows || [])
-          .filter((v) => v.notice_type === "rangos")
-          .map((v) => v.id);
-        const rangesByVersion = new Map<string, NoticeRange[]>();
-        if (rangosVersionIds.length > 0) {
-          const { data: rangeRows } = await supabase
-            .from("notice_ranges")
-            .select("version_id, start_month, end_month")
-            .in("version_id", rangosVersionIds);
-          (rangeRows || []).forEach((r) => {
-            const existing = rangesByVersion.get(r.version_id) || [];
-            existing.push({ start_month: r.start_month, end_month: r.end_month });
-            rangesByVersion.set(r.version_id, existing);
-          });
-        }
-
-        const result: ContractEligible[] = (contractRows || []).map((c) => {
-          const inputs = bcByContract.get(c.id) || null;
-          const version = versionByContract.get(c.id);
-          const computed = inputs ? computeBC(inputs, config) : null;
-          return {
-            id: c.id,
-            name: c.name,
-            hasBusinessCase: !!inputs,
-            inputs,
-            result: computed,
-            durationMonths: version?.duration_months ?? null,
-            noticeType: version?.notice_type ?? null,
-            noticeValue: version?.notice_value ?? null,
-            effectiveDate: version?.effective_date ?? null,
-            noticeRanges: version ? rangesByVersion.get(version.id) || [] : [],
-          };
-        });
-        setContracts(result);
-        setSelectedIds(new Set(result.filter((c) => c.hasBusinessCase).map((c) => c.id)));
-      } catch (err) {
-        console.error("Error cargando contratos para Informe Directorio:", err);
-        toast.error("Error al cargar contratos en revisión");
-      } finally {
-        setLoading(false);
-      }
-    })();
+    loadContracts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfgLoading, config]);
 
   const withBC = useMemo(() => contracts.filter((c) => c.hasBusinessCase && c.result), [contracts]);
   const withoutBC = useMemo(() => contracts.filter((c) => !c.hasBusinessCase), [contracts]);
   const selectedContracts = useMemo(() => withBC.filter((c) => selectedIds.has(c.id)), [withBC, selectedIds]);
   const allSelected = withBC.length > 0 && selectedIds.size === withBC.length;
+  const bcDialogContract = contracts.find((c) => c.id === bcDialogContractId) || null;
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -252,6 +271,15 @@ export function InformeDirectorioReport() {
 
   const toggleSelectAll = () => {
     setSelectedIds(allSelected ? new Set() : new Set(withBC.map((c) => c.id)));
+  };
+
+  const handleBcDialogChange = (open: boolean) => {
+    if (!open) {
+      const closedId = bcDialogContractId;
+      setBcDialogContractId(null);
+      // Refresca al cerrar: puede haberse creado/editado el Business Case.
+      if (closedId) loadContracts();
+    }
   };
 
   const handleDownload = async () => {
@@ -294,6 +322,8 @@ export function InformeDirectorioReport() {
     );
   }
 
+  const allContracts = [...withBC, ...withoutBC];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -317,64 +347,89 @@ export function InformeDirectorioReport() {
         </div>
       </div>
 
-      {withoutBC.length > 0 && (
-        <Card className="p-3 bg-amber-50 border-amber-200">
-          <div className="flex items-start gap-2 text-sm text-amber-800">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div>
-              <span className="font-medium">Sin Business Case cargado (no incluidos en el PPT):</span>{" "}
-              {withoutBC.map((c) => c.name).join(", ")}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {withBC.length === 0 ? (
+      {allContracts.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">
-          No hay contratos con Business Case listos para incluir en el Informe Directorio.
+          No hay contratos en negociación con Comité GP "En Revisión".
         </p>
       ) : (
         <div className="space-y-3">
-          {withBC.map((c) => {
+          {allContracts.map((c) => {
             const isExpanded = expandedIds.has(c.id);
             const isSelected = selectedIds.has(c.id);
+            const bcButtonLabel = !c.hasBusinessCase ? "Crear Business Case" : isAdmin ? "Editar Business Case" : "Ver Business Case";
             return (
               <Card key={c.id} className="p-0 overflow-hidden">
                 <div
                   className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => toggleExpanded(c.id)}
                 >
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={(checked) => toggleSelected(c.id, checked === true)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  {c.hasBusinessCase ? (
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={(checked) => toggleSelected(c.id, checked === true)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="w-4" />
+                  )}
                   {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-                  <h4 className="font-semibold">{c.name}</h4>
+                  <h4 className="font-semibold flex-1">{c.name}</h4>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); setBcDialogContractId(c.id); }}
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" /> {bcButtonLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); navigateToContractFromReports(c.id, "directorio"); }}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Ir al Contrato
+                  </Button>
                 </div>
                 {isExpanded && (
                   <div className="px-4 pb-4 space-y-3">
-                    <p className="text-sm text-muted-foreground italic">{buildSubtitle(c.name, c.inputs)}</p>
-                    <div className="border rounded p-3 bg-muted/30">
-                      <p className="text-xs font-semibold text-muted-foreground mb-1">Aspectos Clave</p>
-                      <ul className="text-sm list-disc list-inside space-y-0.5">
-                        {buildBullets(c).map((b) => <li key={b}>{b}</li>)}
-                      </ul>
-                    </div>
-                    <div className="flex flex-wrap gap-4 overflow-x-auto">
-                      <div className="border rounded overflow-hidden">
-                        <InfoTablePreview inputs={c.inputs!} result={c.result!} />
-                      </div>
-                      <div className="border rounded overflow-hidden flex-1 min-w-[500px]">
-                        <PnlTablePreview inputs={c.inputs!} result={c.result!} />
-                      </div>
-                    </div>
+                    {!c.hasBusinessCase ? (
+                      <p className="text-sm text-muted-foreground italic">Sin Business Case</p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-muted-foreground italic">{buildSubtitle(c.name, c.inputs)}</p>
+                        <div className="border rounded p-3 bg-muted/30">
+                          <p className="text-xs font-semibold text-muted-foreground mb-1">Aspectos Clave</p>
+                          <ul className="text-sm list-disc list-inside space-y-0.5">
+                            {buildBullets(c).map((b) => <li key={b}>{b}</li>)}
+                          </ul>
+                        </div>
+                        <div className="flex flex-wrap gap-4 overflow-x-auto">
+                          <div className="border rounded overflow-hidden">
+                            <InfoTablePreview inputs={c.inputs!} result={c.result!} />
+                          </div>
+                          <div className="border rounded overflow-hidden flex-1 min-w-[500px]">
+                            <PnlTablePreview inputs={c.inputs!} result={c.result!} />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </Card>
             );
           })}
         </div>
+      )}
+
+      {bcDialogContract && (
+        <BusinessCaseFinanciero
+          open={!!bcDialogContractId}
+          onOpenChange={handleBcDialogChange}
+          contractId={bcDialogContract.id}
+          canEdit={isAdmin}
+          seed={bcDialogContract.seed}
+        />
       )}
     </div>
   );
