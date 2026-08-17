@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Check, FileText, Sheet } from "lucide-react";
+import { Loader2, Check, FileText, Sheet, MapPin } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
+import { listSavedIsochrones, fetchSalesProjection } from "@/lib/geochile/client";
 import { toast } from "sonner";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -37,6 +39,18 @@ function addMonthsIso(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Compara nombres ignorando mayúsculas, tildes y sufijos entre paréntesis
+// (ej. "Fontova (express)" ~ "Fontova"), para matchear el BC contra la
+// isócrona de Geochile Compass del mismo local sin exigir nombres idénticos.
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
 function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
   return (
     <Input type="number" step={step} value={Number.isFinite(value) ? value : 0}
@@ -49,6 +63,36 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
   const { config, inputs, result, loading, saving, update, updateArr, updateVentaConCrecimiento, setFormato, setInvOverride } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
+
+  const [syncingGeo, setSyncingGeo] = useState(false);
+
+  const handleSyncGeoplanet = async () => {
+    if (!inputs?.nombre?.trim()) {
+      toast.error("Ingresá el nombre del proyecto antes de sincronizar");
+      return;
+    }
+    setSyncingGeo(true);
+    try {
+      const target = normalizeName(inputs.nombre);
+      const isochrones = await listSavedIsochrones();
+      const matches = isochrones.filter((iso) => normalizeName(iso.name) === target);
+      if (matches.length === 0) {
+        toast.error(`No se encontró ninguna isócrona en Geochile Compass llamada "${inputs.nombre}"`);
+        return;
+      }
+      if (matches.length > 1) {
+        toast.error(`Hay ${matches.length} isócronas llamadas "${inputs.nombre}" en Geochile Compass — asigná una específica desde el Informe Directorio`);
+        return;
+      }
+      const projection = await fetchSalesProjection(matches[0].id);
+      update("ventaMes", projection.ventaMes);
+      toast.success(`Ventas sincronizadas desde "${matches[0].name}" (Geochile Compass)`);
+    } catch (err: any) {
+      toast.error(err.message || "No se pudo sincronizar con Geochile Compass");
+    } finally {
+      setSyncingGeo(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -308,7 +352,22 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
               </Card>
 
               {/* Ventas + Crecimiento UF en una sola sección, alineadas por año y en tiempo real */}
-              <Card title="Ventas y Crecimiento UF anual" sub="Editar cualquiera recalcula el modelo en tiempo real">
+              <Card
+                title="Ventas y Crecimiento UF anual"
+                sub="Editar cualquiera recalcula el modelo en tiempo real"
+                action={!ro && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1.5 text-xs shrink-0"
+                    disabled={syncingGeo}
+                    onClick={handleSyncGeoplanet}
+                  >
+                    {syncingGeo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
+                    Sincronizar con GeoPlanet
+                  </Button>
+                )}
+              >
                 <div className="overflow-x-auto">
                   <table className="text-xs">
                     <thead><tr className="text-muted-foreground">
@@ -385,10 +444,13 @@ function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: 
     </div>
   );
 }
-function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+function Card({ title, sub, action, children }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
-      <div className="mb-2"><h3 className="text-sm font-semibold">{title}</h3>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</div>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div><h3 className="text-sm font-semibold">{title}</h3>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</div>
+        {action}
+      </div>
       {children}
     </div>
   );
