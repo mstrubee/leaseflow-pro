@@ -13,11 +13,12 @@ import { generateInformeDirectorioPPT, type ContractSlideData } from "@/componen
 import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
+import { AssignIsochroneDialog, type AssignedIsochrone } from "@/components/reports/AssignIsochroneDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink } from "lucide-react";
+import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink, MapPin } from "lucide-react";
 
 const MAROON = "#C0003F";
 const MAROON_LIGHT = "#FBE4EA";
@@ -41,6 +42,7 @@ interface ContractEligible {
   noticeValue: string | null;
   effectiveDate: string | null;
   noticeRanges: NoticeRange[];
+  isochroneLink: { name: string; folderName: string | null } | null;
 }
 
 const COMITE_GP_STATUS = "En Revisión";
@@ -154,6 +156,7 @@ export function InformeDirectorioReport() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bcDialogContractId, setBcDialogContractId] = useState<string | null>(null);
+  const [isoDialogContractId, setIsoDialogContractId] = useState<string | null>(null);
 
   const year = new Date().getFullYear().toString();
 
@@ -190,6 +193,13 @@ export function InformeDirectorioReport() {
         .eq("is_current", true);
       const versionByContract = new Map<string, typeof versionRows[number]>();
       (versionRows || []).forEach((v) => versionByContract.set(v.contract_id, v));
+
+      const { data: linkRows } = await supabase
+        .from("contract_isochrone_links" as any)
+        .select("contract_id, isochrone_name, folder_name")
+        .in("contract_id", ids);
+      const linkByContract = new Map<string, { name: string; folderName: string | null }>();
+      (linkRows || []).forEach((r: any) => linkByContract.set(r.contract_id, { name: r.isochrone_name, folderName: r.folder_name }));
 
       const rangosVersionIds = (versionRows || [])
         .filter((v) => v.notice_type === "rangos")
@@ -230,6 +240,7 @@ export function InformeDirectorioReport() {
           noticeValue: version?.notice_value ?? null,
           effectiveDate: version?.effective_date ?? null,
           noticeRanges: version ? rangesByVersion.get(version.id) || [] : [],
+          isochroneLink: linkByContract.get(c.id) || null,
         };
       });
       setContracts(result);
@@ -253,6 +264,7 @@ export function InformeDirectorioReport() {
   const selectedContracts = useMemo(() => withBC.filter((c) => selectedIds.has(c.id)), [withBC, selectedIds]);
   const allSelected = withBC.length > 0 && selectedIds.size === withBC.length;
   const bcDialogContract = contracts.find((c) => c.id === bcDialogContractId) || null;
+  const isoDialogContract = contracts.find((c) => c.id === isoDialogContractId) || null;
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -283,6 +295,41 @@ export function InformeDirectorioReport() {
       // Refresca al cerrar: puede haberse creado/editado el Business Case.
       if (closedId) loadContracts();
     }
+  };
+
+  const handleAssignedIsochrone = (link: AssignedIsochrone) => {
+    setContracts((prev) =>
+      prev.map((c) =>
+        c.id === link.contractId
+          ? { ...c, isochroneLink: { name: link.isochroneName, folderName: link.folderName } }
+          : c,
+      ),
+    );
+  };
+
+  const handleApplyProjectionToBC = async (contractId: string, ventaMes: number[]) => {
+    const contract = contracts.find((c) => c.id === contractId);
+    if (!contract?.inputs) throw new Error("Este contrato no tiene Business Case cargado");
+    const mergedInputs: BCInputs = { ...contract.inputs, ventaMes };
+    const computed = computeBC(mergedInputs, config);
+    const { data: u } = await supabase.auth.getUser();
+    const { error } = await supabase.from("contract_business_cases").upsert(
+      {
+        contract_id: contractId,
+        inputs: mergedInputs as unknown as Record<string, unknown>,
+        computed: computed as unknown as Record<string, unknown>,
+        created_by: u?.user?.id ?? null,
+      } as never,
+      { onConflict: "contract_id" },
+    );
+    if (error) throw error;
+    if (ventaMes.length > 0) {
+      await supabase.from("contracts").update({
+        venta_estimada: Math.min(...ventaMes) * 1_000_000,
+        venta_estimada_max: Math.max(...ventaMes) * 1_000_000,
+      } as never).eq("id", contractId);
+    }
+    loadContracts();
   };
 
   const handleDownload = async () => {
@@ -390,6 +437,14 @@ export function InformeDirectorioReport() {
                     variant="outline"
                     size="sm"
                     className="gap-1.5 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); setIsoDialogContractId(c.id); }}
+                  >
+                    <MapPin className="h-3.5 w-3.5" /> {c.isochroneLink ? "Cambiar Isócrona" : "Asignar Isócrona"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 shrink-0"
                     onClick={(e) => { e.stopPropagation(); navigateToContractFromReports(c.id, "directorio"); }}
                   >
                     <ExternalLink className="h-3.5 w-3.5" /> Ir al Contrato
@@ -397,6 +452,12 @@ export function InformeDirectorioReport() {
                 </div>
                 {isExpanded && (
                   <div className="px-4 pb-4 space-y-3">
+                    {c.isochroneLink && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <MapPin className="h-3 w-3" /> Isócrona asignada: {c.isochroneLink.name}
+                        {c.isochroneLink.folderName ? ` (${c.isochroneLink.folderName})` : ""}
+                      </p>
+                    )}
                     {!c.hasBusinessCase ? (
                       <p className="text-sm text-muted-foreground italic">Sin Business Case</p>
                     ) : (
@@ -433,6 +494,18 @@ export function InformeDirectorioReport() {
           contractId={bcDialogContract.id}
           canEdit={isAdmin}
           seed={bcDialogContract.seed}
+        />
+      )}
+
+      {isoDialogContract && (
+        <AssignIsochroneDialog
+          open={!!isoDialogContractId}
+          onOpenChange={(open) => setIsoDialogContractId(open ? isoDialogContractId : null)}
+          contractId={isoDialogContract.id}
+          contractName={isoDialogContract.name}
+          hasBusinessCase={isoDialogContract.hasBusinessCase}
+          onAssigned={handleAssignedIsochrone}
+          onApplyToBusinessCase={handleApplyProjectionToBC}
         />
       )}
     </div>

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Eye, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Eye, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, ShieldCheck, UserCog, Link2 } from "lucide-react";
 import { RoleManager } from "@/components/admin/RoleManager";
 import { UserFormDialog, UserFormData } from "@/components/admin/UserFormDialog";
 import { PermissionTreeEditor, PermissionsMap, getAllResources } from "@/components/admin/PermissionTreeEditor";
@@ -37,6 +37,7 @@ import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager"
 import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
 import { DataExportDialog } from "@/components/admin/DataExportDialog";
 import { TeamUsersAdminManager } from "@/components/admin/TeamUsersAdminManager";
+import { GeochileIntegrationManager } from "@/components/admin/GeochileIntegrationManager";
 interface Profile {
   id: string;
   email: string;
@@ -894,6 +895,22 @@ const AdminPanel = () => {
           icon={<Columns3 className="h-5 w-5 text-blue-600" />}
         >
           <BusinessCaseAdminConfig />
+        </CollapsibleCard>
+
+        {/* ── Grupo: Integraciones ── */}
+        <CollapsibleCard
+          title="Integraciones"
+          description="Conexión con sistemas externos"
+          icon={<Link2 className="h-5 w-5 text-cyan-600" />}
+        >
+          <CollapsibleCard
+            title="Geochile Compass"
+            description="Isócronas y proyecciones de venta para el Informe Directorio"
+            icon={<Link2 className="h-5 w-5 text-cyan-500" />}
+            defaultOpen={false}
+          >
+            <GeochileIntegrationManager />
+          </CollapsibleCard>
         </CollapsibleCard>
 
         {/* ── Grupo: Estados y Categorías ── */}
