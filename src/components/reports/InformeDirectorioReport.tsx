@@ -308,9 +308,18 @@ export function InformeDirectorioReport() {
   };
 
   const handleApplyProjectionToBC = async (contractId: string, ventaMes: number[]) => {
-    const contract = contracts.find((c) => c.id === contractId);
-    if (!contract?.inputs) throw new Error("Este contrato no tiene Business Case cargado");
-    const mergedInputs: BCInputs = { ...contract.inputs, ventaMes };
+    // Se relee el Business Case directo de la DB (no desde el estado en
+    // memoria de esta lista, que puede quedar desactualizado si se editó en
+    // otra pantalla) para no pisar cambios recientes al mergear ventaMes.
+    const { data: bcRow, error: fetchError } = await supabase
+      .from("contract_business_cases")
+      .select("inputs")
+      .eq("contract_id", contractId)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    const currentInputs = bcRow?.inputs as unknown as BCInputs | null;
+    if (!currentInputs) throw new Error("Este contrato no tiene Business Case cargado");
+    const mergedInputs: BCInputs = { ...currentInputs, ventaMes };
     const computed = computeBC(mergedInputs, config);
     const { data: u } = await supabase.auth.getUser();
     const { error } = await supabase.from("contract_business_cases").upsert(

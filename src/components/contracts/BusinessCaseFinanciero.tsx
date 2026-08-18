@@ -51,9 +51,10 @@ function normalizeName(s: string): string {
     .trim();
 }
 
-function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
+function NumCell({ value, onChange, disabled, w = "w-20", step = "any", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
+  const shown = Number.isFinite(value) ? value : 0;
   return (
-    <Input type="number" step={step} value={Number.isFinite(value) ? value : 0}
+    <Input type="number" step={step} value={decimals != null ? shown.toFixed(decimals) : shown}
       onChange={(e) => onChange(parseFloat(e.target.value) || 0)} disabled={disabled}
       className={`h-7 ${w} text-xs text-right px-1`} />
   );
@@ -322,8 +323,8 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
               <Card title="Contrato">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
-                  <Field label="UF / m²"><NumCell value={inputs.ufM2} disabled={ro} w="w-full" onChange={(v) => update("ufM2", v)} /></Field>
-                  <Field label="Gasto común (UF/mes)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" onChange={(v) => update("gastoComunUf", v)} /></Field>
+                  <Field label="UF / m²"><NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></Field>
+                  <Field label="Gasto común (UF/mes)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
                   <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
                   <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
                   <Field label="Inicio"><Input type="date" value={inputs.inicio} disabled={ro} onChange={(e) => update("inicio", e.target.value)} className="h-8 text-sm" /></Field>
@@ -378,7 +379,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <tr>
                         <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Venta (MM/mes)</td>
                         {inputs.ventaMes.map((v, i) => (
-                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} onChange={(val) => updateVentaConCrecimiento(i, val)} /></td>
+                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} step="1" decimals={1} onChange={(val) => updateVentaConCrecimiento(i, val)} /></td>
                         ))}
                       </tr>
                       <tr>
@@ -403,15 +404,15 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                   <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(result.costoVentas[1]))} MM`}>
                     <NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></FieldConv>
                   <FieldConv label="Otros costos dir. %" conv={`A1: $${fmtMM(Math.abs(result.otrosCostos[1]))} MM`}>
-                    <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
+                    <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
                   <FieldConv label="Costos variables %" conv={`A1: $${fmtMM(Math.abs(result.costosVar[1]))} MM`}>
-                    <NumCell value={inputs.costosVar} disabled={ro} w="w-full" onChange={(v) => update("costosVar", v)} /></FieldConv>
+                    <NumCell value={inputs.costosVar} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("costosVar", v)} /></FieldConv>
                   <FieldConv label="Gastos generales %" conv={`A1: $${fmtMM(Math.abs(result.gastosGral[1]))} MM`}>
-                    <NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></FieldConv>
+                    <NumCell value={inputs.gralPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
                   <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(result.tecnologia[1]))} MM`}>
-                    <NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></FieldConv>
+                    <NumCell value={inputs.tecPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
                   <FieldConv label="Ocupación %" conv={`A1: $${fmtMM(Math.abs(result.ocupacion[1]))} MM`}>
-                    <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+                    <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
                   <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM (${result.mesesY1} ${result.mesesY1 === 1 ? "mes" : "meses"})`}>
                     <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
                   <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
