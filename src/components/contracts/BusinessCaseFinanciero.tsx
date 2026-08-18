@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Check, FileText, Sheet, MapPin } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
-import { listSavedIsochrones, fetchSalesProjection } from "@/lib/geochile/client";
+import { listSavedIsochrones, fetchSalesProjection, normalizeIsochroneName } from "@/lib/geochile/client";
 import { toast } from "sonner";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -39,18 +39,6 @@ function addMonthsIso(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Compara nombres ignorando mayúsculas, tildes y sufijos entre paréntesis
-// (ej. "Fontova (express)" ~ "Fontova"), para matchear el BC contra la
-// isócrona de Geochile Compass del mismo local sin exigir nombres idénticos.
-function normalizeName(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\(.*?\)/g, "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .trim();
-}
-
 function NumCell({ value, onChange, disabled, w = "w-20", step = "any", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
   const shown = Number.isFinite(value) ? value : 0;
   return (
@@ -74,9 +62,9 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
     }
     setSyncingGeo(true);
     try {
-      const target = normalizeName(inputs.nombre);
+      const target = normalizeIsochroneName(inputs.nombre);
       const isochrones = await listSavedIsochrones();
-      const matches = isochrones.filter((iso) => normalizeName(iso.name) === target);
+      const matches = isochrones.filter((iso) => normalizeIsochroneName(iso.name) === target);
       if (matches.length === 0) {
         toast.error(`No se encontró ninguna isócrona en Geochile Compass llamada "${inputs.nombre}"`);
         return;

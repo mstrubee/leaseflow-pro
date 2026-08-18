@@ -21,6 +21,7 @@ export interface SavedIsochroneSummary {
   centerLng: number;
   hasProjection: boolean;
   computedAt: string | null;
+  hasSlides: boolean;
 }
 
 export interface ProjectionComparable {
@@ -39,6 +40,33 @@ export interface SalesProjectionExport {
   growthRate: number;
   comparables: ProjectionComparable[];
   diagnosticMsg: string | null;
+}
+
+// Láminas del "Informe directorio" de una isócrona (2 PNG 1920×1080), para
+// insertar como slides propias en el PPT del Informe Directorio de leaseflow
+// (pptxgenjs no puede importar slides de un .pptx ajeno, solo imágenes).
+export interface ReportSlidesExport {
+  savedIsochroneId: string;
+  locationName: string | null;
+  slide1: string;
+  slide2: string | null;
+  generatedAt: string;
+  alreadyConsumed: boolean;
+  consumedAt: string;
+}
+
+// Compara nombres ignorando mayúsculas, tildes y sufijos entre paréntesis
+// (ej. "Fontova (express)" ~ "Fontova"), para matchear un contrato de
+// leaseflow contra la isócrona de Geochile Compass del mismo local sin exigir
+// nombres idénticos. Compartido por "Sincronizar con GeoPlanet" y "Extraer
+// Informe Isócrona".
+export function normalizeIsochroneName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
 }
 
 export async function getGeochileSettings(): Promise<GeochileSettings | null> {
@@ -100,4 +128,8 @@ export function listSavedIsochrones(settings?: GeochileSettings): Promise<SavedI
 
 export function fetchSalesProjection(savedIsochroneId: string, settings?: GeochileSettings): Promise<SalesProjectionExport> {
   return callGeochileFunction<SalesProjectionExport>("export-sales-projection", { body: { savedIsochroneId }, settings });
+}
+
+export function fetchReportSlides(savedIsochroneId: string, settings?: GeochileSettings): Promise<ReportSlidesExport> {
+  return callGeochileFunction<ReportSlidesExport>("export-report-slides", { body: { savedIsochroneId }, settings });
 }

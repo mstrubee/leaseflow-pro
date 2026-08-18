@@ -14,12 +14,29 @@ import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinan
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 import { AssignIsochroneDialog, type AssignedIsochrone } from "@/components/reports/AssignIsochroneDialog";
+import { listSavedIsochrones, fetchReportSlides, normalizeIsochroneName } from "@/lib/geochile/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink, MapPin, Share2, Copy, Check } from "lucide-react";
+import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink, MapPin, Share2, Copy, Check, Image as ImageIcon } from "lucide-react";
 import { shareInformeDirectorio, DEFAULT_SHARE_DAYS } from "@/lib/boardReport/share";
+
+const ISOCHRONE_SLIDES_BUCKET = "isochrone-report-slides";
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 const MAROON = "#C0003F";
 const MAROON_LIGHT = "#FBE4EA";
@@ -44,6 +61,7 @@ interface ContractEligible {
   effectiveDate: string | null;
   noticeRanges: NoticeRange[];
   isochroneLink: { name: string; folderName: string | null } | null;
+  isochroneReport: { isochroneName: string; slide1Path: string; slide2Path: string | null } | null;
 }
 
 const COMITE_GP_STATUS = "En Revisión";
@@ -164,6 +182,7 @@ export function InformeDirectorioReport() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bcDialogContractId, setBcDialogContractId] = useState<string | null>(null);
   const [isoDialogContractId, setIsoDialogContractId] = useState<string | null>(null);
+  const [extractingReportIds, setExtractingReportIds] = useState<Set<string>>(new Set());
 
   const year = new Date().getFullYear().toString();
 
@@ -208,6 +227,15 @@ export function InformeDirectorioReport() {
       const linkByContract = new Map<string, { name: string; folderName: string | null }>();
       (linkRows || []).forEach((r: any) => linkByContract.set(r.contract_id, { name: r.isochrone_name, folderName: r.folder_name }));
 
+      const { data: reportRows } = await supabase
+        .from("contract_isochrone_reports" as any)
+        .select("contract_id, isochrone_name, slide1_path, slide2_path")
+        .in("contract_id", ids);
+      const reportByContract = new Map<string, { isochroneName: string; slide1Path: string; slide2Path: string | null }>();
+      (reportRows || []).forEach((r: any) =>
+        reportByContract.set(r.contract_id, { isochroneName: r.isochrone_name, slide1Path: r.slide1_path, slide2Path: r.slide2_path }),
+      );
+
       const rangosVersionIds = (versionRows || [])
         .filter((v) => v.notice_type === "rangos")
         .map((v) => v.id);
@@ -248,6 +276,7 @@ export function InformeDirectorioReport() {
           effectiveDate: version?.effective_date ?? null,
           noticeRanges: version ? rangesByVersion.get(version.id) || [] : [],
           isochroneLink: linkByContract.get(c.id) || null,
+          isochroneReport: reportByContract.get(c.id) || null,
         };
       });
       setContracts(result);
@@ -314,6 +343,74 @@ export function InformeDirectorioReport() {
     );
   };
 
+  const handleExtractReport = async (contract: ContractEligible) => {
+    if (!user) return;
+    setExtractingReportIds((prev) => new Set(prev).add(contract.id));
+    try {
+      const target = normalizeIsochroneName(contract.name);
+      const isochrones = await listSavedIsochrones();
+      const matches = isochrones.filter((iso) => normalizeIsochroneName(iso.name) === target);
+      if (matches.length === 0) {
+        toast.error(`No se encontró ninguna isócrona en Geochile Compass llamada "${contract.name}"`);
+        return;
+      }
+      if (matches.length > 1) {
+        toast.error(`Hay ${matches.length} isócronas llamadas "${contract.name}" en Geochile Compass — no se puede determinar cuál usar`);
+        return;
+      }
+      const match = matches[0];
+      if (!match.hasSlides) {
+        toast.error(`"${match.name}" no tiene un informe de directorio generado en Geochile Compass todavía`);
+        return;
+      }
+      const slides = await fetchReportSlides(match.id);
+
+      const slide1Path = `${contract.id}/slide1.png`;
+      const { error: upErr1 } = await supabase.storage
+        .from(ISOCHRONE_SLIDES_BUCKET)
+        .upload(slide1Path, await dataUrlToBlob(slides.slide1), { upsert: true, contentType: "image/png" });
+      if (upErr1) throw upErr1;
+
+      let slide2Path: string | null = null;
+      if (slides.slide2) {
+        slide2Path = `${contract.id}/slide2.png`;
+        const { error: upErr2 } = await supabase.storage
+          .from(ISOCHRONE_SLIDES_BUCKET)
+          .upload(slide2Path, await dataUrlToBlob(slides.slide2), { upsert: true, contentType: "image/png" });
+        if (upErr2) throw upErr2;
+      }
+
+      const { error: dbErr } = await supabase.from("contract_isochrone_reports" as any).upsert(
+        {
+          contract_id: contract.id,
+          saved_isochrone_id: match.id,
+          isochrone_name: match.name,
+          slide1_path: slide1Path,
+          slide2_path: slide2Path,
+          extracted_by: user.id,
+          extracted_at: new Date().toISOString(),
+        },
+        { onConflict: "contract_id" },
+      );
+      if (dbErr) throw dbErr;
+
+      toast.success(
+        slides.alreadyConsumed
+          ? `Informe extraído de "${match.name}" (ya lo había traído alguien más antes)`
+          : `Informe extraído de "${match.name}"`,
+      );
+      loadContracts();
+    } catch (err: any) {
+      toast.error(err.message || "Error al extraer el informe de la isócrona");
+    } finally {
+      setExtractingReportIds((prev) => {
+        const next = new Set(prev);
+        next.delete(contract.id);
+        return next;
+      });
+    }
+  };
+
   const handleApplyProjectionToBC = async (contractId: string, ventaMes: number[]) => {
     // Se relee el Business Case directo de la DB (no desde el estado en
     // memoria de esta lista, que puede quedar desactualizado si se editó en
@@ -348,16 +445,45 @@ export function InformeDirectorioReport() {
     loadContracts();
   };
 
+  const loadGeochileSlides = async (c: ContractEligible): Promise<ContractSlideData["geochileSlides"]> => {
+    if (!c.isochroneReport) return undefined;
+    const { data: d1, error: e1 } = await supabase.storage
+      .from(ISOCHRONE_SLIDES_BUCKET)
+      .download(c.isochroneReport.slide1Path);
+    if (e1 || !d1) return undefined;
+    const slide1 = await blobToBase64(d1);
+    let slide2: string | undefined;
+    if (c.isochroneReport.slide2Path) {
+      const { data: d2 } = await supabase.storage.from(ISOCHRONE_SLIDES_BUCKET).download(c.isochroneReport.slide2Path);
+      if (d2) slide2 = await blobToBase64(d2);
+    }
+    return { slide1, slide2 };
+  };
+
   const buildReportParams = async () => {
     const capexData = await buildCapexPPTData(year, ufValue || 0);
-    const contractSlides: ContractSlideData[] = selectedContracts.map((c) => ({
-      contractName: c.name,
-      subtitle: buildSubtitle(c.name, c.inputs),
-      bullets: buildBullets(c),
-      inputs: c.inputs!,
-      result: c.result!,
-    }));
+    const contractSlides: ContractSlideData[] = await Promise.all(
+      selectedContracts.map(async (c) => ({
+        contractName: c.name,
+        subtitle: buildSubtitle(c.name, c.inputs),
+        bullets: buildBullets(c),
+        inputs: c.inputs!,
+        result: c.result!,
+        geochileSlides: await loadGeochileSlides(c),
+      })),
+    );
     return { year, capexData, contractSlides };
+  };
+
+  // El informe extraído es un stage temporal ("hasta que se genere el PPT"):
+  // una vez incluido en una descarga exitosa, se limpia — no queda dando
+  // vueltas indefinidamente ni hay que acordarse de sacarlo a mano.
+  const clearExtractedReports = async (contractIds: string[]) => {
+    const withReport = contracts.filter((c) => contractIds.includes(c.id) && c.isochroneReport);
+    if (withReport.length === 0) return;
+    const paths = withReport.flatMap((c) => [c.isochroneReport!.slide1Path, c.isochroneReport!.slide2Path].filter(Boolean) as string[]);
+    await supabase.storage.from(ISOCHRONE_SLIDES_BUCKET).remove(paths);
+    await supabase.from("contract_isochrone_reports" as any).delete().in("contract_id", withReport.map((c) => c.id));
   };
 
   const handleShare = async () => {
@@ -403,7 +529,10 @@ export function InformeDirectorioReport() {
     setGenerating(true);
     try {
       toast.info("Generando Informe Directorio...");
+      const includedIds = selectedContracts.map((c) => c.id);
       await generateInformeDirectorioPPT(await buildReportParams());
+      await clearExtractedReports(includedIds);
+      loadContracts();
       toast.success("Informe Directorio descargado");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -542,6 +671,16 @@ export function InformeDirectorioReport() {
                     variant="outline"
                     size="sm"
                     className="gap-1.5 shrink-0"
+                    disabled={extractingReportIds.has(c.id)}
+                    onClick={(e) => { e.stopPropagation(); handleExtractReport(c); }}
+                  >
+                    {extractingReportIds.has(c.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                    Extraer Informe Isócrona
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 shrink-0"
                     onClick={(e) => { e.stopPropagation(); navigateToContractFromReports(c.id, "directorio"); }}
                   >
                     <ExternalLink className="h-3.5 w-3.5" /> Ir al Contrato
@@ -553,6 +692,11 @@ export function InformeDirectorioReport() {
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <MapPin className="h-3 w-3" /> Isócrona asignada: {c.isochroneLink.name}
                         {c.isochroneLink.folderName ? ` (${c.isochroneLink.folderName})` : ""}
+                      </p>
+                    )}
+                    {c.isochroneReport && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <ImageIcon className="h-3 w-3" /> Informe territorial extraído de "{c.isochroneReport.isochroneName}" — se incluirá en el PPT
                       </p>
                     )}
                     {!c.hasBusinessCase ? (

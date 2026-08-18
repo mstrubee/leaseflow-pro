@@ -30,6 +30,8 @@ export interface ContractSlideData {
   bullets: string[];
   inputs: BCInputs;
   result: BCResult;
+  /** Láminas del "Informe directorio" de Geochile Compass (PNG 1920×1080), si se extrajeron para este contrato. */
+  geochileSlides?: { slide1: string; slide2?: string };
 }
 
 export interface InformeDirectorioParams {
@@ -174,6 +176,17 @@ export async function buildInformeDirectorioPptx(
       border: { pt: 0.25, color: BORDER },
       margin: [1, 2, 1, 2],
     });
+
+    // ── Láminas territoriales de Geochile Compass, si se extrajeron ──
+    // Van DESPUÉS de la slide propia del contrato: números primero, después
+    // el territorio que los respalda.
+    if (c.geochileSlides) {
+      for (const data of [c.geochileSlides.slide1, c.geochileSlides.slide2]) {
+        if (!data) continue;
+        const gs = pres.addSlide();
+        gs.addImage({ data, x: 0, y: 0, w: 10, h: 5.625 });
+      }
+    }
   }
 
   const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
