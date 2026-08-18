@@ -280,21 +280,27 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const mesesY1 = dtCanonIso ? mesesHastaFinDeAno(dtCanonIso) : 3;
   const mesesArr = [0, mesesY1, 12, 12, 12, 12];
 
-  // Meses de OPERACIÓN del año 1 (desde la apertura al público) y meses de
-  // PERSONAL (empieza un mes antes de abrir). Son calendarios distintos al de
-  // la renta: un local puede abrir antes o después de empezar a pagar canon.
-  // Si no hay fecha de apertura cargada, se asume el inicio de pago de renta.
+  // Meses de OPERACIÓN de cada año calendario (desde la apertura al público) y
+  // meses de PERSONAL del año 1 (empieza un mes antes de abrir). Son
+  // calendarios distintos al de la renta: un local puede abrir antes o
+  // después de empezar a pagar canon. Si no hay fecha de apertura cargada, se
+  // asume el inicio de pago de renta.
   const aperturaIso = inputs.apertura || dtCanonIso;
   const anoRenta = dtCanonIso ? new Date(dtCanonIso + "T00:00:00").getFullYear() : 0;
   const dApertura = new Date(aperturaIso + "T00:00:00");
   const anoApertura = Number.isNaN(dApertura.getTime()) ? anoRenta : dApertura.getFullYear();
-  // Si abre en un año posterior al del inicio de renta, el año 1 no tiene
-  // operación (pero sí puede tener el mes previo de personal); si abrió antes,
-  // el año 1 opera completo.
-  const mesesOperacion =
-    anoApertura > anoRenta ? 0 : anoApertura < anoRenta ? 12 : mesesHastaFinDeAno(aperturaIso);
+  // Meses de operación de CADA año calendario 1..5, no solo del año 1: si ese
+  // año calendario es anterior al de apertura no opera, si es el de apertura
+  // opera desde ese mes hasta fin de año, y si es posterior opera los 12
+  // meses completos.
+  const mesesOperArr = [0, 0, 0, 0, 0, 0];
+  for (let i = 1; i <= 5; i++) {
+    const anoCalendario = anoRenta + i - 1;
+    mesesOperArr[i] =
+      anoCalendario < anoApertura ? 0 : anoCalendario > anoApertura ? 12 : mesesHastaFinDeAno(aperturaIso);
+  }
+  const mesesOperacion = mesesOperArr[1];
   const mesesPersonal = Math.min(12, mesesOperacion + 1);
-  const mesesOperArr = [0, mesesOperacion, 12, 12, 12, 12];
 
   // Inversión (por categoría)
   const lineas = (admin.invLineas[inputs.categoria] || admin.invLineas["Nuevo"]).filter((l) => l.activo);
@@ -325,10 +331,29 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   // Ventas
   const sf = inputs.scenario === "opt" ? 1.1 : inputs.scenario === "cons" ? 0.85 : 1.0;
   const v = inputs.ventaMes || [];
-  const ventaMes = [0, v[0] ?? 60, v[1] ?? 80, v[2] ?? 90, v[3] ?? 95, v[4] ?? 99.75];
-  // Los ingresos del año 1 se prorratean por los meses de OPERACIÓN (desde la
-  // apertura), no por los de renta.
-  const ingresos = ventaMes.map((vv, i) => round(vv * mesesOperArr[i] * sf, 2));
+  // ventaMes[k] es la tasa mensual del AÑO DE VIDA k+1 del local (de
+  // maduración: recién abierto → régimen), no del año calendario. Como el
+  // local no necesariamente abre el 1 de enero, un año calendario de
+  // operación puede mezclar el tramo final de un año de vida con el tramo
+  // inicial del siguiente — si eso no se reparte mes a mes, un año calendario
+  // completo queda valorizado de golpe a la tasa del año de vida más nuevo
+  // (más alta), inflando ingresos y, en cascada, EBITDA/TIR/VAN.
+  const ventaVida = [v[0] ?? 60, v[1] ?? 80, v[2] ?? 90, v[3] ?? 95, v[4] ?? 99.75];
+  const tasaVida = (anoVidaIdx: number) => ventaVida[Math.min(Math.max(anoVidaIdx, 0), 4)];
+  let vidaAcumulada = 0; // meses de vida transcurridos al cierre del último año calendario procesado
+  const ingresos = [0];
+  for (let i = 1; i <= 5; i++) {
+    const meses = mesesOperArr[i];
+    if (meses <= 0) { ingresos.push(0); continue; }
+    const anoVidaInicio = Math.floor(vidaAcumulada / 12);
+    const mesesRestantesAnoVida = (anoVidaInicio + 1) * 12 - vidaAcumulada;
+    const ing =
+      meses <= mesesRestantesAnoVida
+        ? tasaVida(anoVidaInicio) * meses
+        : tasaVida(anoVidaInicio) * mesesRestantesAnoVida + tasaVida(anoVidaInicio + 1) * (meses - mesesRestantesAnoVida);
+    ingresos.push(round(ing * sf, 2));
+    vidaAcumulada += meses;
+  }
 
   // Márgenes
   const mDir = (inputs.margenDir || 0) / 100;
