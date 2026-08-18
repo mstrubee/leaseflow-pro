@@ -38,24 +38,22 @@ export interface InformeDirectorioParams {
   contractSlides: ContractSlideData[];
 }
 
-export async function generateInformeDirectorioPPT(params: InformeDirectorioParams): Promise<void> {
+export const PPTX_MIME =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+/**
+ * Arma el deck y lo devuelve como Blob, sin decidir qué hacer con él.
+ *
+ * Está separado de `generateInformeDirectorioPPT` porque el informe ahora tiene
+ * dos destinos —descargarlo y compartirlo por link— y ambos tienen que entregar
+ * EXACTAMENTE el mismo archivo. Si cada camino armara su propio deck, tarde o
+ * temprano el que se comparte diría algo distinto del que se descarga.
+ */
+export async function buildInformeDirectorioPptx(
+  params: InformeDirectorioParams,
+): Promise<{ blob: Blob; fileName: string }> {
   const { year, capexData, contractSlides } = params;
   const fileName = `Informe_Directorio_${year}_${new Date().toISOString().slice(0, 10)}.pptx`;
-
-  type FileHandle = { createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> };
-  let saveHandle: FileHandle | null = null;
-  const canPick = typeof (window as any).showSaveFilePicker === "function";
-  if (canPick) {
-    try {
-      saveHandle = await (window as any).showSaveFilePicker({
-        suggestedName: fileName,
-        types: [{ description: "Presentación PowerPoint", accept: { "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"] } }],
-      });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      saveHandle = null;
-    }
-  }
 
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_16x9";
@@ -178,21 +176,46 @@ export async function generateInformeDirectorioPPT(params: InformeDirectorioPara
     });
   }
 
+  const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
+  return { blob: new Blob([arrBuf], { type: PPTX_MIME }), fileName };
+}
+
+/**
+ * Genera el informe y lo guarda en el disco del usuario.
+ *
+ * Mantiene el comportamiento de siempre: si el navegador soporta
+ * `showSaveFilePicker` se elige la ubicación, si no cae al link de descarga.
+ * El picker se abre ANTES de armar el deck a propósito — tiene que ocurrir
+ * dentro del gesto del usuario o Chrome lo bloquea.
+ */
+export async function generateInformeDirectorioPPT(params: InformeDirectorioParams): Promise<void> {
+  const { year } = params;
+  const suggestedName = `Informe_Directorio_${year}_${new Date().toISOString().slice(0, 10)}.pptx`;
+
+  type FileHandle = { createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> };
+  let saveHandle: FileHandle | null = null;
+  const canPick = typeof (window as any).showSaveFilePicker === "function";
+  if (canPick) {
+    try {
+      saveHandle = await (window as any).showSaveFilePicker({
+        suggestedName,
+        types: [{ description: "Presentación PowerPoint", accept: { [PPTX_MIME]: [".pptx"] } }],
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      saveHandle = null;
+    }
+  }
+
+  const { blob, fileName } = await buildInformeDirectorioPptx(params);
+
   if (saveHandle) {
-    const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
-    const blob = new Blob([arrBuf], {
-      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    });
     const writable = await saveHandle.createWritable();
     await writable.write(blob);
     await writable.close();
     return;
   }
 
-  const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
-  const blob = new Blob([arrBuf], {
-    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

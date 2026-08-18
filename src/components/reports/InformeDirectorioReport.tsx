@@ -18,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink, MapPin } from "lucide-react";
+import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink, MapPin, Share2, Copy, Check } from "lucide-react";
+import { shareInformeDirectorio, DEFAULT_SHARE_DAYS } from "@/lib/boardReport/share";
 
 const MAROON = "#C0003F";
 const MAROON_LIGHT = "#FBE4EA";
@@ -146,13 +147,19 @@ function PnlTablePreview({ inputs, result }: { inputs: BCInputs; result: BCResul
 }
 
 export function InformeDirectorioReport() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const { ufValue } = useEconomicIndicators();
   const { config, loading: cfgLoading } = useBusinessCaseAdminConfig();
   const { navigateToContractFromReports } = useReportsNavigation();
   const [contracts, setContracts] = useState<ContractEligible[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  // Link recién emitido. Se muestra en pantalla en vez de solo copiarlo al
+  // portapapeles: si el copiado falla —Safari lo bloquea fuera de un gesto
+  // directo— el usuario igual necesita poder tomarlo a mano.
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bcDialogContractId, setBcDialogContractId] = useState<string | null>(null);
@@ -341,6 +348,53 @@ export function InformeDirectorioReport() {
     loadContracts();
   };
 
+  const buildReportParams = async () => {
+    const capexData = await buildCapexPPTData(year, ufValue || 0);
+    const contractSlides: ContractSlideData[] = selectedContracts.map((c) => ({
+      contractName: c.name,
+      subtitle: buildSubtitle(c.name, c.inputs),
+      bullets: buildBullets(c),
+      inputs: c.inputs!,
+      result: c.result!,
+    }));
+    return { year, capexData, contractSlides };
+  };
+
+  const handleShare = async () => {
+    if (selectedContracts.length === 0) {
+      toast.error("Selecciona al menos un contrato para incluir en el informe");
+      return;
+    }
+    if (!user?.id) {
+      toast.error("Tu sesión expiró. Vuelve a iniciar sesión para compartir el informe.");
+      return;
+    }
+    setSharing(true);
+    setShareUrl(null);
+    setCopied(false);
+    try {
+      toast.info("Generando y subiendo el informe...");
+      const { url } = await shareInformeDirectorio({
+        report: await buildReportParams(),
+        contractIds: selectedContracts.map((c) => c.id),
+        userId: user.id,
+      });
+      setShareUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        toast.success(`Link copiado. Vence en ${DEFAULT_SHARE_DAYS} días.`);
+      } catch {
+        toast.success(`Link generado. Vence en ${DEFAULT_SHARE_DAYS} días.`);
+      }
+    } catch (err) {
+      console.error("Error compartiendo Informe Directorio:", err);
+      toast.error(err instanceof Error ? err.message : "Error al compartir el informe");
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const handleDownload = async () => {
     if (selectedContracts.length === 0) {
       toast.error("Seleccioná al menos un contrato para incluir en el informe");
@@ -349,17 +403,7 @@ export function InformeDirectorioReport() {
     setGenerating(true);
     try {
       toast.info("Generando Informe Directorio...");
-      const capexData = await buildCapexPPTData(year, ufValue || 0);
-
-      const contractSlides: ContractSlideData[] = selectedContracts.map((c) => ({
-        contractName: c.name,
-        subtitle: buildSubtitle(c.name, c.inputs),
-        bullets: buildBullets(c),
-        inputs: c.inputs!,
-        result: c.result!,
-      }));
-
-      await generateInformeDirectorioPPT({ year, capexData, contractSlides });
+      await generateInformeDirectorioPPT(await buildReportParams());
       toast.success("Informe Directorio descargado");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -399,12 +443,56 @@ export function InformeDirectorioReport() {
               {allSelected ? "Deseleccionar todos" : "Seleccionar todos"}
             </Button>
           )}
-          <Button onClick={handleDownload} disabled={generating || selectedContracts.length === 0}>
+          <Button
+            variant="outline"
+            onClick={handleShare}
+            disabled={sharing || generating || selectedContracts.length === 0}
+          >
+            {sharing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Share2 className="h-4 w-4 mr-2" />}
+            Compartir link
+          </Button>
+          <Button onClick={handleDownload} disabled={generating || sharing || selectedContracts.length === 0}>
             {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
             Descargar PPT
           </Button>
         </div>
       </div>
+
+      {shareUrl && (
+        <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Share2 className="h-4 w-4" />
+            Link para compartir
+            <Badge variant="secondary">vence en {DEFAULT_SHARE_DAYS} días</Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={shareUrl}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(shareUrl);
+                  setCopied(true);
+                } catch {
+                  toast.error("No se pudo copiar. Selecciona el link y cópialo a mano.");
+                }
+              }}
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Cualquiera con este link puede descargar el informe, sin necesidad de cuenta.
+            Contiene los Business Case completos — compártelo solo con el directorio.
+          </p>
+        </div>
+      )}
 
       {allContracts.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">
