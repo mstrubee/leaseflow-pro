@@ -20,6 +20,7 @@ import { RepositoryFilePicker } from "./RepositoryFilePicker";
 import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { cn } from "@/lib/utils";
 import { backupOCFileToRepository } from "@/lib/repositoryBackup";
+import { syncOCRequestLinesFromPurchaseOrder } from "@/lib/ocRequestLines";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 
 interface PurchaseOrder {
@@ -1003,7 +1004,32 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
         }
       }
 
-      toast({ title: "OC actualizada", description: `Orden de compra ${editFormData.order_number} actualizada` });
+      // Si esta OC nació de una solicitud, la solicitud tiene que quedar
+      // apuntando a las mismas líneas: es el registro de a qué se imputó el
+      // gasto. Se corrige aunque ya esté cerrada. Va después del update de la
+      // OC y no rompe el guardado si falla: la OC ya quedó bien y avisamos.
+      let syncedRequests = 0;
+      try {
+        if (editFormData.budget_type === "capex") {
+          syncedRequests = await syncOCRequestLinesFromPurchaseOrder(
+            editOrder.id,
+            selectedLines.map((l) => ({ id: l.id, name: l.name })),
+          );
+        }
+      } catch (syncError: any) {
+        toast({
+          variant: "destructive",
+          title: "La OC se guardó, pero la solicitud quedó desactualizada",
+          description: `No se pudieron actualizar las líneas de la solicitud de origen: ${syncError.message}`,
+        });
+      }
+
+      toast({
+        title: "OC actualizada",
+        description: syncedRequests > 0
+          ? `Orden de compra ${editFormData.order_number} actualizada. También se actualizaron las líneas de su solicitud de origen.`
+          : `Orden de compra ${editFormData.order_number} actualizada`,
+      });
       setShowEditDialog(false);
       setEditOrder(null);
       setEditOcFile(null);
