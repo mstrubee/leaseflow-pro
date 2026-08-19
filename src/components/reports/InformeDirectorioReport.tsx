@@ -13,30 +13,14 @@ import { generateInformeDirectorioPPT, type ContractSlideData } from "@/componen
 import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
-import { AssignIsochroneDialog, type AssignedIsochrone } from "@/components/reports/AssignIsochroneDialog";
-import { listSavedIsochrones, fetchReportSlides, normalizeIsochroneName } from "@/lib/geochile/client";
+import { AssignIsochroneDialog } from "@/components/reports/AssignIsochroneDialog";
+import { ISOCHRONE_SLIDES_BUCKET, dataUrlToBlob, blobToBase64 } from "@/lib/geochile/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Download, ChevronDown, ChevronRight, BarChart3, ExternalLink, MapPin, Share2, Copy, Check, Image as ImageIcon } from "lucide-react";
 import { shareInformeDirectorio, DEFAULT_SHARE_DAYS } from "@/lib/boardReport/share";
-
-const ISOCHRONE_SLIDES_BUCKET = "isochrone-report-slides";
-
-async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-  const res = await fetch(dataUrl);
-  return res.blob();
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
 
 const MAROON = "#C0003F";
 const MAROON_LIGHT = "#FBE4EA";
@@ -182,7 +166,6 @@ export function InformeDirectorioReport() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bcDialogContractId, setBcDialogContractId] = useState<string | null>(null);
   const [isoDialogContractId, setIsoDialogContractId] = useState<string | null>(null);
-  const [extractingReportIds, setExtractingReportIds] = useState<Set<string>>(new Set());
 
   const year = new Date().getFullYear().toString();
 
@@ -333,82 +316,11 @@ export function InformeDirectorioReport() {
     }
   };
 
-  const handleAssignedIsochrone = (link: AssignedIsochrone) => {
-    setContracts((prev) =>
-      prev.map((c) =>
-        c.id === link.contractId
-          ? { ...c, isochroneLink: { name: link.isochroneName, folderName: link.folderName } }
-          : c,
-      ),
-    );
-  };
-
-  const handleExtractReport = async (contract: ContractEligible) => {
-    if (!user) return;
-    setExtractingReportIds((prev) => new Set(prev).add(contract.id));
-    try {
-      const target = normalizeIsochroneName(contract.name);
-      const isochrones = await listSavedIsochrones();
-      const matches = isochrones.filter((iso) => normalizeIsochroneName(iso.name) === target);
-      if (matches.length === 0) {
-        toast.error(`No se encontró ninguna isócrona en Geochile Compass llamada "${contract.name}"`);
-        return;
-      }
-      if (matches.length > 1) {
-        toast.error(`Hay ${matches.length} isócronas llamadas "${contract.name}" en Geochile Compass — no se puede determinar cuál usar`);
-        return;
-      }
-      const match = matches[0];
-      if (!match.hasSlides) {
-        toast.error(`"${match.name}" no tiene un informe de directorio generado en Geochile Compass todavía`);
-        return;
-      }
-      const slides = await fetchReportSlides(match.id);
-
-      const slide1Path = `${contract.id}/slide1.png`;
-      const { error: upErr1 } = await supabase.storage
-        .from(ISOCHRONE_SLIDES_BUCKET)
-        .upload(slide1Path, await dataUrlToBlob(slides.slide1), { upsert: true, contentType: "image/png" });
-      if (upErr1) throw upErr1;
-
-      let slide2Path: string | null = null;
-      if (slides.slide2) {
-        slide2Path = `${contract.id}/slide2.png`;
-        const { error: upErr2 } = await supabase.storage
-          .from(ISOCHRONE_SLIDES_BUCKET)
-          .upload(slide2Path, await dataUrlToBlob(slides.slide2), { upsert: true, contentType: "image/png" });
-        if (upErr2) throw upErr2;
-      }
-
-      const { error: dbErr } = await supabase.from("contract_isochrone_reports" as any).upsert(
-        {
-          contract_id: contract.id,
-          saved_isochrone_id: match.id,
-          isochrone_name: match.name,
-          slide1_path: slide1Path,
-          slide2_path: slide2Path,
-          extracted_by: user.id,
-          extracted_at: new Date().toISOString(),
-        },
-        { onConflict: "contract_id" },
-      );
-      if (dbErr) throw dbErr;
-
-      toast.success(
-        slides.alreadyConsumed
-          ? `Informe extraído de "${match.name}" (ya lo había traído alguien más antes)`
-          : `Informe extraído de "${match.name}"`,
-      );
-      loadContracts();
-    } catch (err: any) {
-      toast.error(err.message || "Error al extraer el informe de la isócrona");
-    } finally {
-      setExtractingReportIds((prev) => {
-        const next = new Set(prev);
-        next.delete(contract.id);
-        return next;
-      });
-    }
+  // AssignIsochroneDialog hace todo (link + proyección +, si corresponde,
+  // stagear el informe) en una sola acción — acá solo hace falta recargar
+  // para reflejar el resultado real de la DB.
+  const handleAssociated = () => {
+    loadContracts();
   };
 
   const handleApplyProjectionToBC = async (contractId: string, ventaMes: number[]) => {
@@ -662,20 +574,10 @@ export function InformeDirectorioReport() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1.5 shrink-0"
+                    className={`gap-1.5 shrink-0 ${c.isochroneLink ? "border-green-500 text-green-700 bg-green-50 hover:bg-green-100 hover:text-green-800" : ""}`}
                     onClick={(e) => { e.stopPropagation(); setIsoDialogContractId(c.id); }}
                   >
-                    <MapPin className="h-3.5 w-3.5" /> {c.isochroneLink ? "Cambiar Isócrona" : "Asignar Isócrona"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 shrink-0"
-                    disabled={extractingReportIds.has(c.id)}
-                    onClick={(e) => { e.stopPropagation(); handleExtractReport(c); }}
-                  >
-                    {extractingReportIds.has(c.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-                    Extraer Informe Isócrona
+                    <MapPin className="h-3.5 w-3.5" /> Asociar Isócrona
                   </Button>
                   <Button
                     variant="outline"
@@ -690,7 +592,7 @@ export function InformeDirectorioReport() {
                   <div className="px-4 pb-4 space-y-3">
                     {c.isochroneLink && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <MapPin className="h-3 w-3" /> Isócrona asignada: {c.isochroneLink.name}
+                        <MapPin className="h-3 w-3" /> Isócrona asociada: {c.isochroneLink.name}
                         {c.isochroneLink.folderName ? ` (${c.isochroneLink.folderName})` : ""}
                       </p>
                     )}
@@ -745,7 +647,7 @@ export function InformeDirectorioReport() {
           contractId={isoDialogContract.id}
           contractName={isoDialogContract.name}
           hasBusinessCase={isoDialogContract.hasBusinessCase}
-          onAssigned={handleAssignedIsochrone}
+          onAssigned={handleAssociated}
           onApplyToBusinessCase={handleApplyProjectionToBC}
         />
       )}

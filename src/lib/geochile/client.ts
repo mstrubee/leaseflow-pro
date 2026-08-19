@@ -133,3 +133,22 @@ export function fetchSalesProjection(savedIsochroneId: string, settings?: Geochi
 export function fetchReportSlides(savedIsochroneId: string, settings?: GeochileSettings): Promise<ReportSlidesExport> {
   return callGeochileFunction<ReportSlidesExport>("export-report-slides", { body: { savedIsochroneId }, settings });
 }
+
+// Bucket privado donde se stagean las láminas del informe (ver
+// AssignIsochroneDialog.tsx e InformeDirectorioReport.tsx) — son efímeras del
+// lado de Geochile (~48h), así que se persisten acá hasta usarse en el PPT.
+export const ISOCHRONE_SLIDES_BUCKET = "isochrone-report-slides";
+
+export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+
+export async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}

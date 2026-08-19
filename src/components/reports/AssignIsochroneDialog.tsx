@@ -12,23 +12,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, MapPin, ArrowLeft, TrendingUp } from "lucide-react";
+import { Loader2, MapPin, ArrowLeft, TrendingUp, Image as ImageIcon } from "lucide-react";
 import {
   listSavedIsochrones,
   fetchSalesProjection,
+  fetchReportSlides,
+  dataUrlToBlob,
+  ISOCHRONE_SLIDES_BUCKET,
   type SavedIsochroneSummary,
   type SalesProjectionExport,
 } from "@/lib/geochile/client";
 
 const fmtMM = (v: number) => v.toLocaleString("es-CL", { maximumFractionDigits: 1 });
-
-export interface AssignedIsochrone {
-  contractId: string;
-  savedIsochroneId: string;
-  isochroneName: string;
-  folderName: string | null;
-  projection: SalesProjectionExport;
-}
 
 interface Props {
   open: boolean;
@@ -36,7 +31,7 @@ interface Props {
   contractId: string;
   contractName: string;
   hasBusinessCase: boolean;
-  onAssigned: (link: AssignedIsochrone) => void;
+  onAssigned: () => void;
   onApplyToBusinessCase: (contractId: string, ventaMes: number[]) => Promise<void>;
 }
 
@@ -92,45 +87,84 @@ export function AssignIsochroneDialog({
     }
   };
 
-  const handleAssign = async () => {
+  // Asocia la isócrona (link + proyección) y, si tiene informe generado en
+  // Geochile, stagea sus 2 láminas para el PPT — todo en una sola acción.
+  // El informe es best-effort: si falla, no revierte la asociación, que ya
+  // es lo principal y quedó guardada.
+  const persistAssignment = async (): Promise<void> => {
     if (!selected || !projection || !user) return;
-    setAssigning(true);
+    const { error } = await supabase.from("contract_isochrone_links" as any).upsert(
+      {
+        contract_id: contractId,
+        saved_isochrone_id: selected.id,
+        isochrone_name: selected.name,
+        folder_name: selected.folderName,
+        projection: projection as unknown as Record<string, unknown>,
+        assigned_by: user.id,
+        assigned_at: new Date().toISOString(),
+      },
+      { onConflict: "contract_id" },
+    );
+    if (error) throw error;
+
+    if (!selected.hasSlides) return;
     try {
-      const { error } = await supabase.from("contract_isochrone_links" as any).upsert(
+      const slides = await fetchReportSlides(selected.id);
+      const slide1Path = `${contractId}/slide1.png`;
+      const { error: upErr1 } = await supabase.storage
+        .from(ISOCHRONE_SLIDES_BUCKET)
+        .upload(slide1Path, await dataUrlToBlob(slides.slide1), { upsert: true, contentType: "image/png" });
+      if (upErr1) throw upErr1;
+
+      let slide2Path: string | null = null;
+      if (slides.slide2) {
+        slide2Path = `${contractId}/slide2.png`;
+        const { error: upErr2 } = await supabase.storage
+          .from(ISOCHRONE_SLIDES_BUCKET)
+          .upload(slide2Path, await dataUrlToBlob(slides.slide2), { upsert: true, contentType: "image/png" });
+        if (upErr2) throw upErr2;
+      }
+
+      await supabase.from("contract_isochrone_reports" as any).upsert(
         {
           contract_id: contractId,
           saved_isochrone_id: selected.id,
           isochrone_name: selected.name,
-          folder_name: selected.folderName,
-          projection: projection as unknown as Record<string, unknown>,
-          assigned_by: user.id,
-          assigned_at: new Date().toISOString(),
+          slide1_path: slide1Path,
+          slide2_path: slide2Path,
+          extracted_by: user.id,
+          extracted_at: new Date().toISOString(),
         },
         { onConflict: "contract_id" },
       );
-      if (error) throw error;
-      toast.success("Isócrona asignada al contrato");
-      onAssigned({
-        contractId,
-        savedIsochroneId: selected.id,
-        isochroneName: selected.name,
-        folderName: selected.folderName,
-        projection,
-      });
+    } catch (err) {
+      console.error("[AssignIsochroneDialog] no se pudo extraer el informe de directorio", err);
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!selected || !projection || !user) return;
+    setAssigning(true);
+    try {
+      await persistAssignment();
+      toast.success("Isócrona asociada al contrato");
+      onAssigned();
       if (!hasBusinessCase) onOpenChange(false);
     } catch (err: any) {
-      toast.error(err.message || "Error al asignar la isócrona");
+      toast.error(err.message || "Error al asociar la isócrona");
     } finally {
       setAssigning(false);
     }
   };
 
   const handleApply = async () => {
-    if (!projection) return;
+    if (!selected || !projection || !user) return;
     setApplying(true);
     try {
+      await persistAssignment();
       await onApplyToBusinessCase(contractId, projection.ventaMes);
-      toast.success("Ventas aplicadas al Business Case");
+      toast.success("Isócrona asociada y ventas aplicadas al Business Case");
+      onAssigned();
       onOpenChange(false);
     } catch (err: any) {
       toast.error(err.message || "Error al aplicar la proyección");
@@ -145,10 +179,10 @@ export function AssignIsochroneDialog({
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5 text-primary" />
-            Asignar Isócrona — {contractName}
+            Asociar Isócrona — {contractName}
           </DialogTitle>
           <DialogDescription>
-            Elegí una isócrona guardada en Geochile Compass para importar su proyección de ventas a 5 años.
+            Elegí una isócrona guardada en Geochile Compass para importar su proyección de ventas a 5 años y, si tiene informe de directorio generado, sus 2 láminas para el PPT.
           </DialogDescription>
         </DialogHeader>
 
@@ -184,11 +218,18 @@ export function AssignIsochroneDialog({
                         {iso.mode} · {iso.minutes.join("/")} min
                       </div>
                     </div>
-                    {iso.hasProjection ? (
-                      <Badge variant="outline" className="gap-1 shrink-0"><TrendingUp className="h-3 w-3" /> Con proyección</Badge>
-                    ) : (
-                      <Badge variant="outline" className="shrink-0 text-muted-foreground">Sin proyección</Badge>
-                    )}
+                    <div className="flex gap-1 shrink-0">
+                      {iso.hasProjection ? (
+                        <Badge variant="outline" className="gap-1"><TrendingUp className="h-3 w-3" /> Con proyección</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground">Sin proyección</Badge>
+                      )}
+                      {iso.hasSlides && (
+                        <Badge variant="outline" className="gap-1 text-green-700 border-green-300 bg-green-50">
+                          <ImageIcon className="h-3 w-3" /> Con informe
+                        </Badge>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -264,12 +305,12 @@ export function AssignIsochroneDialog({
             <>
               <Button variant="outline" onClick={handleAssign} disabled={assigning}>
                 {assigning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Asignar a este contrato
+                Asociar a este contrato
               </Button>
               {hasBusinessCase && (
                 <Button onClick={handleApply} disabled={applying}>
                   {applying && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Asignar y aplicar al Business Case
+                  Asociar y aplicar al Business Case
                 </Button>
               )}
             </>
