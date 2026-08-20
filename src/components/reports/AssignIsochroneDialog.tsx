@@ -31,6 +31,9 @@ interface Props {
   contractId: string;
   contractName: string;
   hasBusinessCase: boolean;
+  // "Formato de local" del Business Case (Express/Tradicional) — para avisar
+  // si no coincide con el ajuste Express de la proyección de Geochile.
+  businessCaseFormato?: string | null;
   onAssigned: () => void;
   onApplyToBusinessCase: (contractId: string, ventaMes: number[]) => Promise<void>;
 }
@@ -41,6 +44,7 @@ export function AssignIsochroneDialog({
   contractId,
   contractName,
   hasBusinessCase,
+  businessCaseFormato,
   onAssigned,
   onApplyToBusinessCase,
 }: Props) {
@@ -157,6 +161,14 @@ export function AssignIsochroneDialog({
     }
   };
 
+  // La proyección de Geochile trae su propio ajuste "Express" (vía
+  // meta.isExpress), independiente del "Formato de local" del Business Case
+  // de leaseflow — si no coinciden, las ventas están calibradas para el
+  // formato equivocado.
+  const geoIsExpress = !!projection?.meta?.isExpress;
+  const bcIsExpress = businessCaseFormato === "Express";
+  const expressMismatch = !!projection && !!businessCaseFormato && geoIsExpress !== bcIsExpress;
+
   const handleApply = async () => {
     if (!selected || !projection || !user) return;
     setApplying(true);
@@ -256,6 +268,15 @@ export function AssignIsochroneDialog({
                   {projection.diagnosticMsg && (
                     <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                       {projection.diagnosticMsg}
+                    </p>
+                  )}
+
+                  {expressMismatch && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      Este Business Case es "{businessCaseFormato}", pero esta proyección de Geochile Compass{" "}
+                      {geoIsExpress ? "SÍ" : "NO"} tiene el ajuste Express aplicado. Las ventas pueden estar
+                      sobre/sub-estimadas para este formato — revisá el ajuste Express de la isócrona en Geochile
+                      Compass antes de aplicarlas.
                     </p>
                   )}
 

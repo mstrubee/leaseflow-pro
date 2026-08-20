@@ -40,6 +40,16 @@ export interface SalesProjectionExport {
   growthRate: number;
   comparables: ProjectionComparable[];
   diagnosticMsg: string | null;
+  // Trazabilidad de cómo se armó ventaMes (export-sales-projection/index.ts).
+  // isExpress: si la proyección en Geochile Compass tiene aplicado el ajuste
+  // "Express" de esa carpeta (vía adjustPct) — NO es el formato del Business
+  // Case de leaseflow, son dos configuraciones separadas que hay que
+  // reconciliar al importar (ver handleSyncGeoplanet / AssignIsochroneDialog).
+  meta?: {
+    isExpress?: boolean;
+    adjustPct?: number;
+    [key: string]: unknown;
+  };
 }
 
 // Láminas del "Informe directorio" de una isócrona (2 PNG 1920×1080), para

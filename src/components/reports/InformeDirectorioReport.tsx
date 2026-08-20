@@ -647,6 +647,7 @@ export function InformeDirectorioReport() {
           contractId={isoDialogContract.id}
           contractName={isoDialogContract.name}
           hasBusinessCase={isoDialogContract.hasBusinessCase}
+          businessCaseFormato={isoDialogContract.inputs?.formato}
           onAssigned={handleAssociated}
           onApplyToBusinessCase={handleApplyProjectionToBC}
         />

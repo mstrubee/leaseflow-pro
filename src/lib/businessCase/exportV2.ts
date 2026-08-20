@@ -19,6 +19,7 @@ const PNL_ROWS: { label: string; key: keyof BCResult }[] = [
   { label: "Tecnología", key: "tecnologia" },
   { label: "Ocupación", key: "ocupacion" },
   { label: "Canon Arriendo", key: "canonArr" },
+  { label: "Fondo Promoción", key: "fondoPromocion" },
   { label: "Gasto Común", key: "gastoComun" },
   { label: "EBITDA", key: "ebitda" },
   { label: "Depreciación", key: "depreciacion" },

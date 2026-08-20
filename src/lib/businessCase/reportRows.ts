@@ -108,6 +108,7 @@ export function buildPnlRows(inputs: BCInputs, result: BCResult): PnlRow[] {
     { label: "Tecnologia", values: yr(result.tecnologia) },
     { label: "Ocupacion (sin Arrdo)", values: yr(result.ocupacion) },
     { label: "Canon Arriendo", values: yr(result.canonArr, 1) },
+    { label: "Fondo Promoción", values: yr(result.fondoPromocion, 1) },
     { label: "Gasto comun", values: yr(result.gastoComun, 1) },
     { label: "GAVs", values: yr(result.gavs), bold: true },
     { label: "EBITDA", values: yr(result.ebitda), bold: true, grayHighlight: true },

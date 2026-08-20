@@ -129,6 +129,9 @@ export interface BCInputs {
   // Solo lectura: no editables desde el BC. Ver canonUfForLeaseMonth en computeBC.
   escalations: BCEscalation[];
   regimeRentIsUfM2: boolean;
+  // Fondo de Promoción: % del canon (fondo_promocion_percentage del contrato).
+  // Sincronizado desde el contrato, solo lectura (mismo trato que escalations).
+  fondoPromocionPct: number;
   graciaMeses: number;
   durContratoAnios: number;
   inicio: string; // ISO date (entrega/inicio)
@@ -172,6 +175,8 @@ export interface BCInputs {
 
 export interface BCInvRow { id: string; nombre: string; metodo: InvMethod; monto: number; pct: number; nota?: string }
 
+export interface BCCanonYearBreakdown { meses: number; ufMes: number }
+
 export interface BCResult {
   canonUF: number;
   garantiaUF: number;
@@ -195,6 +200,11 @@ export interface BCResult {
   tecnologia: number[];
   ocupacion: number[];
   canonArr: number[];
+  // UF/mes promedio de cada año-modelo (antes de convertir a CLP) y su
+  // desglose por tramo — para el detalle de cálculo en la UI. Índice 0 vacío.
+  canonUfPromedio: number[];
+  canonTramos: BCCanonYearBreakdown[][];
+  fondoPromocion: number[];
   gastoComun: number[];
   gavs: number[];
   ebitda: number[];
@@ -406,16 +416,39 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   // de día de inicio); para el lookup de tramo se redondea a meses enteros,
   // preservando el "m" exacto para la conversión a CLP. Sin escalaciones el
   // resultado es idéntico al cálculo anterior (canonUF constante).
+  // Fondo de Promoción: % del canon (fondo_promocion_percentage del contrato,
+  // mismo campo que alimenta la columna "F.Prom" de rentPeriods.ts) — sigue el
+  // mismo canon escalonado que canonArr, así que se derivan del mismo
+  // promedio mensual en vez de recorrer los tramos dos veces.
+  const fondoPromPct = (inputs.fondoPromocionPct || 0) / 100;
+  // canonTramos: por año, los tramos de canon que efectivamente cayeron
+  // dentro de ese año-modelo (meses consecutivos al mismo UF/mes), agrupados
+  // para poder mostrar "X meses a Y UF/mes" en el detalle de cálculo de la UI
+  // (botón "ver cálculo" en Proyecciones) sin recorrer los tramos de nuevo ahí.
   let mesRentaCursor = 0;
-  const canonArr = mesesArr.map((m, i) => {
-    if (i === 0 || m <= 0) return 0;
+  const canonTramos: BCCanonYearBreakdown[][] = [];
+  const canonUfPromedioArr = mesesArr.map((m, i) => {
+    if (i === 0 || m <= 0) { canonTramos.push([]); return 0; }
     const mesesEnteros = Math.max(1, Math.round(m));
     let sumaUf = 0;
-    for (let k = 1; k <= mesesEnteros; k++) sumaUf += canonUfForLeaseMonth(mesRentaCursor + k);
+    const segmentos: BCCanonYearBreakdown[] = [];
+    for (let k = 1; k <= mesesEnteros; k++) {
+      const v = canonUfForLeaseMonth(mesRentaCursor + k);
+      sumaUf += v;
+      const last = segmentos[segmentos.length - 1];
+      if (last && last.ufMes === v) last.meses += 1;
+      else segmentos.push({ meses: 1, ufMes: v });
+    }
     mesRentaCursor += mesesEnteros;
-    const canonUfPromedio = sumaUf / mesesEnteros;
-    return round(-canonUfPromedio * m * avgs[i - 1] / 1e6, 4);
+    canonTramos.push(segmentos);
+    return sumaUf / mesesEnteros;
   });
+  const canonArr = canonUfPromedioArr.map((canonUfPromedio, i) =>
+    i === 0 ? 0 : round(-canonUfPromedio * mesesArr[i] * avgs[i - 1] / 1e6, 4),
+  );
+  const fondoPromocion = canonUfPromedioArr.map((canonUfPromedio, i) =>
+    i === 0 ? 0 : round(-canonUfPromedio * fondoPromPct * mesesArr[i] * avgs[i - 1] / 1e6, 4),
+  );
   const gastoComun = mesesArr.map((m, i) => (i === 0 ? 0 : round(-gcomUF * superficie * m * avgs[i - 1] / 1e6, 4)));
 
   // Ventas
@@ -482,7 +515,10 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const depreciacion = [0, -depr, -depr, -depr, -depr, -depr];
 
   const gavs = [0, 1, 2, 3, 4, 5].map((i) =>
-    round(personal[i] + publicidad[i] + gastosGral[i] + tecnologia[i] + ocupacion[i] + canonArr[i] + gastoComun[i], 2),
+    round(
+      personal[i] + publicidad[i] + gastosGral[i] + tecnologia[i] + ocupacion[i] + canonArr[i] + fondoPromocion[i] + gastoComun[i],
+      2,
+    ),
   );
   const ebitda = ingresos.map((_, i) => round(margenCtrib[i] + gavs[i], 2));
   const ebit = ebitda.map((x, i) => round(x + depreciacion[i], 2));
@@ -506,7 +542,9 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
     ufStarts: starts, ufAvgs: avgs,
     inv: { rows: invRows, total, fisica, kt },
     ingresos, costoVentas, otrosCostos, costosVar, margenCtrib,
-    personal, publicidad, gastosGral, tecnologia, ocupacion, canonArr, gastoComun,
+    personal, publicidad, gastosGral, tecnologia, ocupacion, canonArr,
+    canonUfPromedio: canonUfPromedioArr, canonTramos,
+    fondoPromocion, gastoComun,
     gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, capex, flujoOp, payback,
     totalCapex, tir, van, paybackAnio, ebitdaMargin5,
   };
@@ -531,6 +569,7 @@ export interface BCSeed {
   // no son editables desde el BC ni se sincronizan de vuelta). Ver computeBC.
   escalations?: BCEscalation[] | null;
   regimeRentIsUfM2?: boolean;
+  fondoPromocionPct?: number | null;
   // Desglose "Arriendo por periodo" (Canon+GGCC+F.Prom+Otros=Total por tramo),
   // igual al que muestra la ficha del contrato. Solo para mostrar — no
   // participa del cálculo de TIR/VAN (que usa escalations vía resolveCanonTiers).
@@ -552,6 +591,7 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     ufM2: seed.ufM2 ?? 0.375,
     escalations: seed.escalations ?? [],
     regimeRentIsUfM2: seed.regimeRentIsUfM2 ?? false,
+    fondoPromocionPct: seed.fondoPromocionPct ?? 0,
     graciaMeses: 2,
     durContratoAnios: seed.durContratoAnios ?? 10,
     inicio: seed.inicio ?? new Date().toISOString().slice(0, 10),

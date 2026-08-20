@@ -117,6 +117,7 @@ export function buildBCSeed(params: {
     gastoComunSyncable: version?.gastos_comunes_methodology === "uf_m2",
     escalations,
     regimeRentIsUfM2: !!version?.regime_rent_is_uf_m2,
+    fondoPromocionPct: version?.fondo_promocion_percentage ?? null,
     contractPeriods,
   };
 }

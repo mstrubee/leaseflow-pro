@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Loader2, Check, FileText, Sheet, MapPin } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
 import { listSavedIsochrones, fetchSalesProjection, normalizeIsochroneName } from "@/lib/geochile/client";
@@ -75,7 +76,20 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
       }
       const projection = await fetchSalesProjection(matches[0].id);
       update("ventaMes", projection.ventaMes);
-      toast.success(`Ventas sincronizadas desde "${matches[0].name}" (Geochile Compass)`);
+      // La proyección de Geochile Compass trae su propio ajuste "Express"
+      // (independiente del "Formato de local" de este Business Case) — si no
+      // coinciden, las ventas importadas están calibradas para el formato
+      // equivocado y hay que avisar en vez de aplicarlas en silencio.
+      const bcIsExpress = inputs.formato === "Express";
+      const geoIsExpress = !!projection.meta?.isExpress;
+      if (bcIsExpress !== geoIsExpress) {
+        toast.warning(
+          `Ojo: este Business Case es "${inputs.formato}", pero la proyección de "${matches[0].name}" en Geochile Compass ${geoIsExpress ? "SÍ" : "NO"} tiene el ajuste Express aplicado. Las ventas importadas pueden estar sobre/sub-estimadas — revisá el ajuste Express de esa isócrona en Geochile Compass.`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(`Ventas sincronizadas desde "${matches[0].name}" (Geochile Compass)`);
+      }
     } catch (err: any) {
       toast.error(err.message || "No se pudo sincronizar con Geochile Compass");
     } finally {
@@ -284,8 +298,52 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <PnlRow label="Gastos Generales" vals={result.gastosGral} />
                       <PnlRow label="Tecnología" vals={result.tecnologia} />
                       <PnlRow label="Ocupación" vals={result.ocupacion} />
-                      <PnlRow label="Canon Arriendo" vals={result.canonArr} />
-                      <PnlRow label="Gasto Común" vals={result.gastoComun} />
+                      <PnlRow label="Canon Arriendo" vals={result.canonArr} detail={(i) => {
+                        if (i === 0) return null;
+                        const tramos = result.canonTramos[i] || [];
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Canon Arriendo — Año {i}</p>
+                            {tramos.map((t, idx) => (
+                              <p key={idx}>{t.meses} mes{t.meses === 1 ? "" : "es"} × {fmtMM(t.ufMes, 2)} UF/mes</p>
+                            ))}
+                            <p className="text-muted-foreground">= {fmtMM(result.canonUfPromedio[i], 2)} UF/mes promedio del año</p>
+                            <p className="pt-1 border-t">
+                              {fmtMM(result.canonUfPromedio[i], 2)} UF/mes × {fmtMM(result.mesesArr[i], 1)} meses × {fmtMM(result.ufAvgs[i - 1])} CLP/UF (UF promedio del año anterior) ÷ 1.000.000
+                            </p>
+                            <p className="font-semibold">= {fmtMM(result.canonArr[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
+                      <PnlRow label="Fondo Promoción" vals={result.fondoPromocion} detail={(i) => {
+                        if (i === 0) return null;
+                        const canonProm = result.canonUfPromedio[i];
+                        const fondoUf = canonProm * ((inputs.fondoPromocionPct || 0) / 100);
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Fondo Promoción — Año {i}</p>
+                            <p>{fmtMM(inputs.fondoPromocionPct, 1)}% × {fmtMM(canonProm, 2)} UF/mes (canon promedio del año) = {fmtMM(fondoUf, 2)} UF/mes</p>
+                            <p className="pt-1 border-t">
+                              {fmtMM(fondoUf, 2)} UF/mes × {fmtMM(result.mesesArr[i], 1)} meses × {fmtMM(result.ufAvgs[i - 1])} CLP/UF (UF promedio del año anterior) ÷ 1.000.000
+                            </p>
+                            <p className="font-semibold">= {fmtMM(result.fondoPromocion[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
+                      <PnlRow label="Gasto Común" vals={result.gastoComun} detail={(i) => {
+                        if (i === 0) return null;
+                        const gcomUfMes = (inputs.gastoComunUf || 0) * (inputs.superficie || 0);
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Gasto Común — Año {i}</p>
+                            <p>{fmtMM(inputs.gastoComunUf, 2)} UF/m² × {fmtMM(inputs.superficie, 0)} m² = {fmtMM(gcomUfMes, 2)} UF/mes</p>
+                            <p className="pt-1 border-t">
+                              {fmtMM(gcomUfMes, 2)} UF/mes × {fmtMM(result.mesesArr[i], 1)} meses × {fmtMM(result.ufAvgs[i - 1])} CLP/UF (UF promedio del año anterior) ÷ 1.000.000
+                            </p>
+                            <p className="font-semibold">= {fmtMM(result.gastoComun[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
                       <PnlRow label="EBITDA" vals={result.ebitda} bold />
                       <PnlRow label="Depreciación" vals={result.depreciacion} />
                       <PnlRow label="EBIT" vals={result.ebit} bold />
@@ -491,11 +549,30 @@ function FieldConv({ label, conv, children }: { label: string; conv: string; chi
 function Stat({ label, value }: { label: string; value: string }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
 }
-function PnlRow({ label, vals, bold }: { label: string; vals: number[]; bold?: boolean }) {
+function PnlRow({
+  label, vals, bold, detail,
+}: {
+  label: string; vals: number[]; bold?: boolean;
+  /** Detalle de cálculo por año (índice 0..5). Devolver null para años sin desglose (ej. Año 0). */
+  detail?: (i: number) => React.ReactNode | null;
+}) {
   return (
     <tr className={`border-b border-gray-50 ${bold ? "font-semibold" : ""}`}>
       <td className="text-left py-1">{label}</td>
-      {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>)}
+      {yearCols.map((i) => {
+        const content = detail?.(i);
+        if (!content) return <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>;
+        return (
+          <td key={i} className="text-right px-2">
+            <Popover>
+              <PopoverTrigger className="underline decoration-dotted decoration-muted-foreground underline-offset-2 hover:text-primary">
+                {fmtMM(vals[i] ?? 0)}
+              </PopoverTrigger>
+              <PopoverContent className="w-72 text-xs" align="end">{content}</PopoverContent>
+            </Popover>
+          </td>
+        );
+      })}
     </tr>
   );
 }
