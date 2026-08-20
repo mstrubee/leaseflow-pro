@@ -197,7 +197,7 @@ export function InformeDirectorioReport() {
 
       const { data: versionRows } = await supabase
         .from("contract_versions")
-        .select("id, contract_id, duration_months, notice_type, notice_value, effective_date, initial_rent, regime_rent, initial_rent_is_uf_m2, regime_rent_is_uf_m2, gastos_comunes_fixed_admin_uf, gastos_comunes_methodology")
+        .select("id, contract_id, duration_months, notice_type, notice_value, effective_date, initial_rent, regime_rent, initial_rent_is_uf_m2, regime_rent_is_uf_m2, gastos_comunes_uf_m2, gastos_comunes_methodology, grace_months")
         .in("contract_id", ids)
         .eq("is_current", true);
       const versionByContract = new Map<string, typeof versionRows[number]>();

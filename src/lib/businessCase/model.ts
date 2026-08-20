@@ -449,8 +449,9 @@ export interface BCSeed {
   nombre?: string; direccion?: string; comuna?: string; tipo?: string;
   superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null;
   durContratoAnios?: number | null; inicio?: string | null; ufBase?: number;
+  graciaMeses?: number | null;
   // Metadatos para la sincronización bidireccional Business Case ↔ Contrato:
-  // al abrir, estos 5 campos siempre reflejan el contrato (no lo guardado en
+  // al abrir, estos campos siempre reflejan el contrato (no lo guardado en
   // el BC); al editarlos en el BC, se escriben de vuelta al contrato/versión.
   contractVersionId?: string;
   rentField?: "initial_rent" | "regime_rent";

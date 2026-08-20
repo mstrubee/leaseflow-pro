@@ -15,10 +15,15 @@ export interface BCSeedVersion {
   regime_rent?: number | null;
   initial_rent_is_uf_m2?: boolean | null;
   regime_rent_is_uf_m2?: boolean | null;
-  gastos_comunes_fixed_admin_uf?: number | null;
+  // Gasto común UF/m² real del contrato (lo que el analista tipea como
+  // "Gasto Común UF/m²" en el formulario de contrato). NO confundir con
+  // gastos_comunes_fixed_admin_uf, que es un monto fijo adicional de
+  // administración —un concepto distinto— y que este Business Case nunca usó.
+  gastos_comunes_uf_m2?: number | null;
   gastos_comunes_methodology?: string | null;
   duration_months?: number | null;
   effective_date?: string | null;
+  grace_months?: number | null;
 }
 
 export interface BCSeedAddress {
@@ -56,10 +61,11 @@ export function buildBCSeed(params: {
     tipo,
     superficie,
     ufM2,
-    gastoComunUf: version?.gastos_comunes_fixed_admin_uf ?? null,
+    gastoComunUf: version?.gastos_comunes_uf_m2 ?? null,
     durContratoAnios: version?.duration_months ? Math.round(version.duration_months / 12) : null,
     inicio: version?.effective_date ?? null,
     ufBase: ufValue && ufValue > 0 ? ufValue : undefined,
+    graciaMeses: version?.grace_months ?? null,
     contractVersionId: version?.id,
     rentField,
     rentIsUfM2: canonIsUfM2,

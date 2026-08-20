@@ -16,10 +16,10 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const loadedRef = useRef(false);
-  // Últimos valores de los 5 campos que vienen del contrato, para detectar
+  // Últimos valores de los campos que vienen del contrato, para detectar
   // ediciones reales del usuario (vs. el simple re-render) y no reescribir el
   // contrato con el mismo valor que ya tenía.
-  const lastSyncedRef = useRef<{ superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null; durContratoAnios?: number | null; inicio?: string | null } | null>(null);
+  const lastSyncedRef = useRef<{ superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null; durContratoAnios?: number | null; inicio?: string | null; graciaMeses?: number | null } | null>(null);
   const { contractVersionId, rentField, rentIsUfM2, gastoComunSyncable } = seed;
 
   // Cargar una vez (cuando la config global esté lista y el diálogo abierto)
@@ -50,9 +50,10 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         if (seed.gastoComunUf != null && gastoComunSyncable) merged.gastoComunUf = seed.gastoComunUf;
         if (seed.durContratoAnios != null) merged.durContratoAnios = seed.durContratoAnios;
         if (seed.inicio) merged.inicio = seed.inicio;
+        if (seed.graciaMeses != null) merged.graciaMeses = seed.graciaMeses;
         lastSyncedRef.current = {
           superficie: merged.superficie, ufM2: merged.ufM2, gastoComunUf: merged.gastoComunUf,
-          durContratoAnios: merged.durContratoAnios, inicio: merged.inicio,
+          durContratoAnios: merged.durContratoAnios, inicio: merged.inicio, graciaMeses: merged.graciaMeses,
         };
         setInputs(merged);
       } catch {
@@ -161,7 +162,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
 
         // Sincronización bidireccional BC → Contrato: superficie, canon
         // (respetando si el contrato usa UF/m² o monto total), gasto común
-        // (solo si la metodología del contrato es "uf_m2") y duración/inicio.
+        // (solo si la metodología del contrato es "uf_m2"), gracia y duración/inicio.
         const last = lastSyncedRef.current;
         if (last) {
           const contractPatch: Record<string, unknown> = {};
@@ -174,7 +175,11 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
             const versionPatch: Record<string, unknown> = {};
             if (inputs.durContratoAnios !== last.durContratoAnios) versionPatch.duration_months = Math.round((inputs.durContratoAnios || 0) * 12);
             if (inputs.inicio && inputs.inicio !== last.inicio) versionPatch.effective_date = inputs.inicio;
-            if (gastoComunSyncable && inputs.gastoComunUf !== last.gastoComunUf) versionPatch.gastos_comunes_fixed_admin_uf = inputs.gastoComunUf;
+            if (inputs.graciaMeses !== last.graciaMeses) versionPatch.grace_months = inputs.graciaMeses;
+            // gastos_comunes_uf_m2 es el campo real del contrato ("Gasto Común
+            // UF/m²" del formulario) — no gastos_comunes_fixed_admin_uf, que es
+            // un monto fijo adicional de administración, un concepto distinto.
+            if (gastoComunSyncable && inputs.gastoComunUf !== last.gastoComunUf) versionPatch.gastos_comunes_uf_m2 = inputs.gastoComunUf;
             if (rentField && inputs.ufM2 !== last.ufM2) {
               versionPatch[rentField] = rentIsUfM2 ? inputs.ufM2 : +((inputs.ufM2 || 0) * (inputs.superficie || 0)).toFixed(2);
             }
@@ -185,7 +190,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
 
           lastSyncedRef.current = {
             superficie: inputs.superficie, ufM2: inputs.ufM2, gastoComunUf: inputs.gastoComunUf,
-            durContratoAnios: inputs.durContratoAnios, inicio: inputs.inicio,
+            durContratoAnios: inputs.durContratoAnios, inicio: inputs.inicio, graciaMeses: inputs.graciaMeses,
           };
         }
 
