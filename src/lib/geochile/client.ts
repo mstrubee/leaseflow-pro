@@ -102,19 +102,51 @@ export async function saveGeochileSettings(params: {
   if (error) throw error;
 }
 
+/**
+ * Tope de espera por llamada. Sin esto, una función lenta del otro lado deja
+ * el diálogo colgado hasta que el navegador corta solo, y Safari reporta el
+ * corte como un seco "Load failed" que no dice nada de qué pasó.
+ */
+const GEOCHILE_TIMEOUT_MS = 45_000;
+
 async function callGeochileFunction<T>(path: string, opts?: { body?: unknown; settings?: GeochileSettings }): Promise<T> {
   const settings = opts?.settings ?? (await getGeochileSettings());
   if (!settings) {
     throw new Error("La integración con Geochile Compass no está configurada. Configúrala en Admin > Integraciones.");
   }
-  const res = await fetch(`${settings.baseUrl}/functions/v1/${path}`, {
-    method: opts?.body ? "POST" : "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": settings.apiKey,
-    },
-    body: opts?.body ? JSON.stringify(opts.body) : undefined,
-  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEOCHILE_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${settings.baseUrl}/functions/v1/${path}`, {
+      method: opts?.body ? "POST" : "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": settings.apiKey,
+      },
+      body: opts?.body ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    // Un fetch que se rechaza no trae status: el navegador solo dice "Load
+    // failed" (Safari) o "Failed to fetch" (Chrome). Se traduce a algo que
+    // permita actuar, distinguiendo el corte por tiempo del resto.
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Geochile Compass no respondió en ${GEOCHILE_TIMEOUT_MS / 1000}s (${path}). ` +
+          `Puede estar procesando demasiado por llamada; reintentá en un momento.`,
+      );
+    }
+    throw new Error(
+      `No se pudo conectar con Geochile Compass en ${settings.baseUrl} (${path}). ` +
+        `Revisá la URL y la API key en Admin > Integraciones, y que haya conexión.`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Geochile Compass respondió ${res.status}: ${text || res.statusText}`);
