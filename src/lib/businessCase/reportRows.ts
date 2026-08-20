@@ -47,7 +47,7 @@ export function buildResumenEjecutivoRows(inputs: BCInputs, result: BCResult): I
     { label: "Valor x mt2", unit: "mt2", value: nf(inputs.ufM2, 2) },
     { label: "Contrato Arriendo", unit: "Años", value: nf(inputs.durContratoAnios) },
     { label: "Canon", unit: "UF", value: nf(result.canonUF, 1), highlight: true },
-    { label: "Gasto comun", unit: "UF", value: nf(inputs.gastoComunUf, 2) },
+    { label: "Gasto comun x mt2", unit: "mt2", value: nf(inputs.gastoComunUf, 2) },
     { label: "Inicio", unit: "", value: fmtDate(inicioDate) },
     { label: "Periodo Gracia / Habilitación", unit: "meses", value: nf(inputs.graciaMeses) },
     { label: "Inicio pago Canon", unit: "", value: fmtDate(pagoCanonDate) },

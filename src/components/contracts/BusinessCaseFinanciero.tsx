@@ -312,7 +312,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
                   <Field label="UF / m²"><NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></Field>
-                  <Field label="Gasto común (UF/mes)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
+                  <Field label="Gasto común (UF/m²)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
                   <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
                   <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
                   <Field label="Inicio"><Input type="date" value={inputs.inicio} disabled={ro} onChange={(e) => update("inicio", e.target.value)} className="h-8 text-sm" /></Field>

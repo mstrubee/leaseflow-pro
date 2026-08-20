@@ -270,6 +270,24 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
     return Math.min(12, Math.max(0, 12 - d.getMonth()));
   };
 
+  // Igual que mesesHastaFinDeAno, pero prorrateando el mes en que cae la fecha
+  // según el día: si la renta empieza a mitad de mes, ese mes no se cobra
+  // completo. Ej.: fin de gracia el 10 de noviembre → se cobra (30-10+1)/30 de
+  // noviembre + diciembre completo = 1,7 meses (no 2, que es lo que daba
+  // mesesHastaFinDeAno al mirar solo el mes e ignorar el día). El caso del
+  // día 1 da exactamente el mismo resultado que la versión sin prorratear
+  // ((30-1+1)/30 = 1), así que no cambia nada para el caso más común.
+  const mesesProporcionalesHastaFinDeAno = (iso: string): number => {
+    const d = new Date(iso + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return 12;
+    const mes = d.getMonth();
+    const dia = d.getDate();
+    const diasDelMes = new Date(d.getFullYear(), mes + 1, 0).getDate();
+    const fraccionPrimerMes = Math.max(0, Math.min(1, (diasDelMes - dia + 1) / diasDelMes));
+    const mesesCompletosRestantes = Math.max(0, 11 - mes);
+    return Math.min(12, fraccionPrimerMes + mesesCompletosRestantes);
+  };
+
   // Meses de RENTA del año 1: desde el inicio de pago de canon (inicio + gracia).
   let dtCanonIso = inputs.inicio || "";
   if (inputs.inicio) {
@@ -277,7 +295,7 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
     dtCanon.setMonth(dtCanon.getMonth() + gracia);
     dtCanonIso = dtCanon.toISOString().slice(0, 10);
   }
-  const mesesY1 = dtCanonIso ? mesesHastaFinDeAno(dtCanonIso) : 3;
+  const mesesY1 = dtCanonIso ? mesesProporcionalesHastaFinDeAno(dtCanonIso) : 3;
   const mesesArr = [0, mesesY1, 12, 12, 12, 12];
 
   // Meses de OPERACIÓN de cada año calendario (desde la apertura al público) y
@@ -323,10 +341,14 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const kt = ktRow ? ktRow.monto : 0;
   const totalCapex = total;
 
-  // Canon y gasto común (MM CLP) — año 0 = 0; años 1..5 con UF promedio del año anterior
+  // Canon y gasto común (MM CLP) — año 0 = 0; años 1..5 con UF promedio del año
+  // anterior. gastoComunUf viene en UF/m² (mismo criterio que ufM2 para el
+  // canon), así que hay que multiplicarlo por la superficie — antes no se
+  // hacía y un gasto común de 0,05 UF/m² quedaba prácticamente en cero en vez
+  // de multiplicarse por los m² del local.
   const gcomUF = inputs.gastoComunUf || 0;
   const canonArr = mesesArr.map((m, i) => (i === 0 ? 0 : round(-canonUF * m * avgs[i - 1] / 1e6, 4)));
-  const gastoComun = mesesArr.map((m, i) => (i === 0 ? 0 : round(-gcomUF * m * avgs[i - 1] / 1e6, 4)));
+  const gastoComun = mesesArr.map((m, i) => (i === 0 ? 0 : round(-gcomUF * superficie * m * avgs[i - 1] / 1e6, 4)));
 
   // Ventas
   const sf = inputs.scenario === "opt" ? 1.1 : inputs.scenario === "cons" ? 0.85 : 1.0;

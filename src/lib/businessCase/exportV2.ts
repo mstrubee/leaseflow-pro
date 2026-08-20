@@ -130,9 +130,20 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   datos.getCell("B14").value = superficie;                 // Superficie (m²)
   datos.getCell("B15").value = inputs.ufM2 || 0;           // Valor x m² (UF)
   datos.getCell("B16").value = inputs.durContratoAnios || 0;
-  datos.getCell("B18").value = superficie > 0 ? (inputs.gastoComunUf || 0) / superficie : 0; // E18 = E14*B18 = gasto común UF
+  // B18 es UF/m² (mismo criterio que B15/ufM2 para el canon); E18 = E14*B18 la
+  // multiplica por la superficie. Antes se dividía gastoComunUf por superficie
+  // ACÁ y la plantilla volvía a multiplicar por superficie en E18, así que un
+  // gasto común de 0,05 UF/m² terminaba en 0,05/superficie ≈ 0 en vez de
+  // multiplicarse — coincide con el síntoma reportado (B18 se veía en 0).
+  datos.getCell("B18").value = inputs.gastoComunUf || 0;
   datos.getCell("E19").value = isoToDate(inputs.inicio);   // Inicio
   datos.getCell("E20").value = inputs.graciaMeses || 0;    // Gracia (meses)
+  // E21 = inicio del pago de renta = E19 + E20 meses. La plantilla traía
+  // "=E19+(31*E20)" — una aproximación a 31 días por mes que se corre de la
+  // fecha real (por ej. 3 meses "de gracia" no son 93 días en todos los
+  // casos). Se reemplaza por EDATE, que suma meses calendario de verdad y
+  // coincide con dtCanonIso/mesesY1 de model.ts (misma fuente de la verdad).
+  datos.getCell("E21").value = { formula: "EDATE(E19,E20)" } as ExcelJS.CellFormulaValue;
   // B21 = meses de OPERACIÓN del año 1 (desde la apertura). La plantilla lo
   // derivaba de =(12-MONTH(E19))-1, que ignora tanto la gracia como la fecha de
   // apertura; se escribe el valor que ya calcula la app para que planilla y
@@ -270,6 +281,12 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   (["E", "F", "G", "H", "I"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoApertura + i; });
   (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoApertura + i; });
 
+  // Fila 34 es el mismo encabezado "Año" que la fila 8, para el bloque de
+  // "Análisis Financiero" (depreciación, fila 35 y siguientes) — la plantilla
+  // también la trae fija en 2025-2030 y nunca se actualizaba.
+  res.getCell("M34").value = null;
+  (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}34`).value = anoApertura + i; });
+
   // ── Limpieza ────────────────────────────────────────────────────────────────
   // La plantilla arrastra anotaciones sueltas "Corregido" (columnas J y S) que
   // no aportan nada al informe final.
@@ -289,6 +306,13 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   });
   res.getCell("D24").value = null;
   res.getCell("M24").value = null;
+  // K42 = (Datos!E29*Supuestos!B3)+(Datos!E28*Supuestos!B3). Datos!E29 (cobro
+  // por instalaciones) ya se deja en 0, pero Datos!E28 es "=E17" (garantía del
+  // contrato de referencia original) y no una entrada de este Business
+  // Case genérico, así que K42 mostraba un monto en UF de esa garantía
+  // multiplicado por la UF base — un valor "pegado" que no corresponde a nada
+  // que el usuario haya ingresado acá.
+  res.getCell("K42").value = null;
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
   wb.calcProperties.fullCalcOnLoad = true;
