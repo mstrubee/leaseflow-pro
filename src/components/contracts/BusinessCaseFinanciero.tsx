@@ -178,7 +178,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                   <Stat label="Canon (vigente)" value={`${fmtMM(result.canonUF)} UF/mes`} />
                   <Stat label="Canon UF/m²" value={`${fmtMM(inputs.ufM2, 2)} UF/m²`} />
                   <Stat label="Garantía" value={`${fmtMM(result.garantiaUF)} UF`} />
-                  <Stat label="Meses año 1" value={`${result.mesesY1}`} />
+                  <Stat label="Meses año 1" value={fmtMM(result.mesesY1, 1)} />
                   <Stat label="EBITDA Margin Año 5" value={fmtPct(result.ebitdaMargin5)} />
                 </div>
                 {seed.contractPeriods && seed.contractPeriods.length > 0 && (

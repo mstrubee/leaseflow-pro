@@ -112,7 +112,11 @@ export function computeArriendoPeriods(
   const durationMonths = version.duration_months;
 
   if (!hasEscalations && !hasAdjustments) {
-    const periodCanon = actualRegimeRent;
+    // initial_rent tiene prioridad sobre regime_rent cuando está cargado
+    // (mismo criterio que rentField en buildSeed.ts y currentRent en
+    // CommercialConditionsSummary.tsx): en la práctica el analista tipea el
+    // canon real en initial_rent y deja regime_rent en su default (0).
+    const periodCanon = actualInitialRent || actualRegimeRent;
     const periodFProm = periodCanon * (fondoPct / 100);
     const periodTotal = periodCanon + ggcc + periodFProm + otros;
     return [

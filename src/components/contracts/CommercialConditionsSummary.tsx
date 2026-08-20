@@ -381,7 +381,13 @@ export function CommercialConditionsSummary({
   }, [version.effective_date, signedDate]);
 
   // Calculate current rent based on escalations, periodic adjustments, and current month
-  // For contracts not started yet, we use the regime rent (projected rent)
+  // initial_rent siempre tiene prioridad sobre regime_rent cuando está
+  // cargado (mismo criterio que rentField en buildSeed.ts): en la práctica
+  // el analista tipea el canon real en "initial_rent" y deja "regime_rent"
+  // en su default (0), tenga o no escalonamiento el contrato. Antes esto
+  // solo miraba initial_rent cuando hasEscalations era true, así que un
+  // contrato SIN escalaciones (o que aún no arrancó) mostraba canon $0
+  // —el de regime_rent— aunque initial_rent tuviera el valor real cargado.
   const currentRent = useMemo(() => {
     // Calculate current month
     const startDate = version.effective_date
@@ -389,30 +395,29 @@ export function CommercialConditionsSummary({
       : signedDate
         ? new Date(signedDate)
         : null;
-    
+
     if (!startDate) {
-      // If escalations exist, show initial rent; otherwise regime rent
-      return hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+      return actualInitialRent || actualRegimeRent;
     }
-    
+
     const today = new Date();
     const diffTime = today.getTime() - startDate.getTime();
     const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-    
-    // For contracts that haven't started yet, show initial rent if escalations exist
+
     if (currentMonth < 1) {
-      return hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+      return actualInitialRent || actualRegimeRent;
     }
-    
+
     // Check grace period - only apply for active contracts
     const graceMonths = version.grace_months || 0;
     if (currentMonth <= graceMonths && currentMonth >= 1) {
       return 0;
     }
-    
-    // If no escalations and no adjustments, return actual regime rent
+
+    // If no escalations and no adjustments, el canon se mantiene flat en
+    // initial_rent (o regime_rent si no hay initial_rent cargado)
     if (!hasEscalations && !hasAdjustments) {
-      return actualRegimeRent;
+      return actualInitialRent || actualRegimeRent;
     }
     
     // Start with base rent from escalations or regime rent
@@ -671,7 +676,7 @@ export function CommercialConditionsSummary({
   // Calculate guarantee amount based on type
   const guaranteeAmount = useMemo(() => {
     if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
-      const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+      const baseRent = actualInitialRent || actualRegimeRent;
       return version.guarantee_multiplier * baseRent;
     }
     if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {

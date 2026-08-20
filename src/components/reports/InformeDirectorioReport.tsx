@@ -174,7 +174,7 @@ export function InformeDirectorioReport() {
     try {
       const { data: contractRows, error } = await supabase
         .from("contracts")
-        .select("id, name, superficie_edificada_local, contract_companies(companies(name)), contract_addresses(street, number, commune)")
+        .select("id, name, superficie_edificada_local, metros_lineales_frente, contract_companies(companies(name)), contract_addresses(street, number, commune)")
         .eq("status", "en_negociacion")
         .eq("comite_gp_status", COMITE_GP_STATUS)
         .is("deleted_at", null);
@@ -195,13 +195,35 @@ export function InformeDirectorioReport() {
         if (r.inputs) bcByContract.set(r.contract_id, r.inputs as unknown as BCInputs);
       });
 
+      // "*" (no lista acotada de columnas): el Business Case de esta pantalla
+      // tiene que ser un espejo exacto del que se ve en la ficha del contrato
+      // (ContractDetail.tsx usa contract_versions (*, ...) también). Antes
+      // esta query traía solo un subconjunto de columnas y le faltaban los
+      // campos de escalonamiento/GGCC extendido/fondo de promoción/ajustes
+      // periódicos, así que buildBCSeed armaba acá un Business Case distinto
+      // al de la ficha del contrato para el mismo contrato.
       const { data: versionRows } = await supabase
         .from("contract_versions")
-        .select("id, contract_id, duration_months, notice_type, notice_value, effective_date, initial_rent, regime_rent, initial_rent_is_uf_m2, regime_rent_is_uf_m2, gastos_comunes_uf_m2, gastos_comunes_methodology, grace_months")
+        .select("*")
         .in("contract_id", ids)
         .eq("is_current", true);
-      const versionByContract = new Map<string, typeof versionRows[number]>();
-      (versionRows || []).forEach((v) => versionByContract.set(v.contract_id, v));
+      const versionIds = (versionRows || []).map((v) => v.id);
+      const { data: escalationRows } = versionIds.length
+        ? await supabase
+            .from("rent_escalations")
+            .select("version_id, month_number, amount, is_uf_m2")
+            .in("version_id", versionIds)
+        : { data: [] as { version_id: string; month_number: number; amount: number; is_uf_m2: boolean }[] };
+      const escalationsByVersion = new Map<string, { month_number: number; amount: number; is_uf_m2: boolean }[]>();
+      (escalationRows || []).forEach((e) => {
+        const arr = escalationsByVersion.get(e.version_id) || [];
+        arr.push({ month_number: e.month_number, amount: e.amount, is_uf_m2: e.is_uf_m2 });
+        escalationsByVersion.set(e.version_id, arr);
+      });
+      const versionByContract = new Map<string, (typeof versionRows[number]) & { rent_escalations: { month_number: number; amount: number; is_uf_m2: boolean }[] }>();
+      (versionRows || []).forEach((v) =>
+        versionByContract.set(v.contract_id, { ...v, rent_escalations: escalationsByVersion.get(v.id) || [] }),
+      );
 
       const { data: linkRows } = await supabase
         .from("contract_isochrone_links" as any)
