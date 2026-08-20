@@ -124,7 +124,11 @@ export interface BCInputs {
 
   // Contrato
   superficie: number; // m²
-  ufM2: number; // UF/m² (canon = superficie × ufM2)
+  ufM2: number; // UF/m² del tramo base, antes de cualquier escalación (canon base = superficie × ufM2)
+  // Tramos de arriendo escalonado, sincronizados desde el contrato (rent_escalations).
+  // Solo lectura: no editables desde el BC. Ver canonUfForLeaseMonth en computeBC.
+  escalations: BCEscalation[];
+  regimeRentIsUfM2: boolean;
   graciaMeses: number;
   durContratoAnios: number;
   inicio: string; // ISO date (entrega/inicio)
@@ -251,6 +255,39 @@ function round(v: number, d = 2): number {
   return Math.round((Number.isFinite(v) ? v : 0) * p) / p;
 }
 
+// ---------- tramos de canon (escalonamiento) ----------
+export interface BCCanonTier {
+  fromMonth: number; // mes ABSOLUTO desde effective_date (mismo criterio que rent_escalations.month_number)
+  ufM2: number;
+  totalUf: number;
+}
+
+/**
+ * Tramos de canon del contrato: el tramo base (superficie × ufM2, vigente
+ * desde que empieza a pagarse renta = graciaMeses+1) más cada escalación de
+ * inputs.escalations, en el mismo orden en que se aplican. Única fuente de
+ * verdad para el canon escalonado — la usan tanto computeBC (TIR/VAN/EBITDA)
+ * como la UI (para mostrar el desglose). Mismo criterio de UF/m² vs. monto
+ * fijo que "Canon Actual" en CommercialConditionsSummary.tsx.
+ */
+export function resolveCanonTiers(
+  inputs: Pick<BCInputs, "superficie" | "ufM2" | "escalations" | "regimeRentIsUfM2" | "graciaMeses">,
+): BCCanonTier[] {
+  const superficie = inputs.superficie || 0;
+  const baseTotal = round(superficie * (inputs.ufM2 || 0), 2);
+  const tiers: BCCanonTier[] = [
+    { fromMonth: (inputs.graciaMeses || 0) + 1, ufM2: inputs.ufM2 || 0, totalUf: baseTotal },
+  ];
+  const sortedEsc = (inputs.escalations || []).slice().sort((a, b) => a.monthNumber - b.monthNumber);
+  for (const esc of sortedEsc) {
+    const needsMultiply = esc.isUfM2 || (inputs.regimeRentIsUfM2 && !esc.isUfM2);
+    const totalUf = needsMultiply && superficie > 0 ? round(esc.amount * superficie, 2) : round(esc.amount, 2);
+    const ufM2 = superficie > 0 ? round(totalUf / superficie, 4) : 0;
+    tiers.push({ fromMonth: esc.monthNumber, ufM2, totalUf });
+  }
+  return tiers.sort((a, b) => a.fromMonth - b.fromMonth);
+}
+
 // ---------- cálculo principal (réplica de recalcAll del HTML) ----------
 export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminConfig): BCResult {
   const superficie = inputs.superficie || 0;
@@ -259,9 +296,24 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const { starts, avgs } = calcUF(ufBase, inputs.ufRates);
 
   // Contrato derivado
-  const canonUF = round(superficie * ufM2, 2);
-  const garantiaUF = canonUF;
   const gracia = inputs.graciaMeses || 0;
+
+  // Canon con escalonamiento: los tramos de resolveCanonTiers están en mes
+  // ABSOLUTO desde effective_date (igual que rent_escalations.month_number),
+  // por eso hay que sumarle la gracia para comparar con el "mes de renta" del
+  // BC (que cuenta desde el inicio de pago de canon = inicio + gracia).
+  const canonTiers = resolveCanonTiers(inputs);
+  const canonUfForLeaseMonth = (leaseMonth: number): number => {
+    const mesAbsoluto = leaseMonth + gracia;
+    let v = canonTiers[0]?.totalUf ?? 0;
+    for (const t of canonTiers) {
+      if (t.fromMonth > mesAbsoluto) break;
+      v = t.totalUf;
+    }
+    return v;
+  };
+  const canonUF = canonUfForLeaseMonth(1);
+  const garantiaUF = canonUF;
   // Meses que quedan del año calendario contando el mes de la fecha dada:
   // diciembre → 1, agosto → 5, enero → 12.
   const mesesHastaFinDeAno = (iso: string): number => {
@@ -347,7 +399,23 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   // hacía y un gasto común de 0,05 UF/m² quedaba prácticamente en cero en vez
   // de multiplicarse por los m² del local.
   const gcomUF = inputs.gastoComunUf || 0;
-  const canonArr = mesesArr.map((m, i) => (i === 0 ? 0 : round(-canonUF * m * avgs[i - 1] / 1e6, 4)));
+  // canonArr por año: promedio del canon UF mes a mes (según los tramos de
+  // escalonamiento) dentro de ese año-modelo, multiplicado por los meses del
+  // año y la UF promedio del año anterior — mismo criterio de conversión a
+  // CLP que antes. Solo el año 1 (mesesY1) puede ser fraccionario (proración
+  // de día de inicio); para el lookup de tramo se redondea a meses enteros,
+  // preservando el "m" exacto para la conversión a CLP. Sin escalaciones el
+  // resultado es idéntico al cálculo anterior (canonUF constante).
+  let mesRentaCursor = 0;
+  const canonArr = mesesArr.map((m, i) => {
+    if (i === 0 || m <= 0) return 0;
+    const mesesEnteros = Math.max(1, Math.round(m));
+    let sumaUf = 0;
+    for (let k = 1; k <= mesesEnteros; k++) sumaUf += canonUfForLeaseMonth(mesRentaCursor + k);
+    mesRentaCursor += mesesEnteros;
+    const canonUfPromedio = sumaUf / mesesEnteros;
+    return round(-canonUfPromedio * m * avgs[i - 1] / 1e6, 4);
+  });
   const gastoComun = mesesArr.map((m, i) => (i === 0 ? 0 : round(-gcomUF * superficie * m * avgs[i - 1] / 1e6, 4)));
 
   // Ventas
@@ -445,6 +513,8 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
 }
 
 // ---------- defaults / prefill desde el contrato ----------
+export interface BCEscalation { monthNumber: number; amount: number; isUfM2: boolean }
+
 export interface BCSeed {
   nombre?: string; direccion?: string; comuna?: string; tipo?: string;
   superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null;
@@ -457,6 +527,14 @@ export interface BCSeed {
   rentField?: "initial_rent" | "regime_rent";
   rentIsUfM2?: boolean;
   gastoComunSyncable?: boolean; // true solo si la metodología de gasto común es "uf_m2"
+  // Tramos de arriendo escalonado (solo lectura: siempre reflejan el contrato,
+  // no son editables desde el BC ni se sincronizan de vuelta). Ver computeBC.
+  escalations?: BCEscalation[] | null;
+  regimeRentIsUfM2?: boolean;
+  // Desglose "Arriendo por periodo" (Canon+GGCC+F.Prom+Otros=Total por tramo),
+  // igual al que muestra la ficha del contrato. Solo para mostrar — no
+  // participa del cálculo de TIR/VAN (que usa escalations vía resolveCanonTiers).
+  contractPeriods?: import("./rentPeriods").RentPeriodRow[];
 }
 
 export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = defaultAdminConfig): BCInputs {
@@ -472,6 +550,8 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     descripcion: "",
     superficie: seed.superficie ?? 0,
     ufM2: seed.ufM2 ?? 0.375,
+    escalations: seed.escalations ?? [],
+    regimeRentIsUfM2: seed.regimeRentIsUfM2 ?? false,
     graciaMeses: 2,
     durContratoAnios: seed.durContratoAnios ?? 10,
     inicio: seed.inicio ?? new Date().toISOString().slice(0, 10),

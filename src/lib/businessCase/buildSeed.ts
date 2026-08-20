@@ -1,4 +1,5 @@
 import type { BCSeed } from "./model";
+import { computeArriendoPeriods, type RentPeriodsVersionInput } from "./rentPeriods";
 
 // Mismos shapes mínimos que usa ContractDetail.tsx — se aceptan sueltos para
 // poder reusar esta función desde cualquier pantalla que ya tenga cargados
@@ -6,24 +7,20 @@ import type { BCSeed } from "./model";
 export interface BCSeedContract {
   name: string;
   superficie_edificada_local?: number | null;
+  metros_lineales_frente?: number | null;
   contract_companies?: { companies?: { name?: string | null } | null }[] | null;
 }
 
-export interface BCSeedVersion {
+// Superset de RentPeriodsVersionInput (para el desglose "Arriendo por
+// periodo") más los campos propios del Business Case (canon UF/m², gracia,
+// duración, etc). Todo opcional porque distintas pantallas cargan distintos
+// subconjuntos de columnas de contract_versions.
+export interface BCSeedVersion extends Partial<Omit<RentPeriodsVersionInput, "rent_escalations">> {
   id?: string;
-  initial_rent?: number | null;
-  regime_rent?: number | null;
-  initial_rent_is_uf_m2?: boolean | null;
-  regime_rent_is_uf_m2?: boolean | null;
-  // Gasto común UF/m² real del contrato (lo que el analista tipea como
-  // "Gasto Común UF/m²" en el formulario de contrato). NO confundir con
-  // gastos_comunes_fixed_admin_uf, que es un monto fijo adicional de
-  // administración —un concepto distinto— y que este Business Case nunca usó.
-  gastos_comunes_uf_m2?: number | null;
-  gastos_comunes_methodology?: string | null;
-  duration_months?: number | null;
-  effective_date?: string | null;
-  grace_months?: number | null;
+  // Tramos de arriendo escalonado del contrato. month_number cuenta meses
+  // desde effective_date (1-indexado) — NO desde el inicio de pago de canon
+  // (que además resta grace_months). Ver CommercialConditionsSummary.tsx.
+  rent_escalations?: { month_number: number; amount: number; is_uf_m2: boolean }[] | null;
 }
 
 export interface BCSeedAddress {
@@ -50,9 +47,57 @@ export function buildBCSeed(params: {
   const superficie = contract.superficie_edificada_local ?? null;
 
   const rentField: "initial_rent" | "regime_rent" = version?.initial_rent ? "initial_rent" : "regime_rent";
-  const canonIsUfM2 = rentField === "initial_rent" ? !!version?.initial_rent_is_uf_m2 : !!version?.regime_rent_is_uf_m2;
+  // initial_rent hereda el flag UF/m² del régimen si el suyo propio no viene
+  // explícitamente en true (mismo criterio que isInitialRentUfM2 en
+  // CommercialConditionsSummary.tsx — evita interpretar como monto fijo un
+  // canon que en realidad está en UF/m² por herencia del régimen).
+  const canonIsUfM2 = rentField === "initial_rent"
+    ? (!!version?.initial_rent_is_uf_m2 || !!version?.regime_rent_is_uf_m2)
+    : !!version?.regime_rent_is_uf_m2;
   const canonUf = version?.initial_rent || version?.regime_rent || null;
   const ufM2 = canonUf == null ? null : canonIsUfM2 ? canonUf : (superficie ? +(canonUf / superficie).toFixed(4) : null);
+
+  const escalations = (version?.rent_escalations || [])
+    .slice()
+    .sort((a, b) => a.month_number - b.month_number)
+    .map((e) => ({ monthNumber: e.month_number, amount: e.amount, isUfM2: e.is_uf_m2 }));
+
+  // Desglose "Arriendo por periodo" (Canon + GGCC + F.Prom + Otros = Total,
+  // por tramo), calculado con la misma lógica que la ficha del contrato —
+  // para que el Business Case muestre exactamente el mismo detalle.
+  const contractPeriods = version
+    ? computeArriendoPeriods(
+        {
+          initial_rent: version.initial_rent ?? null,
+          regime_rent: version.regime_rent ?? 0,
+          initial_rent_is_uf_m2: version.initial_rent_is_uf_m2,
+          regime_rent_is_uf_m2: version.regime_rent_is_uf_m2,
+          duration_months: version.duration_months ?? 0,
+          grace_months: version.grace_months,
+          gastos_comunes_methodology: version.gastos_comunes_methodology,
+          gastos_comunes_uf_m2: version.gastos_comunes_uf_m2,
+          gastos_comunes_uf_ml_frente: version.gastos_comunes_uf_ml_frente,
+          gastos_comunes_prorrata_kwh_clima: version.gastos_comunes_prorrata_kwh_clima,
+          gastos_comunes_percentage: version.gastos_comunes_percentage,
+          gastos_comunes_total_centro: version.gastos_comunes_total_centro,
+          gastos_comunes_tope: version.gastos_comunes_tope,
+          gastos_comunes_tope_type: version.gastos_comunes_tope_type,
+          adicional_administracion_percentage: version.adicional_administracion_percentage,
+          gastos_comunes_fixed_admin_uf: version.gastos_comunes_fixed_admin_uf,
+          has_extended_gastos_comunes: version.has_extended_gastos_comunes,
+          fondo_promocion_percentage: version.fondo_promocion_percentage,
+          otros_egresos_amount: version.otros_egresos_amount,
+          has_periodic_adjustments: version.has_periodic_adjustments,
+          first_adjustment_month: version.first_adjustment_month,
+          adjustment_periodicity_months: version.adjustment_periodicity_months,
+          adjustment_type: version.adjustment_type,
+          adjustment_value: version.adjustment_value,
+          rent_escalations: version.rent_escalations,
+        },
+        superficie,
+        contract.metros_lineales_frente,
+      )
+    : [];
 
   return {
     nombre: contract.name,
@@ -70,5 +115,8 @@ export function buildBCSeed(params: {
     rentField,
     rentIsUfM2: canonIsUfM2,
     gastoComunSyncable: version?.gastos_comunes_methodology === "uf_m2",
+    escalations,
+    regimeRentIsUfM2: !!version?.regime_rent_is_uf_m2,
+    contractPeriods,
   };
 }

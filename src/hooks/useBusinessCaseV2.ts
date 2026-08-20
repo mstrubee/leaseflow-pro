@@ -51,6 +51,8 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         if (seed.durContratoAnios != null) merged.durContratoAnios = seed.durContratoAnios;
         if (seed.inicio) merged.inicio = seed.inicio;
         if (seed.graciaMeses != null) merged.graciaMeses = seed.graciaMeses;
+        merged.escalations = seed.escalations ?? [];
+        merged.regimeRentIsUfM2 = seed.regimeRentIsUfM2 ?? false;
         lastSyncedRef.current = {
           superficie: merged.superficie, ufM2: merged.ufM2, gastoComunUf: merged.gastoComunUf,
           durContratoAnios: merged.durContratoAnios, inicio: merged.inicio, graciaMeses: merged.graciaMeses,

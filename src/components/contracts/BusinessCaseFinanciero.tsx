@@ -161,11 +161,43 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
 
               <Card title="Contrato (resumen)">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <Stat label="Canon" value={`${fmtMM(result.canonUF)} UF/mes`} />
+                  <Stat label="Canon (vigente)" value={`${fmtMM(result.canonUF)} UF/mes`} />
+                  <Stat label="Canon UF/m²" value={`${fmtMM(inputs.ufM2, 2)} UF/m²`} />
                   <Stat label="Garantía" value={`${fmtMM(result.garantiaUF)} UF`} />
                   <Stat label="Meses año 1" value={`${result.mesesY1}`} />
                   <Stat label="EBITDA Margin Año 5" value={fmtPct(result.ebitdaMargin5)} />
                 </div>
+                {seed.contractPeriods && seed.contractPeriods.length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="text-xs text-muted-foreground mb-1.5">
+                      Arriendo por periodo (desde el contrato{seed.contractPeriods.length > 1 ? " — escalonado" : ""})
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead><tr className="text-muted-foreground border-b">
+                        <th className="text-left py-1 font-normal">Periodo</th>
+                        <th className="text-right font-normal">Canon</th>
+                        <th className="text-right font-normal">GGCC</th>
+                        <th className="text-right font-normal">F.Prom</th>
+                        <th className="text-right font-normal">Otros</th>
+                        <th className="text-right font-normal">Total</th>
+                        <th className="text-right font-normal">UF/m²</th>
+                      </tr></thead>
+                      <tbody>
+                        {seed.contractPeriods.map((p) => (
+                          <tr key={p.label} className="border-b border-gray-50">
+                            <td className="py-1">{p.label}</td>
+                            <td className="text-right">{fmtMM(p.canon, 2)}</td>
+                            <td className="text-right">{p.ggcc ? fmtMM(p.ggcc, 2) : "-"}</td>
+                            <td className="text-right">{p.fProm ? fmtMM(p.fProm, 2) : "-"}</td>
+                            <td className="text-right">{p.otros ? fmtMM(p.otros, 2) : "-"}</td>
+                            <td className="text-right font-medium">{fmtMM(p.total, 2)}</td>
+                            <td className="text-right">{p.ufM2 != null ? fmtMM(p.ufM2, 2) : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Card>
             </TabsContent>
 
