@@ -89,7 +89,18 @@ export async function buildInformeDirectorioPptx(
   await generateCapexPPT(capexData, { pres, skipCover: true, skipSave: true });
 
   // ═══════════ SLIDES 5+: una por contrato en revisión ═══════════
+  // Orden por contrato: 1) Análisis Territorial, 2) Potencial Económico
+  // (ambas de Geochile Compass, si se extrajeron), 3) Detalle Capex Plan
+  // Expansión (propia de este PPT) — en ese orden, no al revés.
   for (const c of contractSlides) {
+    if (c.geochileSlides) {
+      for (const data of [c.geochileSlides.slide1, c.geochileSlides.slide2]) {
+        if (!data) continue;
+        const gs = pres.addSlide();
+        gs.addImage({ data, x: 0, y: 0, w: 10, h: 5.625 });
+      }
+    }
+
     const s = pres.addSlide();
     s.background = { color: PAGE_BG };
 
@@ -176,17 +187,6 @@ export async function buildInformeDirectorioPptx(
       border: { pt: 0.25, color: BORDER },
       margin: [1, 2, 1, 2],
     });
-
-    // ── Láminas territoriales de Geochile Compass, si se extrajeron ──
-    // Van DESPUÉS de la slide propia del contrato: números primero, después
-    // el territorio que los respalda.
-    if (c.geochileSlides) {
-      for (const data of [c.geochileSlides.slide1, c.geochileSlides.slide2]) {
-        if (!data) continue;
-        const gs = pres.addSlide();
-        gs.addImage({ data, x: 0, y: 0, w: 10, h: 5.625 });
-      }
-    }
   }
 
   const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;

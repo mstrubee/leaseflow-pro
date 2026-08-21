@@ -26,7 +26,11 @@ const WHITE = "#FFFFFF";
 // depende de datos de aviso de término del contrato que este diálogo no
 // carga (solo tiene inputs/result del Business Case).
 function buildBulletsForBC(inputs: BCInputs, r: BCResult): string[] {
-  const bullets: string[] = [`CAPEX ${fmtMM(r.totalCapex, 0)} mm$`];
+  // CAPEX sin inventario (capital de trabajo, no es CAPEX) — mismo criterio
+  // que "CAPEX Est." en ContractsTable.tsx y buildBullets en
+  // InformeDirectorioReport.tsx.
+  const inventario = r.inv.rows.find((row) => row.id === "inv")?.monto || 0;
+  const bullets: string[] = [`CAPEX ${fmtMM(r.totalCapex - inventario, 0)} mm$`];
   const ventasProyectadas = (r.ingresos[4] + r.ingresos[5]) / 2;
   bullets.push(`Ventas Proyectadas: ${fmtMM(ventasProyectadas, 0)} mm$`);
   if (inputs.durContratoAnios) {

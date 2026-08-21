@@ -79,7 +79,10 @@ function deriveSalidaAnio(c: ContractEligible): number | null {
 function buildBullets(c: ContractEligible): string[] {
   if (!c.result) return [];
   const bullets: string[] = [];
-  bullets.push(`CAPEX ${fmtMM(c.result.totalCapex, 0)} mm$`);
+  // CAPEX sin inventario (capital de trabajo, no es CAPEX) — mismo criterio
+  // que "CAPEX Est." en ContractsTable.tsx. totalCapex sí lo incluye.
+  const inventario = c.result.inv.rows.find((row) => row.id === "inv")?.monto || 0;
+  bullets.push(`CAPEX ${fmtMM(c.result.totalCapex - inventario, 0)} mm$`);
   const ventasProyectadas = (c.result.ingresos[4] + c.result.ingresos[5]) / 2;
   bullets.push(`Ventas Proyectadas: ${fmtMM(ventasProyectadas, 0)} mm$`);
   const anio = deriveSalidaAnio(c);
@@ -381,39 +384,80 @@ export function InformeDirectorioReport() {
     loadContracts();
   };
 
-  const loadGeochileSlides = async (c: ContractEligible): Promise<ContractSlideData["geochileSlides"]> => {
+  // Descarga con reintento: un error transitorio de Storage (momentáneo, de
+  // red) hacía que la lámina se cayera en silencio de ESE PPT únicamente —
+  // pero como clearExtractedReports (más abajo) desvinculaba el informe
+  // igual para todos los contratos incluidos sin chequear si su lámina
+  // realmente se había adjuntado, un solo fallo transitorio dejaba el
+  // contrato SIN informe territorial para siempre (nadie lo notaba porque
+  // no había ningún aviso). Ahora se reintenta, se loguea si igual falla, y
+  // clearExtractedReports solo desvincula los contratos cuya lámina sí quedó
+  // adjunta — ver geochileFailures/geochileSucceededIds en buildReportParams.
+  const downloadSlideWithRetry = async (path: string, contractName: string, attempts = 2): Promise<Blob | null> => {
+    for (let i = 0; i < attempts; i++) {
+      const { data, error } = await supabase.storage.from(ISOCHRONE_SLIDES_BUCKET).download(path);
+      if (data && !error) return data;
+      if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 600));
+      else console.error(`[InformeDirectorio] No se pudo descargar "${path}" (${contractName}):`, error);
+    }
+    return null;
+  };
+
+  const loadGeochileSlides = async (
+    c: ContractEligible,
+    failures: string[],
+  ): Promise<ContractSlideData["geochileSlides"]> => {
     if (!c.isochroneReport) return undefined;
-    const { data: d1, error: e1 } = await supabase.storage
-      .from(ISOCHRONE_SLIDES_BUCKET)
-      .download(c.isochroneReport.slide1Path);
-    if (e1 || !d1) return undefined;
+    const d1 = await downloadSlideWithRetry(c.isochroneReport.slide1Path, c.name);
+    if (!d1) {
+      failures.push(c.name);
+      return undefined;
+    }
     const slide1 = await blobToBase64(d1);
     let slide2: string | undefined;
     if (c.isochroneReport.slide2Path) {
-      const { data: d2 } = await supabase.storage.from(ISOCHRONE_SLIDES_BUCKET).download(c.isochroneReport.slide2Path);
+      const d2 = await downloadSlideWithRetry(c.isochroneReport.slide2Path, c.name);
       if (d2) slide2 = await blobToBase64(d2);
+      else failures.push(`${c.name} (lámina 2)`);
     }
     return { slide1, slide2 };
   };
 
   const buildReportParams = async () => {
     const capexData = await buildCapexPPTData(year, ufValue || 0);
+    const geochileFailures: string[] = [];
+    const geochileSucceededIds: string[] = [];
     const contractSlides: ContractSlideData[] = await Promise.all(
-      selectedContracts.map(async (c) => ({
-        contractName: c.name,
-        subtitle: buildSubtitle(c.name, c.inputs),
-        bullets: buildBullets(c),
-        inputs: c.inputs!,
-        result: c.result!,
-        geochileSlides: await loadGeochileSlides(c),
-      })),
+      selectedContracts.map(async (c) => {
+        const geochileSlides = await loadGeochileSlides(c, geochileFailures);
+        if (c.isochroneReport && geochileSlides) geochileSucceededIds.push(c.id);
+        return {
+          contractName: c.name,
+          subtitle: buildSubtitle(c.name, c.inputs),
+          bullets: buildBullets(c),
+          inputs: c.inputs!,
+          result: c.result!,
+          geochileSlides,
+        };
+      }),
     );
-    return { year, capexData, contractSlides };
+    return { params: { year, capexData, contractSlides }, geochileFailures, geochileSucceededIds };
+  };
+
+  const warnGeochileFailures = (failures: string[]) => {
+    if (failures.length === 0) return;
+    toast.warning(
+      `No se pudo adjuntar la lámina territorial de: ${failures.join(", ")}. El resto del informe se generó igual — reintenta la descarga para esos contratos.`,
+      { duration: 12000 },
+    );
   };
 
   // El informe extraído es un stage temporal ("hasta que se genere el PPT"):
   // una vez incluido en una descarga exitosa, se limpia — no queda dando
-  // vueltas indefinidamente ni hay que acordarse de sacarlo a mano.
+  // vueltas indefinidamente ni hay que acordarse de sacarlo a mano. Solo se
+  // desvincula lo que REALMENTE quedó adjunto en el PPT (succeededIds) — si
+  // la descarga de una lámina falló, su vínculo se conserva para poder
+  // reintentar, en vez de perderse en silencio.
   const clearExtractedReports = async (contractIds: string[]) => {
     const withReport = contracts.filter((c) => contractIds.includes(c.id) && c.isochroneReport);
     if (withReport.length === 0) return;
@@ -436,12 +480,14 @@ export function InformeDirectorioReport() {
     setCopied(false);
     try {
       toast.info("Generando y subiendo el informe...");
+      const { params, geochileFailures } = await buildReportParams();
       const { url } = await shareInformeDirectorio({
-        report: await buildReportParams(),
+        report: params,
         contractIds: selectedContracts.map((c) => c.id),
         userId: user.id,
       });
       setShareUrl(url);
+      warnGeochileFailures(geochileFailures);
       try {
         await navigator.clipboard.writeText(url);
         setCopied(true);
@@ -465,11 +511,12 @@ export function InformeDirectorioReport() {
     setGenerating(true);
     try {
       toast.info("Generando Informe Directorio...");
-      const includedIds = selectedContracts.map((c) => c.id);
-      await generateInformeDirectorioPPT(await buildReportParams());
-      await clearExtractedReports(includedIds);
+      const { params, geochileFailures, geochileSucceededIds } = await buildReportParams();
+      await generateInformeDirectorioPPT(params);
+      await clearExtractedReports(geochileSucceededIds);
       loadContracts();
       toast.success("Informe Directorio descargado");
+      warnGeochileFailures(geochileFailures);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         toast.info("Descarga cancelada");
