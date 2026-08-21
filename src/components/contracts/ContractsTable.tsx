@@ -537,46 +537,53 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     
     // Get base regime rent (considering UF/m²)
     const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
-    
+    // Initial rent (considering UF/m²) — has priority over regime_rent whenever
+    // it's loaded (same criteria as rentField in buildSeed.ts): in practice the
+    // analyst types the real canon into initial_rent and leaves regime_rent at
+    // its default (0), whether or not the contract has escalations. Every early
+    // return below used to fall back to baseRegimeRent alone, so a contract
+    // without escalations (or that hadn't started yet) showed canon $0 even
+    // with initial_rent loaded — real case: Ovalle (Express).
+    const baseInitialRent = version.initial_rent
+      ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
+      : 0;
+    const baseRent = baseInitialRent || baseRegimeRent;
+
     if (!startDate) {
-      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
+      return { currentRent: baseRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
     }
-    
+
     const today = new Date();
     const diffTime = today.getTime() - startDate.getTime();
     const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-    
+
     // Check if contract hasn't started yet (future start date)
     const isContractNotStarted = currentMonth < 1;
     if (isContractNotStarted) {
-      // For contracts that haven't started, return regime rent (projected)
-      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
+      // For contracts that haven't started, return the (still) projected rent
+      return { currentRent: baseRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
     }
-    
+
     // Check grace period - only for active contracts (currentMonth >= 1)
     const graceMonths = version.grace_months || 0;
     if (currentMonth <= graceMonths) {
       return { currentRent: 0, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
     }
-    
-    // If no escalations and no adjustments, return regime rent
+
+    // If no escalations and no adjustments, rent stays flat at initial_rent
+    // (or regime_rent if there's no initial_rent loaded)
     if (!hasEscalations && !hasAdjustments) {
-      return { currentRent: baseRegimeRent, hasEscalations: false, hasAdjustments: false, isContractNotStarted: false };
+      return { currentRent: baseRent, hasEscalations: false, hasAdjustments: false, isContractNotStarted: false };
     }
-    
+
     // Start with base rent from escalations or regime rent
-    let currentRent = baseRegimeRent;
-    
+    let currentRent = baseRent;
+
     if (hasEscalations) {
       // Find the applicable escalation for current month
       const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
-      
-      // Initial rent (considering UF/m²)
-      const baseInitialRent = version.initial_rent 
-        ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
-        : baseRegimeRent;
-      
-      currentRent = baseInitialRent;
+
+      currentRent = baseInitialRent || baseRegimeRent;
       for (const esc of sortedEscalations) {
         if (esc.month_number <= currentMonth) {
           // Per-escalation UF/m²: own flag or legacy regime flag
