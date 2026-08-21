@@ -200,6 +200,10 @@ export interface BCResult {
   inv: { rows: BCInvRow[]; total: number; fisica: number; kt: number };
   // P&L (arrays de 6 columnas: índice 0 = año 0 pre-apertura)
   ingresos: number[];
+  // Tramos de "año de vida" que componen cada Ingresos[i] — para el detalle
+  // de cálculo en la UI. Índice 0 vacío. Ver también BCResult.scenarioFactor.
+  ingresosTramos: { anoVida: number; meses: number; tasa: number }[][];
+  scenarioFactor: number;
   costoVentas: number[];
   otrosCostos: number[];
   costosVar: number[];
@@ -475,16 +479,28 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const tasaVida = (anoVidaIdx: number) => ventaVida[Math.min(Math.max(anoVidaIdx, 0), 4)];
   let vidaAcumulada = 0; // meses de vida transcurridos al cierre del último año calendario procesado
   const ingresos = [0];
+  // ingresosTramos: por año, los 1-2 tramos de "año de vida" que lo componen
+  // (mismo detalle que la fórmula de arriba) — para poder mostrar "X meses ×
+  // Y MM/mes" en el detalle de cálculo de la UI (botón "ver cálculo" en
+  // Proyecciones) sin recorrer la lógica de vidaAcumulada otra vez ahí.
+  const ingresosTramos: { anoVida: number; meses: number; tasa: number }[][] = [[]];
   for (let i = 1; i <= 5; i++) {
     const meses = mesesOperArr[i];
-    if (meses <= 0) { ingresos.push(0); continue; }
+    if (meses <= 0) { ingresos.push(0); ingresosTramos.push([]); continue; }
     const anoVidaInicio = Math.floor(vidaAcumulada / 12);
     const mesesRestantesAnoVida = (anoVidaInicio + 1) * 12 - vidaAcumulada;
-    const ing =
-      meses <= mesesRestantesAnoVida
-        ? tasaVida(anoVidaInicio) * meses
-        : tasaVida(anoVidaInicio) * mesesRestantesAnoVida + tasaVida(anoVidaInicio + 1) * (meses - mesesRestantesAnoVida);
+    const tramos: { anoVida: number; meses: number; tasa: number }[] = [];
+    let ing: number;
+    if (meses <= mesesRestantesAnoVida) {
+      ing = tasaVida(anoVidaInicio) * meses;
+      tramos.push({ anoVida: anoVidaInicio + 1, meses, tasa: tasaVida(anoVidaInicio) });
+    } else {
+      ing = tasaVida(anoVidaInicio) * mesesRestantesAnoVida + tasaVida(anoVidaInicio + 1) * (meses - mesesRestantesAnoVida);
+      tramos.push({ anoVida: anoVidaInicio + 1, meses: mesesRestantesAnoVida, tasa: tasaVida(anoVidaInicio) });
+      tramos.push({ anoVida: anoVidaInicio + 2, meses: meses - mesesRestantesAnoVida, tasa: tasaVida(anoVidaInicio + 1) });
+    }
     ingresos.push(round(ing * sf, 2));
+    ingresosTramos.push(tramos);
     vidaAcumulada += meses;
   }
 
@@ -551,7 +567,7 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
     canonUF, garantiaUF, mesesY1, mesesArr, mesesOperacion, mesesPersonal, anoApertura,
     ufStarts: starts, ufAvgs: avgs,
     inv: { rows: invRows, total, fisica, kt },
-    ingresos, costoVentas, otrosCostos, costosVar, margenCtrib,
+    ingresos, ingresosTramos, scenarioFactor: sf, costoVentas, otrosCostos, costosVar, margenCtrib,
     personal, publicidad, gastosGral, tecnologia, ocupacion, canonArr,
     canonUfPromedio: canonUfPromedioArr, canonTramos,
     fondoPromocion, gastoComun,

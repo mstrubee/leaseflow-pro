@@ -291,11 +291,29 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <th className="text-left py-1">Línea</th>{yearCols.map((i) => <th key={i} className="px-2">{i === 0 ? "Año 0" : `Año ${i}`}</th>)}
                     </tr></thead>
                     <tbody>
-                      <PnlRow label="Ingresos" vals={result.ingresos} bold />
+                      <SectionRow label="Ingresos y Costos Directos" color="teal" />
+                      <PnlRow label="Ingresos" vals={result.ingresos} bold detail={(i) => {
+                        if (i === 0) return null;
+                        const tramos = result.ingresosTramos[i] || [];
+                        if (tramos.length === 0) return null;
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Ingresos — Año {i}</p>
+                            {tramos.map((t, idx) => (
+                              <p key={idx}>{fmtMM(t.meses, 1)} mes{t.meses === 1 ? "" : "es"} × {fmtMM(t.tasa, 1)} MM/mes <span className="text-muted-foreground">(venta año de vida {t.anoVida})</span></p>
+                            ))}
+                            {result.scenarioFactor !== 1 && (
+                              <p className="pt-1 border-t">× {fmtMM(result.scenarioFactor, 2)} (factor de escenario)</p>
+                            )}
+                            <p className="font-semibold">= {fmtMM(result.ingresos[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
                       <PnlRow label="Costo de Ventas" vals={result.costoVentas} />
                       <PnlRow label="Otros costos dir." vals={result.otrosCostos} />
                       <PnlRow label="Costos variables" vals={result.costosVar} />
                       <PnlRow label="Margen Contribución" vals={result.margenCtrib} bold />
+                      <SectionRow label="Gastos Operacionales" color="orange" />
                       <PnlRow label="Personal" vals={result.personal} />
                       <PnlRow label="Publicidad" vals={result.publicidad} />
                       <PnlRow label="Gastos Generales" vals={result.gastosGral} />
@@ -348,6 +366,8 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                         );
                       }} />
                       <PnlRow label="EBITDA" vals={result.ebitda} bold />
+                      <MarginRow label="% EBITDA / Ventas" vals={yearCols.map((i) => (result.ingresos[i] ? result.ebitda[i] / result.ingresos[i] : 0))} />
+                      <SectionRow label="Resultado y Flujo" color="purple" />
                       <PnlRow label="Depreciación" vals={result.depreciacion} />
                       <PnlRow label="EBIT" vals={result.ebit} bold />
                       <PnlRow label="Impuesto" vals={result.impuesto} />
@@ -586,6 +606,38 @@ function PnlRow({
           </td>
         );
       })}
+    </tr>
+  );
+}
+// Agrupa el Estado de Resultados por a qué subtotal alimenta cada tramo
+// (Margen Contribución / EBITDA / resultado final), sin tocar el alto ni el
+// padding de las filas normales (PnlRow) — solo separa visualmente.
+const SECTION_COLORS: Record<string, string> = {
+  teal: "text-brand-teal",
+  orange: "text-primary",
+  purple: "text-brand-purple",
+};
+function SectionRow({ label, color }: { label: string; color: "teal" | "orange" | "purple" }) {
+  return (
+    <tr>
+      <td colSpan={7} className="pt-3 pb-1">
+        <div className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide ${SECTION_COLORS[color]}`}>
+          {label}
+          <span className="h-px flex-1 bg-current opacity-20" />
+        </div>
+      </td>
+    </tr>
+  );
+}
+function MarginRow({ label, vals }: { label: string; vals: number[] }) {
+  return (
+    <tr>
+      <td className="text-left py-0.5 pb-2 text-[10px] italic text-muted-foreground">{label}</td>
+      {yearCols.map((i) => (
+        <td key={i} className="text-right px-2 py-0.5 pb-2 text-[10px] font-medium text-green-700">
+          {i === 0 ? "—" : fmtPct(vals[i] ?? 0)}
+        </td>
+      ))}
     </tr>
   );
 }
