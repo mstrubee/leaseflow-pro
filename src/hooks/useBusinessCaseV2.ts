@@ -86,8 +86,10 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   }, []);
 
   // Editar la venta de un año recalcula los demás años hacia adelante y hacia
-  // atrás usando el Crecimiento UF anual % ya ingresado (ufRates[i] = variación
-  // de ese año respecto al anterior, misma columna que ventaMes[i]).
+  // atrás usando el Crecimiento Ventas % ya ingresado (ventaGrowthPct[i] =
+  // variación de ese año respecto al anterior, misma columna que
+  // ventaMes[i]). NO usa ufRates — esa es la UF real (inflación), una
+  // curva de negocio distinta a la de maduración de ventas del local.
   const updateVentaConCrecimiento = useCallback((idx: number, value: number) => {
     setInputs((p) => {
       if (!p) return p;
@@ -96,11 +98,11 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       // Los años propagados se redondean hacia arriba (sin decimales); el año
       // editado a mano conserva el valor exacto que se tipeó.
       for (let i = idx + 1; i < ventas.length; i++) {
-        const rate = (p.ufRates[i] ?? 0) / 100;
+        const rate = (p.ventaGrowthPct[i] ?? 0) / 100;
         ventas[i] = Math.ceil(ventas[i - 1] * (1 + rate));
       }
       for (let i = idx - 1; i >= 0; i--) {
-        const rate = (p.ufRates[i + 1] ?? 0) / 100;
+        const rate = (p.ventaGrowthPct[i + 1] ?? 0) / 100;
         ventas[i] = Math.ceil(ventas[i + 1] / (1 + rate));
       }
       return { ...p, ventaMes: ventas };

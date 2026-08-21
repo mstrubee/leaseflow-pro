@@ -142,9 +142,19 @@ export interface BCInputs {
   apertura: string;
   gastoComunUf: number; // UF/mes
 
-  // UF
+  // UF real (inflación/IPC, ~3-4% anual) — SOLO convierte a CLP los montos en
+  // UF (canon, gasto común, fondo promoción, reajuste de personal). NO es la
+  // tasa de crecimiento de ventas — ver ventaGrowthPct.
   ufBase: number;
   ufRates: number[]; // % por año [5]
+
+  // Tasa de maduración de ventas: la usa updateVentaConCrecimiento (hook) para
+  // proyectar los años de "Venta (MM/mes)" hacia adelante/atrás al editar uno.
+  // Es una curva de ventas del local (puede ser 20-30%+ en los primeros años),
+  // sin relación con el crecimiento real de la UF — antes compartía el campo
+  // ufRates con la conversión UF→CLP, lo que inflaba canon/gasto común con
+  // tasas de venta en vez de inflación real.
+  ventaGrowthPct: number[]; // % por año [5]
 
   // Económico
   waccRate: number; // %
@@ -599,6 +609,7 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     gastoComunUf: seed.gastoComunUf ?? 0,
     ufBase: seed.ufBase ?? 39485.65,
     ufRates: [3.8, 3.3, 3.0, 3.0, 3.0],
+    ventaGrowthPct: [3.8, 3.3, 3.0, 3.0, 3.0],
     waccRate: 12,
     taxRate: 27,
     scenario: "base",

@@ -430,9 +430,13 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                 </div>
               </Card>
 
-              {/* Ventas + Crecimiento UF en una sola sección, alineadas por año y en tiempo real */}
+              {/* Ventas + supuestos de crecimiento en una sola sección, alineadas por
+                  año y en tiempo real. Dos tasas distintas, no confundir: Crec.
+                  Ventas % es la curva de maduración del local (la usa la cascada
+                  al editar Venta); Crec. UF anual % es la UF real (inflación,
+                  ~3-4%/año) y solo convierte a CLP canon/gasto común/personal. */}
               <Card
-                title="Ventas y Crecimiento UF anual"
+                title="Ventas y Supuestos de Crecimiento"
                 sub="Editar cualquiera recalcula el modelo en tiempo real"
                 action={!ro && (
                   <Button
@@ -458,6 +462,12 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                         <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Venta (MM/mes)</td>
                         {inputs.ventaMes.map((v, i) => (
                           <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} step="1" decimals={1} onChange={(val) => updateVentaConCrecimiento(i, val)} /></td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Crec. Ventas %</td>
+                        {inputs.ventaGrowthPct.map((r, i) => (
+                          <td key={i} className="px-1 text-center"><NumCell value={r} disabled={ro} onChange={(v) => updateArr("ventaGrowthPct", i, v)} /></td>
                         ))}
                       </tr>
                       <tr>
