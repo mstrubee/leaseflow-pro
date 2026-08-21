@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -40,11 +41,10 @@ function addMonthsIso(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function NumCell({ value, onChange, disabled, w = "w-20", step = "any", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
-  const shown = Number.isFinite(value) ? value : 0;
+function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
   return (
-    <Input type="number" step={step} value={decimals != null ? shown.toFixed(decimals) : shown}
-      onChange={(e) => onChange(parseFloat(e.target.value) || 0)} disabled={disabled}
+    <DecimalInput value={value} decimals={decimals}
+      onChange={(v) => { if (v !== null) onChange(v); }} disabled={disabled}
       className={`h-7 ${w} text-xs text-right px-1`} />
   );
 }
@@ -515,9 +515,9 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
               </Card>
 
               <Card title="Márgenes y costos" sub="Conversión a MM CLP/mes (promedio) bajo cada campo">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(result.costoVentas[1]))} MM`}>
-                    <NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></FieldConv>
+                    <NumCell value={inputs.margenDir} disabled={ro} w="w-20" onChange={(v) => update("margenDir", v)} /></FieldConv>
                   {(() => {
                     // Año 1 es parcial (result.mesesOperacion meses, porque el
                     // local abre a mitad de año) — un "A1: $X MM" ahí no es un
@@ -534,31 +534,31 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                     return (
                       <>
                         <FieldConv label="Otros costos dir. %" conv={`Prom: $${fmtMM(promedioMensual(result.otrosCostos))} MM/mes`}>
-                          <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
+                          <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
                         <FieldConv label="Costos variables %" conv={`Prom: $${fmtMM(promedioMensual(result.costosVar))} MM/mes`}>
-                          <NumCell value={inputs.costosVar} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("costosVar", v)} /></FieldConv>
+                          <NumCell value={inputs.costosVar} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("costosVar", v)} /></FieldConv>
                         <FieldConv label="Gastos generales %" conv={`Prom: $${fmtMM(promedioMensual(result.gastosGral))} MM/mes`}>
-                          <NumCell value={inputs.gralPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
+                          <NumCell value={inputs.gralPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
                         <FieldConv label="Tecnología %" conv={`Prom: $${fmtMM(promedioMensual(result.tecnologia))} MM/mes`}>
-                          <NumCell value={inputs.tecPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
+                          <NumCell value={inputs.tecPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
                         <FieldConv label="Ocupación %" conv={`Prom: $${fmtMM(promedioMensual(result.ocupacion))} MM/mes`}>
-                          <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+                          <NumCell value={inputs.ocupPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
                       </>
                     );
                   })()}
-                  <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM (${result.mesesY1} ${result.mesesY1 === 1 ? "mes" : "meses"})`}>
-                    <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
+                  <FieldConv label="# Personas" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM`}>
+                    <NumCell value={inputs.personalY1} disabled={ro} w="w-20" onChange={(v) => update("personalY1", v)} /></FieldConv>
                   <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
-                    <NumCell value={inputs.costoPersonaMM} disabled={ro} w="w-full" onChange={(v) => update("costoPersonaMM", v)} /></FieldConv>
+                    <NumCell value={inputs.costoPersonaMM} disabled={ro} w="w-20" onChange={(v) => update("costoPersonaMM", v)} /></FieldConv>
                   {/* El crecimiento de personal ya no es un input: los años 2..5
                       se reajustan por la variación de UF del año anterior, igual
                       que la planilla oficial. Se muestra el resultado del año 5. */}
                   <FieldConv label="Personal Año 5" conv="Reajustado por variación UF">
-                    <Input value={`$${fmtMM(Math.abs(result.personal[5]))} MM`} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
+                    <Input value={`$${fmtMM(Math.abs(result.personal[5]))} MM`} disabled readOnly className="h-7 w-20 text-xs text-right px-1 bg-muted/40" /></FieldConv>
                   <FieldConv label="CAPEX depreciable (MM)" conv="Se lee desde Inversión (física)">
-                    <Input value={fmtMM(result.inv.fisica)} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
+                    <Input value={fmtMM(result.inv.fisica)} disabled readOnly className="h-7 w-20 text-xs text-right px-1 bg-muted/40" /></FieldConv>
                   <FieldConv label="Años depreciación" conv={`Depr. anual: $${fmtMM(Math.abs(result.depreciacion[1]))} MM`}>
-                    <NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></FieldConv>
+                    <NumCell value={inputs.deprAnos} disabled={ro} w="w-20" onChange={(v) => update("deprAnos", v)} /></FieldConv>
                 </div>
               </Card>
             </TabsContent>
@@ -590,12 +590,12 @@ function Card({ title, sub, action, children }: { title: string; sub?: string; a
   );
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><Label className="text-xs">{label}</Label><div className="mt-0.5">{children}</div></div>;
+  return <div><Label className="text-xs block min-h-[2rem]">{label}</Label><div className="mt-0.5">{children}</div></div>;
 }
 function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
   return (
-    <div>
-      <Label className="text-xs">{label}</Label>
+    <div className="flex flex-col">
+      <Label className="text-xs block min-h-[2rem]">{label}</Label>
       <div className="mt-0.5">{children}</div>
       <div className="text-[10px] text-muted-foreground mt-0.5">{conv}</div>
     </div>
