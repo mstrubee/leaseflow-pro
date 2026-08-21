@@ -20,6 +20,9 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   // ediciones reales del usuario (vs. el simple re-render) y no reescribir el
   // contrato con el mismo valor que ya tenía.
   const lastSyncedRef = useRef<{ superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null; durContratoAnios?: number | null; inicio?: string | null; graciaMeses?: number | null } | null>(null);
+  // Últimos montos de escalonamiento sincronizados con rent_escalations, por
+  // id de tramo — para no reescribir un tramo cuyo monto no cambió.
+  const lastSyncedEscalationAmountsRef = useRef<Record<string, number>>({});
   const { contractVersionId, rentField, rentIsUfM2, gastoComunSyncable } = seed;
 
   // Cargar una vez (cuando la config global esté lista y el diálogo abierto)
@@ -58,6 +61,9 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
           superficie: merged.superficie, ufM2: merged.ufM2, gastoComunUf: merged.gastoComunUf,
           durContratoAnios: merged.durContratoAnios, inicio: merged.inicio, graciaMeses: merged.graciaMeses,
         };
+        lastSyncedEscalationAmountsRef.current = Object.fromEntries(
+          merged.escalations.filter((e) => e.id).map((e) => [e.id as string, e.amount]),
+        );
         setInputs(merged);
       } catch {
         setInputs(buildDefaultBCInputs(seed, config));
@@ -128,6 +134,20 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         invOverrides: { ...p.invOverrides, inv: preset.inventarioMM },
         ocupPct: ocupPctFromVenta(formato, p.ventaMes[0]),
       };
+    });
+    setDirty(true);
+  }, []);
+
+  // Edita solo el MONTO de un tramo de escalonamiento (nunca el mes/plazo,
+  // que sigue siendo de solo lectura acá). Recalcula el modelo al toque
+  // (inputs.escalations alimenta resolveCanonTiers) y el monto se
+  // sincroniza de vuelta a rent_escalations en el autoguardado, igual que
+  // ufM2 sincroniza el tramo base.
+  const updateEscalationAmount = useCallback((idx: number, amount: number) => {
+    setInputs((p) => {
+      if (!p) return p;
+      const escalations = p.escalations.map((e, i) => (i === idx ? { ...e, amount } : e));
+      return { ...p, escalations };
     });
     setDirty(true);
   }, []);
@@ -205,6 +225,20 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
           };
         }
 
+        // Montos de escalonamiento editados acá → de vuelta a rent_escalations
+        // (solo el monto; mes/plazo no es editable desde el Business Case).
+        const lastEsc = lastSyncedEscalationAmountsRef.current;
+        const changedEsc = inputs.escalations.filter((e) => e.id && e.amount !== lastEsc[e.id]);
+        if (changedEsc.length > 0) {
+          await Promise.all(
+            changedEsc.map((e) => supabase.from("rent_escalations").update({ amount: e.amount } as never).eq("id", e.id as string)),
+          );
+          lastSyncedEscalationAmountsRef.current = {
+            ...lastEsc,
+            ...Object.fromEntries(changedEsc.map((e) => [e.id as string, e.amount])),
+          };
+        }
+
         setDirty(false);
       } finally {
         setSaving(false);
@@ -223,6 +257,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     update,
     updateArr,
     updateVentaConCrecimiento,
+    updateEscalationAmount,
     setFormato,
     setInvOverride,
   };

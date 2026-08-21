@@ -20,7 +20,9 @@ export interface BCSeedVersion extends Partial<Omit<RentPeriodsVersionInput, "re
   // Tramos de arriendo escalonado del contrato. month_number cuenta meses
   // desde effective_date (1-indexado) — NO desde el inicio de pago de canon
   // (que además resta grace_months). Ver CommercialConditionsSummary.tsx.
-  rent_escalations?: { month_number: number; amount: number; is_uf_m2: boolean }[] | null;
+  // id: necesario para poder sincronizar ediciones de monto desde el
+  // Business Case de vuelta a la fila real de rent_escalations.
+  rent_escalations?: { id?: string; month_number: number; amount: number; is_uf_m2: boolean }[] | null;
 }
 
 export interface BCSeedAddress {
@@ -60,7 +62,7 @@ export function buildBCSeed(params: {
   const escalations = (version?.rent_escalations || [])
     .slice()
     .sort((a, b) => a.month_number - b.month_number)
-    .map((e) => ({ monthNumber: e.month_number, amount: e.amount, isUfM2: e.is_uf_m2 }));
+    .map((e) => ({ id: e.id, monthNumber: e.month_number, amount: e.amount, isUfM2: e.is_uf_m2 }));
 
   // Desglose "Arriendo por periodo" (Canon + GGCC + F.Prom + Otros = Total,
   // por tramo), calculado con la misma lógica que la ficha del contrato —

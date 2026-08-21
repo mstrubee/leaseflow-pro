@@ -50,7 +50,7 @@ function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: n
 }
 
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, update, updateArr, updateVentaConCrecimiento, setFormato, setInvOverride } =
+  const { config, inputs, result, loading, saving, update, updateArr, updateVentaConCrecimiento, updateEscalationAmount, setFormato, setInvOverride } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
@@ -431,7 +431,11 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
               <Card title="Contrato">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
-                  <Field label="UF / m²"><NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></Field>
+                  <FieldConv
+                    label="UF / m²"
+                    conv={`$${fmtMM((inputs.superficie || 0) * (inputs.ufM2 || 0) * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * (inputs.ufM2 || 0), 2)} UF/mes)`}
+                  >
+                    <NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></FieldConv>
                   <Field label="Gasto común (UF/m²)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
                   <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
                   <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
@@ -450,6 +454,23 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                     />
                   </FieldConv>
                 </div>
+
+                {inputs.escalations.length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="text-xs text-muted-foreground mb-1.5">
+                      Escalonamiento de renta — solo el monto es editable acá (los plazos se gestionan desde el contrato); sincroniza con el contrato
+                    </div>
+                    <div className="space-y-1.5">
+                      {inputs.escalations.map((esc, i) => (
+                        <div key={esc.id ?? i} className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground w-24 shrink-0">Desde mes {esc.monthNumber}</span>
+                          <NumCell value={esc.amount} disabled={ro} w="w-24" step="0.01" onChange={(v) => updateEscalationAmount(i, v)} />
+                          <span className="text-[10px] text-muted-foreground">{esc.isUfM2 ? "UF/m²" : "UF"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </Card>
 
               <Card title="UF y económico">

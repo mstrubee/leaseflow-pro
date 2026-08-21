@@ -593,7 +593,9 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
 }
 
 // ---------- defaults / prefill desde el contrato ----------
-export interface BCEscalation { monthNumber: number; amount: number; isUfM2: boolean }
+// id presente = tramo real de rent_escalations (permite sincronizar ediciones
+// de monto de vuelta al contrato); ausente en escalations sin persistir aún.
+export interface BCEscalation { id?: string; monthNumber: number; amount: number; isUfM2: boolean }
 
 export interface BCSeed {
   nombre?: string; direccion?: string; comuna?: string; tipo?: string;

@@ -211,16 +211,16 @@ export function InformeDirectorioReport() {
       const { data: escalationRows } = versionIds.length
         ? await supabase
             .from("rent_escalations")
-            .select("version_id, month_number, amount, is_uf_m2")
+            .select("id, version_id, month_number, amount, is_uf_m2")
             .in("version_id", versionIds)
-        : { data: [] as { version_id: string; month_number: number; amount: number; is_uf_m2: boolean }[] };
-      const escalationsByVersion = new Map<string, { month_number: number; amount: number; is_uf_m2: boolean }[]>();
+        : { data: [] as { id: string; version_id: string; month_number: number; amount: number; is_uf_m2: boolean }[] };
+      const escalationsByVersion = new Map<string, { id: string; month_number: number; amount: number; is_uf_m2: boolean }[]>();
       (escalationRows || []).forEach((e) => {
         const arr = escalationsByVersion.get(e.version_id) || [];
-        arr.push({ month_number: e.month_number, amount: e.amount, is_uf_m2: e.is_uf_m2 });
+        arr.push({ id: e.id, month_number: e.month_number, amount: e.amount, is_uf_m2: e.is_uf_m2 });
         escalationsByVersion.set(e.version_id, arr);
       });
-      const versionByContract = new Map<string, (typeof versionRows[number]) & { rent_escalations: { month_number: number; amount: number; is_uf_m2: boolean }[] }>();
+      const versionByContract = new Map<string, (typeof versionRows[number]) & { rent_escalations: { id: string; month_number: number; amount: number; is_uf_m2: boolean }[] }>();
       (versionRows || []).forEach((v) =>
         versionByContract.set(v.contract_id, { ...v, rent_escalations: escalationsByVersion.get(v.id) || [] }),
       );
