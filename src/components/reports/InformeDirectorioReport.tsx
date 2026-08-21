@@ -345,7 +345,7 @@ export function InformeDirectorioReport() {
     loadContracts();
   };
 
-  const handleApplyProjectionToBC = async (contractId: string, ventaMes: number[]) => {
+  const handleApplyProjectionToBC = async (contractId: string, ventaMes: number[], ventaGrowthPct: number[]) => {
     // Se relee el Business Case directo de la DB (no desde el estado en
     // memoria de esta lista, que puede quedar desactualizado si se editó en
     // otra pantalla) para no pisar cambios recientes al mergear ventaMes.
@@ -357,7 +357,9 @@ export function InformeDirectorioReport() {
     if (fetchError) throw fetchError;
     const currentInputs = bcRow?.inputs as unknown as BCInputs | null;
     if (!currentInputs) throw new Error("Este contrato no tiene Business Case cargado");
-    const mergedInputs: BCInputs = { ...currentInputs, ventaMes };
+    // ventaGrowthPct = curva de maduración de Geochile ("Crec." en su panel).
+    // NO toca ufRates (UF real/inflación), es un supuesto totalmente aparte.
+    const mergedInputs: BCInputs = { ...currentInputs, ventaMes, ventaGrowthPct };
     const computed = computeBC(mergedInputs, config);
     const { data: u } = await supabase.auth.getUser();
     const { error } = await supabase.from("contract_business_cases").upsert(

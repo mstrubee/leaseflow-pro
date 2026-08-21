@@ -76,6 +76,9 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
       }
       const projection = await fetchSalesProjection(matches[0].id);
       update("ventaMes", projection.ventaMes);
+      // Curva de maduración de Geochile (columna "Crec." de su panel) — NO
+      // toca ufRates, que es la UF real/inflación, un supuesto aparte.
+      update("ventaGrowthPct", projection.growthRates);
       // La proyección de Geochile Compass trae su propio ajuste "Express"
       // (independiente del "Formato de local" de este Business Case) — si no
       // coinciden, las ventas importadas están calibradas para el formato

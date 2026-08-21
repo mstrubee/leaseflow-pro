@@ -35,6 +35,10 @@ export interface ProjectionComparable {
 export interface SalesProjectionExport {
   locationName: string;
   ventaMes: number[];
+  // Curva de maduración año a año (misma columna "Crec." del panel de
+  // Geochile Compass) — 5 valores, años 1..5. Va en BCInputs.ventaGrowthPct
+  // al importar, NUNCA en ufRates (esa es la UF real/inflación).
+  growthRates: number[];
   estimatedUf: number;
   baseYear: number;
   growthRate: number;

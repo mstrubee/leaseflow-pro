@@ -35,7 +35,7 @@ interface Props {
   // si no coincide con el ajuste Express de la proyección de Geochile.
   businessCaseFormato?: string | null;
   onAssigned: () => void;
-  onApplyToBusinessCase: (contractId: string, ventaMes: number[]) => Promise<void>;
+  onApplyToBusinessCase: (contractId: string, ventaMes: number[], ventaGrowthPct: number[]) => Promise<void>;
 }
 
 export function AssignIsochroneDialog({
@@ -174,7 +174,7 @@ export function AssignIsochroneDialog({
     setApplying(true);
     try {
       await persistAssignment();
-      await onApplyToBusinessCase(contractId, projection.ventaMes);
+      await onApplyToBusinessCase(contractId, projection.ventaMes, projection.growthRates);
       toast.success("Isócrona asociada y ventas aplicadas al Business Case");
       onAssigned();
       onOpenChange(false);
