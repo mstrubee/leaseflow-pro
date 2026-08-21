@@ -319,71 +319,46 @@ export const generateContractsListPDF = async (
               : `${ventaMinMM}-${ventaMaxMM} MM$`);
             
             // Line 2: Range in UF (if ufValue available)
+            const ventaMinUF = ufValue > 0 ? ventaMin / ufValue : 0;
+            const ventaMaxUF = ufValue > 0 ? ventaMax / ufValue : 0;
             if (ufValue > 0) {
-              const ventaMinUF = Math.round(ventaMin / ufValue);
-              const ventaMaxUF = Math.round(ventaMax / ufValue);
-              lines.push(ventaMinUF === ventaMaxUF 
-                ? `${ventaMinUF.toLocaleString('es-CL')} UF` 
-                : `${ventaMinUF.toLocaleString('es-CL')}-${ventaMaxUF.toLocaleString('es-CL')} UF`);
+              lines.push(Math.round(ventaMinUF) === Math.round(ventaMaxUF)
+                ? `${Math.round(ventaMinUF).toLocaleString('es-CL')} UF`
+                : `${Math.round(ventaMinUF).toLocaleString('es-CL')}-${Math.round(ventaMaxUF).toLocaleString('es-CL')} UF`);
             }
-            
+
             // Line 3: UF/m² (if superficie available)
             if (superficie > 0 && ufValue > 0) {
-              const ventaMinUFm2 = (ventaMin / ufValue) / superficie;
-              const ventaMaxUFm2 = (ventaMax / ufValue) / superficie;
+              const ventaMinUFm2 = ventaMinUF / superficie;
+              const ventaMaxUFm2 = ventaMaxUF / superficie;
               const fmtUFm2 = (n: number) => n.toFixed(1);
-              lines.push(ventaMinUFm2 === ventaMaxUFm2 
-                ? `${fmtUFm2(ventaMinUFm2)} UF/m²` 
+              lines.push(ventaMinUFm2 === ventaMaxUFm2
+                ? `${fmtUFm2(ventaMinUFm2)} UF/m²`
                 : `${fmtUFm2(ventaMinUFm2)}-${fmtUFm2(ventaMaxUFm2)} UF/m²`);
             }
-            
-            // Line 4: Arr/Vta ratio
+
+            // Line 4: Arr/Vta ratio — mismo cálculo que la pantalla
+            // (ContractsTable.tsx): promedio ponderado por periodo/escalación
+            // vía calculateWeightedAverageTotalArriendo, no solo el canon
+            // vigente. Antes esto se recalculaba a mano acá mismo ignorando
+            // escalations/ajustes periódicos, dando un % distinto al de la
+            // pantalla para cualquier contrato con renta escalonada.
             if (ufValue > 0 && currentVersion) {
-              const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-              const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-              
-              // Calculate current rent
-              let currentRent = currentVersion.regime_rent || 0;
-              if (currentVersion.regime_rent_is_uf_m2 && superficie > 0) {
-                currentRent = currentVersion.regime_rent * superficie;
-              }
-              
-              // Calculate GGCC
-              let gastosComunesTotal = 0;
-              if (methodology === "percentage") {
-                const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-                const percentage = currentVersion.gastos_comunes_percentage || 0;
-                const topeValue = currentVersion.gastos_comunes_tope;
-                const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-                const calculatedAmount = (totalCentro * percentage) / 100;
-                if (topeValue && topeValue > 0) {
-                  const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-                  gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
-                } else {
-                  gastosComunesTotal = calculatedAmount;
-                }
-              } else {
-                const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-                const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-                const adicionalAdmin = hasExtended ? currentRent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
-              }
-              
-              const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
-              const fondoPromocion = currentRent * (fondoPromocionPct / 100);
-              const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-              
-              const arriendoTotalMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
-              const ventaPromedio = ventaMax ? (ventaMin + ventaMax) / 2 : ventaMin;
-              const ventaPromedioEnUF = ventaPromedio / ufValue;
-              const ratioArrVta = ventaPromedioEnUF > 0 ? (arriendoTotalMensual / ventaPromedioEnUF) * 100 : 0;
-              
+              const { promedio: arriendoTotalMensual } = calculateWeightedAverageTotalArriendo({
+                version: currentVersion,
+                signedDate: contract.signed_date,
+                superficie,
+                metrosLinealesFrente: metrosFrente,
+              });
+              const arriendoAnual = arriendoTotalMensual * 12;
+              const ventaAnualUF = ((ventaMinUF + ventaMaxUF) / 2) * 12;
+              const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
+
               if (ratioArrVta > 0) {
                 lines.push(`Arr/Vta: ${ratioArrVta.toFixed(2)}%`);
               }
             }
-            
+
           rowData.push(lines.join('\n'));
           } else {
             rowData.push('-');
@@ -414,28 +389,45 @@ export const generateContractsListPDF = async (
     };
   });
 
-  // Generate table
-  autoTable(doc, {
-    startY: 36,
-    head: [headers],
-    body: tableData,
-    theme: 'grid',
-    headStyles: { 
-      fillColor: [220, 38, 38],
-      textColor: 255,
-      fontStyle: 'bold',
-      halign: 'center'
-    },
-    margin: { left: 14, right: 14 },
-    columnStyles,
-    styles: {
-      fontSize: 8,
-      cellPadding: 3,
-      overflow: 'linebreak',
-    },
-    alternateRowStyles: {
-      fillColor: [245, 247, 250],
-    },
+  // Generate table — máximo 8 filas por página, forzado (no autoTable
+  // decidiendo cuántas entran según el contenido). Cada bloque de hasta 8
+  // filas arranca en una página propia y usa exactamente el mismo estilo
+  // (mismo fontSize/cellPadding en todas), así ninguna página queda con un
+  // "zoom" distinto. rowPageBreak: 'avoid' asegura además que, si un bloque
+  // no entrara entero, jsPDF nunca corte una fila a la mitad — la empuja
+  // completa a la página siguiente en vez de partirla.
+  const ROWS_PER_PAGE = 8;
+  const rowChunks: string[][][] = tableData.length > 0
+    ? Array.from({ length: Math.ceil(tableData.length / ROWS_PER_PAGE) }, (_, i) =>
+        tableData.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE))
+    : [[]];
+
+  rowChunks.forEach((chunk, idx) => {
+    if (idx > 0) doc.addPage();
+    autoTable(doc, {
+      startY: idx === 0 ? 36 : 20,
+      head: [headers],
+      body: chunk,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 38, 38],
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      margin: { left: 14, right: 14 },
+      columnStyles,
+      styles: {
+        fontSize: 8,
+        cellPadding: 3,
+        overflow: 'linebreak',
+      },
+      alternateRowStyles: {
+        fillColor: [245, 247, 250],
+      },
+      rowPageBreak: 'avoid',
+      showHead: 'everyPage',
+    });
   });
 
   // Footer with page numbers

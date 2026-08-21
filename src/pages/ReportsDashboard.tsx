@@ -135,8 +135,19 @@ const ReportsDashboard = () => {
     "local", "empresa", "direccion", "prioridad", "comentarios", "proximas_acciones"
   ]);
   
-  // Row selection for PDF export (excluded contract IDs)
-  const [excludedPdfContractIds, setExcludedPdfContractIds] = useState<string[]>([]);
+  // Row selection for PDF export. null = todos, en el orden de la tabla.
+  // Array = ids en el orden en que se fueron marcando (orden de exportación).
+  const [selectedPdfContractIds, setSelectedPdfContractIds] = useState<string[] | null>(null);
+
+  // Aplica la selección/orden elegido en ContractRowSelector sobre una lista.
+  // Ids que ya no están en la lista (cambió el filtro) se ignoran.
+  const orderContractsForExport = <T extends { id: string }>(list: T[]): T[] => {
+    if (selectedPdfContractIds === null) return list;
+    const byId = new Map(list.map((c) => [c.id, c]));
+    return selectedPdfContractIds
+      .map((id) => byId.get(id))
+      .filter((c): c is T => !!c);
+  };
 
   const availablePdfColumns = [
     { key: "local", label: "Local" },
@@ -503,10 +514,9 @@ const ReportsDashboard = () => {
 
   // Export PDF function for Sin Patente section (respects current filter, sort, and column selection)
   const exportSinPatentePDF = async () => {
-    // Filter out excluded contracts
-    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
-    
-    console.log(`[PDF Export Sin Patente] Generando PDF con ${pdfContracts.length} de ${sinPatenteContracts.length} contratos (${excludedPdfContractIds.length} excluidos)`);
+    const pdfContracts = orderContractsForExport(sinPatenteContracts);
+
+    console.log(`[PDF Export Sin Patente] Generando PDF con ${pdfContracts.length} de ${sinPatenteContracts.length} contratos`);
     
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
@@ -1374,16 +1384,16 @@ const ReportsDashboard = () => {
                             </Popover>
                             <ContractRowSelector
                               contracts={sinPatenteContracts.map(c => ({ id: c.id, name: c.name }))}
-                              excludedContractIds={excludedPdfContractIds}
-                              onExclusionChange={setExcludedPdfContractIds}
+                              selectedContractIds={selectedPdfContractIds}
+                              onSelectionChange={setSelectedPdfContractIds}
                             />
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
+                                <Button
+                                  variant="ghost"
                                   size="sm"
                                   className="rounded-none"
-                                  disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
+                                  disabled={selectedPdfColumns.length === 0 || orderContractsForExport(sinPatenteContracts).length === 0}
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <Download className="h-3 w-3 mr-1" />
@@ -1396,9 +1406,9 @@ const ReportsDashboard = () => {
                                   <Files className="h-4 w-4 mr-2" />
                                   PDF Consolidado
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   onClick={() => {
-                                    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
+                                    const pdfContracts = orderContractsForExport(sinPatenteContracts);
                                     pdfContracts.forEach(c => exportSinPatenteIndividualPDF(c));
                                   }}
                                 >

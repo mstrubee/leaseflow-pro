@@ -781,34 +781,44 @@ const Contracts = () => {
     "contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"
   ]);
   
-  // PDF row exclusion state
-  const [excludedPdfContractIds, setExcludedPdfContractIds] = useState<string[]>([]);
+  // Selección de filas a exportar (PDF/Excel). null = todas, en el orden de
+  // la tabla. Array = ids en el orden en que se fueron marcando — ese orden
+  // es el que se usa para exportar.
+  const [selectedPdfContractIds, setSelectedPdfContractIds] = useState<string[] | null>(null);
+
+  // Aplica la selección/orden elegido en ContractRowSelector sobre la lista
+  // filtrada actual. Ids que ya no están en filteredContracts (p.ej. cambió
+  // el filtro de status) se ignoran en vez de romper el export.
+  const orderContractsForExport = <T extends { id: string }>(list: T[]): T[] => {
+    if (selectedPdfContractIds === null) return list;
+    const byId = new Map(list.map((c) => [c.id, c]));
+    return selectedPdfContractIds
+      .map((id) => byId.get(id))
+      .filter((c): c is T => !!c);
+  };
 
   const handleDownloadReport = async () => {
     const isFirmado = statusFilter === "firmado";
     const isNego = statusFilter === "en_negociacion";
-    const title = isNego 
-      ? "Contratos en Negociación" 
-      : isFirmado 
-        ? "Contratos Vigentes" 
+    const title = isNego
+      ? "Contratos en Negociación"
+      : isFirmado
+        ? "Contratos Vigentes"
         : "Lista de Contratos";
-    
-    // Filter out excluded contracts
-    const contractsForPdf = filteredContracts.filter(
-      c => !excludedPdfContractIds.includes(c.id)
-    );
-    
-    console.log(`[PDF Export] Generando PDF con ${contractsForPdf.length} de ${filteredContracts.length} contratos (${excludedPdfContractIds.length} excluidos)`);
-    
+
+    const contractsForPdf = orderContractsForExport(filteredContracts);
+
+    console.log(`[PDF Export] Generando PDF con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
+
     await generateContractsListPDF(
-      contractsForPdf as any, 
-      selectedPdfColumns, 
-      title, 
-      isFirmado, 
+      contractsForPdf as any,
+      selectedPdfColumns,
+      title,
+      isFirmado,
       isNego,
       ufValue
     );
-    
+
     toast.success(`PDF generado con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
   };
 
@@ -821,9 +831,7 @@ const Contracts = () => {
         ? "Contratos Vigentes"
         : "Lista de Contratos";
 
-    const contractsForExcel = filteredContracts.filter(
-      (c) => !excludedPdfContractIds.includes(c.id)
-    );
+    const contractsForExcel = orderContractsForExport(filteredContracts);
 
     generateContractsListExcel(
       contractsForExcel as any,
@@ -1010,8 +1018,8 @@ const Contracts = () => {
                 />
                 <ContractRowSelector
                   contracts={filteredContracts.map(c => ({ id: c.id, name: c.name }))}
-                  excludedContractIds={excludedPdfContractIds}
-                  onExclusionChange={setExcludedPdfContractIds}
+                  selectedContractIds={selectedPdfContractIds}
+                  onSelectionChange={setSelectedPdfContractIds}
                 />
                 <Button
                   variant="outline"

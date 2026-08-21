@@ -14,16 +14,25 @@ interface Contract {
 
 interface ContractRowSelectorProps {
   contracts: Contract[];
-  excludedContractIds: string[];
-  onExclusionChange: (excludedIds: string[]) => void;
+  /** null = sin personalizar (todos, en el orden de la tabla). Array = orden
+   *  de selección elegido a mano — ese es el orden en que se exporta. */
+  selectedContractIds: string[] | null;
+  onSelectionChange: (ids: string[] | null) => void;
 }
 
 export function ContractRowSelector({
   contracts,
-  excludedContractIds,
-  onExclusionChange,
+  selectedContractIds,
+  onSelectionChange,
 }: ContractRowSelectorProps) {
   const [searchTerm, setSearchTerm] = useState("");
+
+  const effectiveSelection = selectedContractIds ?? contracts.map(c => c.id);
+  const orderIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    effectiveSelection.forEach((id, i) => m.set(id, i + 1));
+    return m;
+  }, [effectiveSelection]);
 
   const filteredContracts = useMemo(() => {
     if (!searchTerm) return contracts;
@@ -32,30 +41,31 @@ export function ContractRowSelector({
   }, [contracts, searchTerm]);
 
   const handleChange = (id: string, included: boolean) => {
+    const current = selectedContractIds ?? contracts.map(c => c.id);
     if (included) {
-      // Remove from excluded
-      onExclusionChange(excludedContractIds.filter(eid => eid !== id));
+      if (current.includes(id)) return;
+      // Se agrega al final: queda última en el orden de exportación.
+      onSelectionChange([...current, id]);
     } else {
-      // Add to excluded
-      onExclusionChange([...excludedContractIds, id]);
+      onSelectionChange(current.filter(cid => cid !== id));
     }
   };
 
   const handleSelectAll = () => {
-    onExclusionChange([]);
+    onSelectionChange(null);
   };
 
   const handleDeselectAll = () => {
-    onExclusionChange(contracts.map(c => c.id));
+    onSelectionChange([]);
   };
 
-  const includedCount = contracts.length - excludedContractIds.length;
-  const hasCustomSelection = excludedContractIds.length > 0;
+  const includedCount = effectiveSelection.length;
+  const hasCustomSelection = selectedContractIds !== null;
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button 
+        <Button
           variant={hasCustomSelection ? "default" : "outline"}
           size="sm"
           className="gap-2"
@@ -68,9 +78,9 @@ export function ContractRowSelector({
         <div className="space-y-3">
           <h4 className="font-medium text-sm">Contratos a incluir</h4>
           <p className="text-xs text-muted-foreground">
-            💡 Haz clic en "Ninguno" y luego selecciona solo los que necesitas.
+            💡 El orden en que los marcás es el orden en que se exportan.
           </p>
-          
+
           <div className="relative">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
             <Input
@@ -82,17 +92,17 @@ export function ContractRowSelector({
           </div>
 
           <div className="flex gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="text-xs h-7 px-2"
               onClick={handleSelectAll}
             >
               Todos
             </Button>
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="text-xs h-7 px-2"
               onClick={handleDeselectAll}
             >
@@ -102,22 +112,30 @@ export function ContractRowSelector({
 
           <ScrollArea className="h-[200px]">
             <div className="space-y-2 pr-2">
-              {filteredContracts.map((contract) => (
-                <div key={contract.id} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`pdf-row-${contract.id}`}
-                    checked={!excludedContractIds.includes(contract.id)}
-                    onCheckedChange={(checked) => handleChange(contract.id, !!checked)}
-                  />
-                  <Label 
-                    htmlFor={`pdf-row-${contract.id}`}
-                    className="text-sm cursor-pointer truncate flex-1"
-                    title={contract.name}
-                  >
-                    {contract.name}
-                  </Label>
-                </div>
-              ))}
+              {filteredContracts.map((contract) => {
+                const pos = orderIndex.get(contract.id);
+                return (
+                  <div key={contract.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`pdf-row-${contract.id}`}
+                      checked={pos !== undefined}
+                      onCheckedChange={(checked) => handleChange(contract.id, !!checked)}
+                    />
+                    <Label
+                      htmlFor={`pdf-row-${contract.id}`}
+                      className="text-sm cursor-pointer truncate flex-1"
+                      title={contract.name}
+                    >
+                      {contract.name}
+                    </Label>
+                    {pos !== undefined && (
+                      <span className="text-[10px] font-medium text-muted-foreground shrink-0 min-w-[1.25rem] text-right">
+                        {pos}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
               {filteredContracts.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-4">
                   No se encontraron contratos

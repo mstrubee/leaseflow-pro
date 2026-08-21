@@ -192,13 +192,35 @@ export const generateContractsListExcel = (
           if (!contract.venta_estimada) return "";
           const min = contract.venta_estimada;
           const max = contract.venta_estimada_max || min;
+          const superficie = contract.superficie_edificada_local || 0;
+          const metrosFrente = contract.metros_lineales_frente || 0;
           const minMM = Math.round(min / 1_000_000);
           const maxMM = Math.round(max / 1_000_000);
           const lines: string[] = [min === max ? `${minMM} MM$` : `${minMM}-${maxMM} MM$`];
+          const minUF = ufValue > 0 ? min / ufValue : 0;
+          const maxUF = ufValue > 0 ? max / ufValue : 0;
           if (ufValue > 0) {
-            const minUF = Math.round(min / ufValue);
-            const maxUF = Math.round(max / ufValue);
-            lines.push(minUF === maxUF ? `${minUF} UF` : `${minUF}-${maxUF} UF`);
+            lines.push(Math.round(minUF) === Math.round(maxUF) ? `${Math.round(minUF)} UF` : `${Math.round(minUF)}-${Math.round(maxUF)} UF`);
+          }
+          if (superficie > 0 && ufValue > 0) {
+            const minUFm2 = minUF / superficie;
+            const maxUFm2 = maxUF / superficie;
+            lines.push(minUFm2 === maxUFm2 ? `${minUFm2.toFixed(1)} UF/m²` : `${minUFm2.toFixed(1)}-${maxUFm2.toFixed(1)} UF/m²`);
+          }
+          // Arr/Vta — mismo cálculo que la pantalla (ContractsTable.tsx) y el
+          // PDF: promedio ponderado por periodo/escalación, no solo el canon
+          // vigente. Antes esta línea directamente no existía en el Excel.
+          if (ufValue > 0 && v) {
+            const { promedio: arriendoTotalMensual } = calculateWeightedAverageTotalArriendo({
+              version: v,
+              signedDate: contract.signed_date,
+              superficie,
+              metrosLinealesFrente: metrosFrente,
+            });
+            const arriendoAnual = arriendoTotalMensual * 12;
+            const ventaAnualUF = ((minUF + maxUF) / 2) * 12;
+            const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
+            if (ratioArrVta > 0) lines.push(`Arr/Vta: ${ratioArrVta.toFixed(2)}%`);
           }
           return lines.join(" | ");
         }
