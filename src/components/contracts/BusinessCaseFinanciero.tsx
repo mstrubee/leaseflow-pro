@@ -514,20 +514,38 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                 </div>
               </Card>
 
-              <Card title="Márgenes y costos" sub="Conversión a MM CLP (Año 1) bajo cada campo">
+              <Card title="Márgenes y costos" sub="Conversión a MM CLP/mes (promedio) bajo cada campo">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(result.costoVentas[1]))} MM`}>
                     <NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></FieldConv>
-                  <FieldConv label="Otros costos dir. %" conv={`A1: $${fmtMM(Math.abs(result.otrosCostos[1]))} MM`}>
-                    <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
-                  <FieldConv label="Costos variables %" conv={`A1: $${fmtMM(Math.abs(result.costosVar[1]))} MM`}>
-                    <NumCell value={inputs.costosVar} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("costosVar", v)} /></FieldConv>
-                  <FieldConv label="Gastos generales %" conv={`A1: $${fmtMM(Math.abs(result.gastosGral[1]))} MM`}>
-                    <NumCell value={inputs.gralPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
-                  <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(result.tecnologia[1]))} MM`}>
-                    <NumCell value={inputs.tecPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
-                  <FieldConv label="Ocupación %" conv={`A1: $${fmtMM(Math.abs(result.ocupacion[1]))} MM`}>
-                    <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+                  {(() => {
+                    // Año 1 es parcial (result.mesesOperacion meses, porque el
+                    // local abre a mitad de año) — un "A1: $X MM" ahí no es un
+                    // valor mensual, es el total de un año incompleto. Para un
+                    // $/mes comparable se promedia el total de costo de los 5
+                    // años sobre el total de meses de operación proyectados
+                    // (años 2-5 siempre son 12 meses completos, mismo criterio
+                    // que mesesOperArr en computeBC).
+                    const totalMesesOperacion = result.mesesOperacion + 48;
+                    const promedioMensual = (arr: number[]) => {
+                      const total = arr.slice(1, 6).reduce((s, x) => s + Math.abs(x), 0);
+                      return totalMesesOperacion > 0 ? total / totalMesesOperacion : 0;
+                    };
+                    return (
+                      <>
+                        <FieldConv label="Otros costos dir. %" conv={`Prom: $${fmtMM(promedioMensual(result.otrosCostos))} MM/mes`}>
+                          <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
+                        <FieldConv label="Costos variables %" conv={`Prom: $${fmtMM(promedioMensual(result.costosVar))} MM/mes`}>
+                          <NumCell value={inputs.costosVar} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("costosVar", v)} /></FieldConv>
+                        <FieldConv label="Gastos generales %" conv={`Prom: $${fmtMM(promedioMensual(result.gastosGral))} MM/mes`}>
+                          <NumCell value={inputs.gralPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
+                        <FieldConv label="Tecnología %" conv={`Prom: $${fmtMM(promedioMensual(result.tecnologia))} MM/mes`}>
+                          <NumCell value={inputs.tecPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
+                        <FieldConv label="Ocupación %" conv={`Prom: $${fmtMM(promedioMensual(result.ocupacion))} MM/mes`}>
+                          <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+                      </>
+                    );
+                  })()}
                   <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM (${result.mesesY1} ${result.mesesY1 === 1 ? "mes" : "meses"})`}>
                     <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
                   <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
