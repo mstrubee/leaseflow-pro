@@ -111,6 +111,17 @@ export const FORMATO_PRESETS: Record<FormatoLocal, { personalY1: number; inventa
   Express: { personalY1: 6.5, inventarioMM: 60 },
 };
 
+// ---------- Ocupación: costo objetivo (MM CLP/mes) ----------
+// El input sigue siendo un %, pero ese % se calibra para que, sobre la Venta
+// Año 1 (MM/mes), el costo de ocupación resultante sea el objetivo por
+// formato. Se recalcula cada vez que cambian la Venta Año 1 o el formato
+// (ver setFormato/updateVentaConCrecimiento en useBusinessCaseV2); el input
+// queda editable a mano después, igual que personalY1 con el preset de formato.
+export const OCUPACION_TARGET_MM: Record<FormatoLocal, number> = {
+  Tradicional: 1.5,
+  Express: 1.2,
+};
+
 // ---------- Inputs editables del business case (por contrato) ----------
 export interface BCInputs {
   // Proyecto
@@ -277,6 +288,11 @@ function calcUF(base: number, rates: number[]): { starts: number[]; avgs: number
 function round(v: number, d = 2): number {
   const p = Math.pow(10, d);
   return Math.round((Number.isFinite(v) ? v : 0) * p) / p;
+}
+
+export function ocupPctFromVenta(formato: FormatoLocal, ventaMesY1: number): number {
+  if (!ventaMesY1 || ventaMesY1 <= 0) return 0;
+  return round((OCUPACION_TARGET_MM[formato] / ventaMesY1) * 100, 2);
 }
 
 // ---------- tramos de canon (escalonamiento) ----------
@@ -640,7 +656,7 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     personalCrec: 3.4,
     gralPct: 1.03,
     tecPct: 1.8,
-    ocupPct: 1.28,
+    ocupPct: ocupPctFromVenta("Tradicional", 60), // 60 = ventaMes[0] de abajo
     capexDepreciable: 155,
     deprAnos: d.anosDepr,
     invOverrides: {},

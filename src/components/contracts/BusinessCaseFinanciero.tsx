@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
 import type { BCSeed, BCInputs, FormatoLocal } from "@/lib/businessCase/model";
-import { FORMATOS_LOCAL, FORMATO_PRESETS } from "@/lib/businessCase/model";
+import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta } from "@/lib/businessCase/model";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 
 interface Props {
@@ -79,6 +79,9 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
       // Curva de maduración de Geochile (columna "Crec." de su panel) — NO
       // toca ufRates, que es la UF real/inflación, un supuesto aparte.
       update("ventaGrowthPct", projection.growthRates);
+      // Recalibrar Ocupación % sobre la nueva Venta Año 1 (mismo criterio que
+      // updateVentaConCrecimiento/setFormato — sigue editable a mano después).
+      update("ocupPct", ocupPctFromVenta(inputs.formato, projection.ventaMes[0]));
       // La proyección de Geochile Compass trae su propio ajuste "Express"
       // (independiente del "Formato de local" de este Business Case) — si no
       // coinciden, las ventas importadas están calibradas para el formato
@@ -166,7 +169,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                   </Field>
                   <FieldConv
                     label="Formato de local"
-                    conv={`Precarga ${FORMATO_PRESETS[inputs.formato].personalY1} trabajadores y $${FORMATO_PRESETS[inputs.formato].inventarioMM} MM de inventario (editables)`}
+                    conv={`Precarga ${FORMATO_PRESETS[inputs.formato].personalY1} trabajadores, $${FORMATO_PRESETS[inputs.formato].inventarioMM} MM de inventario y Ocupación calibrada a $${OCUPACION_TARGET_MM[inputs.formato]} MM/mes (editables)`}
                   >
                     <Select value={inputs.formato} disabled={ro} onValueChange={(v) => setFormato(v as FormatoLocal)}>
                       <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
@@ -177,7 +180,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
               </Card>
 
               <Card title="Contrato (resumen)">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-sm">
                   <Stat label="Canon (vigente)" value={`${fmtMM(result.canonUF)} UF/mes`} />
                   <Stat label="Canon UF/m²" value={`${fmtMM(inputs.ufM2, 2)} UF/m²`} />
                   <Stat label="Garantía" value={`${fmtMM(result.garantiaUF)} UF`} />

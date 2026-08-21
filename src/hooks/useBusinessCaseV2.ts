@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
-import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal } from "@/lib/businessCase/model";
+import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, ocupPctFromVenta } from "@/lib/businessCase/model";
 
 interface Args {
   contractId: string;
@@ -105,13 +105,18 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         const rate = (p.ventaGrowthPct[i + 1] ?? 0) / 100;
         ventas[i] = Math.ceil(ventas[i + 1] / (1 + rate));
       }
-      return { ...p, ventaMes: ventas };
+      // Ocupación % se calibra sobre la Venta Año 1 (puede haber cambiado
+      // directa o indirectamente por la propagación de arriba) para que el
+      // costo de ocupación objetivo (ver OCUPACION_TARGET_MM) se mantenga.
+      // Sigue siendo editable a mano después.
+      return { ...p, ventaMes: ventas, ocupPct: ocupPctFromVenta(p.formato, ventas[0]) };
     });
     setDirty(true);
   }, []);
 
-  // Cambiar de formato precarga dotación e inventario en una sola operación.
-  // Ambos quedan editables a mano después (son inputs normales).
+  // Cambiar de formato precarga dotación, inventario y Ocupación % (calibrado
+  // sobre la Venta Año 1 vigente) en una sola operación. Todos quedan
+  // editables a mano después (son inputs normales).
   const setFormato = useCallback((formato: FormatoLocal) => {
     setInputs((p) => {
       if (!p) return p;
@@ -121,6 +126,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         formato,
         personalY1: preset.personalY1,
         invOverrides: { ...p.invOverrides, inv: preset.inventarioMM },
+        ocupPct: ocupPctFromVenta(formato, p.ventaMes[0]),
       };
     });
     setDirty(true);
