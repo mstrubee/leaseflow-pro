@@ -81,11 +81,21 @@ export const calculateCurrentRentUF = (params: {
   const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || isRentUfM2;
 
   const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
+  // initial_rent tiene prioridad sobre regime_rent cuando está cargado (mismo
+  // criterio que rentField en buildSeed.ts): en la práctica el analista tipea
+  // el canon real en initial_rent y deja regime_rent en su default (0), tenga
+  // o no escalonamiento el contrato. Antes cada return de acá abajo caía a
+  // baseRegimeRent solo, así que un contrato sin escalaciones (o que aún no
+  // arrancaba) mostraba canon $0 aunque initial_rent tuviera el valor real.
+  const baseInitialRent = version.initial_rent != null
+    ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
+    : 0;
+  const baseRent = baseInitialRent || baseRegimeRent;
 
   const startDate = safeParseDate(version.effective_date) || safeParseDate(signedDate);
   if (!startDate) {
     return {
-      currentRent: baseRegimeRent,
+      currentRent: baseRent,
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: true,
@@ -99,7 +109,7 @@ export const calculateCurrentRentUF = (params: {
   // Future start
   if (currentMonth < 1) {
     return {
-      currentRent: baseRegimeRent,
+      currentRent: baseRent,
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: true,
@@ -117,27 +127,24 @@ export const calculateCurrentRentUF = (params: {
     };
   }
 
-  // No escalations/adjustments
+  // No escalations/adjustments: rent stays flat at initial_rent (or
+  // regime_rent if there's no initial_rent loaded)
   if (!hasEscalations && !hasAdjustments) {
     return {
-      currentRent: baseRegimeRent,
+      currentRent: baseRent,
       hasEscalations: false,
       hasAdjustments: false,
       isContractNotStarted: false,
     };
   }
 
-  let currentRent = baseRegimeRent;
+  let currentRent = baseRent;
 
   // Escalations (absolute values; if UF/m², multiply by superficie)
   if (hasEscalations) {
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
 
-    const baseInitialRent = version.initial_rent != null
-      ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
-      : baseRegimeRent;
-
-    currentRent = baseInitialRent;
+    currentRent = baseInitialRent || baseRegimeRent;
 
     for (const esc of sortedEscalations) {
       if (esc.month_number <= currentMonth) {
