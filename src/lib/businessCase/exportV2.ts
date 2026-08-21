@@ -3,93 +3,125 @@ import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 import type { BCInputs, BCResult } from "./model";
 import { fmtMM, fmtPct } from "./format";
+import { buildResumenEjecutivoRows, buildPnlRows } from "./reportRows";
 import bcTemplateUrl from "@/assets/bc_template.xlsx?url";
 
-const YEAR_LABELS = ["Año 0", "Año 1", "Año 2", "Año 3", "Año 4", "Año 5"];
+// Mismos colores/layout que la lámina "Detalle Capex Plan Expansión" del
+// Informe Directorio (ver InformeDirectorioPPT.ts) — este PDF reutiliza las
+// mismas filas (reportRows.ts) para que ambos documentos digan exactamente
+// lo mismo, solo que acá se descarga como PDF de una sola página en vez de
+// una slide de PPT. 10×5.625in = mismo aspect ratio 16:9 que la slide.
+const MAROON = "#C0003F";
+const MAROON_LIGHT = "#FBE4EA";
+const GRAY_HIGHLIGHT = "#D9D9D9";
+const PAGE_BG = "#F2F2F2";
+const KICKER_RED = "#C21D18";
+const DARK = "#1A1A1A";
+const MUTED = "#666666";
+const BORDER = "#CCCCCC";
+const WHITE = "#FFFFFF";
 
-const PNL_ROWS: { label: string; key: keyof BCResult }[] = [
-  { label: "Ingresos", key: "ingresos" },
-  { label: "Costo de Ventas", key: "costoVentas" },
-  { label: "Otros costos directos", key: "otrosCostos" },
-  { label: "Costos variables", key: "costosVar" },
-  { label: "Margen de Contribución", key: "margenCtrib" },
-  { label: "Personal", key: "personal" },
-  { label: "Publicidad", key: "publicidad" },
-  { label: "Gastos Generales", key: "gastosGral" },
-  { label: "Tecnología", key: "tecnologia" },
-  { label: "Ocupación", key: "ocupacion" },
-  { label: "Canon Arriendo", key: "canonArr" },
-  { label: "Fondo Promoción", key: "fondoPromocion" },
-  { label: "Gasto Común", key: "gastoComun" },
-  { label: "EBITDA", key: "ebitda" },
-  { label: "Depreciación", key: "depreciacion" },
-  { label: "EBIT", key: "ebit" },
-  { label: "Impuesto", key: "impuesto" },
-  { label: "UDI", key: "udi" },
-  { label: "Flujo operativo", key: "flujoOp" },
-  { label: "Flujo acumulado", key: "payback" },
-];
+// Mismos 3 bullets que "Aspectos clave" del PPT (buildBullets en
+// InformeDirectorioReport.tsx), salvo la cláusula de salida anticipada —
+// depende de datos de aviso de término del contrato que este diálogo no
+// carga (solo tiene inputs/result del Business Case).
+function buildBulletsForBC(inputs: BCInputs, r: BCResult): string[] {
+  const bullets: string[] = [`CAPEX ${fmtMM(r.totalCapex, 0)} mm$`];
+  const ventasProyectadas = (r.ingresos[4] + r.ingresos[5]) / 2;
+  bullets.push(`Ventas Proyectadas: ${fmtMM(ventasProyectadas, 0)} mm$`);
+  if (inputs.durContratoAnios) {
+    const years = Math.round(inputs.durContratoAnios);
+    bullets.push(`Contrato ${years} Año${years === 1 ? "" : "s"}`);
+  }
+  return bullets;
+}
 
-function kpiRows(inputs: BCInputs, r: BCResult): string[][] {
-  return [
-    ["TIR", r.tir != null ? fmtPct(r.tir) : "N/A"],
-    ["Tasa descuento", `${inputs.waccRate}%`],
-    ["VAN (MM CLP)", fmtMM(r.van)],
-    ["Payback", r.paybackAnio > 0 ? `${r.paybackAnio} año(s)` : ">5 años"],
-    ["Inversión total (MM CLP)", fmtMM(r.totalCapex)],
-    ["EBITDA Margin Año 5", fmtPct(r.ebitdaMargin5)],
-    ["Escenario", inputs.scenario === "opt" ? "Optimista" : inputs.scenario === "cons" ? "Conservador" : "Base"],
-  ];
+function buildSubtitleForBC(inputs: BCInputs): string {
+  // "-" en vez de "→": la fuente Helvetica base de jsPDF no tiene ese glyph
+  // (sale como caracteres basura). El PPT del Informe Directorio sí usa "→"
+  // porque PowerPoint no tiene esa limitación — ver buildSubtitle en
+  // InformeDirectorioReport.tsx.
+  const isExpress = inputs.formato === "Express";
+  return `Nuevo Local ${inputs.nombre}${isExpress ? " - Formato Express" : ""}`;
 }
 
 export function exportBusinessCasePDF(inputs: BCInputs, r: BCResult) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt" });
-  const W = doc.internal.pageSize.getWidth();
+  const doc = new jsPDF({ orientation: "landscape", unit: "in", format: [10, 5.625] });
+
+  doc.setFillColor(PAGE_BG);
+  doc.rect(0, 0, 10, 5.625, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(KICKER_RED);
+  doc.text("DETALLE CAPEX PLAN EXPANSIÓN", 0.4, 0.32);
+
   doc.setFontSize(16);
-  doc.text("Business Case Financiero", 40, 40);
-  doc.setFontSize(10);
-  doc.setTextColor(90);
-  doc.text(`${inputs.nombre} · ${inputs.tipo} / ${inputs.categoria}`, 40, 58);
-  doc.text(`${inputs.direccion}${inputs.comuna ? ", " + inputs.comuna : ""}`, 40, 72);
-  doc.setTextColor(0);
+  doc.setTextColor(DARK);
+  doc.text(buildSubtitleForBC(inputs), 0.4, 0.62);
 
-  autoTable(doc, {
-    startY: 90,
-    head: [["Indicador", "Valor"]],
-    body: kpiRows(inputs, r),
-    theme: "grid",
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [59, 130, 246] },
-    tableWidth: 280,
+  doc.setDrawColor(BORDER);
+  doc.setLineWidth(0.007);
+  doc.line(0.4, 0.87, 9.6, 0.87);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text(`Local ${inputs.nombre}`, 0.4, 1.08);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text("Aspectos clave:", 0.4, 1.28);
+  let bulletY = 1.45;
+  buildBulletsForBC(inputs, r).forEach((b) => {
+    doc.text(`•  ${b}`, 0.5, bulletY);
+    bulletY += 0.17;
   });
 
+  // Tabla izquierda: Resumen Ejecutivo NUEVO LOCAL
+  const infoRows = buildResumenEjecutivoRows(inputs, r);
   autoTable(doc, {
-    startY: 90,
-    margin: { left: 340 },
-    head: [["Plan de Inversión (MM CLP)", "Monto", "%"]],
-    body: [
-      ...r.inv.rows.map((x) => [x.nombre, fmtMM(x.monto), `${x.pct.toFixed(1)}%`]),
-      ["TOTAL", fmtMM(r.inv.total), "100%"],
-    ],
-    theme: "grid",
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [139, 92, 246] },
-    tableWidth: W - 340 - 40,
-  });
-
-  // @ts-expect-error lastAutoTable injected by plugin
-  const y = (doc.lastAutoTable?.finalY ?? 200) + 20;
-  autoTable(doc, {
-    startY: y,
-    head: [["Estado de Resultados (MM CLP)", ...YEAR_LABELS]],
-    body: PNL_ROWS.map((row) => {
-      const vals = r[row.key] as number[];
-      return [row.label, ...vals.map((v) => fmtMM(v ?? 0))];
+    startY: 2.0,
+    margin: { left: 0.4, right: 5.0, top: 0.1, bottom: 0.1 },
+    tableWidth: 4.3,
+    theme: "plain",
+    styles: { font: "helvetica", fontSize: 5.5, cellPadding: { top: 0.014, right: 0.028, bottom: 0.014, left: 0.028 }, lineColor: BORDER, lineWidth: 0.0035 },
+    columnStyles: { 0: { cellWidth: 2.55 }, 1: { cellWidth: 0.65 }, 2: { cellWidth: 1.1 } },
+    head: [[{ content: "Resumen Ejecutivo NUEVO LOCAL", colSpan: 3, styles: { fillColor: MAROON, textColor: WHITE, fontStyle: "bold", halign: "left" } }]],
+    body: infoRows.map((row) => {
+      const fill = row.highlight ? MAROON_LIGHT : WHITE;
+      const topBorder = row.divider ? 0.014 : 0.0035;
+      return [
+        { content: row.label, styles: { fillColor: fill, textColor: DARK, halign: "left" as const, lineWidth: { top: topBorder, right: 0.0035, bottom: 0.0035, left: 0.0035 } } },
+        { content: row.unit, styles: { fillColor: fill, textColor: MUTED, halign: "left" as const, lineWidth: { top: topBorder, right: 0.0035, bottom: 0.0035, left: 0 } } },
+        { content: row.value, styles: { fillColor: fill, textColor: DARK, halign: "right" as const, lineWidth: { top: topBorder, right: 0.0035, bottom: 0.0035, left: 0 } } },
+      ];
     }),
-    theme: "striped",
-    styles: { fontSize: 8, halign: "right" },
-    columnStyles: { 0: { halign: "left", fontStyle: "bold" } },
-    headStyles: { fillColor: [16, 185, 129], halign: "right" },
+  });
+
+  // Tabla derecha: P&L completo
+  const pnlRows = buildPnlRows(inputs, r);
+  const startYear = new Date(inputs.inicio ? `${inputs.inicio}T00:00:00` : Date.now()).getFullYear();
+  autoTable(doc, {
+    startY: 0.95,
+    margin: { left: 4.85, right: 0.4, top: 0.1, bottom: 0.1 },
+    tableWidth: 4.75,
+    theme: "grid",
+    styles: { font: "helvetica", fontSize: 5.5, cellPadding: { top: 0.014, right: 0.028, bottom: 0.014, left: 0.028 }, lineColor: BORDER, lineWidth: 0.0035 },
+    columnStyles: { 0: { cellWidth: 1.75 }, 1: { cellWidth: 0.6 }, 2: { cellWidth: 0.6 }, 3: { cellWidth: 0.6 }, 4: { cellWidth: 0.6 }, 5: { cellWidth: 0.6 } },
+    head: [[
+      { content: "Año", styles: { fillColor: MAROON, textColor: WHITE, fontStyle: "bold", halign: "left" } },
+      ...[1, 2, 3, 4, 5].map((n, i) => ({ content: `${n}\n${startYear + i}`, styles: { fillColor: MAROON, textColor: WHITE, fontStyle: "bold" as const, halign: "center" as const } })),
+    ]],
+    body: pnlRows.map((row) => {
+      if (!row.label) return [{ content: "", colSpan: 6, styles: { fillColor: WHITE, minCellHeight: 0.05 } }];
+      const fill = row.maroonHighlight ? MAROON : row.grayHighlight ? GRAY_HIGHLIGHT : WHITE;
+      const textColor = row.maroonHighlight ? WHITE : DARK;
+      const fontStyle = row.bold ? "bold" as const : "normal" as const;
+      return [
+        { content: row.label, styles: { fillColor: fill, textColor, fontStyle, halign: "left" as const } },
+        ...row.values.map((v, i) => ({ content: i === 0 && row.col0 ? row.col0 : v, styles: { fillColor: fill, textColor, fontStyle, halign: "right" as const } })),
+      ];
+    }),
   });
 
   doc.save(`BusinessCase_${(inputs.nombre || "proyecto").replace(/\s+/g, "_")}.pdf`);
