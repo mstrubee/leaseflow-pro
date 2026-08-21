@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1346,13 +1347,11 @@ const EditContract = () => {
                             return (
                               <div className="space-y-2">
                                 <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
-                                <Input
+                                <DecimalInput
                                   id="variableRentPercentage"
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Ej: 5.5"
+                                  placeholder="Ej: 5,5"
                                   value={variableRentPercentage}
-                                  onChange={(e) => setVariableRentPercentage(e.target.value)}
+                                  onChange={(v) => v !== null && setVariableRentPercentage(String(v))}
                                 />
                               </div>
                             );
@@ -1400,15 +1399,13 @@ const EditContract = () => {
                                   <div className="space-y-2">
                                     <Label htmlFor="guaranteeMultiplier">Multiplicador</Label>
                                     <div className="flex items-center gap-4">
-                                      <Input
+                                      <DecimalInput
                                         id="guaranteeMultiplier"
-                                        type="number"
-                                        step="0.5"
-                                        min="0"
                                         placeholder="Ej: 2"
                                         value={guaranteeMultiplier}
-                                        onChange={(e) => {
-                                          setGuaranteeMultiplier(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setGuaranteeMultiplier(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                         className="w-24"
@@ -1464,15 +1461,13 @@ const EditContract = () => {
                                     <Label htmlFor="guaranteeFixedAmount">
                                       Monto de Garantía ({guaranteeType === "fixed_clp" ? "$" : "UF"})
                                     </Label>
-                                    <Input
+                                    <DecimalInput
                                       id="guaranteeFixedAmount"
-                                      type="number"
-                                      step={guaranteeType === "fixed_clp" ? "1000" : "0.01"}
-                                      min="0"
                                       placeholder={guaranteeType === "fixed_clp" ? "Ej: 5000000" : "Ej: 100"}
                                       value={guaranteeFixedAmount}
-                                      onChange={(e) => {
-                                        setGuaranteeFixedAmount(e.target.value);
+                                      onChange={(v) => {
+                                        if (v === null) return;
+                                        setGuaranteeFixedAmount(String(v));
                                         setHasUnsavedChanges(true);
                                       }}
                                       className="w-48"
@@ -1494,14 +1489,12 @@ const EditContract = () => {
                                   <div className="space-y-2">
                                     <Label>Multiplicador</Label>
                                     <div className="flex items-center gap-4">
-                                      <Input
-                                        type="number"
-                                        step="0.5"
-                                        min="0"
+                                      <DecimalInput
                                         placeholder="Ej: 2"
                                         value={guaranteeMultiplier}
-                                        onChange={(e) => {
-                                          setGuaranteeMultiplier(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setGuaranteeMultiplier(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                         className="w-24"
@@ -1651,14 +1644,11 @@ const EditContract = () => {
 
                                     <div className="space-y-2">
                                       <Label htmlFor="gastosComunesUfM2">Gastos Comunes (UF/m² de superficie)</Label>
-                                      <Input
+                                      <DecimalInput
                                         id="gastosComunesUfM2"
-                                        type="number"
-                                        step="0.001"
-                                        min="0"
-                                        placeholder="Ej: 0.05"
+                                        placeholder="Ej: 0,05"
                                         value={gastosComunesUfM2}
-                                        onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                                        onChange={(v) => v !== null && setGastosComunesUfM2(String(v))}
                                       />
                                     </div>
 
@@ -1666,40 +1656,31 @@ const EditContract = () => {
                                       <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
                                         <div className="space-y-2">
                                           <Label htmlFor="gastosComunesUfMlFrente">Gastos Comunes (UF/mL de frente)</Label>
-                                          <Input
+                                          <DecimalInput
                                             id="gastosComunesUfMlFrente"
-                                            type="number"
-                                            step="0.001"
-                                            min="0"
-                                            placeholder="Ej: 0.10"
+                                            placeholder="Ej: 0,10"
                                             value={gastosComunesUfMlFrente}
-                                            onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
+                                            onChange={(v) => v !== null && setGastosComunesUfMlFrente(String(v))}
                                           />
                                         </div>
 
                                         <div className="space-y-2">
                                           <Label htmlFor="gastosComunesProrratKwhClima">Prorrata KWH Clima (UF)</Label>
-                                          <Input
+                                          <DecimalInput
                                             id="gastosComunesProrratKwhClima"
-                                            type="number"
-                                            step="0.001"
-                                            min="0"
-                                            placeholder="Ej: 5.00"
+                                            placeholder="Ej: 5,00"
                                             value={gastosComunesProrratKwhClima}
-                                            onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
+                                            onChange={(v) => v !== null && setGastosComunesProrratKwhClima(String(v))}
                                           />
                                         </div>
 
                                         <div className="space-y-2">
                                           <Label htmlFor="adicionalAdministracionPercentage">Adicional por Administración (%)</Label>
-                                          <Input
+                                          <DecimalInput
                                             id="adicionalAdministracionPercentage"
-                                            type="number"
-                                            step="0.001"
-                                            min="0"
                                             placeholder="Ej: 5"
                                             value={adicionalAdministracionPercentage}
-                                            onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
+                                            onChange={(v) => v !== null && setAdicionalAdministracionPercentage(String(v))}
                                           />
                                           <p className="text-xs text-muted-foreground">
                                             Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
@@ -1708,14 +1689,11 @@ const EditContract = () => {
 
                                         <div className="space-y-2">
                                           <Label htmlFor="gastosComunesFixedAdminUf">Monto Fijo por Administración (UF)</Label>
-                                          <Input
+                                          <DecimalInput
                                             id="gastosComunesFixedAdminUf"
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            placeholder="Ej: 10.00"
+                                            placeholder="Ej: 10,00"
                                             value={gastosComunesFixedAdminUf}
-                                            onChange={(e) => setGastosComunesFixedAdminUf(e.target.value)}
+                                            onChange={(v) => v !== null && setGastosComunesFixedAdminUf(String(v))}
                                           />
                                           <p className="text-xs text-muted-foreground">
                                             Monto fijo en UF por administración (se suma a Gastos Comunes)
@@ -1768,15 +1746,13 @@ const EditContract = () => {
                                   <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
                                     <div className="space-y-2">
                                       <Label htmlFor="gastosComunesTotalCentro">Total GGCC del Centro Comercial (UF/mes)</Label>
-                                      <Input
+                                      <DecimalInput
                                         id="gastosComunesTotalCentro"
-                                        type="number"
-                                        step="0.001"
-                                        min="0"
                                         placeholder="Ej: 10000"
                                         value={gastosComunesTotalCentro}
-                                        onChange={(e) => {
-                                          setGastosComunesTotalCentro(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setGastosComunesTotalCentro(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                       />
@@ -1787,16 +1763,13 @@ const EditContract = () => {
 
                                     <div className="space-y-2">
                                       <Label htmlFor="gastosComunesPercentage">Porcentaje de Participación (%)</Label>
-                                      <Input
+                                      <DecimalInput
                                         id="gastosComunesPercentage"
-                                        type="number"
-                                        step="0.001"
-                                        min="0"
-                                        max="100"
-                                        placeholder="Ej: 2.5"
+                                        placeholder="Ej: 2,5"
                                         value={gastosComunesPercentage}
-                                        onChange={(e) => {
-                                          setGastosComunesPercentage(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setGastosComunesPercentage(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                       />
@@ -1828,15 +1801,13 @@ const EditContract = () => {
                                           </Label>
                                         </div>
                                       </RadioGroup>
-                                      <Input
+                                      <DecimalInput
                                         id="gastosComunesTope"
-                                        type="number"
-                                        step="0.001"
-                                        min="0"
-                                        placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0.15 UF/m²"}
+                                        placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0,15 UF/m²"}
                                         value={gastosComunesTope}
-                                        onChange={(e) => {
-                                          setGastosComunesTope(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setGastosComunesTope(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                       />
@@ -1912,14 +1883,11 @@ const EditContract = () => {
                             return (
                               <div className="space-y-2">
                                 <Label htmlFor="fondoPromocionPercentage">Fondo de Promoción (%)</Label>
-                                <Input
+                                <DecimalInput
                                   id="fondoPromocionPercentage"
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  placeholder="Ej: 2.5"
+                                  placeholder="Ej: 2,5"
                                   value={fondoPromocionPercentage}
-                                  onChange={(e) => setFondoPromocionPercentage(e.target.value)}
+                                  onChange={(v) => v !== null && setFondoPromocionPercentage(String(v))}
                                 />
                                 <p className="text-xs text-muted-foreground">
                                   Porcentaje sobre el Canon en Régimen (puede ser 0)
@@ -1936,15 +1904,13 @@ const EditContract = () => {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  <Input
+                                  <DecimalInput
                                     id="otrosEgresosAmount"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
                                     placeholder="Monto"
                                     value={otrosEgresosAmount}
-                                    onChange={(e) => {
-                                      setOtrosEgresosAmount(e.target.value);
+                                    onChange={(v) => {
+                                      if (v === null) return;
+                                      setOtrosEgresosAmount(String(v));
                                       setHasUnsavedChanges(true);
                                     }}
                                     className="flex-1"
@@ -2010,15 +1976,13 @@ const EditContract = () => {
                                       <Label htmlFor="adjustmentValue">
                                         {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : `Monto de reajuste (${currency})`}
                                       </Label>
-                                      <Input
+                                      <DecimalInput
                                         id="adjustmentValue"
-                                        type="number"
-                                        step={adjustmentType === "percentage" ? "0.1" : "0.01"}
-                                        min="0"
-                                        placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5.5"}
+                                        placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5,5"}
                                         value={adjustmentValue}
-                                        onChange={(e) => {
-                                          setAdjustmentValue(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setAdjustmentValue(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                       />
@@ -2287,13 +2251,11 @@ const EditContract = () => {
                                     
                                     <div className="space-y-2">
                                       <Label>Meses antes del vencimiento *</Label>
-                                      <Input
-                                        type="number"
-                                        min="1"
-                                        max={parseInt(duration) || 999}
+                                      <DecimalInput
                                         value={contractEndNoticeMonths}
-                                        onChange={(e) => {
-                                          setContractEndNoticeMonths(e.target.value);
+                                        onChange={(v) => {
+                                          if (v === null) return;
+                                          setContractEndNoticeMonths(String(v));
                                           setHasUnsavedChanges(true);
                                         }}
                                         placeholder="Ej: 6"
@@ -2355,13 +2317,12 @@ const EditContract = () => {
                                 {noticeType === "meses" && (
                                   <div className="space-y-2">
                                     <Label htmlFor="noticeValue">Número de Meses *</Label>
-                                    <Input
+                                    <DecimalInput
                                       id="noticeValue"
-                                      type="number"
-                                      min="1"
                                       value={noticeValue}
-                                      onChange={(e) => {
-                                        setNoticeValue(e.target.value);
+                                      onChange={(v) => {
+                                        if (v === null) return;
+                                        setNoticeValue(String(v));
                                         setHasUnsavedChanges(true);
                                       }}
                                     />
@@ -2414,28 +2375,24 @@ const EditContract = () => {
                                         <span className="text-sm font-medium">Rango {index + 1}:</span>
                                         <div className="flex items-center gap-2">
                                           <Label className="text-sm">Del mes</Label>
-                                          <Input
-                                            type="number"
-                                            min="1"
-                                            max={parseInt(duration) || 999}
+                                          <DecimalInput
                                             value={range.start_month}
-                                            onChange={(e) => {
+                                            onChange={(v) => {
+                                              if (v === null) return;
                                               const newRanges = [...noticeRanges];
-                                              newRanges[index].start_month = parseInt(e.target.value) || 1;
+                                              newRanges[index].start_month = v;
                                               setNoticeRanges(newRanges);
                                               setHasUnsavedChanges(true);
                                             }}
                                             className="w-20"
                                           />
                                           <Label className="text-sm">al mes</Label>
-                                          <Input
-                                            type="number"
-                                            min={range.start_month}
-                                            max={parseInt(duration) || 999}
+                                          <DecimalInput
                                             value={range.end_month}
-                                            onChange={(e) => {
+                                            onChange={(v) => {
+                                              if (v === null) return;
                                               const newRanges = [...noticeRanges];
-                                              newRanges[index].end_month = parseInt(e.target.value) || range.start_month;
+                                              newRanges[index].end_month = v;
                                               setNoticeRanges(newRanges);
                                               setHasUnsavedChanges(true);
                                             }}
@@ -2468,14 +2425,12 @@ const EditContract = () => {
                                 {noticeType === "desde_mes" && (
                                   <div className="space-y-2">
                                     <Label htmlFor="noticeValue">Desde el mes *</Label>
-                                    <Input
+                                    <DecimalInput
                                       id="noticeValue"
-                                      type="number"
-                                      min="1"
-                                      max={parseInt(duration) || 999}
                                       value={noticeValue}
-                                      onChange={(e) => {
-                                        setNoticeValue(e.target.value);
+                                      onChange={(v) => {
+                                        if (v === null) return;
+                                        setNoticeValue(String(v));
                                         setHasUnsavedChanges(true);
                                       }}
                                       placeholder="Ej: 12"

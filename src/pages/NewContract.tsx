@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -677,13 +678,11 @@ const NewContract = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
-                <Input
+                <DecimalInput
                   id="variableRentPercentage"
-                  type="number"
-                  step="0.01"
-                  placeholder="Ej: 5.5"
+                  placeholder="Ej: 5,5"
                   value={variableRentPercentage}
-                  onChange={(e) => setVariableRentPercentage(e.target.value)}
+                  onChange={(v) => v !== null && setVariableRentPercentage(String(v))}
                 />
               </div>
 
@@ -691,14 +690,11 @@ const NewContract = () => {
               <div className="space-y-2">
                 <Label htmlFor="guaranteeMultiplier">Garantía (multiplicador del arriendo)</Label>
                 <div className="flex items-center gap-4">
-                  <Input
+                  <DecimalInput
                     id="guaranteeMultiplier"
-                    type="number"
-                    step="0.5"
-                    min="0"
                     placeholder="Ej: 2"
                     value={guaranteeMultiplier}
-                    onChange={(e) => setGuaranteeMultiplier(e.target.value)}
+                    onChange={(v) => v !== null && setGuaranteeMultiplier(String(v))}
                     className="w-24"
                   />
                   <span className="text-sm text-muted-foreground">×</span>
@@ -760,14 +756,11 @@ const NewContract = () => {
 
                     <div className="space-y-2">
                       <Label htmlFor="gastosComunesUfM2New">Gastos Comunes (UF/m² de superficie)</Label>
-                      <Input
+                      <DecimalInput
                         id="gastosComunesUfM2New"
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        placeholder="Ej: 0.05"
+                        placeholder="Ej: 0,05"
                         value={gastosComunesUfM2}
-                        onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                        onChange={(v) => v !== null && setGastosComunesUfM2(String(v))}
                       />
                       <p className="text-xs text-muted-foreground">
                         Se multiplica por la Superficie Edificada Local
@@ -778,14 +771,11 @@ const NewContract = () => {
                       <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
                         <div className="space-y-2">
                           <Label htmlFor="gastosComunesUfMlFrenteNew">Gastos Comunes (UF/mL de frente)</Label>
-                          <Input
+                          <DecimalInput
                             id="gastosComunesUfMlFrenteNew"
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            placeholder="Ej: 0.10"
+                            placeholder="Ej: 0,10"
                             value={gastosComunesUfMlFrente}
-                            onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
+                            onChange={(v) => v !== null && setGastosComunesUfMlFrente(String(v))}
                           />
                           <p className="text-xs text-muted-foreground">
                             Se multiplica por los Metros Lineales de Frente
@@ -794,14 +784,11 @@ const NewContract = () => {
 
                         <div className="space-y-2">
                           <Label htmlFor="gastosComunesProrratKwhClimaNew">Prorrata KWH Clima (UF)</Label>
-                          <Input
+                          <DecimalInput
                             id="gastosComunesProrratKwhClimaNew"
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            placeholder="Ej: 5.00"
+                            placeholder="Ej: 5,00"
                             value={gastosComunesProrratKwhClima}
-                            onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
+                            onChange={(v) => v !== null && setGastosComunesProrratKwhClima(String(v))}
                           />
                           <p className="text-xs text-muted-foreground">
                             Monto fijo en UF por prorrata de consumo eléctrico de clima
@@ -810,14 +797,11 @@ const NewContract = () => {
 
                         <div className="space-y-2">
                           <Label htmlFor="adicionalAdministracionPercentageNew">Adicional por Administración (%)</Label>
-                          <Input
+                          <DecimalInput
                             id="adicionalAdministracionPercentageNew"
-                            type="number"
-                            step="0.001"
-                            min="0"
                             placeholder="Ej: 5"
                             value={adicionalAdministracionPercentage}
-                            onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
+                            onChange={(v) => v !== null && setAdicionalAdministracionPercentage(String(v))}
                           />
                           <p className="text-xs text-muted-foreground">
                             Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
@@ -826,14 +810,11 @@ const NewContract = () => {
 
                         <div className="space-y-2">
                           <Label htmlFor="gastosComunesFixedAdminUfNew">Monto Fijo por Administración (UF)</Label>
-                          <Input
+                          <DecimalInput
                             id="gastosComunesFixedAdminUfNew"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="Ej: 10.00"
+                            placeholder="Ej: 10,00"
                             value={gastosComunesFixedAdminUf}
-                            onChange={(e) => setGastosComunesFixedAdminUf(e.target.value)}
+                            onChange={(v) => v !== null && setGastosComunesFixedAdminUf(String(v))}
                           />
                           <p className="text-xs text-muted-foreground">
                             Monto fijo en UF por administración (se suma a Gastos Comunes)
@@ -870,14 +851,11 @@ const NewContract = () => {
                   <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
                     <div className="space-y-2">
                       <Label htmlFor="gastosComunesTotalCentroNew">Total GGCC del Centro Comercial (UF/mes)</Label>
-                      <Input
+                      <DecimalInput
                         id="gastosComunesTotalCentroNew"
-                        type="number"
-                        step="0.001"
-                        min="0"
                         placeholder="Ej: 10000"
                         value={gastosComunesTotalCentro}
-                        onChange={(e) => setGastosComunesTotalCentro(e.target.value)}
+                        onChange={(v) => v !== null && setGastosComunesTotalCentro(String(v))}
                       />
                       <p className="text-xs text-muted-foreground">
                         Monto total de gastos comunes del centro comercial
@@ -886,15 +864,11 @@ const NewContract = () => {
 
                     <div className="space-y-2">
                       <Label htmlFor="gastosComunesPercentageNew">Porcentaje de Participación (%)</Label>
-                      <Input
+                      <DecimalInput
                         id="gastosComunesPercentageNew"
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        max="100"
-                        placeholder="Ej: 2.5"
+                        placeholder="Ej: 2,5"
                         value={gastosComunesPercentage}
-                        onChange={(e) => setGastosComunesPercentage(e.target.value)}
+                        onChange={(v) => v !== null && setGastosComunesPercentage(String(v))}
                       />
                       <p className="text-xs text-muted-foreground">
                         Porcentaje del total de GGCC que corresponde al local
@@ -921,14 +895,11 @@ const NewContract = () => {
                           </Label>
                         </div>
                       </RadioGroup>
-                      <Input
+                      <DecimalInput
                         id="gastosComunesTopeNew"
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0.15 UF/m²"}
+                        placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0,15 UF/m²"}
                         value={gastosComunesTope}
-                        onChange={(e) => setGastosComunesTope(e.target.value)}
+                        onChange={(v) => v !== null && setGastosComunesTope(String(v))}
                       />
                       <p className="text-xs text-muted-foreground">
                         {gastosComunesTopeType === "fixed" 
@@ -980,14 +951,11 @@ const NewContract = () => {
               {/* Fondo de Promoción */}
               <div className="space-y-2">
                 <Label htmlFor="fondoPromocionPercentageNew">Fondo de Promoción (%)</Label>
-                <Input
+                <DecimalInput
                   id="fondoPromocionPercentageNew"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Ej: 2.5"
+                  placeholder="Ej: 2,5"
                   value={fondoPromocionPercentage}
-                  onChange={(e) => setFondoPromocionPercentage(e.target.value)}
+                  onChange={(v) => v !== null && setFondoPromocionPercentage(String(v))}
                 />
                 <p className="text-xs text-muted-foreground">
                   Porcentaje sobre el Canon en Régimen (puede ser 0)
@@ -1003,14 +971,11 @@ const NewContract = () => {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Input
+                  <DecimalInput
                     id="otrosEgresosAmountNew"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     placeholder="Monto"
                     value={otrosEgresosAmount}
-                    onChange={(e) => setOtrosEgresosAmount(e.target.value)}
+                    onChange={(v) => v !== null && setOtrosEgresosAmount(String(v))}
                     className="flex-1"
                   />
                   <Input
@@ -1066,14 +1031,11 @@ const NewContract = () => {
                     <Label htmlFor="adjustmentValueNew">
                       {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : "Monto de reajuste (UF)"}
                     </Label>
-                    <Input
+                    <DecimalInput
                       id="adjustmentValueNew"
-                      type="number"
-                      step={adjustmentType === "percentage" ? "0.1" : "0.01"}
-                      min="0"
-                      placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5.5"}
+                      placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5,5"}
                       value={adjustmentValue}
-                      onChange={(e) => setAdjustmentValue(e.target.value)}
+                      onChange={(v) => v !== null && setAdjustmentValue(String(v))}
                     />
                   </div>
 
@@ -1222,12 +1184,9 @@ const NewContract = () => {
                   
                   <div className="space-y-2">
                     <Label>Meses antes del vencimiento *</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max={parseInt(duration) || 999}
+                    <DecimalInput
                       value={contractEndNoticeMonths}
-                      onChange={(e) => setContractEndNoticeMonths(e.target.value)}
+                      onChange={(v) => v !== null && setContractEndNoticeMonths(String(v))}
                       placeholder="Ej: 6"
                     />
                   </div>
@@ -1281,12 +1240,10 @@ const NewContract = () => {
               {noticeType === "meses" && (
                 <div className="space-y-2">
                   <Label htmlFor="noticeValue">Número de Meses</Label>
-                  <Input
+                  <DecimalInput
                     id="noticeValue"
-                    type="number"
-                    min="1"
                     value={noticeValue}
-                    onChange={(e) => setNoticeValue(e.target.value)}
+                    onChange={(v) => v !== null && setNoticeValue(String(v))}
                   />
                 </div>
               )}
@@ -1333,27 +1290,23 @@ const NewContract = () => {
                       <span className="text-sm font-medium">Rango {index + 1}:</span>
                       <div className="flex items-center gap-2">
                         <Label className="text-sm">Del mes</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max={parseInt(duration) || 999}
+                        <DecimalInput
                           value={range.start_month}
-                          onChange={(e) => {
+                          onChange={(v) => {
+                            if (v === null) return;
                             const newRanges = [...noticeRanges];
-                            newRanges[index].start_month = parseInt(e.target.value) || 1;
+                            newRanges[index].start_month = v;
                             setNoticeRanges(newRanges);
                           }}
                           className="w-20"
                         />
                         <Label className="text-sm">al mes</Label>
-                        <Input
-                          type="number"
-                          min={range.start_month}
-                          max={parseInt(duration) || 999}
+                        <DecimalInput
                           value={range.end_month}
-                          onChange={(e) => {
+                          onChange={(v) => {
+                            if (v === null) return;
                             const newRanges = [...noticeRanges];
-                            newRanges[index].end_month = parseInt(e.target.value) || range.start_month;
+                            newRanges[index].end_month = v;
                             setNoticeRanges(newRanges);
                           }}
                           className="w-20"
@@ -1384,13 +1337,10 @@ const NewContract = () => {
               {noticeType === "desde_mes" && (
                 <div className="space-y-2">
                   <Label htmlFor="noticeValue">Desde el mes *</Label>
-                  <Input
+                  <DecimalInput
                     id="noticeValue"
-                    type="number"
-                    min="1"
-                    max={parseInt(duration) || 999}
                     value={noticeValue}
-                    onChange={(e) => setNoticeValue(e.target.value)}
+                    onChange={(v) => v !== null && setNoticeValue(String(v))}
                     placeholder="Ej: 12"
                   />
                   <p className="text-xs text-muted-foreground">
