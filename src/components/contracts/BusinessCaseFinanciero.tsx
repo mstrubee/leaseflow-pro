@@ -290,7 +290,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                     <thead><tr className="text-right text-muted-foreground border-b">
                       <th className="text-left py-1">Línea</th>{yearCols.map((i) => <th key={i} className="px-2">{i === 0 ? "Año 0" : `Año ${i}`}</th>)}
                     </tr></thead>
-                    <tbody>
+                    <tbody style={{ backgroundColor: "hsl(173 80% 40% / 0.05)" }}>
                       <SectionRow label="Ingresos y Costos Directos" color="teal" />
                       <PnlRow label="Ingresos" vals={result.ingresos} bold detail={(i) => {
                         if (i === 0) return null;
@@ -313,6 +313,8 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <PnlRow label="Otros costos dir." vals={result.otrosCostos} />
                       <PnlRow label="Costos variables" vals={result.costosVar} />
                       <PnlRow label="Margen Contribución" vals={result.margenCtrib} bold />
+                    </tbody>
+                    <tbody style={{ backgroundColor: "hsl(var(--primary) / 0.05)" }}>
                       <SectionRow label="Gastos Operacionales" color="orange" />
                       <PnlRow label="Personal" vals={result.personal} />
                       <PnlRow label="Publicidad" vals={result.publicidad} />
@@ -367,6 +369,8 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       }} />
                       <PnlRow label="EBITDA" vals={result.ebitda} bold />
                       <MarginRow label="% EBITDA / Ventas" vals={yearCols.map((i) => (result.ingresos[i] ? result.ebitda[i] / result.ingresos[i] : 0))} />
+                    </tbody>
+                    <tbody style={{ backgroundColor: "hsl(271 91% 65% / 0.05)" }}>
                       <SectionRow label="Resultado y Flujo" color="purple" />
                       <PnlRow label="Depreciación" vals={result.depreciacion} />
                       <PnlRow label="EBIT" vals={result.ebit} bold />
@@ -613,9 +617,9 @@ function PnlRow({
 // (Margen Contribución / EBITDA / resultado final), sin tocar el alto ni el
 // padding de las filas normales (PnlRow) — solo separa visualmente.
 const SECTION_COLORS: Record<string, string> = {
-  teal: "text-brand-teal",
+  teal: "text-teal-700",
   orange: "text-primary",
-  purple: "text-brand-purple",
+  purple: "text-purple-700",
 };
 function SectionRow({ label, color }: { label: string; color: "teal" | "orange" | "purple" }) {
   return (
