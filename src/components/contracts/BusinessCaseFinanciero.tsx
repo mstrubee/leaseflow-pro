@@ -512,6 +512,16 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                           <td key={y} className="px-1 text-center text-[10px] text-muted-foreground">{fmtMM(result.ingresos[y])}</td>
                         ))}
                       </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-[10px] text-muted-foreground" title="Canon + Fondo Promoción + Gasto Común, sobre Ingresos del mismo año">Arriendo/Vta %</td>
+                        {[1, 2, 3, 4, 5].map((y) => {
+                          const arriendoTotal = Math.abs(result.canonArr[y]) + Math.abs(result.fondoPromocion[y]) + Math.abs(result.gastoComun[y]);
+                          const ratio = result.ingresos[y] > 0 ? arriendoTotal / result.ingresos[y] : 0;
+                          return (
+                            <td key={y} className="px-1 text-center text-[10px] font-medium text-amber-600">{fmtPct(ratio)}</td>
+                          );
+                        })}
+                      </tr>
                     </tbody>
                   </table>
                 </div>
