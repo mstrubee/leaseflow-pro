@@ -56,10 +56,13 @@ export function ExpenseReportsList({ onSelectReport }: Props) {
       ) : (
         <div className="space-y-2">
           {reports.map((report) => (
-            <button
+            <div
               key={report.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectReport(report)}
-              className="w-full text-left border rounded-lg p-3 hover:bg-muted/40 transition-colors flex items-center justify-between gap-2"
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelectReport(report)}
+              className="w-full text-left border rounded-lg p-3 hover:bg-muted/40 transition-colors flex items-center justify-between gap-2 cursor-pointer"
             >
               <div className="min-w-0 flex-1 flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -86,7 +89,7 @@ export function ExpenseReportsList({ onSelectReport }: Props) {
                   </Button>
                 )}
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}

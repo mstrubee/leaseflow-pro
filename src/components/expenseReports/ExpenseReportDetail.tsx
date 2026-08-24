@@ -99,10 +99,13 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
             const missing = getMissingFields(item);
             const complete = missing.length === 0;
             return (
-              <button
+              <div
                 key={item.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setOpenItemId(item.id)}
-                className="w-full text-left border rounded-lg p-3 hover:bg-muted/40 transition-colors flex items-center justify-between gap-2"
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setOpenItemId(item.id)}
+                className="w-full text-left border rounded-lg p-3 hover:bg-muted/40 transition-colors flex items-center justify-between gap-2 cursor-pointer"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -133,7 +136,7 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
