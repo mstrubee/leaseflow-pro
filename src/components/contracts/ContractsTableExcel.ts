@@ -153,12 +153,18 @@ export const generateContractsListExcel = (
           return parts.join(" | ");
         }
         case "capex_est": {
-          const capexEst = capexData.capexEstByContract[contract.id];
-          if (!capexEst || capexEst <= 0) return "";
+          const capexEstData = capexData.capexEstByContract[contract.id];
+          const capexEst = capexEstData?.capexEstMM || 0;
+          if (capexEst <= 0) return "";
+          const capitalTrabajo = capexEstData?.capitalTrabajoMM || 0;
           const superficie = contract.superficie_edificada_local || 0;
           const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
           const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
-          const parts = [`${Math.round(capexEst).toLocaleString("es-CL")} MM$`, superficie > 0 ? `${superficie} m²` : "-"];
+          const parts = [
+            `${Math.round(capexEst).toLocaleString("es-CL")} MM$`,
+            capitalTrabajo > 0 ? `${Math.round(capitalTrabajo).toLocaleString("es-CL")} MM$ (CT)` : "-",
+            superficie > 0 ? `${superficie} m²` : "-",
+          ];
           if (perM2UF > 0) parts.push(`${perM2UF.toFixed(2)} UF/m²`);
           return parts.join(" | ");
         }

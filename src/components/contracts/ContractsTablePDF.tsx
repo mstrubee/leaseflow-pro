@@ -180,7 +180,7 @@ const origenLabels: Record<string, string> = {
 
 export interface CapexData {
   capexByContract: Record<string, { authorized: number; unauthorized: number }>;
-  capexEstByContract: Record<string, number>;
+  capexEstByContract: Record<string, { capexEstMM: number; capitalTrabajoMM: number }>;
 }
 
 export const generateContractsListPDF = async (
@@ -309,14 +309,19 @@ export const generateContractsListPDF = async (
         }
         case "capex_est": {
           // Inversión estimada del Business Case Financiero, sin inventario —
-          // mismo cálculo que "Capex Est / Sup." en pantalla.
-          const capexEst = capexData.capexEstByContract[contract.id];
-          if (capexEst && capexEst > 0) {
+          // mismo cálculo que "Capex Est / Sup." en pantalla. Capital de
+          // Trabajo = el inventario (input "Inventario" en Inversión del BC),
+          // se muestra aparte, no se suma al Capex Estimado.
+          const capexEstData = capexData.capexEstByContract[contract.id];
+          const capexEst = capexEstData?.capexEstMM || 0;
+          if (capexEst > 0) {
+            const capitalTrabajo = capexEstData?.capitalTrabajoMM || 0;
             const superficie = contract.superficie_edificada_local || 0;
             const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
             const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
             const lines = [
               `${capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$`,
+              capitalTrabajo > 0 ? `${capitalTrabajo.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$ (CT)` : '-',
               superficie > 0 ? `${superficie.toLocaleString('es-CL')} m²` : '-',
             ];
             if (perM2UF > 0) lines.push(`${perM2UF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²`);
@@ -420,6 +425,22 @@ export const generateContractsListPDF = async (
 
     return rowData;
   });
+
+  // Fila "TOTAL": solo si la columna Capex Est / Sup. está seleccionada.
+  // Suma el Capex Estimado y el Capital de Trabajo (Inventario) de TODOS
+  // los contratos incluidos en este PDF — no promedios ni ratios, esos no
+  // tienen sentido sumados (superficie/UF-m² se dejan en blanco acá).
+  if (columns.length > 0 && columns.some((col) => col.key === "capex_est")) {
+    const totalCapexEst = contracts.reduce((sum, c) => sum + (capexData.capexEstByContract[c.id]?.capexEstMM || 0), 0);
+    const totalCapitalTrabajo = contracts.reduce((sum, c) => sum + (capexData.capexEstByContract[c.id]?.capitalTrabajoMM || 0), 0);
+    const totalRow = columns.map((col, idx) => {
+      if (col.key === "capex_est") {
+        return `${totalCapexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$\n${totalCapitalTrabajo.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$ (CT)`;
+      }
+      return idx === 0 ? 'TOTAL' : '';
+    });
+    tableData.push(totalRow);
+  }
 
   // Calculate column widths
   const pageWidth = doc.internal.pageSize.getWidth();

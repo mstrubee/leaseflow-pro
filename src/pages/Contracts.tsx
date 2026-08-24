@@ -287,7 +287,7 @@ const Contracts = () => {
   // — se reciben acá (en vez de recalcularlos) para poder ofrecer "Capex" y
   // "Capex Est." en "Columnas PDF" y usarlos en la exportación.
   const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
-  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, number>>({});
+  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, { capexEstMM: number; capitalTrabajoMM: number }>>({});
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";

@@ -139,7 +139,7 @@ interface ContractsTableProps {
   // contract_business_cases) que ya vive en esta tabla.
   onCapexDataChange?: (data: {
     capexByContract: Record<string, { authorized: number; unauthorized: number }>;
-    capexEstByContract: Record<string, number>;
+    capexEstByContract: Record<string, { capexEstMM: number; capitalTrabajoMM: number }>;
   }) => void;
 }
 
@@ -157,7 +157,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
-  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, number>>({});
+  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, { capexEstMM: number; capitalTrabajoMM: number }>>({});
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
@@ -259,15 +259,17 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   // "CAPEX Est." = inversión total estimada en el Business Case Financiero,
   // sin el inventario (capital de trabajo, no es CAPEX). Independiente de la
   // columna "CAPEX" (presupuesto real del año en curso, contract_budgets).
+  // capitalTrabajoMM = ese inventario (input "Inventario" en Inversión del
+  // Business Case) — se muestra aparte, no se suma al Capex Estimado.
   useEffect(() => {
     const loadCapexEst = async () => {
       const { data } = await supabase.from("contract_business_cases").select("contract_id, computed");
-      const map: Record<string, number> = {};
+      const map: Record<string, { capexEstMM: number; capitalTrabajoMM: number }> = {};
       (data || []).forEach((row: { contract_id: string; computed: unknown }) => {
         const computed = row.computed as { inv?: { total?: number; rows?: { id: string; monto: number }[] } } | null;
         const total = computed?.inv?.total || 0;
         const inventario = computed?.inv?.rows?.find((r) => r.id === "inv")?.monto || 0;
-        map[row.contract_id] = total - inventario;
+        map[row.contract_id] = { capexEstMM: total - inventario, capitalTrabajoMM: inventario };
       });
       setCapexEstByContract(map);
     };
@@ -1151,8 +1153,10 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 </TableCell>
                 <TableCell className="text-center" style={getColStyle("capex_est")}>
                   {(() => {
-                    const capexEst = capexEstByContract[contract.id];
+                    const capexEstData = capexEstByContract[contract.id];
+                    const capexEst = capexEstData?.capexEstMM || 0;
                     if (!capexEst || capexEst <= 0) return <span className="text-muted-foreground">-</span>;
+                    const capitalTrabajo = capexEstData?.capitalTrabajoMM || 0;
                     const superficie = contract.superficie_edificada_local || 0;
                     // capexEst viene en MM CLP (ver comentario más arriba) — se
                     // pasa a UF para el ratio, mismo criterio que la columna
@@ -1163,6 +1167,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       <div className="flex flex-col items-center" title="Inversión estimada del Business Case Financiero, sin inventario">
                         <span className="font-medium text-xs">
                           {capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$
+                        </span>
+                        <span className="text-[10px] text-muted-foreground" title="Capital de Trabajo (Inventario) del Business Case Financiero">
+                          {capitalTrabajo > 0 ? `${capitalTrabajo.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$ (CT)` : '-'}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
                           {superficie > 0 ? `${superficie.toLocaleString('es-CL')} m²` : '-'}
