@@ -938,6 +938,7 @@ const ContractDetail = () => {
                 open={businessCaseFinOpen}
                 onOpenChange={setBusinessCaseFinOpen}
                 contractId={contract.id}
+                contractName={contract.name}
                 canEdit={isAdmin}
                 seed={buildBCSeed({ contract, version: displayVersion as any, address, ufValue })}
               />

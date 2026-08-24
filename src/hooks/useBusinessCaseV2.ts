@@ -163,89 +163,87 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     setDirty(true);
   }, []);
 
-  // Autoguardado (debounce)
-  useEffect(() => {
-    if (!dirty || !inputs || !result) return;
-    const t = setTimeout(async () => {
-      setSaving(true);
-      try {
-        const { data: u } = await supabase.auth.getUser();
-        await supabase.from("contract_business_cases").upsert(
-          {
-            contract_id: contractId,
-            inputs: inputs as unknown as Record<string, unknown>,
-            computed: result as unknown as Record<string, unknown>,
-            created_by: u?.user?.id ?? null,
-          } as never,
-          { onConflict: "contract_id" },
-        );
+  // Guardado manual — se dispara solo desde el botón "Guardar" (o "Guardar y
+  // cerrar" al cerrar con cambios pendientes), nunca automáticamente.
+  const save = useCallback(async () => {
+    if (!inputs || !result) return;
+    setSaving(true);
+    try {
+      const { data: u } = await supabase.auth.getUser();
+      await supabase.from("contract_business_cases").upsert(
+        {
+          contract_id: contractId,
+          inputs: inputs as unknown as Record<string, unknown>,
+          computed: result as unknown as Record<string, unknown>,
+          created_by: u?.user?.id ?? null,
+        } as never,
+        { onConflict: "contract_id" },
+      );
 
-        // "Venta Est." del listado de contratos = rango (min/max) de las ventas
-        // mensuales ingresadas. contracts.venta_estimada[_max] se guarda en
-        // pesos crudos (ver ContractsTable.tsx: ventaMin/ufValue sin dividir
-        // por 1e6 antes), mientras que inputs.ventaMes está en MM CLP/mes.
-        if (inputs.ventaMes.length > 0) {
-          await supabase.from("contracts").update({
-            venta_estimada: Math.min(...inputs.ventaMes) * 1_000_000,
-            venta_estimada_max: Math.max(...inputs.ventaMes) * 1_000_000,
-          } as never).eq("id", contractId);
-        }
-
-        // Sincronización bidireccional BC → Contrato: superficie, canon
-        // (respetando si el contrato usa UF/m² o monto total), gasto común
-        // (solo si la metodología del contrato es "uf_m2"), gracia y duración/inicio.
-        const last = lastSyncedRef.current;
-        if (last) {
-          const contractPatch: Record<string, unknown> = {};
-          if (inputs.superficie !== last.superficie) contractPatch.superficie_edificada_local = inputs.superficie;
-          if (Object.keys(contractPatch).length) {
-            await supabase.from("contracts").update(contractPatch as never).eq("id", contractId);
-          }
-
-          if (contractVersionId) {
-            const versionPatch: Record<string, unknown> = {};
-            if (inputs.durContratoAnios !== last.durContratoAnios) versionPatch.duration_months = Math.round((inputs.durContratoAnios || 0) * 12);
-            if (inputs.inicio && inputs.inicio !== last.inicio) versionPatch.effective_date = inputs.inicio;
-            if (inputs.graciaMeses !== last.graciaMeses) versionPatch.grace_months = inputs.graciaMeses;
-            // gastos_comunes_uf_m2 es el campo real del contrato ("Gasto Común
-            // UF/m²" del formulario) — no gastos_comunes_fixed_admin_uf, que es
-            // un monto fijo adicional de administración, un concepto distinto.
-            if (gastoComunSyncable && inputs.gastoComunUf !== last.gastoComunUf) versionPatch.gastos_comunes_uf_m2 = inputs.gastoComunUf;
-            if (rentField && inputs.ufM2 !== last.ufM2) {
-              versionPatch[rentField] = rentIsUfM2 ? inputs.ufM2 : +((inputs.ufM2 || 0) * (inputs.superficie || 0)).toFixed(2);
-            }
-            if (Object.keys(versionPatch).length) {
-              await supabase.from("contract_versions").update(versionPatch as never).eq("id", contractVersionId);
-            }
-          }
-
-          lastSyncedRef.current = {
-            superficie: inputs.superficie, ufM2: inputs.ufM2, gastoComunUf: inputs.gastoComunUf,
-            durContratoAnios: inputs.durContratoAnios, inicio: inputs.inicio, graciaMeses: inputs.graciaMeses,
-          };
-        }
-
-        // Montos de escalonamiento editados acá → de vuelta a rent_escalations
-        // (solo el monto; mes/plazo no es editable desde el Business Case).
-        const lastEsc = lastSyncedEscalationAmountsRef.current;
-        const changedEsc = inputs.escalations.filter((e) => e.id && e.amount !== lastEsc[e.id]);
-        if (changedEsc.length > 0) {
-          await Promise.all(
-            changedEsc.map((e) => supabase.from("rent_escalations").update({ amount: e.amount } as never).eq("id", e.id as string)),
-          );
-          lastSyncedEscalationAmountsRef.current = {
-            ...lastEsc,
-            ...Object.fromEntries(changedEsc.map((e) => [e.id as string, e.amount])),
-          };
-        }
-
-        setDirty(false);
-      } finally {
-        setSaving(false);
+      // "Venta Est." del listado de contratos = rango (min/max) de las ventas
+      // mensuales ingresadas. contracts.venta_estimada[_max] se guarda en
+      // pesos crudos (ver ContractsTable.tsx: ventaMin/ufValue sin dividir
+      // por 1e6 antes), mientras que inputs.ventaMes está en MM CLP/mes.
+      if (inputs.ventaMes.length > 0) {
+        await supabase.from("contracts").update({
+          venta_estimada: Math.min(...inputs.ventaMes) * 1_000_000,
+          venta_estimada_max: Math.max(...inputs.ventaMes) * 1_000_000,
+        } as never).eq("id", contractId);
       }
-    }, 800);
-    return () => clearTimeout(t);
-  }, [dirty, inputs, result, contractId, contractVersionId, rentField, rentIsUfM2, gastoComunSyncable]);
+
+      // Sincronización bidireccional BC → Contrato: superficie, canon
+      // (respetando si el contrato usa UF/m² o monto total), gasto común
+      // (solo si la metodología del contrato es "uf_m2"), gracia y duración/inicio.
+      const last = lastSyncedRef.current;
+      if (last) {
+        const contractPatch: Record<string, unknown> = {};
+        if (inputs.superficie !== last.superficie) contractPatch.superficie_edificada_local = inputs.superficie;
+        if (Object.keys(contractPatch).length) {
+          await supabase.from("contracts").update(contractPatch as never).eq("id", contractId);
+        }
+
+        if (contractVersionId) {
+          const versionPatch: Record<string, unknown> = {};
+          if (inputs.durContratoAnios !== last.durContratoAnios) versionPatch.duration_months = Math.round((inputs.durContratoAnios || 0) * 12);
+          if (inputs.inicio && inputs.inicio !== last.inicio) versionPatch.effective_date = inputs.inicio;
+          if (inputs.graciaMeses !== last.graciaMeses) versionPatch.grace_months = inputs.graciaMeses;
+          // gastos_comunes_uf_m2 es el campo real del contrato ("Gasto Común
+          // UF/m²" del formulario) — no gastos_comunes_fixed_admin_uf, que es
+          // un monto fijo adicional de administración, un concepto distinto.
+          if (gastoComunSyncable && inputs.gastoComunUf !== last.gastoComunUf) versionPatch.gastos_comunes_uf_m2 = inputs.gastoComunUf;
+          if (rentField && inputs.ufM2 !== last.ufM2) {
+            versionPatch[rentField] = rentIsUfM2 ? inputs.ufM2 : +((inputs.ufM2 || 0) * (inputs.superficie || 0)).toFixed(2);
+          }
+          if (Object.keys(versionPatch).length) {
+            await supabase.from("contract_versions").update(versionPatch as never).eq("id", contractVersionId);
+          }
+        }
+
+        lastSyncedRef.current = {
+          superficie: inputs.superficie, ufM2: inputs.ufM2, gastoComunUf: inputs.gastoComunUf,
+          durContratoAnios: inputs.durContratoAnios, inicio: inputs.inicio, graciaMeses: inputs.graciaMeses,
+        };
+      }
+
+      // Montos de escalonamiento editados acá → de vuelta a rent_escalations
+      // (solo el monto; mes/plazo no es editable desde el Business Case).
+      const lastEsc = lastSyncedEscalationAmountsRef.current;
+      const changedEsc = inputs.escalations.filter((e) => e.id && e.amount !== lastEsc[e.id]);
+      if (changedEsc.length > 0) {
+        await Promise.all(
+          changedEsc.map((e) => supabase.from("rent_escalations").update({ amount: e.amount } as never).eq("id", e.id as string)),
+        );
+        lastSyncedEscalationAmountsRef.current = {
+          ...lastEsc,
+          ...Object.fromEntries(changedEsc.map((e) => [e.id as string, e.amount])),
+        };
+      }
+
+      setDirty(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [inputs, result, contractId, contractVersionId, rentField, rentIsUfM2, gastoComunSyncable]);
 
   return {
     config,
@@ -260,5 +258,6 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     updateEscalationAmount,
     setFormato,
     setInvOverride,
+    save,
   };
 }
