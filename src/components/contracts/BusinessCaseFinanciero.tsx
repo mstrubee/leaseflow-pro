@@ -135,7 +135,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Business Case Financiero{contractName ? ` (${contractName})` : ""}
+            Business Case Financiero{contractName ? ` ${contractName}` : ""}
             {saving && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Guardando…</span>}
             {!saving && dirty && <span className="text-xs text-amber-600 inline-flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Cambios sin guardar</span>}
             {!saving && !dirty && !loading && <span className="text-xs text-green-600 inline-flex items-center gap-1"><Check className="h-3 w-3" /> Guardado</span>}
