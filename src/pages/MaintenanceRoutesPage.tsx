@@ -5,7 +5,7 @@ import { RouteCalendar } from "@/components/maintenance/routes/RouteCalendar";
 import { RouteComplianceStats } from "@/components/maintenance/routes/RouteComplianceStats";
 import { UnscheduledRoutesButton } from "@/components/maintenance/routes/UnscheduledRoutesButton";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Navigation, CalendarDays, BarChart2 } from "lucide-react";
+import { ArrowLeft, Navigation, CalendarDays, BarChart2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 type Tab = "builder" | "calendar" | "stats";
@@ -16,6 +16,7 @@ export default function MaintenanceRoutesPage() {
   const canArmar       = hasPermission("maintenance_armar_rutas",    "view");
   const canCumplimiento = hasPermission("maintenance_cumplimiento",   "view");
   const canFormularios  = hasPermission("maintenance_formularios",    "view");
+  const canExpenseReports = hasPermission("expense_reports", "view");
 
   const [tab, setTab] = useState<Tab>(canArmar ? "builder" : "calendar");
   const [editRouteId, setEditRouteId] = useState<string | null>(null);
@@ -60,6 +61,14 @@ export default function MaintenanceRoutesPage() {
             <UnscheduledRoutesButton
               onEdit={(routeId) => { setEditRouteId(routeId); setTab("builder"); }}
             />
+          </div>
+        )}
+
+        {canExpenseReports && (
+          <div className={canArmar ? "" : "ml-auto"}>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => navigate("/expense-reports")}>
+              <Wallet className="w-3.5 h-3.5" /> Rendición de Gastos
+            </Button>
           </div>
         )}
       </div>

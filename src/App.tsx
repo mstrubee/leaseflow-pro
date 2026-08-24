@@ -43,6 +43,7 @@ const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDas
 const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
 const TeamUsers = lazy(() => import("./pages/TeamUsers"));
 const ActivateAccount = lazy(() => import("./pages/ActivateAccount"));
+const ExpenseReportsDashboard = lazy(() => import("./pages/ExpenseReportsDashboard"));
 
 const queryClient = new QueryClient();
 
@@ -110,6 +111,7 @@ const App = () => (
                   <Route path="/maintenance/routes" element={<ProtectedRoute resource="maintenance"><MaintenanceRoutesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/schedules" element={<ProtectedRoute resource="maintenance"><MaintenanceSchedulesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute resource="maintenance_ejecutar_rutas"><RouteExecutionPage /></ProtectedRoute>} />
+                  <Route path="/expense-reports" element={<ProtectedRoute resource="expense_reports"><ExpenseReportsDashboard /></ProtectedRoute>} />
                   <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
                   <Route path="/service-contracts" element={<ProtectedRoute resource="service_contracts"><ServiceContractsDashboard /></ProtectedRoute>} />
                   <Route path="/service-contracts/:id" element={<ProtectedRoute resource="service_contracts"><ServiceContractDetail /></ProtectedRoute>} />
