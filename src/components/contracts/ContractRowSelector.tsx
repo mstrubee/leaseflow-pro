@@ -3,7 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { ListFilter, Search } from "lucide-react";
+import { ListFilter, Search, ChevronUp, ChevronDown, X } from "lucide-react";
 import { useState, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -59,6 +59,20 @@ export function ContractRowSelector({
     onSelectionChange([]);
   };
 
+  const moveSelection = (index: number, direction: -1 | 1) => {
+    const current = selectedContractIds ?? contracts.map((c) => c.id);
+    const target = index + direction;
+    if (target < 0 || target >= current.length) return;
+    const next = [...current];
+    [next[index], next[target]] = [next[target], next[index]];
+    onSelectionChange(next);
+  };
+
+  const removeFromSelection = (id: string) => {
+    const current = selectedContractIds ?? contracts.map((c) => c.id);
+    onSelectionChange(current.filter((cid) => cid !== id));
+  };
+
   const includedCount = effectiveSelection.length;
   const hasCustomSelection = selectedContractIds !== null;
 
@@ -82,15 +96,41 @@ export function ContractRowSelector({
           </p>
 
           {hasCustomSelection && effectiveSelection.length > 0 && (
-            <div className="rounded border bg-muted/30 px-2 py-1.5 max-h-28 overflow-y-auto">
+            <div className="rounded border bg-muted/30 px-2 py-1.5 max-h-36 overflow-y-auto">
               <ol className="text-xs space-y-0.5">
                 {effectiveSelection.map((id, i) => {
                   const contract = contracts.find((c) => c.id === id);
                   if (!contract) return null;
                   return (
-                    <li key={id} className="flex gap-1.5">
+                    <li key={id} className="flex items-center gap-1">
                       <span className="text-muted-foreground shrink-0 w-4 text-right">{i + 1}.</span>
-                      <span className="truncate" title={contract.name}>{contract.name}</span>
+                      <span className="truncate flex-1" title={contract.name}>{contract.name}</span>
+                      <button
+                        type="button"
+                        disabled={i === 0}
+                        onClick={() => moveSelection(i, -1)}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                        title="Subir"
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={i === effectiveSelection.length - 1}
+                        onClick={() => moveSelection(i, 1)}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                        title="Bajar"
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeFromSelection(id)}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        title="Quitar"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </li>
                   );
                 })}
