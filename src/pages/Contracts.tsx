@@ -35,6 +35,7 @@ import { ContractStatsCards } from "@/components/contracts/ContractStatsCards";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths, DEFAULT_COLUMN_WIDTHS } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { toast } from "sonner";
 import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -782,9 +783,15 @@ const Contracts = () => {
     return getAvailableColumns(isFirmado, isNego);
   }, [statusFilter]);
   
-  const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
-    "contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"
-  ]);
+  // Recuerda la última selección de columnas del PDF por usuario (igual
+  // criterio que useContractColumnWidths) — así "Columnas PDF" abre la
+  // próxima vez con lo que se haya dejado seleccionado, no siempre el
+  // default de fábrica.
+  const { value: selectedPdfColumns, setValue: setSelectedPdfColumns } = useUserPreferences<string[]>({
+    preferenceKey: "contracts_pdf_columns",
+    defaultValue: ["contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"],
+    localStorageKey: "contracts_pdf_columns",
+  });
   
   // Selección de filas a exportar (PDF/Excel). null = todas, en el orden de
   // la tabla. Array = ids en el orden en que se fueron marcando — ese orden
