@@ -282,6 +282,11 @@ const Contracts = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [comiteGPStatuses, setComiteGPStatuses] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [customFieldsByContract, setCustomFieldsByContract] = useState<Record<string, { cebe?: string; codigo?: string }>>({});
+  // Totales de CAPEX que ContractsTable ya calcula para sus propias columnas
+  // — se reciben acá (en vez de recalcularlos) para poder ofrecer "Capex" y
+  // "Capex Est." en "Columnas PDF" y usarlos en la exportación.
+  const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
+  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, number>>({});
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";
@@ -816,7 +821,8 @@ const Contracts = () => {
       title,
       isFirmado,
       isNego,
-      ufValue
+      ufValue,
+      { capexByContract, capexEstByContract }
     );
 
     toast.success(`PDF generado con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
@@ -839,7 +845,8 @@ const Contracts = () => {
       title,
       isFirmado,
       isNego,
-      ufValue
+      ufValue,
+      { capexByContract, capexEstByContract }
     );
 
     toast.success(`Excel generado con ${contractsForExcel.length} de ${filteredContracts.length} contratos`);
@@ -1388,6 +1395,10 @@ const Contracts = () => {
               columnWidths={columnWidths}
               customFieldsByContract={customFieldsByContract}
               comiteGPStatuses={comiteGPStatuses}
+              onCapexDataChange={({ capexByContract, capexEstByContract }) => {
+                setCapexByContract(capexByContract);
+                setCapexEstByContract(capexEstByContract);
+              }}
             />
           ) : (
             <Card className="p-12">

@@ -79,6 +79,8 @@ export const getAvailableColumns = (isFirmadoView: boolean, isNegociacionView: b
     { key: "empresa", label: "Empresa" },
     { key: "ubicacion", label: "Ubicación" },
     { key: "direccion", label: "Dirección" },
+    { key: "capex", label: "Capex" },
+    { key: "capex_est", label: "Capex Est / Sup." },
     { key: "costo_arriendo", label: "Costo Arriendo" },
     { key: "duracion", label: "Duración" },
   ];
@@ -176,13 +178,19 @@ const origenLabels: Record<string, string> = {
   inversionista: "Inversionista",
 };
 
+export interface CapexData {
+  capexByContract: Record<string, { authorized: number; unauthorized: number }>;
+  capexEstByContract: Record<string, number>;
+}
+
 export const generateContractsListPDF = async (
   contracts: Contract[],
   selectedColumns: string[],
   title: string,
   isFirmadoView: boolean,
   isNegociacionView: boolean,
-  ufValue: number = 0
+  ufValue: number = 0,
+  capexData: CapexData = { capexByContract: {}, capexEstByContract: {} }
 ) => {
   const doc = new jsPDF({ orientation: 'landscape' });
   const today = new Date().toLocaleDateString('es-CL');
@@ -280,6 +288,44 @@ export const generateContractsListPDF = async (
             rowData.push('-');
           }
           break;
+        case "capex": {
+          // Mismo cálculo que la columna "CAPEX" en pantalla (ContractsTable.tsx):
+          // presupuesto real del año en curso, contract_budgets.
+          const capex = capexData.capexByContract[contract.id];
+          const totalUF = (capex?.authorized || 0) + (capex?.unauthorized || 0);
+          if (totalUF > 0) {
+            const superficie = contract.superficie_edificada_local || 0;
+            const perM2 = superficie > 0 ? totalUF / superficie : 0;
+            const lines = [
+              `$${Math.round(totalUF * ufValue).toLocaleString('es-CL')}`,
+              `${totalUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`,
+            ];
+            if (perM2 > 0) lines.push(`${perM2.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²`);
+            rowData.push(lines.join('\n'));
+          } else {
+            rowData.push('-');
+          }
+          break;
+        }
+        case "capex_est": {
+          // Inversión estimada del Business Case Financiero, sin inventario —
+          // mismo cálculo que "Capex Est / Sup." en pantalla.
+          const capexEst = capexData.capexEstByContract[contract.id];
+          if (capexEst && capexEst > 0) {
+            const superficie = contract.superficie_edificada_local || 0;
+            const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
+            const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
+            const lines = [
+              `${capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$`,
+              superficie > 0 ? `${superficie.toLocaleString('es-CL')} m²` : '-',
+            ];
+            if (perM2UF > 0) lines.push(`${perM2UF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²`);
+            rowData.push(lines.join('\n'));
+          } else {
+            rowData.push('-');
+          }
+          break;
+        }
         case "duracion":
           rowData.push(currentVersion ? `${currentVersion.duration_months} meses` : '-');
           break;
@@ -384,7 +430,7 @@ export const generateContractsListPDF = async (
   columns.forEach((col, idx) => {
     columnStyles[idx] = { 
       cellWidth: colWidth,
-      halign: ['costo_arriendo', 'venta_estimada'].includes(col.key) ? 'right' : 
+      halign: ['costo_arriendo', 'venta_estimada', 'capex', 'capex_est'].includes(col.key) ? 'right' :
               ['duracion', 'termino', 'aviso', 'categoria', 'clasificacion', 'estado_patente'].includes(col.key) ? 'center' : 'left'
     };
   });

@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
 import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, formatContractAmount } from "@/lib/contractRent";
-import { getAvailableColumns } from "./ContractsTablePDF";
+import { getAvailableColumns, type CapexData } from "./ContractsTablePDF";
 
 interface ContractVersion {
   regime_rent: number;
@@ -116,7 +116,8 @@ export const generateContractsListExcel = (
   title: string,
   isFirmadoView: boolean,
   isNegociacionView: boolean,
-  ufValue: number = 0
+  ufValue: number = 0,
+  capexData: CapexData = { capexByContract: {}, capexEstByContract: {} }
 ) => {
   const allColumns = getAvailableColumns(isFirmadoView, isNegociacionView);
   const columns = allColumns.filter((c) => selectedColumns.includes(c.key));
@@ -141,6 +142,26 @@ export const generateContractsListExcel = (
           return address?.commune || "";
         case "direccion":
           return address ? `${address.street || ""} ${address.number || ""}`.trim() : "";
+        case "capex": {
+          const capex = capexData.capexByContract[contract.id];
+          const totalUF = (capex?.authorized || 0) + (capex?.unauthorized || 0);
+          if (totalUF <= 0) return "";
+          const superficie = contract.superficie_edificada_local || 0;
+          const perM2 = superficie > 0 ? totalUF / superficie : 0;
+          const parts = [`$${Math.round(totalUF * ufValue).toLocaleString("es-CL")}`, `${totalUF.toFixed(2)} UF`];
+          if (perM2 > 0) parts.push(`${perM2.toFixed(2)} UF/m²`);
+          return parts.join(" | ");
+        }
+        case "capex_est": {
+          const capexEst = capexData.capexEstByContract[contract.id];
+          if (!capexEst || capexEst <= 0) return "";
+          const superficie = contract.superficie_edificada_local || 0;
+          const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
+          const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
+          const parts = [`${Math.round(capexEst).toLocaleString("es-CL")} MM$`, superficie > 0 ? `${superficie} m²` : "-"];
+          if (perM2UF > 0) parts.push(`${perM2UF.toFixed(2)} UF/m²`);
+          return parts.join(" | ");
+        }
         case "costo_arriendo": {
           if (!v) return "";
           const superficie = contract.superficie_edificada_local || 0;
@@ -242,6 +263,8 @@ export const generateContractsListExcel = (
       empresa: 22,
       ubicacion: 18,
       direccion: 30,
+      capex: 30,
+      capex_est: 30,
       costo_arriendo: 42,
       duracion: 12,
       termino: 12,

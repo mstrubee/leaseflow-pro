@@ -133,9 +133,17 @@ interface ContractsTableProps {
   columnWidths?: Record<string, number>;
   customFieldsByContract?: Record<string, { cebe?: string; codigo?: string }>;
   comiteGPStatuses?: Array<{ id: string; name: string; color: string | null }>;
+  // El padre (Contracts.tsx) necesita estos mismos totales para las columnas
+  // "Capex"/"Capex Est." de la exportación PDF/Excel — se los pasa acá en
+  // vez de duplicar el fetch/agregación (contract_budgets + budget_lines,
+  // contract_business_cases) que ya vive en esta tabla.
+  onCapexDataChange?: (data: {
+    capexByContract: Record<string, { authorized: number; unauthorized: number }>;
+    capexEstByContract: Record<string, number>;
+  }) => void;
 }
 
-export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract, comiteGPStatuses: comiteGPStatusesProp }: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract, comiteGPStatuses: comiteGPStatusesProp, onCapexDataChange }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
@@ -265,6 +273,14 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     };
     loadCapexEst();
   }, []);
+
+  // Notifica al padre cada vez que estos totales cambian, para que pueda
+  // usarlos en las columnas "Capex"/"Capex Est." de la exportación PDF/Excel
+  // (ver comentario en ContractsTableProps.onCapexDataChange).
+  useEffect(() => {
+    onCapexDataChange?.({ capexByContract, capexEstByContract });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capexByContract, capexEstByContract]);
 
   const handleComiteGPChange = async (contractId: string, value: string) => {
     const { error } = await supabase
@@ -718,7 +734,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               style={getColStyle("venta_estimada")}
             />
             <TableHead className="font-semibold text-center" style={getColStyle("capex")}>CAPEX</TableHead>
-            <TableHead className="font-semibold text-center" style={getColStyle("capex_est")}>CAPEX Est.</TableHead>
+            <TableHead className="font-semibold text-center" style={getColStyle("capex_est")}>Capex Est / Sup.</TableHead>
             <SortableTableHead
               label={<div className="leading-tight">Costo<br/>Arriendo</div>}
               sortKey="costo_arriendo"
@@ -1137,10 +1153,26 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   {(() => {
                     const capexEst = capexEstByContract[contract.id];
                     if (!capexEst || capexEst <= 0) return <span className="text-muted-foreground">-</span>;
+                    const superficie = contract.superficie_edificada_local || 0;
+                    // capexEst viene en MM CLP (ver comentario más arriba) — se
+                    // pasa a UF para el ratio, mismo criterio que la columna
+                    // "CAPEX" de al lado (perM2 en UF/m², no en MM$/m²).
+                    const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
+                    const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
                     return (
-                      <span className="font-medium text-xs" title="Inversión estimada del Business Case Financiero, sin inventario">
-                        {capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$
-                      </span>
+                      <div className="flex flex-col items-center" title="Inversión estimada del Business Case Financiero, sin inventario">
+                        <span className="font-medium text-xs">
+                          {capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {superficie > 0 ? `${superficie.toLocaleString('es-CL')} m²` : '-'}
+                        </span>
+                        {perM2UF > 0 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {perM2UF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²
+                          </span>
+                        )}
+                      </div>
                     );
                   })()}
                 </TableCell>
