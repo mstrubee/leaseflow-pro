@@ -81,6 +81,23 @@ export function ContractRowSelector({
             💡 El orden en que los marcás es el orden en que se exportan.
           </p>
 
+          {hasCustomSelection && effectiveSelection.length > 0 && (
+            <div className="rounded border bg-muted/30 px-2 py-1.5 max-h-28 overflow-y-auto">
+              <ol className="text-xs space-y-0.5">
+                {effectiveSelection.map((id, i) => {
+                  const contract = contracts.find((c) => c.id === id);
+                  if (!contract) return null;
+                  return (
+                    <li key={id} className="flex gap-1.5">
+                      <span className="text-muted-foreground shrink-0 w-4 text-right">{i + 1}.</span>
+                      <span className="truncate" title={contract.name}>{contract.name}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
+
           <div className="relative">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
             <Input
