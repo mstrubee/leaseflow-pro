@@ -177,7 +177,7 @@ export function UserFormDialog({ open, onOpenChange, initialData, onSaved, suppl
       const { data: sessionData } = await supabase.auth.getSession();
 
       const effectivePermissions = role === "operador_terreno"
-        ? { maintenance: permissions.maintenance ?? "edit", ...permissions }
+        ? { maintenance: permissions.maintenance ?? "edit", expense_reports: permissions.expense_reports ?? "edit", ...permissions }
         : permissions;
 
       if (isEditing && initialData?.userId) {

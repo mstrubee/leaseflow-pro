@@ -87,6 +87,7 @@ export const PERMISSION_TREE: TreeNode[] = [
       { id: "maintenance_categorias",       label: "Gestionar categorías y criticidad",  resource: "maintenance_categorias" },
     ],
   },
+  { id: "expense_reports", label: "Rendición de Gastos", resource: "expense_reports" },
   { id: "repository", label: "Repositorio General", resource: "repository" },
   { id: "alerts", label: "Alertas", resource: "alerts" },
   {
