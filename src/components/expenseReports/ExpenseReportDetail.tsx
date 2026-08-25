@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2, Plus, Receipt, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Lock, LockOpen, Plus, Receipt, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useExpenseItems } from "@/hooks/useExpenseReports";
+import { useAuth } from "@/hooks/useAuth";
+import { useExpenseItems, setExpenseReportUnlock } from "@/hooks/useExpenseReports";
 import { getMissingFields, getReportBlockers } from "./expenseItemCompleteness";
 import { ExpenseItemForm } from "./ExpenseItemForm";
 import { exportExpenseReportZip } from "./expenseReportZip";
@@ -13,21 +14,37 @@ import type { ExpenseReport } from "./expenseReportsTypes";
 interface Props {
   report: ExpenseReport;
   onBack: () => void;
-  onReportUpdated: () => void;
+  onReportUpdated: (patch: Partial<ExpenseReport>) => void;
 }
 
 export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) {
+  const { isAdmin } = useAuth();
   const { items, loading, saving, createItem, updateItem, deleteItem, uploadReceiptPhoto, deleteReceiptPhoto, sendReport, loadItems } =
     useExpenseItems(report.id);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [togglingLock, setTogglingLock] = useState(false);
   const [shareFallback, setShareFallback] = useState<{ whatsapp: string; email: string } | null>(null);
 
-  const readOnly = report.status === "enviado";
+  const isSent = report.status === "enviado";
+  const readOnly = isSent && !report.edit_unlocked;
   const blockers = getReportBlockers(items);
   const canSend = !readOnly && blockers.length === 0;
   const openItem = items.find((i) => i.id === openItemId) || null;
+  const total = items.reduce((s, i) => s + (i.total_amount ?? 0), 0);
+
+  const handleToggleLock = async () => {
+    setTogglingLock(true);
+    const ok = await setExpenseReportUnlock(report.id, !report.edit_unlocked);
+    setTogglingLock(false);
+    if (!ok) {
+      toast.error("No se pudo cambiar el bloqueo del informe");
+      return;
+    }
+    onReportUpdated({ edit_unlocked: !report.edit_unlocked });
+    toast.success(report.edit_unlocked ? "Informe bloqueado de nuevo" : "Edición habilitada para este informe");
+  };
 
   const handleAddItem = async () => {
     const item = await createItem();
@@ -51,8 +68,9 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
       setSending(false);
       return;
     }
-    onReportUpdated();
-    const sentReport = { ...report, status: "enviado" as const };
+    const sentAt = new Date().toISOString();
+    onReportUpdated({ status: "enviado", sent_at: sentAt, edit_unlocked: false });
+    const sentReport = { ...report, status: "enviado" as const, sent_at: sentAt, edit_unlocked: false };
     const { shared, fileName } = await shareExpenseReport(sentReport, items);
     if (!shared) {
       toast.info(`Se descargó "${fileName}". Adjúntalo manualmente en WhatsApp o el correo que se abrirá.`, { duration: 10000 });
@@ -84,15 +102,40 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="font-semibold text-base">{report.title}</h2>
-          <Badge variant={readOnly ? "default" : "outline"} className="mt-1">
-            {readOnly ? "Enviado" : "Borrador"}
-          </Badge>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <Badge variant={isSent ? "default" : "outline"}>
+              {isSent ? (report.edit_unlocked ? "Enviado — edición habilitada" : "Enviado") : "Borrador"}
+            </Badge>
+            {items.length > 0 && (
+              <span className="text-sm font-medium text-foreground">Total: {total.toLocaleString("es-CL")}</span>
+            )}
+          </div>
         </div>
-        {!readOnly && (
-          <Button size="sm" className="gap-1.5" onClick={handleAddItem} disabled={saving}>
-            <Plus className="h-4 w-4" /> Agregar gasto
-          </Button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {isAdmin && isSent && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={handleToggleLock}
+              disabled={togglingLock}
+            >
+              {togglingLock ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : report.edit_unlocked ? (
+                <Lock className="h-4 w-4" />
+              ) : (
+                <LockOpen className="h-4 w-4" />
+              )}
+              {report.edit_unlocked ? "Bloquear" : "Habilitar edición"}
+            </Button>
+          )}
+          {!readOnly && (
+            <Button size="sm" className="gap-1.5" onClick={handleAddItem} disabled={saving}>
+              <Plus className="h-4 w-4" /> Agregar gasto
+            </Button>
+          )}
+        </div>
       </div>
 
       {loading ? (

@@ -15,7 +15,7 @@ export function ExpenseReportsModule() {
           setSelected(null);
           setRefreshKey((k) => k + 1);
         }}
-        onReportUpdated={() => setSelected((r) => (r ? { ...r, status: "enviado", sent_at: new Date().toISOString() } : r))}
+        onReportUpdated={(patch) => setSelected((r) => (r ? { ...r, ...patch } : r))}
       />
     );
   }

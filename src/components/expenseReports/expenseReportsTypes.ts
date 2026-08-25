@@ -33,6 +33,7 @@ export interface ExpenseReport {
   title: string;
   status: ExpenseReportStatus;
   sent_at: string | null;
+  edit_unlocked: boolean;
   created_at: string;
   updated_at: string;
 }

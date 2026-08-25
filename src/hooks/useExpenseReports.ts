@@ -6,10 +6,14 @@ import type { ExpenseItem, ExpenseItemFields, ExpenseReport } from "@/components
 
 const RECEIPTS_BUCKET = "expense-receipts";
 
-/** Lista de informes del usuario actual (o de todos, si es admin — RLS decide). */
+/** Lista de informes del usuario actual (o de todos, si es admin — RLS decide),
+ *  con el total de cada uno y, si es admin, el nombre del dueño (para poder
+ *  ubicar de quién es cada informe antes de conceder una excepción de edición). */
 export function useExpenseReports() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [reports, setReports] = useState<ExpenseReport[]>([]);
+  const [totalsByReport, setTotalsByReport] = useState<Record<string, number>>({});
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const loadReports = useCallback(async () => {
@@ -18,9 +22,41 @@ export function useExpenseReports() {
       .from("expense_reports" as any)
       .select("*")
       .order("created_at", { ascending: false });
-    setReports((data as unknown as ExpenseReport[]) || []);
+    const loaded = (data as unknown as ExpenseReport[]) || [];
+    setReports(loaded);
+
+    const reportIds = loaded.map((r) => r.id);
+    if (reportIds.length > 0) {
+      const { data: itemRows } = await supabase
+        .from("expense_items" as any)
+        .select("expense_report_id, total_amount")
+        .in("expense_report_id", reportIds);
+      const totals: Record<string, number> = {};
+      for (const row of (itemRows as unknown as { expense_report_id: string; total_amount: number | null }[]) || []) {
+        totals[row.expense_report_id] = (totals[row.expense_report_id] || 0) + (row.total_amount ?? 0);
+      }
+      setTotalsByReport(totals);
+    } else {
+      setTotalsByReport({});
+    }
+
+    if (isAdmin) {
+      const ownerIds = Array.from(new Set(loaded.map((r) => r.created_by)));
+      if (ownerIds.length > 0) {
+        const { data: profileRows } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", ownerIds);
+        const names: Record<string, string> = {};
+        for (const p of (profileRows as { id: string; full_name: string | null }[]) || []) {
+          if (p.full_name) names[p.id] = p.full_name;
+        }
+        setOwnerNames(names);
+      }
+    }
+
     setLoading(false);
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     loadReports();
@@ -49,7 +85,7 @@ export function useExpenseReports() {
     [loadReports],
   );
 
-  return { reports, loading, loadReports, createReport, deleteReport };
+  return { reports, totalsByReport, ownerNames, loading, loadReports, createReport, deleteReport };
 }
 
 /** Gastos de un informe puntual, con subida/borrado de foto y envío. */
@@ -157,11 +193,25 @@ export function useExpenseItems(reportId: string | null) {
     if (!reportId) return { ok: false, error: "Informe no encontrado" };
     const { error } = await supabase
       .from("expense_reports" as any)
-      .update({ status: "enviado", sent_at: new Date().toISOString() } as never)
+      // edit_unlocked: false re-bloquea el informe al reenviarlo tras una
+      // excepción concedida por un admin (el trigger permite que el dueño
+      // pase de true a false, solo un admin puede pasar de false a true).
+      .update({ status: "enviado", sent_at: new Date().toISOString(), edit_unlocked: false } as never)
       .eq("id", reportId);
     if (error) return { ok: false, error: "No se pudo enviar el informe" };
     return { ok: true };
   }, [items, reportId]);
 
   return { items, loading, saving, loadItems, createItem, updateItem, deleteItem, uploadReceiptPhoto, deleteReceiptPhoto, sendReport };
+}
+
+/** Admin: concede o revoca la excepción para editar un informe ya enviado.
+ *  Enforzado también en RLS (trigger) — un no-admin que intente pasar de
+ *  false a true recibirá un error acá. */
+export async function setExpenseReportUnlock(reportId: string, unlocked: boolean): Promise<boolean> {
+  const { error } = await supabase
+    .from("expense_reports" as any)
+    .update({ edit_unlocked: unlocked } as never)
+    .eq("id", reportId);
+  return !error;
 }
