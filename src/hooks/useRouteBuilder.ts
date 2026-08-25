@@ -1494,7 +1494,10 @@ export function useRouteBuilder(editTourId?: string | null) {
                     contractId: stop.location.contract_id,
                     formId: fid,
                     existingTaskId: taskIdByForm.get(fid) ?? null,
-                    name: `Ruta ${routeName.trim()} — ${stop.location.name} (${tramo.arrivalTime})`,
+                    // routeName ya suele empezar con "Ruta " (convención del
+                    // usuario, ej. "Ruta 2026.08.25 RM2") — no se antepone un
+                    // segundo "Ruta " para no duplicarlo.
+                    name: `${routeName.trim()} — ${stop.location.name} (${tramo.arrivalTime})`,
                     startDate: dayDate,
                     durationDays: 1,
                   });
