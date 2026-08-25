@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getOsrmRoute } from "@/lib/osrmRoute";
 import { detectMaintenanceType } from "@/components/maintenance/types";
 import { findNearbyHardwareStores, type HardwareStore } from "@/lib/findHardwareStore";
+import { scheduleMaintenanceTask } from "@/lib/scheduleMaintenanceTask";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1356,15 +1357,31 @@ export function useRouteBuilder(editTourId?: string | null) {
       const realLocIds = new Set(locations.map((l) => l.id));
 
       // Agrupar los TRAMOS (parada-día) por día. Una parada partida aparece en
-      // varios días con sus forms respectivos (e.formIds).
-      const byDay = new Map<number, { stopIndex: number; formIds: string[] }[]>();
+      // varios días con sus forms respectivos (e.formIds). arrivalTime se
+      // retiene por tramo (no solo por día) para nombrar la tarea de Gantt
+      // que se crea más abajo con la hora real de ESA parada.
+      const byDay = new Map<number, { stopIndex: number; formIds: string[]; arrivalTime: string }[]>();
       const dayStartByIndex = new Map<number, string>();
       schedule.forEach((e) => {
         if (!byDay.has(e.dayIndex)) byDay.set(e.dayIndex, []);
-        byDay.get(e.dayIndex)!.push({ stopIndex: e.stopIndex, formIds: e.formIds });
+        byDay.get(e.dayIndex)!.push({ stopIndex: e.stopIndex, formIds: e.formIds, arrivalTime: e.arrivalTime });
         // Hora de inicio del día = llegada del primer tramo de ese día
         if (!dayStartByIndex.has(e.dayIndex)) dayStartByIndex.set(e.dayIndex, e.arrivalTime);
       });
+
+      // Cronograma de mantenciones: mapa formId → gantt_task_id existente (o
+      // null), para actualizar en vez de duplicar tareas al reprogramar el
+      // mismo form (incluida una parada partida entre dos días de la misma
+      // gira). Se resuelve una sola vez antes del loop de días.
+      const allScheduledFormIds = Array.from(new Set(schedule.flatMap((e) => e.formIds)));
+      const taskIdByForm = new Map<string, string | null>();
+      if (calendarize && allScheduledFormIds.length > 0) {
+        const { data: formsWithTask } = await supabase
+          .from("maintenance_forms")
+          .select("id, gantt_task_id")
+          .in("id", allScheduledFormIds);
+        (formsWithTask || []).forEach((f: any) => taskIdByForm.set(f.id, f.gantt_task_id ?? null));
+      }
 
       const tourId = crypto.randomUUID();
       const days = [...byDay.keys()].sort((a, b) => a - b);
@@ -1454,6 +1471,43 @@ export function useRouteBuilder(editTourId?: string | null) {
               formErr = (await supabase.from("maintenance_route_forms").insert(baseRows)).error;
             }
             if (formErr) throw new Error(formErr.message);
+
+            // Cronograma de mantenciones: además de guardar la parada de la
+            // gira, reflejar cada form como tarea del cronograma del contrato
+            // (mismo mecanismo que el botón "Programar" — scheduleMaintenanceTask),
+            // así "Programaciones" y el Gantt de mantenciones del contrato
+            // muestran lo que ya se definió acá, sin que el usuario tenga que
+            // programar cada form a mano de nuevo. Solo si la gira quedó
+            // calendarizada (dayDate) y la parada es un local real con
+            // contrato (las ad-hoc — compras/ferretería — no tienen a qué
+            // contrato asociar una tarea). Best-effort: un fallo acá no debe
+            // impedir que la gira se guarde, que es el dato primario.
+            //
+            // Limitación conocida: si al EDITAR una gira se saca un form que
+            // antes sí estaba, su tarea de Gantt queda con la fecha vieja —
+            // no se borra ni desvincula acá (requeriría diffear el set de
+            // forms viejo vs. nuevo de la gira reemplazada).
+            if (dayDate && stop.location?.contract_id) {
+              for (const fid of dayFormIds) {
+                try {
+                  const result = await scheduleMaintenanceTask({
+                    contractId: stop.location.contract_id,
+                    formId: fid,
+                    existingTaskId: taskIdByForm.get(fid) ?? null,
+                    name: `Ruta ${routeName.trim()} — ${stop.location.name} (${tramo.arrivalTime})`,
+                    startDate: dayDate,
+                    durationDays: 1,
+                  });
+                  if ("error" in result) {
+                    console.error("[saveRoute] scheduleMaintenanceTask", fid, result.error);
+                  } else {
+                    taskIdByForm.set(fid, result.taskId);
+                  }
+                } catch (err) {
+                  console.error("[saveRoute] scheduleMaintenanceTask", fid, err);
+                }
+              }
+            }
           }
         }
       }
