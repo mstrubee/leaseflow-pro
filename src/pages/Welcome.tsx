@@ -10,7 +10,7 @@ import { ServiceContractApprovalBanner } from "@/components/serviceContracts/Ser
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
-  BarChart3, Wrench, Shield, Users, UserCog, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle,
+  BarChart3, Wrench, Shield, Users, UserCog, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle, CalendarDays,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -52,10 +52,6 @@ const Welcome = () => {
   useEffect(() => {
     if (!loading && !user) navigate("/auth");
   }, [loading, user, navigate]);
-
-  useEffect(() => {
-    if (roleLoaded && isOperador) navigate("/maintenance/routes", { replace: true });
-  }, [roleLoaded, isOperador, navigate]);
 
   useEffect(() => {
     if (user) {
@@ -127,7 +123,43 @@ const Welcome = () => {
         {/* Alerts */}
         <WelcomeAlertsBar />
 
-        {/* Module grid */}
+        {/* Homepage del operador de terreno: solo sus 2 accesos, no la grilla general */}
+        {isOperador ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+            {hasPermission("maintenance", "view") && (
+              <Card
+                className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+                onClick={() => navigate("/maintenance/routes")}
+              >
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className="rounded-lg p-2.5 text-rose-600 bg-rose-100">
+                    <CalendarDays className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Calendario de Ruta</p>
+                    <p className="text-sm text-muted-foreground">Revisa y ejecuta tus rutas de mantención</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {hasPermission("expense_reports", "view") && (
+              <Card
+                className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+                onClick={() => navigate("/expense-reports")}
+              >
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className="rounded-lg p-2.5 text-orange-600 bg-orange-100">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Rendición de Gastos</p>
+                    <p className="text-sm text-muted-foreground">Registra y envía tus gastos del Fondo por rendir</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleModules.map(mod => {
             const Icon = mod.icon;
@@ -189,6 +221,7 @@ const Welcome = () => {
             </Card>
           )}
         </div>
+        )}
       </main>
 
       <ChangePasswordDialog open={pwdOpen} onOpenChange={setPwdOpen} />
