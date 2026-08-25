@@ -1,19 +1,12 @@
 import * as XLSX from "xlsx";
 import { EXPENSE_TYPE_LABELS, PAYMENT_TYPE_LABELS, RECEIPT_TYPE_LABELS, type ExpenseItem, type ExpenseReport } from "./expenseReportsTypes";
 
-/** Nombre de archivo consistente entre la descarga directa y el compartir. */
-export function expenseReportFileName(report: ExpenseReport): string {
-  const sanitizedTitle = report.title.replace(/[^\w.\-]/g, "_");
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
-  return `Rendicion_${sanitizedTitle}_${dateStr}.xlsx`;
-}
-
 /**
  * Arma el workbook (filas de resumen + una fila por gasto con sus 13
- * campos) sin escribirlo a disco — lo reusan exportExpenseReportExcel()
- * (descarga directa) y shareExpenseReport.ts (Web Share / fallback). La
- * foto NO se puede incrustar como imagen con la librería xlsx gratuita —
- * queda accesible solo dentro de la app.
+ * campos) sin escribirlo a disco — lo reusa expenseReportZip.ts para
+ * incluirlo dentro del .zip junto con las fotos. La foto NO se puede
+ * incrustar como imagen con la librería xlsx gratuita, por eso va aparte
+ * como archivo dentro del zip.
  */
 export function buildExpenseReportWorkbook(report: ExpenseReport, items: ExpenseItem[]): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
@@ -53,12 +46,4 @@ export function buildExpenseReportWorkbook(report: ExpenseReport, items: Expense
   ];
   XLSX.utils.book_append_sheet(wb, ws, "Gastos");
   return wb;
-}
-
-/** Descarga directa del informe como .xlsx. */
-export function exportExpenseReportExcel(report: ExpenseReport, items: ExpenseItem[]): string {
-  const wb = buildExpenseReportWorkbook(report, items);
-  const fileName = expenseReportFileName(report);
-  XLSX.writeFile(wb, fileName);
-  return fileName;
 }

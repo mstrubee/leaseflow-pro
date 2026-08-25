@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useExpenseItems } from "@/hooks/useExpenseReports";
 import { getMissingFields, getReportBlockers } from "./expenseItemCompleteness";
 import { ExpenseItemForm } from "./ExpenseItemForm";
-import { exportExpenseReportExcel } from "./expenseReportExcel";
+import { exportExpenseReportZip } from "./expenseReportZip";
 import { expenseReportShareLinks, shareExpenseReport } from "./shareExpenseReport";
 import type { ExpenseReport } from "./expenseReportsTypes";
 
@@ -21,6 +21,7 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
     useExpenseItems(report.id);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [shareFallback, setShareFallback] = useState<{ whatsapp: string; email: string } | null>(null);
 
   const readOnly = report.status === "enviado";
@@ -60,9 +61,16 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
     setSending(false);
   };
 
-  const handleDownloadOnly = () => {
-    exportExpenseReportExcel(report, items);
-    toast.success("Excel descargado");
+  const handleDownloadOnly = async () => {
+    setDownloading(true);
+    try {
+      await exportExpenseReportZip(report, items);
+      toast.success("ZIP descargado (Excel + fotos)");
+    } catch {
+      toast.error("No se pudo generar el ZIP");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -155,8 +163,9 @@ export function ExpenseReportDetail({ report, onBack, onReportUpdated }: Props) 
           </>
         )}
         {readOnly && (
-          <Button variant="outline" className="w-full gap-2" onClick={handleDownloadOnly}>
-            Descargar Excel de nuevo
+          <Button variant="outline" className="w-full gap-2" onClick={handleDownloadOnly} disabled={downloading}>
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Descargar ZIP de nuevo
           </Button>
         )}
         {shareFallback && (
