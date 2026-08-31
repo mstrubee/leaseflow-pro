@@ -481,9 +481,19 @@ export default function BulkOCImport() {
       return;
     }
 
+    // Una OC "digitada" multi-local tiene N filas en purchase_orders con el
+    // MISMO order_number, una por contrato asignado, cada una con el monto
+    // PARCIAL de esa asignación (ver ConvertOCRequestDialog). Hay que sumar
+    // todas las filas del mismo order_number para obtener el total real:
+    // comparar el total del Excel contra el monto de una sola fila las
+    // marcaba como "distintas" aunque el total coincidiera.
     const existingMap = new Map<string, { id: string; amountClp: number }>();
     for (const o of (existing || []) as any[]) {
-      existingMap.set(o.order_number, { id: o.id, amountClp: Number(o.amount_clp) || 0 });
+      const prev = existingMap.get(o.order_number);
+      existingMap.set(o.order_number, {
+        id:        prev?.id ?? o.id, // se usa la primera fila como referencia
+        amountClp: (prev?.amountClp ?? 0) + (Number(o.amount_clp) || 0),
+      });
     }
 
     for (const g of groups) {
@@ -581,6 +591,32 @@ export default function BulkOCImport() {
       return;
     }
 
+    // Reconciliación de "Reemplazar" para OC multi-local digitadas: existen
+    // como N filas en purchase_orders con el MISMO order_number (una por
+    // contrato, ver ConvertOCRequestDialog), no como una sola fila con el
+    // total. Se traen todas para actualizar cada una por su contract_id en
+    // vez de tocar solo g.existingId (la primera fila del grupo).
+    const replaceOrderNumbers = toImport
+      .filter(g => g.isDuplicate && g.duplicateResolution === "replace")
+      .map(g => g.orderNumber);
+
+    const existingRowsByOrder = new Map<string, { id: string; contractId: string | null; amountClp: number }[]>();
+    if (replaceOrderNumbers.length > 0) {
+      const { data: existingRows, error: existingRowsErr } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, contract_id, amount_clp")
+        .in("order_number", replaceOrderNumbers)
+        .is("deleted_at", null) as any;
+      if (existingRowsErr) {
+        console.error("Error al leer OC existentes para reemplazo:", existingRowsErr);
+      }
+      for (const row of ((existingRows || []) as any[])) {
+        const list = existingRowsByOrder.get(row.order_number) ?? [];
+        list.push({ id: row.id, contractId: row.contract_id, amountClp: Number(row.amount_clp) || 0 });
+        existingRowsByOrder.set(row.order_number, list);
+      }
+    }
+
     let inserted = 0;
 
     for (let i = 0; i < toImport.length; i++) {
@@ -592,19 +628,106 @@ export default function BulkOCImport() {
         const primaryAlloc = g.allocations.find(a => a.contractId) ?? g.allocations[0];
 
         if (g.isDuplicate && g.duplicateResolution === "replace" && g.existingId) {
-          await (supabase
+          const existingRows = existingRowsByOrder.get(g.orderNumber) ?? [];
+          const sharedFields = {
+            description:             g.description,
+            supplier_id:             g.supplierId,
+            supplier_name:           g.supplierName,
+            order_date:              g.orderDate,
+            import_pending_supplier: !g.supplierId,
+            import_batch_id:         batchId,
+          };
+
+          if (existingRows.length > 1) {
+            // Multi-local: una fila existente por contrato. Se actualiza cada
+            // una con el monto de SU asignación (matcheando por contract_id),
+            // no con el total. Un contrato del Excel sin fila existente se
+            // inserta; una fila existente sin contrato en el Excel se avisa
+            // y se deja intacta (no se borra sin confirmación explícita).
+            const allocByContract = new Map(
+              g.allocations.filter(a => a.contractId).map(a => [a.contractId as string, a])
+            );
+            const matchedContractIds = new Set<string>();
+
+            for (const row of existingRows) {
+              const alloc = row.contractId ? allocByContract.get(row.contractId) : undefined;
+              if (!alloc) continue;
+              matchedContractIds.add(row.contractId!);
+              const { error: updErr } = await (supabase
+                .from("purchase_orders")
+                .update({
+                  ...sharedFields,
+                  amount_clp:           alloc.amountClp,
+                  amount_uf:            ufValue > 0 ? alloc.amountClp / ufValue : 0,
+                  import_pending_local: false,
+                } as any)
+                .eq("id", row.id));
+              if (updErr) console.error("Error al reemplazar asignación de OC", g.orderNumber, row.contractId, updErr);
+              await (supabase
+                .from("purchase_order_contract_allocations")
+                .update({ amount_clp: alloc.amountClp, amount_uf: ufValue > 0 ? alloc.amountClp / ufValue : 0 } as any)
+                .eq("purchase_order_id", row.id));
+            }
+
+            const unmatchedExisting = existingRows.filter(r => !r.contractId || !matchedContractIds.has(r.contractId));
+            if (unmatchedExisting.length > 0) {
+              toast.warning(
+                `OC ${g.orderNumber}: ${unmatchedExisting.length} contrato(s) existente(s) no está(n) en el Excel y NO se modificaron. Revisar manualmente.`
+              );
+            }
+
+            const newContracts = [...allocByContract.keys()].filter(cId => !existingRows.some(r => r.contractId === cId));
+            for (const contractId of newContracts) {
+              const alloc = allocByContract.get(contractId)!;
+              const { data: newRow, error: insErr } = await (supabase
+                .from("purchase_orders")
+                .insert({
+                  ...sharedFields,
+                  order_number:      g.orderNumber,
+                  contract_id:       contractId,
+                  amount_clp:        alloc.amountClp,
+                  amount_uf:         ufValue > 0 ? alloc.amountClp / ufValue : 0,
+                  uf_value_at_entry: ufValue > 0 ? ufValue : null,
+                  input_currency:    "CLP",
+                  status:            "abierta",
+                  budget_classification: "OPEX",
+                  year:              g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear(),
+                  is_multi_contract: true,
+                  import_pending_local: false,
+                } as any)
+                .select("id")
+                .single() as any);
+              if (insErr) {
+                console.error("Error al agregar contrato nuevo a OC existente", g.orderNumber, contractId, insErr);
+                continue;
+              }
+              await supabase.from("purchase_order_contract_allocations").insert({
+                purchase_order_id: newRow.id,
+                contract_id:       contractId,
+                amount_clp:        alloc.amountClp,
+                amount_uf:         ufValue > 0 ? alloc.amountClp / ufValue : 0,
+              } as any);
+            }
+
+            inserted++;
+            continue;
+          }
+
+          // Caso simple: una sola fila existente para este order_number.
+          const { error: updErr } = await (supabase
             .from("purchase_orders")
             .update({
-              description:             g.description,
-              amount_clp:              g.totalAmountClp,
-              supplier_id:             g.supplierId,
-              supplier_name:           g.supplierName,
-              order_date:              g.orderDate,
-              import_pending_supplier: !g.supplierId,
-              import_pending_local:    g.allocations.some(a => !a.contractId),
+              ...sharedFields,
+              amount_clp:           g.totalAmountClp,
+              amount_uf:            ufValue > 0 ? g.totalAmountClp / ufValue : 0,
+              import_pending_local: g.allocations.some(a => !a.contractId),
             } as any)
             .eq("id", g.existingId));
-          inserted++;
+          if (updErr) {
+            console.error("Error al reemplazar OC", g.orderNumber, updErr);
+          } else {
+            inserted++;
+          }
           continue;
         }
 
