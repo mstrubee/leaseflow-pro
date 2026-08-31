@@ -33,6 +33,9 @@ interface FullLocation {
   id: string;
   contract_id: string | null;
   contract_name: string;
+  /** Empresa del contrato. El logo NO se puede deducir de contract_name: ese
+   *  campo es el nombre del local ("San Felipe"), no el de la empresa. */
+  company_name: string | null;
   centro_sap: string | null;
 }
 
@@ -135,14 +138,34 @@ export default function BulkOCImport() {
           .in("field_id", fieldIds)
           .not("field_value", "is", null) as any;
 
-        cebeLocations = ((cebeValues || []) as any[])
-          .filter((v: any) => v.contract_id && v.field_value && v.contracts?.name)
-          .map((v: any) => ({
-            id:            v.contract_id,
-            contract_id:   v.contract_id,
-            contract_name: v.contracts.name as string,
-            centro_sap:    v.field_value as string,
-          }));
+        const rows = ((cebeValues || []) as any[])
+          .filter((v: any) => v.contract_id && v.field_value && v.contracts?.name);
+
+        // Query separada a propósito: si el join de empresas falla, se pierden
+        // los logos pero NO la lista de locales.
+        const companyByContract = new Map<string, string>();
+        const contractIds = [...new Set(rows.map((v: any) => v.contract_id as string))];
+        if (contractIds.length > 0) {
+          const { data: compRows, error: compErr } = await supabase
+            .from("contract_companies")
+            .select("contract_id, companies(name)")
+            .in("contract_id", contractIds) as any;
+          if (compErr) {
+            console.error("No se pudieron cargar las empresas de los contratos:", compErr);
+          }
+          for (const r of ((compRows || []) as any[])) {
+            const name = r.companies?.name;
+            if (r.contract_id && name) companyByContract.set(r.contract_id, name as string);
+          }
+        }
+
+        cebeLocations = rows.map((v: any) => ({
+          id:            v.contract_id,
+          contract_id:   v.contract_id,
+          contract_name: v.contracts.name as string,
+          company_name:  companyByContract.get(v.contract_id) ?? null,
+          centro_sap:    v.field_value as string,
+        }));
       }
 
       const [supRes, batchRes] = await Promise.all([
@@ -156,6 +179,12 @@ export default function BulkOCImport() {
 
       setAllLocations(cebeLocations);
       setSuppliers(((supRes.data || []) as any[]) as OCSupplier[]);
+      if ((batchRes as any).error) {
+        // Antes se mostraba "Sin importaciones anteriores" aunque la lectura
+        // hubiera fallado, haciendo parecer que las cargas no existían.
+        console.error("Error al cargar el historial de importaciones:", (batchRes as any).error);
+        toast.error("No se pudo cargar el historial de importaciones. Puede haber cargas previas que no se muestran.");
+      }
       setBatches(((batchRes.data || []) as any[]) as ImportBatch[]);
       setLoadingRef(false);
     }
@@ -176,11 +205,16 @@ export default function BulkOCImport() {
     .filter(l => l.contract_id)
     .map(l => {
       const cebeCode = extractCentroCode(l.centro_sap);
-      const logoUrl  = logoForName(l.contract_name);
+      // El logo sale de la empresa, no del nombre del local. Además se muestra
+      // la empresa en la etiqueta: hay locales Agroplanet y Autoplanet en la
+      // misma ciudad y sin eso la elección es ambigua.
+      const logoUrl  = l.company_name ? logoForName(l.company_name) : null;
       return {
         value:       l.id,
-        label:       l.contract_name,
-        searchValue: cebeCode,
+        label:       l.company_name
+          ? `${l.contract_name} — ${l.company_name}`
+          : l.contract_name,
+        searchValue: [cebeCode, l.company_name].filter(Boolean).join(" "),
         icon: logoUrl
           ? <img src={logoUrl} alt="" className="h-5 w-5 rounded object-contain flex-shrink-0" />
           : undefined,
@@ -437,7 +471,7 @@ export default function BulkOCImport() {
       if (!error) storagePath = path;
     } catch { /* non-blocking */ }
 
-    const { data: batchData } = await supabase
+    const { data: batchData, error: batchErr } = await supabase
       .from("oc_import_batches" as any)
       .insert({
         filename:              file.name,
@@ -452,6 +486,23 @@ export default function BulkOCImport() {
       .single() as any;
 
     const batchId: string | null = batchData?.id ?? null;
+
+    // Sin batchId las OC se insertan con import_batch_id = null y quedan
+    // marcadas como "D" (digitadas) en el listado, indistinguibles de las
+    // manuales, y la importación no aparece en el historial. Antes este error
+    // se descartaba y el import seguía igual: se perdía toda la trazabilidad
+    // en silencio. Se aborta para no ensuciar los datos.
+    if (batchErr || !batchId) {
+      console.error("Error al registrar el lote de importación:", batchErr);
+      setStage("review");
+      setProgress(0);
+      toast.error(
+        "No se pudo registrar el lote de importación, así que se canceló para no cargar OC sin trazabilidad. " +
+        (batchErr?.message ? `Detalle: ${batchErr.message}` : "Revisa los permisos de la tabla oc_import_batches.")
+      );
+      return;
+    }
+
     let inserted = 0;
 
     for (let i = 0; i < toImport.length; i++) {
@@ -532,11 +583,12 @@ export default function BulkOCImport() {
     setStage("done");
     toast.success(`${inserted} OC importadas correctamente.`);
 
-    const { data: freshBatches } = await supabase
+    const { data: freshBatches, error: freshErr } = await supabase
       .from("oc_import_batches" as any)
       .select("id,filename,storage_path,imported_at,rows_total,rows_ok,rows_pending_supplier,rows_pending_local,rows_duplicate,drive_synced_at")
       .order("imported_at", { ascending: false })
       .limit(20) as any;
+    if (freshErr) console.error("Error al refrescar el historial:", freshErr);
     setBatches(((freshBatches || []) as any[]) as ImportBatch[]);
   }
 
