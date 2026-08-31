@@ -168,14 +168,43 @@ export default function BulkOCImport() {
         }));
       }
 
-      const [supRes, batchRes] = await Promise.all([
+      const [supRes, batchRes, mapRes] = await Promise.all([
         supabase.from("suppliers").select("id, name").order("name"),
         supabase
           .from("oc_import_batches" as any)
           .select("id,filename,storage_path,imported_at,rows_total,rows_ok,rows_pending_supplier,rows_pending_local,rows_duplicate,drive_synced_at")
           .order("imported_at", { ascending: false })
           .limit(20),
+        // Mapeos código Centro → contrato guardados en cargas anteriores.
+        supabase
+          .from("oc_centro_mappings" as any)
+          .select("centro_code, contract_id") as any,
       ]);
+
+      // Los mapeos recordados se suman a los locales conocidos, así el match
+      // automático resuelve los códigos que alguna vez se asignaron a mano.
+      // Sin toast a propósito: si esto falla, la única consecuencia es que la
+      // pantalla pide el mapeo a mano, que es el comportamiento de siempre.
+      // Un aviso en cada visita sería ruido. El camino de GUARDADO sí avisa,
+      // porque ahí el usuario espera que quede persistido.
+      if ((mapRes as any)?.error) {
+        console.error("No se pudieron cargar los mapeos recordados:", (mapRes as any).error);
+      }
+      const nameByContract = new Map<string, string>();
+      for (const l of cebeLocations) {
+        if (l.contract_id) nameByContract.set(l.contract_id, l.contract_name);
+      }
+      const remembered: FullLocation[] = (((mapRes as any)?.data || []) as any[])
+        .filter(m => m.centro_code && m.contract_id)
+        .map(m => ({
+          id:            m.contract_id as string,
+          contract_id:   m.contract_id as string,
+          contract_name: nameByContract.get(m.contract_id as string) ?? "(contrato)",
+          company_name:  null,
+          centro_sap:    m.centro_code as string,
+        }));
+      // Se agregan al final: si un código ya matchea por CEBE, gana el CEBE.
+      cebeLocations = [...cebeLocations, ...remembered];
 
       setAllLocations(cebeLocations);
       setSuppliers(((supRes.data || []) as any[]) as OCSupplier[]);
@@ -339,6 +368,33 @@ export default function BulkOCImport() {
       }));
 
     const allLocs = [...knownLocations, ...manualLocations];
+
+    // Guardar los mapeos marcados con "Recordar" para no volver a pedirlos.
+    // Va antes del resto para que un fallo se vea en el acto; no aborta la
+    // importación, que puede continuar con los mapeos en memoria.
+    const toRemember = mappings.filter(m => m.contractId && m.remember);
+    if (toRemember.length > 0) {
+      const { error: rememberErr } = await (supabase
+        .from("oc_centro_mappings" as any)
+        .upsert(
+          toRemember.map(m => ({
+            centro_code: m.centroCode.trim().toUpperCase(),
+            contract_id: m.contractId!,
+            updated_at:  new Date().toISOString(),
+          })),
+          { onConflict: "centro_code" },
+        ) as any);
+      if (rememberErr) {
+        console.error("Error al guardar los mapeos de código Centro:", rememberErr);
+        toast.error(
+          "No se pudieron guardar las asignaciones para futuras cargas. " +
+          "Esta importación sigue igual, pero habrá que reasignarlas la próxima vez."
+        );
+      } else {
+        toast.success(`${toRemember.length} asignación(es) guardada(s) para futuras cargas`);
+      }
+    }
+
     const parsed   = resolveRows(rawRows, allLocs, suppliers);
     const grouped_ = groupByOrderNumber(parsed);
 
@@ -413,23 +469,45 @@ export default function BulkOCImport() {
   async function markDuplicates(groups: GroupedOC[]) {
     const numbers = groups.map(g => g.orderNumber).filter(Boolean);
     if (numbers.length === 0) return;
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from("purchase_orders")
-      .select("id, order_number")
+      .select("id, order_number, amount_clp")
       .in("order_number", numbers)
       .is("deleted_at", null) as any;
 
-    const existingMap = new Map<string, string>();
-    for (const o of (existing || []) as any[]) existingMap.set(o.order_number, o.id);
+    if (error) {
+      console.error("Error al buscar OC existentes:", error);
+      toast.error("No se pudo verificar qué OC ya existen. Revisa antes de importar para no duplicar.");
+      return;
+    }
+
+    const existingMap = new Map<string, { id: string; amountClp: number }>();
+    for (const o of (existing || []) as any[]) {
+      existingMap.set(o.order_number, { id: o.id, amountClp: Number(o.amount_clp) || 0 });
+    }
+
     for (const g of groups) {
-      if (existingMap.has(g.orderNumber)) {
-        g.isDuplicate = true;
-        g.existingId  = existingMap.get(g.orderNumber) ?? null;
-      }
+      const hit = existingMap.get(g.orderNumber);
+      if (!hit) continue;
+      g.isDuplicate       = true;
+      g.existingId        = hit.id;
+      g.existingAmountClp = hit.amountClp;
+      // Preselección: si el monto difiere hay que sincerarlo, así que se
+      // propone reemplazar; si coincide, se conserva lo que ya está. En ambos
+      // casos queda visible y se puede cambiar con un clic.
+      g.duplicateResolution = amountsDiffer(g.totalAmountClp, hit.amountClp)
+        ? "replace"
+        : "keep_existing";
     }
   }
 
   // ── Duplicate resolution ───────────────────────────────────────────────────
+
+  /** Tolerancia de 1 peso: los montos vienen de sumar filas del Excel y el
+   *  redondeo no debe contar como diferencia real. */
+  function amountsDiffer(a: number, b: number): boolean {
+    return Math.abs((a || 0) - (b || 0)) >= 1;
+  }
 
   function setResolution(orderNumber: string, res: DuplicateResolution) {
     setGrouped(prev => prev.map(g =>
@@ -806,13 +884,17 @@ export default function BulkOCImport() {
                           <span className="font-mono font-semibold">OC {g.orderNumber}</span>
                           <span className="text-muted-foreground text-sm ml-2">— {g.description}</span>
                         </div>
-                        {g.duplicateResolution && (
-                          <Badge variant="outline" className="text-xs">
-                            {g.duplicateResolution === "keep_existing" && "Mantener existente"}
-                            {g.duplicateResolution === "replace"       && "Reemplazar"}
-                            {g.duplicateResolution === "keep_both"     && "Mantener ambas"}
-                          </Badge>
-                        )}
+                        {(() => {
+                          const differs = g.existingAmountClp !== null
+                            && amountsDiffer(g.totalAmountClp, g.existingAmountClp);
+                          return differs ? (
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
+                              Monto distinto — se sincera
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">Sin diferencias</Badge>
+                          );
+                        })()}
                       </div>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="bg-muted/40 rounded p-3">
@@ -824,15 +906,28 @@ export default function BulkOCImport() {
                         </div>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3">
                           <p className="font-medium text-xs text-amber-700 mb-1">EN EL SISTEMA</p>
-                          <p className="text-xs text-muted-foreground italic">
-                            ID: {g.existingId?.slice(0, 8)}… — ver en listado de OC
+                          <p className="font-semibold">
+                            {g.existingAmountClp !== null ? fmtClp(g.existingAmountClp) : "—"}
+                          </p>
+                          {g.existingAmountClp !== null
+                            && amountsDiffer(g.totalAmountClp, g.existingAmountClp) && (
+                            <p className="text-xs font-medium text-amber-700 mt-1">
+                              Diferencia: {fmtClp(g.totalAmountClp - g.existingAmountClp)}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground italic mt-1">
+                            ID: {g.existingId?.slice(0, 8)}…
                           </p>
                         </div>
                       </div>
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="flex gap-2 flex-wrap items-center">
                         <Button size="sm" variant={g.duplicateResolution === "keep_existing" ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "keep_existing")}>Mantener existente</Button>
                         <Button size="sm" variant={g.duplicateResolution === "replace"       ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "replace")}>Reemplazar con importado</Button>
-                        <Button size="sm" variant={g.duplicateResolution === "keep_both"     ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "keep_both")}>Mantener ambas</Button>
+                        <span className="text-xs text-muted-foreground">
+                          {g.duplicateResolution === "replace"
+                            ? "Se actualizará la OC existente con los datos del Excel."
+                            : "La OC existente queda como está."}
+                        </span>
                       </div>
                     </div>
                   ))}
