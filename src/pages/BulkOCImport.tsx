@@ -526,7 +526,7 @@ export default function BulkOCImport() {
   }
 
   const unresolvedDuplicates = grouped.filter(g => g.isDuplicate && g.duplicateResolution === null);
-  const toImport             = grouped.filter(g => !g.isDuplicate || g.duplicateResolution !== "keep_existing");
+  const toImport             = grouped; // se procesan todas: nueva, reemplazo o verificación de existente
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -618,6 +618,7 @@ export default function BulkOCImport() {
     }
 
     let inserted = 0;
+    let verified  = 0;
 
     for (let i = 0; i < toImport.length; i++) {
       const g = toImport[i];
@@ -626,6 +627,23 @@ export default function BulkOCImport() {
       try {
         const orderYear    = g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear();
         const primaryAlloc = g.allocations.find(a => a.contractId) ?? g.allocations[0];
+
+        if (g.isDuplicate && g.duplicateResolution === "keep_existing" && g.existingId) {
+          // Un solo UPDATE por order_number: no hace falta reconciliar por
+          // contrato porque no se toca ningún monto, solo se deja constancia
+          // de que el import confirmó que esta OC ya está correcta.
+          const { error: verifyErr } = await (supabase
+            .from("purchase_orders")
+            .update({ import_batch_id: batchId } as any)
+            .eq("order_number", g.orderNumber)
+            .is("deleted_at", null));
+          if (verifyErr) {
+            console.error("Error al marcar OC existente como verificada", g.orderNumber, verifyErr);
+          } else {
+            verified++;
+          }
+          continue;
+        }
 
         if (g.isDuplicate && g.duplicateResolution === "replace" && g.existingId) {
           const existingRows = existingRowsByOrder.get(g.orderNumber) ?? [];
@@ -782,7 +800,9 @@ export default function BulkOCImport() {
 
     setProgress(100);
     setStage("done");
-    toast.success(`${inserted} OC importadas correctamente.`);
+    const parts = [`${inserted} OC importadas`];
+    if (verified > 0) parts.push(`${verified} verificadas sin cambios`);
+    toast.success(`${parts.join(", ")}.`);
 
     const { data: freshBatches, error: freshErr } = await supabase
       .from("oc_import_batches" as any)
