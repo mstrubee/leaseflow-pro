@@ -1753,6 +1753,82 @@ const PurchaseOrdersDashboard = () => {
     });
   };
 
+  const [changingTypeOrderNumber, setChangingTypeOrderNumber] = useState<string | null>(null);
+  // Tipo original de las filas de orders antes de reflejar optimistamente un
+  // cambio de CAPEX/OPEX pendiente de completar en el diálogo. Si el diálogo
+  // se cierra sin guardar (Cancelar, X, clic afuera), se revierte con esto en
+  // vez de dejar el listado mostrando un tipo que nunca se persistió.
+  const pendingTypeRevertRef = useRef<{ orderIds: string[]; previousType: string | null } | null>(null);
+
+  const closeEditOCDialog = () => {
+    if (pendingTypeRevertRef.current) {
+      const { orderIds, previousType } = pendingTypeRevertRef.current;
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: previousType } : o
+      ));
+      pendingTypeRevertRef.current = null;
+    }
+    setShowEditOCDialog(false);
+  };
+
+  /**
+   * Cambio directo de CAPEX/OPEX desde el badge de la fila, sin pasar por el
+   * diálogo completo. Solo se permite cuando el dato adicional que exige el
+   * nuevo tipo ya existe en TODAS las filas de la OC (línea de presupuesto
+   * para CAPEX, categoría para OPEX): si falta, se abre el diálogo de edición
+   * en vez de guardar a medias, para no dejar una OC CAPEX sin línea o una
+   * OPEX sin categoría.
+   */
+  const handleChangeOCType = async (groupedOrder: GroupedOrder, newType: "CAPEX" | "OPEX") => {
+    if (groupedOrder.budget_classification === newType) return;
+
+    const missingRequiredField = newType === "CAPEX"
+      ? groupedOrder.orders.some(o => !o.budget_line_id)
+      : groupedOrder.orders.some(o => !o.opex_category_id);
+
+    const orderIds = groupedOrder.orders.map(o => o.id);
+
+    if (missingRequiredField) {
+      // El diálogo deriva "es CAPEX" leyendo orders en vivo (ver
+      // editingOCFirstOrder más abajo), así que para que abra ya con el tipo
+      // elegido hay que reflejarlo ahí ANTES de abrirlo — no existe un campo
+      // de tipo en editingOCData. El valor se persiste recién al Guardar del
+      // diálogo, así que hasta entonces sigue siendo solo un estado local.
+      pendingTypeRevertRef.current = { orderIds, previousType: groupedOrder.budget_classification };
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: newType } : o
+      ));
+      toast.info(
+        newType === "CAPEX"
+          ? "Falta asignar la línea de presupuesto: se abre el editor para completarla."
+          : "Falta asignar la categoría OPEX: se abre el editor para completarla."
+      );
+      await handleOpenEditOCDialog({ ...groupedOrder, budget_classification: newType });
+      return;
+    }
+
+    setChangingTypeOrderNumber(groupedOrder.order_number);
+    try {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ budget_classification: newType } as any)
+        .in("id", orderIds);
+
+      if (error) {
+        console.error("Error al cambiar el tipo de la OC:", error);
+        toast.error(`No se pudo cambiar el tipo: ${error.message}`);
+        return;
+      }
+
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: newType } : o
+      ));
+      toast.success(`OC ${groupedOrder.order_number} marcada como ${newType}`);
+    } finally {
+      setChangingTypeOrderNumber(null);
+    }
+  };
+
   const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
@@ -2125,6 +2201,7 @@ const PurchaseOrdersDashboard = () => {
       }
 
       toast.success("OC actualizada correctamente");
+      pendingTypeRevertRef.current = null;
       setShowEditOCDialog(false);
       setEditingOCId(null);
       setEditingOCOriginalOrderNumber("");
@@ -2923,14 +3000,34 @@ const PurchaseOrdersDashboard = () => {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
-                                  {groupedOrder.budget_classification ? (
+                                  {isAdmin ? (
+                                    <Select
+                                      value={groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
+                                      disabled={changingTypeOrderNumber === groupedOrder.order_number}
+                                      onValueChange={(v) => handleChangeOCType(groupedOrder, v as "CAPEX" | "OPEX")}
+                                    >
+                                      <SelectTrigger
+                                        className="h-6 w-[90px] px-2 border-none shadow-none focus:ring-0 [&>svg]:opacity-50"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Badge
+                                          variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                          className="pointer-events-none"
+                                        >
+                                          {groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
+                                        </Badge>
+                                      </SelectTrigger>
+                                      <SelectContent onClick={(e) => e.stopPropagation()}>
+                                        <SelectItem value="OPEX">OPEX</SelectItem>
+                                        <SelectItem value="CAPEX">CAPEX</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
                                     <Badge
                                       variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
                                     >
-                                      {groupedOrder.budget_classification}
+                                      {groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
                                     </Badge>
-                                  ) : (
-                                    <Badge variant="secondary">OPEX</Badge>
                                   )}
                                   {groupedOrder.budget_classification === "CAPEX" && !groupedOrder.budget_line_name && (
                                     <span className="text-[10px] text-destructive font-medium">sin línea</span>
@@ -4269,7 +4366,7 @@ const PurchaseOrdersDashboard = () => {
       </Dialog>
 
       {/* Edit OC Dialog */}
-      <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
+      <Dialog open={showEditOCDialog} onOpenChange={(o) => { if (!o) closeEditOCDialog(); }}>
         <DialogContent className={cn(
           // NOTE: `h-[90vh]` (not only `max-h`) is required so the internal ScrollArea
           // gets a real height to scroll within.
@@ -4686,7 +4783,7 @@ const PurchaseOrdersDashboard = () => {
           </div>
 
           <DialogFooter className="flex-shrink-0 gap-2 sm:gap-0 pt-4 border-t">
-            <Button variant="outline" onClick={() => setShowEditOCDialog(false)} disabled={updatingOC}>
+            <Button variant="outline" onClick={closeEditOCDialog} disabled={updatingOC}>
               Cancelar
             </Button>
             <Button onClick={handleUpdateOC} disabled={updatingOC || !editingOCData.order_number}>
