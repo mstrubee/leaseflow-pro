@@ -9,6 +9,13 @@ import { toast } from "sonner";
 import { validateFile } from "@/lib/fileValidation";
 import { uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
+import * as pdfjsLib from "pdfjs-dist";
+// Vite resuelve esto a la URL del worker ya compilado (ver vite.config para el
+// resto de assets tratados igual). Sin esto pdf.js no puede parsear en el
+// navegador: necesita correr en un worker.
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 interface OCMatchRow {
   id: string;
@@ -28,6 +35,11 @@ interface OCFileEntry {
   selected: boolean;
   status: "idle" | "uploading" | "done" | "error";
   errorMessage?: string;
+  /** Número leído del CONTENIDO del PDF. undefined = aún verificando,
+   *  null = no se pudo leer o no se encontró, string = encontrado. */
+  contentOrderNumber?: string | null;
+  /** true si el nombre del archivo y su contenido indican OC distintas. */
+  numberMismatch: boolean;
 }
 
 interface OCBulkAttachDialogProps {
@@ -46,6 +58,30 @@ function parseOrderNumber(fileName: string): string | null {
   const base = fileName.replace(/\.pdf$/i, "").trim();
   const match = base.match(/^oc[\s_-]+(\d+)/i);
   return match ? match[1] : null;
+}
+
+/**
+ * Lee el número real impreso en el PDF ("Nº Orden: 4900043986"), para
+ * verificar que coincide con el número que dice el nombre del archivo. Un
+ * archivo mal renombrado a mano (o duplicado y renombrado por error) tendría
+ * el número correcto adentro pero uno distinto en el nombre — sin esto se
+ * subiría igual, adjuntando el PDF equivocado a una OC.
+ * Solo se lee la primera página: ahí está el dato en todas las OC vistas.
+ */
+async function extractOrderNumberFromPdf(file: File): Promise<string | null> {
+  try {
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const page = await pdf.getPage(1);
+    const content = await page.getTextContent();
+    const text = content.items.map((item: any) => item.str ?? "").join(" ");
+    // "Nº Orden", "N° Orden", "No Orden", con o sin espacio/dos puntos.
+    const match = text.match(/n[°ºo]\.?\s*orden\s*:?\s*(\d{4,})/i);
+    return match ? match[1] : null;
+  } catch (err) {
+    console.error("No se pudo leer el contenido del PDF para verificar el número:", err);
+    return null;
+  }
 }
 
 export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAttachDialogProps) {
@@ -105,10 +141,39 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
         // una OC que ya tiene adjunto no se pisa sin que el usuario lo pida.
         selected: !!orderNumber && rows.length > 0 && !existing,
         status: "idle",
+        contentOrderNumber: undefined,
+        numberMismatch: false,
       };
     });
 
     setEntries((prev) => [...prev, ...newEntries]);
+
+    // Verificación cruzada: leer el número real del PDF y compararlo con el
+    // del nombre. Solo vale la pena para archivos que de otro modo se
+    // subirían (matchearon y no fallaron antes) — no tiene sentido gastar
+    // tiempo leyendo un PDF cuyo archivo ya está descartado.
+    const startIndex = entries.length; // los nuevos quedan a partir de acá
+    newEntries.forEach((entry, offset) => {
+      if (!entry.orderNumber || entry.matches.length === 0) return;
+      const globalIndex = startIndex + offset;
+      void extractOrderNumberFromPdf(entry.file).then((contentOrderNumber) => {
+        setEntries((prev) => {
+          const copy = [...prev];
+          const current = copy[globalIndex];
+          if (!current || current.file !== entry.file) return prev; // se reordenó/borró
+          const mismatch = !!contentOrderNumber && contentOrderNumber !== entry.orderNumber;
+          copy[globalIndex] = {
+            ...current,
+            contentOrderNumber,
+            numberMismatch: mismatch,
+            // Un archivo con el número equivocado no se sube solo por error:
+            // se desmarca y el usuario decide qué hacer después de revisarlo.
+            selected: mismatch ? false : current.selected,
+          };
+          return copy;
+        });
+      });
+    });
   };
 
   const toggleSelected = (index: number) => {
@@ -250,7 +315,7 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
               <div className="mt-1 flex-shrink-0">
                 {entry.status === "done" ? (
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : entry.status === "error" ? (
+                ) : entry.status === "error" || entry.numberMismatch ? (
                   <AlertCircle className="h-4 w-4 text-destructive" />
                 ) : entry.orderNumber && entry.matches.length > 0 ? (
                   <CheckCircle2 className="h-4 w-4 text-green-500/60" />
@@ -281,11 +346,27 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
                   </p>
                 )}
 
-                {entry.status !== "error" && entry.orderNumber && entry.matches.length > 0 && (
+                {entry.status !== "error" && entry.orderNumber && entry.matches.length > 0 && entry.numberMismatch && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-destructive font-medium">
+                      El nombre dice OC {entry.orderNumber}, pero el PDF dice OC {entry.contentOrderNumber}. No se sube hasta que lo revises.
+                    </p>
+                    <button
+                      className="text-xs underline hover:text-foreground"
+                      onClick={() => toggleSelected(idx)}
+                      disabled={uploading}
+                    >
+                      {entry.selected ? "No subir de todos modos" : `Subir igual a OC ${entry.orderNumber}`}
+                    </button>
+                  </div>
+                )}
+
+                {entry.status !== "error" && entry.orderNumber && entry.matches.length > 0 && !entry.numberMismatch && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className={`text-xs ${entry.selected ? "text-green-600" : "text-muted-foreground"}`}>
                       → OC {entry.orderNumber}
                       {entry.matches.length > 1 && ` · ${entry.matches.length} contratos`}
+                      {entry.contentOrderNumber === undefined && " · verificando…"}
                     </p>
                     {entry.hasExistingAttachment && (
                       <>
