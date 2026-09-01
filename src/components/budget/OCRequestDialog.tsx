@@ -12,6 +12,8 @@ import { Loader2, Download, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 
 interface SelectedLine {
   lineId: string;
@@ -74,6 +76,7 @@ export const OCRequestDialog = ({
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [templateFileName, setTemplateName] = useState<string | null>(null);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const { toast } = useToast();
 
   // Load active template
@@ -133,6 +136,34 @@ export const OCRequestDialog = ({
     return { number: requestNumber, correlative };
   };
 
+  /** Resuelve cada línea del plan de pagos a un monto CLP concreto — misma
+   *  lógica que se usaba solo al insertar, extraída para poder validar el
+   *  total ANTES de crear nada y para reutilizarla en el PDF de la Solicitud. */
+  const resolvePaymentPlan = (amountClp: number) => {
+    return paymentPlan
+      .map((p, idx) => {
+        let resolvedClp = 0;
+        if (p.input_mode === "balance") {
+          const previousSum = paymentPlan.slice(0, idx).reduce((sum, prev) => {
+            if (prev.input_mode === "percent") return sum + (amountClp * (parseFloat(prev.amount) || 0) / 100);
+            if (prev.input_mode === "balance") return sum;
+            return sum + (parseFloat(prev.amount) || 0);
+          }, 0);
+          resolvedClp = amountClp - previousSum;
+        } else if (p.input_mode === "percent") {
+          resolvedClp = amountClp * (parseFloat(p.amount) || 0) / 100;
+        } else {
+          resolvedClp = parseFloat(p.amount) || 0;
+        }
+        return {
+          description: p.description || `Pago ${idx + 1}`,
+          amountClp: Math.round(resolvedClp),
+          dueDate: p.due_date || null,
+        };
+      })
+      .filter((e) => e.amountClp > 0);
+  };
+
   const handleCreate = async () => {
     if (!form.supplier_id) {
       toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
@@ -177,6 +208,13 @@ export const OCRequestDialog = ({
     
     // Calculate CLP equivalent (round to integer)
     const amountClp = Math.round(totalAmountUf * ufValue);
+
+    const resolvedPayments = resolvePaymentPlan(amountClp);
+    const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), amountClp);
+    if (planError) {
+      toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: planError });
+      return;
+    }
 
     setLoading(true);
     try {
@@ -229,38 +267,16 @@ export const OCRequestDialog = ({
 
       // Create payment plan entries - if no plan defined, create single payment entry
       if (requestData) {
-        if (paymentPlan.length > 0) {
-          const planEntries = paymentPlan
-            .map((p, idx) => {
-              let resolvedClp = 0;
-              if (p.input_mode === "balance") {
-                // Total minus sum of previous payments
-                const previousSum = paymentPlan.slice(0, idx).reduce((sum, prev) => {
-                  if (prev.input_mode === "percent") return sum + (amountClp * (parseFloat(prev.amount) || 0) / 100);
-                  if (prev.input_mode === "balance") return sum; // skip, will be resolved
-                  return sum + (parseFloat(prev.amount) || 0);
-                }, 0);
-                resolvedClp = amountClp - previousSum;
-              } else if (p.input_mode === "percent") {
-                resolvedClp = amountClp * (parseFloat(p.amount) || 0) / 100;
-              } else {
-                resolvedClp = parseFloat(p.amount) || 0;
-              }
-              const resolvedUf = ufValue > 0 ? resolvedClp / ufValue : 0;
-              return {
-                oc_request_id: requestData.id,
-                payment_number: idx + 1,
-                description: p.description || `Pago ${idx + 1}`,
-                amount_uf: Math.round(resolvedUf * 10000) / 10000,
-                due_date: p.due_date || null,
-                status: "pending"
-              };
-            })
-            .filter(e => e.amount_uf > 0);
-
-          if (planEntries.length > 0) {
-            await supabase.from("oc_payment_plans").insert(planEntries);
-          }
+        if (resolvedPayments.length > 0) {
+          const planEntries = resolvedPayments.map((p, idx) => ({
+            oc_request_id: requestData.id,
+            payment_number: idx + 1,
+            description: p.description,
+            amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            due_date: p.dueDate,
+            status: "pending"
+          }));
+          await supabase.from("oc_payment_plans").insert(planEntries);
         } else {
           // No payment plan defined - assume single payment with full amount
           await supabase.from("oc_payment_plans").insert({
@@ -274,9 +290,27 @@ export const OCRequestDialog = ({
         }
       }
 
-      toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+      toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
       onOpenChange(false);
       onSuccess?.();
+
+      // Se ofrece compartir recién creada, con los mismos datos que se acaban
+      // de guardar — así el PDF y lo que quedó en la base nunca se desalinean.
+      setShareData({
+        requestDate: new Date().toISOString().split("T")[0],
+        currency: form.currency as "UF" | "CLP",
+        contractNames: [contractName],
+        description: form.description,
+        lines: useMultipleLines
+          ? selectedLines.filter((l) => l.amount > 0).map((l) => ({
+              lineName: l.lineName,
+              amountClp: Math.round(l.amount * ufValue),
+            }))
+          : [{ lineName, amountClp }],
+        totalAmountClp: amountClp,
+        payments: resolvedPayments,
+        supplierName: form.supplier_name,
+      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -320,6 +354,7 @@ export const OCRequestDialog = ({
     : parseFloat(form.amount) || 0;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -580,5 +615,12 @@ export const OCRequestDialog = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+    />
+    </>
   );
 };

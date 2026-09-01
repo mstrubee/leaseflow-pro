@@ -19,6 +19,8 @@ import { OCRequestViewDialog } from "./OCRequestViewDialog";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 
 interface OCRequest {
   id: string;
@@ -120,6 +122,7 @@ export const OCRequestsList = ({
     supplier_name: null as string | null
   });
   const [creatingRequest, setCreatingRequest] = useState(false);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
@@ -506,13 +509,6 @@ export const OCRequestsList = ({
       return;
     }
 
-    // Payment plan must not exceed total requested
-    const totalPlanAmt = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-    if (paymentPlan.length > 0 && totalPlanAmt > enteredAmount) {
-      toast({ variant: "destructive", title: "Error", description: "El total planificado de pagos supera el monto de la solicitud. Use 'Cuadrar' para ajustar." });
-      return;
-    }
-
     const validLines = selectedLines.filter(l => l.lineId);
     if (validLines.length === 0) {
       toast({
@@ -539,6 +535,23 @@ export const OCRequestsList = ({
       // UF
       totalAmountUf = Math.round(enteredAmount * 10000) / 10000;
       totalAmountClp = Math.round(enteredAmount * currentUfValue);
+    }
+
+    // El plan de pagos debe sumar EXACTO el monto solicitado, no solo "no
+    // superarlo": un plan incompleto dejaría un pago sin registrar. Se
+    // convierte a CLP antes de comparar — si la moneda es UF, comparar los
+    // montos crudos con una tolerancia de "1 peso" habría sido inútil (1 UF
+    // son ~$38.000).
+    if (paymentPlan.length > 0) {
+      const resolvedPaymentsClp = paymentPlan.map((p) => {
+        const raw = parseFloat(p.amount) || 0;
+        return inputCurrency === "CLP" ? Math.round(raw) : Math.round(raw * currentUfValue);
+      });
+      const planError = validatePaymentPlanTotal(resolvedPaymentsClp, totalAmountClp);
+      if (planError) {
+        toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: `${planError} Usa "Cuadrar" para ajustar.` });
+        return;
+      }
     }
 
     const lineNames = validLines.map(l => l.lineName);
@@ -620,10 +633,32 @@ export const OCRequestsList = ({
         }
       }
 
-      toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+      toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
       setShowNewRequestDialog(false);
       loadRequests();
       onRefresh?.();
+
+      setShareData({
+        requestDate: new Date().toISOString().split("T")[0],
+        currency: inputCurrency as "UF" | "CLP",
+        contractNames: [contractName || ""].filter(Boolean),
+        description: newRequestForm.description,
+        lines: validLines.map((l) => ({
+          lineName: l.lineName,
+          amountClp: Math.round(l.amount * currentUfValue),
+        })),
+        totalAmountClp,
+        payments: paymentPlan
+          .filter((p) => parseFloat(p.amount) > 0)
+          .map((p) => ({
+            description: p.description || "Pago",
+            amountClp: inputCurrency === "CLP"
+              ? Math.round(parseFloat(p.amount))
+              : Math.round(parseFloat(p.amount) * currentUfValue),
+            dueDate: p.due_date || null,
+          })),
+        supplierName: newRequestForm.supplier_name,
+      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -1368,7 +1403,7 @@ export const OCRequestsList = ({
                     !newRequestForm.amount ||
                     parseFloat(newRequestForm.amount) <= 0 ||
                     !newRequestForm.supplier_id ||
-                    (paymentPlan.length > 0 && totalPlanned > totalSelected)
+                    (paymentPlan.length > 0 && Math.abs(totalPlanned - totalSelected) > 0.01)
                   }
                 >
                   {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -1379,6 +1414,12 @@ export const OCRequestsList = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ShareOCRequestDialog
+        open={!!shareData}
+        onOpenChange={(o) => { if (!o) setShareData(null); }}
+        data={shareData}
+      />
     </div>
   );
 };

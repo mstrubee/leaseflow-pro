@@ -20,6 +20,8 @@ import { uploadFileToStorage } from "@/lib/storageUtils";
 import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { formatCLP } from "@/lib/utils";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 interface Contract {
   id: string;
   name: string;
@@ -222,6 +224,7 @@ export const CentralizedOrderCreator = ({
   
   const [activeTab, setActiveTab] = useState("basic");
   const [loading, setLoading] = useState(false);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [opexMasterLines, setOpexMasterLines] = useState<OpexMasterLine[]>([]);
@@ -759,6 +762,20 @@ export const CentralizedOrderCreator = ({
       const primaryContractId = isMultiContract ? contractAllocations[0]?.contractId : singleContractId;
       
       if (mode === "request") {
+        // El plan de pagos debe sumar EXACTO el total, no solo no excederlo —
+        // antes nada lo garantizaba y un plan incompleto dejaba un pago sin
+        // registrar. Se resuelve una sola vez y se reutiliza para el insert
+        // y para el PDF que se comparte, en vez de recalcularlo dos veces.
+        const resolvedPayments = paymentPlan.map((p, idx) => {
+          const pAmount = parseFloat(p.amount) || 0;
+          const amountClp = formData.currency === "CLP" ? Math.round(pAmount) : Math.round(pAmount * ufValue);
+          return { description: p.description || `Pago ${idx + 1}`, amountClp, dueDate: p.due_date || null };
+        });
+        const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), totalAmountClp);
+        if (planError) {
+          throw new Error(planError);
+        }
+
         // Create OC Request
         const { number, correlative } = await generateNumber();
         
@@ -829,24 +846,15 @@ export const CentralizedOrderCreator = ({
         }
         
         // Create payment plan
-        if (paymentPlan.length > 0) {
-          const planItems = paymentPlan.map((p, idx) => {
-            const pAmount = parseFloat(p.amount) || 0;
-            let pUf: number;
-            if (formData.currency === "CLP") {
-              pUf = ufValue > 0 ? pAmount / ufValue : 0;
-            } else {
-              pUf = pAmount;
-            }
-            return {
-              oc_request_id: requestData.id,
-              payment_number: idx + 1,
-              description: p.description || `Pago ${idx + 1}`,
-              amount_uf: Math.round(pUf * 10000) / 10000,
-              due_date: p.due_date || null,
-              status: "pending"
-            };
-          });
+        if (resolvedPayments.length > 0) {
+          const planItems = resolvedPayments.map((p, idx) => ({
+            oc_request_id: requestData.id,
+            payment_number: idx + 1,
+            description: p.description,
+            amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            due_date: p.dueDate,
+            status: "pending"
+          }));
           await supabase.from("oc_payment_plans").insert(planItems);
         } else {
           // Create single payment
@@ -860,7 +868,23 @@ export const CentralizedOrderCreator = ({
           });
         }
         
-        toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+        toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
+
+        setShareData({
+          requestDate: new Date().toISOString().split("T")[0],
+          currency: formData.currency as "UF" | "CLP",
+          contractNames: isMultiContract
+            ? contractAllocations.map((a) => a.contractName)
+            : [contracts.find((c) => c.id === primaryContractId)?.name || ""].filter(Boolean),
+          description: formData.description,
+          lines: [{
+            lineName: opexCategories.find((c) => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
+            amountClp: totalAmountClp,
+          }],
+          totalAmountClp,
+          payments: resolvedPayments,
+          supplierName: formData.supplier_name,
+        });
       } else {
         // El disponible por línea es real: nunca se puede asignar a una línea
         // más de lo que le queda disponible (autorizado - ya consumido). Se
@@ -1727,6 +1751,12 @@ export const CentralizedOrderCreator = ({
         )}
       </DialogContent>
     </Dialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+    />
     </>
   );
 };
