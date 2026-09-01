@@ -21,6 +21,8 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage, extractStoragePath } from "@/lib/storageUtils";
+import { useAuth } from "@/hooks/useAuth";
+import { ReconcileImportsDialog } from "@/components/budget/ReconcileImportsDialog";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
   OCSupplier, GroupedOC, OCAllocation, OCRowStatus, DuplicateResolution,
@@ -97,6 +99,8 @@ export default function BulkOCImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { logos } = useAppLogos();
   const { ufValue } = useEconomicIndicators();
+  const { isAdmin } = useAuth();
+  const [showReconcileDialog, setShowReconcileDialog] = useState(false);
 
   // Reference data
   const [allLocations, setAllLocations] = useState<FullLocation[]>([]);
@@ -1257,14 +1261,26 @@ export default function BulkOCImport() {
 
         {/* ── Import history ── */}
         <div>
-          <button
-            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
-            onClick={() => setShowHistory(v => !v)}
-          >
-            <History className="h-4 w-4" />
-            Historial de importaciones
-            {showHistory ? <ChevronUp className="h-4 w-4 ml-auto" /> : <ChevronDown className="h-4 w-4 ml-auto" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex-1"
+              onClick={() => setShowHistory(v => !v)}
+            >
+              <History className="h-4 w-4" />
+              Historial de importaciones
+              {showHistory ? <ChevronUp className="h-4 w-4 ml-auto" /> : <ChevronDown className="h-4 w-4 ml-auto" />}
+            </button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0"
+                onClick={() => setShowReconcileDialog(true)}
+              >
+                Reconciliar importaciones anteriores
+              </Button>
+            )}
+          </div>
 
           {showHistory && (
             <Card className="mt-3">
@@ -1344,6 +1360,11 @@ export default function BulkOCImport() {
         </div>
 
       </main>
+
+      <ReconcileImportsDialog
+        open={showReconcileDialog}
+        onOpenChange={setShowReconcileDialog}
+      />
     </div>
   );
 }

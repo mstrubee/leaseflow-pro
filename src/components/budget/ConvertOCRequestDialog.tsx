@@ -45,6 +45,7 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
+import { extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
 
 interface ContractAllocation {
   contract_id: string;
@@ -109,6 +110,12 @@ export const ConvertOCRequestDialog = ({
   const [supplierName, setSupplierName] = useState<string | null>(null);
   const [ocFile, setOcFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  // Mientras se lee el numero desde el contenido del PDF, para no dejar el
+  // campo "Numero de OC" mudo sin explicar por que todavia esta vacio.
+  const [readingNumberFromFile, setReadingNumberFromFile] = useState(false);
+  // Si el usuario ya habia escrito un numero a mano y el PDF trae uno
+  // distinto, no se pisa en silencio: se avisa y decide el.
+  const [numberMismatchWarning, setNumberMismatchWarning] = useState<string | null>(null);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
@@ -134,22 +141,47 @@ export const ConvertOCRequestDialog = ({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const validation = validateFile(file);
-      if (!validation.isValid) {
-        toast({
-          variant: "destructive",
-          title: "Archivo no válido",
-          description: validation.error,
+    if (!file) return;
+
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Archivo no válido",
+        description: validation.error,
+      });
+      return;
+    }
+    setOcFile(file);
+    setNumberMismatchWarning(null);
+
+    // Se lee el número real impreso en el PDF ("Nº Orden: xxxx") para
+    // precargar el campo y evitar que el usuario lo digite a mano (fuente
+    // de errores de tipeo). Si el archivo no es un PDF (ocFile también
+    // acepta imágenes) o no tiene capa de texto, extractOrderNumberFromPdf
+    // devuelve null y el campo sigue editable como antes.
+    if (file.type === "application/pdf") {
+      setReadingNumberFromFile(true);
+      void extractOrderNumberFromPdf(file).then((extracted) => {
+        setReadingNumberFromFile(false);
+        if (!extracted) return;
+        setOrderNumber((current) => {
+          if (!current.trim()) return extracted;
+          if (current.trim() !== extracted) {
+            setNumberMismatchWarning(
+              `El PDF dice OC ${extracted}, pero el campo tiene ${current.trim()}. Revisa cuál es el correcto.`
+            );
+          }
+          return current;
         });
-        return;
-      }
-      setOcFile(file);
+      });
     }
   };
 
   const handleRemoveFile = () => {
     setOcFile(null);
+    setNumberMismatchWarning(null);
+    setReadingNumberFromFile(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -432,6 +464,65 @@ export const ConvertOCRequestDialog = ({
 
           {/* Form */}
           <div className="space-y-4 pt-2">
+            {/* Se sube primero el PDF de la OC: el número real va impreso en
+                el documento ("Nº Orden: xxxx") y se lee automáticamente para
+                precargar el campo de abajo, evitando errores de tipeo. */}
+            <div className="space-y-2">
+              <Label>Archivo OC (PDF)</Label>
+              {ocFile ? (
+                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 border rounded-lg">
+                  <FileText className="h-5 w-5 text-green-600" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{ocFile.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(ocFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveFile}
+                    disabled={converting}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Click para subir el archivo de la OC
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    PDF — el número de OC se completa solo si viene en el documento
+                  </p>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.PDF"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              {/* Show existing quotation if no new file */}
+              {!ocFile && request.quotation_url && (
+                <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-sm">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <span className="text-muted-foreground">
+                    Se utilizará la cotización adjunta:{" "}
+                  </span>
+                  <span className="font-medium">
+                    {request.quotation_file_name || "Cotización"}
+                  </span>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="order_number">
                 Número de OC <span className="text-destructive">*</span>
@@ -439,9 +530,18 @@ export const ConvertOCRequestDialog = ({
               <Input
                 id="order_number"
                 value={orderNumber}
-                onChange={(e) => setOrderNumber(e.target.value)}
-                placeholder="Ingrese el número de orden de compra"
+                onChange={(e) => {
+                  setOrderNumber(e.target.value);
+                  setNumberMismatchWarning(null);
+                }}
+                placeholder="Se completa solo al subir el PDF, o ingrésalo a mano"
               />
+              {readingNumberFromFile && (
+                <p className="text-xs text-muted-foreground">Leyendo el número desde el PDF…</p>
+              )}
+              {numberMismatchWarning && (
+                <p className="text-xs text-destructive">{numberMismatchWarning}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -478,60 +578,6 @@ export const ConvertOCRequestDialog = ({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Archivo OC (PDF)</Label>
-              {ocFile ? (
-                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 border rounded-lg">
-                  <FileText className="h-5 w-5 text-green-600" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{ocFile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(ocFile.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRemoveFile}
-                    disabled={converting}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Click para subir el archivo de la OC
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">PDF</p>
-                </div>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.PDF"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-
-              {/* Show existing quotation if no new file */}
-              {!ocFile && request.quotation_url && (
-                <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-sm">
-                  <FileText className="h-4 w-4 text-blue-600" />
-                  <span className="text-muted-foreground">
-                    Se utilizará la cotización adjunta:{" "}
-                  </span>
-                  <span className="font-medium">
-                    {request.quotation_file_name || "Cotización"}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         </div>

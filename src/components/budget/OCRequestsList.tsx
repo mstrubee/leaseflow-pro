@@ -515,7 +515,11 @@ export const OCRequestsList = ({
 
     const validLines = selectedLines.filter(l => l.lineId);
     if (validLines.length === 0) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea de imputación" });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: budgetType === "opex" ? "Seleccione al menos una categoría OPEX" : "Seleccione al menos una línea de imputación"
+      });
       return;
     }
 
@@ -1059,7 +1063,9 @@ export const OCRequestsList = ({
             <Tabs value={newRequestTab} onValueChange={setNewRequestTab}>
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="basic">Tipo y Datos</TabsTrigger>
-                <TabsTrigger value="lines" disabled={!selectedBudgetId}>Líneas</TabsTrigger>
+                <TabsTrigger value="lines" disabled={!selectedBudgetId}>
+                  {budgetType === "opex" ? "Categoría OPEX" : "Líneas"}
+                </TabsTrigger>
                 <TabsTrigger value="payments" disabled={selectedLines.length === 0}>Pagos</TabsTrigger>
               </TabsList>
 

@@ -134,6 +134,11 @@ export const OCRequestDialog = ({
   };
 
   const handleCreate = async () => {
+    if (!form.supplier_id) {
+      toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
+      return;
+    }
+
     // Amount is always entered in basic tab
     const amount = parseFloat(form.amount) || 0;
     if (amount <= 0) {
@@ -408,7 +413,7 @@ export const OCRequestDialog = ({
 
             {/* Supplier */}
             <div className="space-y-2">
-              <Label>Proveedor (opcional)</Label>
+              <Label>Proveedor *</Label>
               <SupplierSelect
                 value={form.supplier_id}
                 onChange={handleSupplierChange}

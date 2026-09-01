@@ -699,27 +699,33 @@ export const CentralizedOrderCreator = ({
       return;
     }
 
-    // Reglas para OCs de CAPEX: proveedor obligatorio y al menos una línea
-    // del presupuesto CAPEX de cada local imputado. Aplican solo al crear —
-    // las OCs antiguas que no cumplen no se bloquean.
-    if (budgetType === "capex") {
+    // Proveedor obligatorio siempre en una Solicitud de OC (antes solo se
+    // exigía para CAPEX; una solicitud sin proveedor identificado no sirve
+    // para nada, sea CAPEX u OPEX). En "order" se mantiene el criterio
+    // anterior (solo CAPEX) para no cambiar ese flujo sin que se haya pedido.
+    if (mode === "request" || budgetType === "capex") {
       if (!formData.supplier_id) {
-        toast({ title: "Falta el proveedor", description: "Debe seleccionar un proveedor para crear una OC de CAPEX.", variant: "destructive" });
+        toast({ title: "Falta el proveedor", description: "Debe seleccionar un proveedor para crear la solicitud.", variant: "destructive" });
         return;
       }
-      if (mode === "order") {
-        const contractsToCheck = isMultiContract
-          ? contractAllocations.map(a => ({ id: a.contractId, name: a.contractName }))
-          : [{ id: singleContractId, name: contracts.find(c => c.id === singleContractId)?.name || "" }];
-        for (const c of contractsToCheck) {
-          if ((capexLineSelections[c.id] || []).length === 0) {
-            toast({
-              title: "Faltan líneas de presupuesto",
-              description: `Debe seleccionar al menos una línea del presupuesto CAPEX${c.name ? ` de ${c.name}` : ""}.`,
-              variant: "destructive"
-            });
-            return;
-          }
+    }
+
+    // Reglas para CAPEX: al menos una línea del presupuesto CAPEX de cada
+    // local imputado. Antes solo se exigía al convertir en OC ("order"); una
+    // Solicitud de OC de CAPEX sin línea asignada quedaba sin destino de
+    // presupuesto — ahora se exige también al crear la solicitud.
+    if (budgetType === "capex") {
+      const contractsToCheck = isMultiContract
+        ? contractAllocations.map(a => ({ id: a.contractId, name: a.contractName }))
+        : [{ id: singleContractId, name: contracts.find(c => c.id === singleContractId)?.name || "" }];
+      for (const c of contractsToCheck) {
+        if ((capexLineSelections[c.id] || []).length === 0) {
+          toast({
+            title: "Faltan líneas de presupuesto",
+            description: `Debe seleccionar al menos una línea del presupuesto CAPEX${c.name ? ` de ${c.name}` : ""}.`,
+            variant: "destructive"
+          });
+          return;
         }
       }
     }
@@ -1269,7 +1275,7 @@ export const CentralizedOrderCreator = ({
                 
                 {/* Supplier */}
                 <div className="space-y-2">
-                  <Label>Proveedor{budgetType === "capex" ? " *" : ""}</Label>
+                  <Label>Proveedor{(mode === "request" || budgetType === "capex") ? " *" : ""}</Label>
                   <SupplierSelect
                     value={formData.supplier_id}
                     onChange={(id, name) => setFormData(prev => ({ 

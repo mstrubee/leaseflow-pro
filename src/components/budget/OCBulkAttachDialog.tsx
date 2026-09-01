@@ -9,13 +9,7 @@ import { toast } from "sonner";
 import { validateFile } from "@/lib/fileValidation";
 import { uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
-import * as pdfjsLib from "pdfjs-dist";
-// Vite resuelve esto a la URL del worker ya compilado (ver vite.config para el
-// resto de assets tratados igual). Sin esto pdf.js no puede parsear en el
-// navegador: necesita correr en un worker.
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+import { parseOrderNumberFromFileName, extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
 
 interface OCMatchRow {
   id: string;
@@ -54,36 +48,6 @@ interface OCBulkAttachDialogProps {
  * seguido de dígitos: no hay forma de saber a qué OC corresponde un PDF cuyo
  * nombre no lo indica.
  */
-function parseOrderNumber(fileName: string): string | null {
-  const base = fileName.replace(/\.pdf$/i, "").trim();
-  const match = base.match(/^oc[\s_-]+(\d+)/i);
-  return match ? match[1] : null;
-}
-
-/**
- * Lee el número real impreso en el PDF ("Nº Orden: 4900043986"), para
- * verificar que coincide con el número que dice el nombre del archivo. Un
- * archivo mal renombrado a mano (o duplicado y renombrado por error) tendría
- * el número correcto adentro pero uno distinto en el nombre — sin esto se
- * subiría igual, adjuntando el PDF equivocado a una OC.
- * Solo se lee la primera página: ahí está el dato en todas las OC vistas.
- */
-async function extractOrderNumberFromPdf(file: File): Promise<string | null> {
-  try {
-    const buffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    const page = await pdf.getPage(1);
-    const content = await page.getTextContent();
-    const text = content.items.map((item: any) => item.str ?? "").join(" ");
-    // "Nº Orden", "N° Orden", "No Orden", con o sin espacio/dos puntos.
-    const match = text.match(/n[°ºo]\.?\s*orden\s*:?\s*(\d{4,})/i);
-    return match ? match[1] : null;
-  } catch (err) {
-    console.error("No se pudo leer el contenido del PDF para verificar el número:", err);
-    return null;
-  }
-}
-
 export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAttachDialogProps) {
   const { openFile } = useSecureFileAccess();
   const [entries, setEntries] = useState<OCFileEntry[]>([]);
@@ -100,7 +64,7 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
     const files = Array.from(e.target.files);
     e.target.value = "";
 
-    const parsed = files.map((file) => ({ file, orderNumber: parseOrderNumber(file.name) }));
+    const parsed = files.map((file) => ({ file, orderNumber: parseOrderNumberFromFileName(file.name) }));
     const orderNumbers = [...new Set(parsed.filter((p) => p.orderNumber).map((p) => p.orderNumber as string))];
 
     // Una sola consulta para todos los archivos seleccionados, en vez de una
