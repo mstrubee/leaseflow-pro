@@ -37,6 +37,7 @@ import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+import { GanttOverviewTimeline } from "@/components/gantt/GanttOverviewTimeline";
 
 type FilterGantt = "all" | "con" | "sin";
 type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
@@ -617,11 +618,15 @@ export function GanttReportsSection() {
         });
       }
 
-      // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
+      // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos).
+      //    Solo el cronograma PRINCIPAL (category = 'general') — el de
+      //    mantenciones (category = 'maintenance', creado desde /maintenance)
+      //    vive en la misma tabla pero no corresponde a esta vista.
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
         .select("id, name, contract_id, is_priority")
         .in("contract_id", contractIds)
+        .eq("category", "general")
         .order("is_priority", { ascending: false })
         .order("created_at", { ascending: false });
       if (tlErr) throw tlErr;
@@ -1079,6 +1084,21 @@ export function GanttReportsSection() {
   // ── Derived counts para badges ─────────────────────────────────────────────
   const countCon = data.filter((d) => d.tasks.length > 0).length;
   const countSin = data.filter((d) => d.tasks.length === 0).length;
+
+  /** Proyectos con Gantt y fecha de término, para la línea de tiempo general. */
+  const timelineProjects = useMemo(
+    () =>
+      data
+        .filter((d) => d.tasks.length > 0 && d.endDate)
+        .map((d) => ({
+          contractId: d.contractId,
+          contractName: d.contractName,
+          companyNames: d.companyNames,
+          endDate: d.endDate as string,
+          capexUF: d.capexUF,
+        })),
+    [data]
+  );
   const allVisibleOpen =
     displayData.length > 0 && displayData.every((d) => openCards.has(d.contractId));
 
@@ -1148,6 +1168,11 @@ export function GanttReportsSection() {
               </div>
             ) : (
               <div className="space-y-3">
+
+                <GanttOverviewTimeline
+                  projects={timelineProjects}
+                  onSelect={(contractId) => navigateToContractFromReports(contractId, "gantt")}
+                />
 
                 {/* ── Barra de filtro / orden / selección ──────────────────── */}
                 <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
