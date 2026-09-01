@@ -247,7 +247,12 @@ type OCSortField = "local" | "order_number" | "description" | "supplier" | "type
 
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
-  const { user, loading: authLoading, isAdmin } = useAuth();
+  const { user, loading: authLoading, isAdmin, hasPermission } = useAuth();
+  // Mismo criterio que ya usan las políticas RLS de purchase_orders
+  // (hasPermission ya cubre "all" internamente, no solo "edit"): cualquier
+  // perfil con ese permiso asignado desde Admin > Roles (p. ej. "Equipo
+  // Desarrollo") queda habilitado acá, sin hardcodear el nombre del rol.
+  const canManagePurchaseOrders = hasPermission("purchase_orders", "edit");
   const { ufValue } = useEconomicIndicators();
   const { openFile, getSecureUrl } = useSecureFileAccess();
   const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
@@ -2341,7 +2346,7 @@ const PurchaseOrdersDashboard = () => {
                 <FileSpreadsheet className="h-4 w-4 mr-1" />
                 Carga Masiva de OOCC
               </Button>
-              {isAdmin && (
+              {canManagePurchaseOrders && (
                 <Button variant="outline" size="sm" onClick={() => setShowBulkAttachDialog(true)}>
                   <Paperclip className="h-4 w-4 mr-1" />
                   Adjuntar PDFs
@@ -3032,7 +3037,7 @@ const PurchaseOrdersDashboard = () => {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
-                                  {isAdmin && groupedOrder.is_imported ? (
+                                  {canManagePurchaseOrders && groupedOrder.is_imported ? (
                                     <Select
                                       value={groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
                                       disabled={changingTypeOrderNumber === groupedOrder.order_number}
