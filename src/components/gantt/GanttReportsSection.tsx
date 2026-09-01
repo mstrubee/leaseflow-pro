@@ -38,10 +38,13 @@ import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
 import { GanttOverviewTimeline } from "@/components/gantt/GanttOverviewTimeline";
+import { cn } from "@/lib/utils";
 
 type FilterGantt = "all" | "con" | "sin";
 type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
 type SortBy2 = "none" | "empresa" | "name" | "capex_desc";
+/** Estado del cronograma principal para esta vista — no afecta al contrato en sí. */
+export type OverviewStatus = "active" | "paused" | "completed";
 
 interface Disbursement {
   startDate: string;   // start_date of "Obras Civiles"
@@ -56,7 +59,9 @@ interface GanttContractData {
   contractId: string;
   contractName: string;
   companyNames: string[];
+  timelineId: string | null;
   timelineName: string;
+  overviewStatus: OverviewStatus;
   tasks: GanttTask[];
   taskTree: GanttTask[];
   endDate: string | null;
@@ -520,6 +525,26 @@ export function GanttReportsSection() {
     });
   };
 
+  /** Cambia Pausa/Terminado/Activo del cronograma principal — solo afecta esta vista. */
+  const updateOverviewStatus = async (
+    contractId: string,
+    timelineId: string,
+    status: OverviewStatus
+  ) => {
+    const prev = data;
+    setData((cur) =>
+      cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatus: status } : d))
+    );
+    const { error } = await supabase
+      .from("gantt_timelines")
+      .update({ overview_status: status } as any)
+      .eq("id", timelineId);
+    if (error) {
+      setData(prev);
+      toast.error("No se pudo actualizar el estado del proyecto");
+    }
+  };
+
   const { isOpen: isSectionOpen, setIsOpen: setSectionOpen } = useSingleCollapsible(
     "reports-gantt-section",
     false
@@ -624,7 +649,7 @@ export function GanttReportsSection() {
       //    vive en la misma tabla pero no corresponde a esta vista.
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .select("id, name, contract_id, is_priority")
+        .select("id, name, contract_id, is_priority, overview_status")
         .in("contract_id", contractIds)
         .eq("category", "general")
         .order("is_priority", { ascending: false })
@@ -632,10 +657,17 @@ export function GanttReportsSection() {
       if (tlErr) throw tlErr;
 
       // El cronograma PRINCIPAL de cada contrato (o el más reciente si no lo hay)
-      const timelineByContract = new Map<string, { id: string; name: string }>();
+      const timelineByContract = new Map<
+        string,
+        { id: string; name: string; overviewStatus: OverviewStatus }
+      >();
       (timelines || []).forEach((t: any) => {
         if (!timelineByContract.has(t.contract_id))
-          timelineByContract.set(t.contract_id, { id: t.id, name: t.name });
+          timelineByContract.set(t.contract_id, {
+            id: t.id,
+            name: t.name,
+            overviewStatus: (t.overview_status as OverviewStatus) || "active",
+          });
       });
       const timelineIds = Array.from(timelineByContract.values()).map((t) => t.id);
 
@@ -695,10 +727,18 @@ export function GanttReportsSection() {
         const endDates = tasks
           .map((t) => effOf(t).end)
           .filter(Boolean) as string[];
-        const endDate =
+        const maxEndDate =
           endDates.length > 0
             ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
             : null;
+
+        // "Fecha término" que se muestra en el listado y en la línea de
+        // tiempo: si el cronograma tiene una tarea "Apertura", esa es la
+        // fecha real de término (apertura al público) — no el máximo de
+        // todas las tareas, que puede incluir trabajos posteriores a la
+        // apertura. Si no existe esa tarea, se mantiene el cálculo anterior.
+        const aperturaTask = tasks.find((t) => t.name.trim().toLowerCase() === "apertura");
+        const endDate = aperturaTask ? effOf(aperturaTask).end : maxEndDate;
 
         const capexCLP = capexUF * currentUF;
 
@@ -730,7 +770,9 @@ export function GanttReportsSection() {
           contractId,
           contractName: contract.name,
           companyNames: companiesByContract.get(contractId) || [],
+          timelineId: timeline?.id ?? null,
           timelineName: timeline?.name ?? "",
+          overviewStatus: timeline?.overviewStatus ?? "active",
           tasks,
           taskTree,
           endDate,
@@ -1085,17 +1127,22 @@ export function GanttReportsSection() {
   const countCon = data.filter((d) => d.tasks.length > 0).length;
   const countSin = data.filter((d) => d.tasks.length === 0).length;
 
-  /** Proyectos con Gantt y fecha de término, para la línea de tiempo general. */
+  /**
+   * Proyectos con Gantt y fecha de término, para la línea de tiempo general.
+   * Los "En pausa" se excluyen a pedido explícito — siguen en el listado de
+   * abajo, pero no ocupan espacio en la línea de tiempo.
+   */
   const timelineProjects = useMemo(
     () =>
       data
-        .filter((d) => d.tasks.length > 0 && d.endDate)
+        .filter((d) => d.tasks.length > 0 && d.endDate && d.overviewStatus !== "paused")
         .map((d) => ({
           contractId: d.contractId,
           contractName: d.contractName,
           companyNames: d.companyNames,
           endDate: d.endDate as string,
           capexUF: d.capexUF,
+          overviewStatus: d.overviewStatus,
         })),
     [data]
   );
@@ -1378,6 +1425,33 @@ export function GanttReportsSection() {
                               </div>
                             )}
                             <div className="flex items-center gap-3">
+                              {item.timelineId && (
+                                <Select
+                                  value={item.overviewStatus}
+                                  onValueChange={(v) =>
+                                    updateOverviewStatus(item.contractId, item.timelineId!, v as OverviewStatus)
+                                  }
+                                >
+                                  <SelectTrigger
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={cn(
+                                      "h-7 w-[112px] text-xs gap-1",
+                                      item.overviewStatus === "paused" &&
+                                        "border-amber-300 bg-amber-50 text-amber-800",
+                                      item.overviewStatus === "completed" &&
+                                        "border-green-300 bg-green-50 text-green-800"
+                                    )}
+                                    title="Estado del proyecto en esta vista"
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent onClick={(e) => e.stopPropagation()}>
+                                    <SelectItem value="active">Activo</SelectItem>
+                                    <SelectItem value="paused">En pausa</SelectItem>
+                                    <SelectItem value="completed">Terminado</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
                               <div className="text-right text-xs">
                                 <div className="text-muted-foreground">CAPEX Total</div>
                                 <div className="font-semibold text-sm">

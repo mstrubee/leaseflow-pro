@@ -21,6 +21,7 @@ interface TimelineProject {
   companyNames: string[];
   endDate: string;
   capexUF: number;
+  overviewStatus: "active" | "paused" | "completed";
 }
 
 interface GanttOverviewTimelineProps {
@@ -134,20 +135,22 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
                 >
                   {items.map((p) => {
                     const d = parseISO(p.endDate);
-                    const overdue = d < today;
+                    const overdue = d < today && p.overviewStatus !== "completed";
                     return (
                       <button
                         key={p.contractId}
                         type="button"
                         onClick={() => onSelect(p.contractId)}
                         title={`${p.contractName} — término ${format(d, "dd/MM/yyyy")}${
-                          p.companyNames.length ? ` · ${p.companyNames.join(", ")}` : ""
-                        }`}
+                          p.overviewStatus === "completed" ? " · Terminado" : ""
+                        }${p.companyNames.length ? ` · ${p.companyNames.join(", ")}` : ""}`}
                         className={cn(
                           "text-left text-[10px] leading-tight rounded border px-1.5 py-1 truncate transition-shadow hover:shadow-sm hover:border-primary/50",
-                          overdue
-                            ? "bg-red-50 border-red-200 text-red-700"
-                            : "bg-blue-50 border-blue-200 text-blue-700"
+                          p.overviewStatus === "completed"
+                            ? "bg-green-50 border-green-200 text-green-700"
+                            : overdue
+                              ? "bg-red-50 border-red-200 text-red-700"
+                              : "bg-blue-50 border-blue-200 text-blue-700"
                         )}
                       >
                         <div className="font-semibold">{format(d, "dd MMM", { locale: es })}</div>
