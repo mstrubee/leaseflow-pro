@@ -5,11 +5,23 @@ import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-/** "OC 4900040476.pdf" → "4900040476". Tolera espacio, guion y guion bajo. */
+/**
+ * "OC 4900040476.pdf" → "4900040476". Tolera espacio, guion y guion bajo.
+ * También acepta el archivo nombrado solo con el número, sin el prefijo
+ * "OC" ("4900040476.pdf") — se exige un mínimo de 6 dígitos y que sea TODO
+ * el nombre (no una parte), para no confundir con años, versiones u otros
+ * números que aparezcan en nombres compuestos como "Factura_123456.pdf".
+ */
 export function parseOrderNumberFromFileName(fileName: string): string | null {
   const base = fileName.replace(/\.pdf$/i, "").trim();
-  const match = base.match(/^oc[\s_-]+(\d+)/i);
-  return match ? match[1] : null;
+
+  const withPrefix = base.match(/^oc[\s_-]+(\d+)/i);
+  if (withPrefix) return withPrefix[1];
+
+  const onlyNumber = base.match(/^(\d{6,})$/);
+  if (onlyNumber) return onlyNumber[1];
+
+  return null;
 }
 
 /**

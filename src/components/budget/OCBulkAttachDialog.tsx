@@ -233,8 +233,8 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
         </DialogHeader>
 
         <p className="text-xs text-muted-foreground -mt-2">
-          Selecciona los archivos de tu carpeta local. Se reconocen por el nombre,
-          formato "OC (número).pdf" — por ejemplo "OC 4900040476.pdf".
+          Selecciona los archivos de tu carpeta local. Se reconocen por el nombre:
+          "OC (número).pdf" (ej. "OC 4900040476.pdf") o solo el número (ej. "4900040476.pdf").
         </p>
 
         <div className="flex items-center gap-2">
