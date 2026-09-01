@@ -3,12 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Upload, CheckCircle2, AlertCircle, FileText, ExternalLink } from "lucide-react";
+import { Upload, CheckCircle2, AlertCircle, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { validateFile } from "@/lib/fileValidation";
 import { uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
-import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 import { parseOrderNumberFromFileName, extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
 
 interface OCMatchRow {
@@ -22,10 +21,11 @@ interface OCFileEntry {
   orderNumber: string | null;
   /** Filas de purchase_orders (una por contrato) que comparten ese order_number. */
   matches: OCMatchRow[];
-  /** Cualquiera de esas filas ya tenía un adjunto antes de esta sincronización. */
+  /** Cualquiera de esas filas ya tenía un adjunto antes de esta sincronización.
+   *  Una OC en este estado se omite SIEMPRE — nunca se pisa un PDF existente,
+   *  no hay opción de "reemplazar". Solo se cuenta en el resumen. */
   hasExistingAttachment: boolean;
-  existingAttachmentUrl: string | null;
-  /** Si se va a subir en esta pasada. Falso por defecto cuando ya hay adjunto. */
+  /** Si se va a subir en esta pasada. */
   selected: boolean;
   status: "idle" | "uploading" | "done" | "error";
   errorMessage?: string;
@@ -34,6 +34,22 @@ interface OCFileEntry {
   contentOrderNumber?: string | null;
   /** true si el nombre del archivo y su contenido indican OC distintas. */
   numberMismatch: boolean;
+}
+
+/**
+ * Solo dos categorías aparecen como fila individual en el listado — las que
+ * requieren una decisión real del usuario. El resto (sin reconocer, no
+ * existe, ya tiene PDF) se omite de la subida y se resume en un contador,
+ * para no llenar la pantalla con archivos que no se van a tocar.
+ */
+type EntryCategory = "ready" | "mismatch" | "unrecognized" | "not_found" | "already_attached";
+
+function categorize(entry: OCFileEntry): EntryCategory {
+  if (!entry.orderNumber) return "unrecognized";
+  if (entry.matches.length === 0) return "not_found";
+  if (entry.hasExistingAttachment) return "already_attached";
+  if (entry.numberMismatch) return "mismatch";
+  return "ready";
 }
 
 interface OCBulkAttachDialogProps {
@@ -49,7 +65,6 @@ interface OCBulkAttachDialogProps {
  * nombre no lo indica.
  */
 export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAttachDialogProps) {
-  const { openFile } = useSecureFileAccess();
   const [entries, setEntries] = useState<OCFileEntry[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -100,9 +115,9 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
         orderNumber,
         matches: rows.map((r) => ({ id: r.id, contractId: r.contractId })),
         hasExistingAttachment: !!existing,
-        existingAttachmentUrl: existing?.attachmentUrl ?? null,
-        // Seleccionado por defecto solo si matcheó y todavía no tiene PDF —
-        // una OC que ya tiene adjunto no se pisa sin que el usuario lo pida.
+        // Seleccionado por defecto solo cuando matcheó y todavía no tiene
+        // PDF. Una OC con adjunto existente jamás se sube — se omite del
+        // todo, no hay forma de forzarla desde acá.
         selected: !!orderNumber && rows.length > 0 && !existing,
         status: "idle",
         contentOrderNumber: undefined,
@@ -155,6 +170,13 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
   };
 
   const selectedCount = entries.filter((e) => e.selected).length;
+  const unrecognizedCount = entries.filter((e) => categorize(e) === "unrecognized").length;
+  const notFoundCount = entries.filter((e) => categorize(e) === "not_found").length;
+  const alreadyAttachedCount = entries.filter((e) => categorize(e) === "already_attached").length;
+  const visibleCount = entries.filter((e) => {
+    const c = categorize(e);
+    return c === "ready" || c === "mismatch";
+  }).length;
 
   const handleUploadAll = async () => {
     if (selectedCount === 0) return;
@@ -187,11 +209,15 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
         // Se actualizan TODAS las filas actuales de este order_number, no solo
         // las que trajo la consulta inicial: evita dejar una fila sin adjuntar
         // si algo cambió entre que se abrió el diálogo y se subió el archivo.
+        // `.is("attachment_url", null)` es la última salvaguarda contra
+        // duplicar una subida: si alguien más adjuntó un PDF a esta OC
+        // mientras el diálogo seguía abierto, esa fila no se pisa acá.
         const { error: updateErr } = await supabase
           .from("purchase_orders")
           .update({ attachment_url: uploadResult.primaryUrl } as any)
           .eq("order_number", entry.orderNumber!)
-          .is("deleted_at", null);
+          .is("deleted_at", null)
+          .is("attachment_url", null);
 
         if (updateErr) throw updateErr;
 
@@ -260,6 +286,20 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
           </span>
         </div>
 
+        {entries.length > 0 && (unrecognizedCount > 0 || notFoundCount > 0 || alreadyAttachedCount > 0) && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground px-1">
+            {alreadyAttachedCount > 0 && (
+              <span>{alreadyAttachedCount} ya tienen PDF (omitidas, no se pisan)</span>
+            )}
+            {notFoundCount > 0 && (
+              <span>{notFoundCount} no existen en el sistema</span>
+            )}
+            {unrecognizedCount > 0 && (
+              <span>{unrecognizedCount} sin número reconocible en el nombre</span>
+            )}
+          </div>
+        )}
+
         {uploading && (
           <div className="space-y-1">
             <Progress value={progress} className="h-2" />
@@ -274,92 +314,73 @@ export function OCBulkAttachDialog({ open, onOpenChange, onComplete }: OCBulkAtt
             </div>
           )}
 
-          {entries.map((entry, idx) => (
-            <div key={idx} className="flex items-start gap-3 p-3 rounded-md border bg-card">
-              <div className="mt-1 flex-shrink-0">
-                {entry.status === "done" ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : entry.status === "error" || entry.numberMismatch ? (
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                ) : entry.orderNumber && entry.matches.length > 0 ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500/60" />
-                ) : (
-                  <AlertCircle className="h-4 w-4 text-yellow-500" />
-                )}
-              </div>
+          {entries.length > 0 && visibleCount === 0 && (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              Ningún archivo coincide con una OC pendiente de PDF — ver el resumen arriba.
+            </div>
+          )}
 
-              <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center gap-1">
-                  <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                  <span className="text-sm font-medium truncate">{entry.file.name}</span>
+          {/* Solo se listan "ready" y "mismatch": son las dos categorías que
+              requieren una decisión del usuario. El resto (sin reconocer, no
+              existe, ya tiene PDF) queda resumido arriba, no como fila. */}
+          {entries.map((entry, idx) => {
+            const category = categorize(entry);
+            if (category !== "ready" && category !== "mismatch") return null;
+
+            return (
+              <div key={idx} className="flex items-start gap-3 p-3 rounded-md border bg-card">
+                <div className="mt-1 flex-shrink-0">
+                  {entry.status === "done" ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : entry.status === "error" || category === "mismatch" ? (
+                    <AlertCircle className="h-4 w-4 text-destructive" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 text-green-500/60" />
+                  )}
                 </div>
 
-                {entry.status === "error" && (
-                  <p className="text-xs text-destructive">{entry.errorMessage || "Error al subir"}</p>
-                )}
-
-                {entry.status !== "error" && !entry.orderNumber && (
-                  <p className="text-xs text-yellow-600">
-                    No se reconoció el número de OC en el nombre del archivo.
-                  </p>
-                )}
-
-                {entry.status !== "error" && entry.orderNumber && entry.matches.length === 0 && (
-                  <p className="text-xs text-yellow-600">
-                    OC {entry.orderNumber} no existe en el sistema.
-                  </p>
-                )}
-
-                {entry.status !== "error" && entry.orderNumber && entry.matches.length > 0 && entry.numberMismatch && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-destructive font-medium">
-                      El nombre dice OC {entry.orderNumber}, pero el PDF dice OC {entry.contentOrderNumber}. No se sube hasta que lo revises.
-                    </p>
-                    <button
-                      className="text-xs underline hover:text-foreground"
-                      onClick={() => toggleSelected(idx)}
-                      disabled={uploading}
-                    >
-                      {entry.selected ? "No subir de todos modos" : `Subir igual a OC ${entry.orderNumber}`}
-                    </button>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-1">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    <span className="text-sm font-medium truncate">{entry.file.name}</span>
                   </div>
-                )}
 
-                {entry.status !== "error" && entry.orderNumber && entry.matches.length > 0 && !entry.numberMismatch && (
-                  <div className="flex items-center gap-2 flex-wrap">
+                  {entry.status === "error" && (
+                    <p className="text-xs text-destructive">{entry.errorMessage || "Error al subir"}</p>
+                  )}
+
+                  {entry.status !== "error" && category === "mismatch" && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-destructive font-medium">
+                        El nombre dice OC {entry.orderNumber}, pero el PDF dice OC {entry.contentOrderNumber}. No se sube hasta que lo revises.
+                      </p>
+                      <button
+                        className="text-xs underline hover:text-foreground"
+                        onClick={() => toggleSelected(idx)}
+                        disabled={uploading}
+                      >
+                        {entry.selected ? "No subir de todos modos" : `Subir igual a OC ${entry.orderNumber}`}
+                      </button>
+                    </div>
+                  )}
+
+                  {entry.status !== "error" && category === "ready" && (
                     <p className={`text-xs ${entry.selected ? "text-green-600" : "text-muted-foreground"}`}>
                       → OC {entry.orderNumber}
                       {entry.matches.length > 1 && ` · ${entry.matches.length} contratos`}
                       {entry.contentOrderNumber === undefined && " · verificando…"}
                     </p>
-                    {entry.hasExistingAttachment && (
-                      <>
-                        <button
-                          className="text-xs text-muted-foreground underline hover:text-foreground inline-flex items-center gap-0.5"
-                          onClick={() => void openFile(entry.existingAttachmentUrl!)}
-                        >
-                          Ver PDF actual <ExternalLink className="h-3 w-3" />
-                        </button>
-                        <button
-                          className="text-xs underline hover:text-foreground"
-                          onClick={() => toggleSelected(idx)}
-                          disabled={uploading}
-                        >
-                          {entry.selected ? "No reemplazar" : "Reemplazar"}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  )}
+                </div>
+
+                {!uploading && entry.status !== "done" && (
+                  <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={() => removeEntry(idx)}>
+                    ×
+                  </Button>
                 )}
               </div>
-
-              {!uploading && entry.status !== "done" && (
-                <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0" onClick={() => removeEntry(idx)}>
-                  ×
-                </Button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="flex justify-end gap-2 pt-2 border-t">

@@ -57,6 +57,7 @@ import {
   ChevronsUpDown,
   X,
   FileText,
+  FileX,
   Receipt,
   Trash2,
   ExternalLink,
@@ -148,6 +149,7 @@ interface PurchaseOrder {
   is_multi_contract?: boolean;
   allocations?: ContractAllocation[];
   import_batch_id?: string | null;
+  attachment_url?: string | null;
 }
 
 interface OCRequest {
@@ -209,6 +211,9 @@ interface GroupedOrder {
   year: number;
   is_multi_contract: boolean;
   is_imported: boolean;
+  /** true solo si TODAS las filas del grupo tienen PDF adjunto — en una OC
+   *  multi-contrato, si falta en cualquiera, se considera incompleta. */
+  has_attachment: boolean;
   orders: PurchaseOrder[]; // Individual orders that make up this group
   contracts: { contract_id: string; contract_name: string; amount_uf: number; order_id: string }[];
 }
@@ -532,6 +537,7 @@ const PurchaseOrdersDashboard = () => {
           supplier_name,
           is_multi_contract,
           import_batch_id,
+          attachment_url,
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
@@ -1030,6 +1036,7 @@ const PurchaseOrdersDashboard = () => {
         year: firstOrder.year || yearNum,
         is_multi_contract: isMulti,
         is_imported: !!firstOrder.import_batch_id,
+        has_attachment: ordersList.every((o) => !!o.attachment_url),
         orders: ordersList,
         contracts,
       });
@@ -3016,10 +3023,14 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell
                                 className="font-medium cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => handleOpenOCViewer(groupedOrder)}
-                                title="Ver PDF de OC"
+                                title={groupedOrder.has_attachment ? "Ver PDF de OC" : "Sin PDF adjunto"}
                               >
                                 <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  {groupedOrder.has_attachment ? (
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                  ) : (
+                                    <FileX className="h-4 w-4 text-destructive" />
+                                  )}
                                   {groupedOrder.order_number}
                                   {groupedOrder.is_multi_contract && (
                                     <Badge variant="outline" className="text-[10px] gap-1">
