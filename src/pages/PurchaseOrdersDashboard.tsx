@@ -398,6 +398,7 @@ const PurchaseOrdersDashboard = () => {
   const [classificationFilter, setClassificationFilter] = useState("todos");
   const [amountFilter, setAmountFilter] = useState("todos");
   const [originFilter, setOriginFilter] = useState("todos");
+  const [attachmentFilter, setAttachmentFilter] = useState("todos");
   const [requestStatusFilter, setRequestStatusFilter] = useState("todos");
 
   // Chart-based filters
@@ -1050,9 +1051,15 @@ const PurchaseOrdersDashboard = () => {
       ? result
       : result.filter((g) => (originFilter === "importada" ? g.is_imported : !g.is_imported));
 
+    // Mismo criterio que el filtro de Origen: se aplica sobre el resultado ya
+    // agrupado, porque has_attachment también se calcula recién al agrupar.
+    const attachmentFiltered = attachmentFilter === "todos"
+      ? originFiltered
+      : originFiltered.filter((g) => (attachmentFilter === "con_pdf" ? g.has_attachment : !g.has_attachment));
+
     // Sort based on current sort state
     const dir = sortDirection === "asc" ? 1 : -1;
-    return originFiltered.sort((a, b) => {
+    return attachmentFiltered.sort((a, b) => {
       switch (sortField) {
         case "local": {
           const aName = a.contracts[0]?.contract_name || "";
@@ -1084,7 +1091,7 @@ const PurchaseOrdersDashboard = () => {
         }
       }
     });
-  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, originFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
+  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, originFilter, attachmentFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -1126,6 +1133,7 @@ const PurchaseOrdersDashboard = () => {
     setClassificationFilter("todos");
     setAmountFilter("todos");
     setOriginFilter("todos");
+    setAttachmentFilter("todos");
     setRequestStatusFilter("todos");
     setChartContractFilter(null);
     setChartCategoryFilter(null);
@@ -1138,6 +1146,7 @@ const PurchaseOrdersDashboard = () => {
     classificationFilter !== "todos" ||
     amountFilter !== "todos" ||
     originFilter !== "todos" ||
+    attachmentFilter !== "todos" ||
     requestStatusFilter !== "todos" ||
     chartContractFilter ||
     chartCategoryFilter;
@@ -2854,6 +2863,18 @@ const PurchaseOrdersDashboard = () => {
                 ]}
                 placeholder="Origen"
                 triggerClassName="w-[140px]"
+              />
+
+              <SearchableSelect
+                value={attachmentFilter}
+                onValueChange={setAttachmentFilter}
+                options={[
+                  { value: "todos", label: "Todas (PDF)" },
+                  { value: "con_pdf", label: "Con PDF" },
+                  { value: "sin_pdf", label: "Sin PDF" },
+                ]}
+                placeholder="PDF"
+                triggerClassName="w-[130px]"
               />
 
               {hasActiveFilters && (
