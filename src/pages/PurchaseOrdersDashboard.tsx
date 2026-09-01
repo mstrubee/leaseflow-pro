@@ -83,10 +83,12 @@ import {
   FileSpreadsheet,
   Wrench,
   Eye,
+  Paperclip,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
+import { OCBulkAttachDialog } from "@/components/budget/OCBulkAttachDialog";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -321,6 +323,7 @@ const PurchaseOrdersDashboard = () => {
 
   // Edit OC dialog states
   const [showEditOCDialog, setShowEditOCDialog] = useState(false);
+  const [showBulkAttachDialog, setShowBulkAttachDialog] = useState(false);
   const [editingOCData, setEditingOCData] = useState({
     order_number: "",
     description: "",
@@ -2327,6 +2330,12 @@ const PurchaseOrdersDashboard = () => {
                 <FileSpreadsheet className="h-4 w-4 mr-1" />
                 Carga Masiva de OOCC
               </Button>
+              {isAdmin && (
+                <Button variant="outline" size="sm" onClick={() => setShowBulkAttachDialog(true)}>
+                  <Paperclip className="h-4 w-4 mr-1" />
+                  Adjuntar PDFs
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
                 Expandir
@@ -4364,6 +4373,12 @@ const PurchaseOrdersDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OCBulkAttachDialog
+        open={showBulkAttachDialog}
+        onOpenChange={setShowBulkAttachDialog}
+        onComplete={loadData}
+      />
 
       {/* Edit OC Dialog */}
       <Dialog open={showEditOCDialog} onOpenChange={(o) => { if (!o) closeEditOCDialog(); }}>
