@@ -3000,7 +3000,7 @@ const PurchaseOrdersDashboard = () => {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
-                                  {isAdmin ? (
+                                  {isAdmin && groupedOrder.is_imported ? (
                                     <Select
                                       value={groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
                                       disabled={changingTypeOrderNumber === groupedOrder.order_number}
