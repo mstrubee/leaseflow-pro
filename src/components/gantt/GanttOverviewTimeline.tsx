@@ -4,7 +4,6 @@ import {
   differenceInCalendarDays,
   eachMonthOfInterval,
   endOfMonth,
-  endOfYear,
   format,
   isSameMonth,
   parseISO,
@@ -31,16 +30,16 @@ interface GanttOverviewTimelineProps {
 
 /**
  * Línea de tiempo horizontal con las fechas de término de cada proyecto con
- * carta Gantt cargada. Rango fijo: desde el 1° del mes anterior al actual
- * hasta el 31 de diciembre del año en curso — se recalcula solo con la fecha
- * de hoy, no depende de filtros de la lista de abajo.
+ * carta Gantt cargada. Ventana móvil de 12 meses: desde el 1° del mes
+ * anterior al actual hasta el mismo día 11 meses después — se recalcula solo
+ * con la fecha de hoy, no depende de filtros de la lista de abajo.
  */
 export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimelineProps) {
   const today = startOfDay(new Date());
 
   const { rangeStart, rangeEnd, months, totalDays, todayPct } = useMemo(() => {
     const start = startOfMonth(addMonths(today, -1));
-    const end = endOfYear(today);
+    const end = endOfMonth(addMonths(start, 11));
     const totalDays = differenceInCalendarDays(end, start) + 1;
     const months = eachMonthOfInterval({ start, end }).map((m) => {
       const monthStart = m < start ? start : startOfMonth(m);
@@ -87,7 +86,8 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
         <div className="flex items-center gap-2 mb-3">
           <CalendarRange className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">
-            Línea de tiempo general — términos {format(rangeEnd, "yyyy")}
+            Línea de tiempo general — términos {format(rangeStart, "MMM yyyy", { locale: es })} a{" "}
+            {format(rangeEnd, "MMM yyyy", { locale: es })}
           </span>
           <span className="text-xs text-muted-foreground ml-auto">
             {inRange.length} proyecto{inRange.length !== 1 ? "s" : ""} en el rango
@@ -176,7 +176,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
         {(before > 0 || after > 0) && (
           <div className="text-[11px] text-muted-foreground mt-1.5">
             {before > 0 && <>{before} proyecto{before !== 1 ? "s" : ""} con término anterior al rango. </>}
-            {after > 0 && <>{after} proyecto{after !== 1 ? "s" : ""} con término posterior a {format(rangeEnd, "yyyy")}.</>}
+            {after > 0 && <>{after} proyecto{after !== 1 ? "s" : ""} con término posterior a {format(rangeEnd, "MMM yyyy", { locale: es })}.</>}
           </div>
         )}
       </CardContent>
