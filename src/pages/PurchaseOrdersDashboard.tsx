@@ -387,6 +387,7 @@ const PurchaseOrdersDashboard = () => {
   const [categoryFilter, setCategoryFilter] = useState("todos");
   const [classificationFilter, setClassificationFilter] = useState("todos");
   const [amountFilter, setAmountFilter] = useState("todos");
+  const [originFilter, setOriginFilter] = useState("todos");
   const [requestStatusFilter, setRequestStatusFilter] = useState("todos");
 
   // Chart-based filters
@@ -1029,9 +1030,17 @@ const PurchaseOrdersDashboard = () => {
       });
     });
 
+    // Filtro de Origen: se aplica sobre el resultado YA agrupado, no fila por
+    // fila — is_imported se calcula recién al agrupar (una OC multi-contrato
+    // podría tener filas mezcladas), así que filtrar antes podría no
+    // coincidir con lo que la columna "Origen" muestra en pantalla.
+    const originFiltered = originFilter === "todos"
+      ? result
+      : result.filter((g) => (originFilter === "importada" ? g.is_imported : !g.is_imported));
+
     // Sort based on current sort state
     const dir = sortDirection === "asc" ? 1 : -1;
-    return result.sort((a, b) => {
+    return originFiltered.sort((a, b) => {
       switch (sortField) {
         case "local": {
           const aName = a.contracts[0]?.contract_name || "";
@@ -1063,7 +1072,7 @@ const PurchaseOrdersDashboard = () => {
         }
       }
     });
-  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
+  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, originFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -1104,6 +1113,7 @@ const PurchaseOrdersDashboard = () => {
     setCategoryFilter("todos");
     setClassificationFilter("todos");
     setAmountFilter("todos");
+    setOriginFilter("todos");
     setRequestStatusFilter("todos");
     setChartContractFilter(null);
     setChartCategoryFilter(null);
@@ -1115,6 +1125,7 @@ const PurchaseOrdersDashboard = () => {
     categoryFilter !== "todos" ||
     classificationFilter !== "todos" ||
     amountFilter !== "todos" ||
+    originFilter !== "todos" ||
     requestStatusFilter !== "todos" ||
     chartContractFilter ||
     chartCategoryFilter;
@@ -2821,6 +2832,18 @@ const PurchaseOrdersDashboard = () => {
                 triggerClassName="w-[150px]"
               />
 
+              <SearchableSelect
+                value={originFilter}
+                onValueChange={setOriginFilter}
+                options={[
+                  { value: "todos", label: "Todos los orígenes" },
+                  { value: "importada", label: "Importada (I)" },
+                  { value: "digitada", label: "Digitada (D)" },
+                ]}
+                placeholder="Origen"
+                triggerClassName="w-[140px]"
+              />
+
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X className="h-4 w-4 mr-1" />
@@ -3108,7 +3131,7 @@ const PurchaseOrdersDashboard = () => {
                                 {groupedOrder.is_imported ? (
                                   <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px] px-1.5 font-mono" title="Importada desde Excel">I</Badge>
                                 ) : (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 font-mono text-muted-foreground" title="Digitada manualmente">D</Badge>
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 text-[10px] px-1.5 font-mono" title="Digitada manualmente">D</Badge>
                                 )}
                               </TableCell>
                               <TableCell>
