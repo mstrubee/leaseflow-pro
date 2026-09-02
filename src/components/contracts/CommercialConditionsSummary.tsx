@@ -218,6 +218,15 @@ export function CommercialConditionsSummary({
     return "";
   };
 
+  // Compact UF/m² (or $/m²) label, used by the Total Arriendo Actual/Promedio columns
+  const formatPerM2 = (amount: number) => {
+    if (!superficieEdificadaLocal || superficieEdificadaLocal <= 0) return null;
+    const perM2 = amount / superficieEdificadaLocal;
+    return displayCurrency === "CLP"
+      ? `$${Math.round(perM2).toLocaleString("es-CL")}/m²`
+      : `${perM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`;
+  };
+
   // Secondary format for guarantee - always uses historical UF from signed date
   const formatSecondaryGuarantee = (amount: number) => {
     if (displayCurrency === "CLP") {
@@ -662,14 +671,18 @@ export function CommercialConditionsSummary({
     return periods;
   }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
 
-  // Weighted average total arriendo across all escalation periods
+  // Weighted average total arriendo across all escalation periods. El
+  // fallback de 1 período usa escalationPeriods[0].total (canon real, sin
+  // gracia) y no totalArriendo (snapshot de HOY, 0 durante la gracia) --
+  // mismo motivo que el fix de escalationPeriods: un contrato sin
+  // escalonamiento en gracia debe promediar el arriendo real, no $0.
   const totalArriendoPromedio = useMemo(() => {
-    if (escalationPeriods.length <= 1) return totalArriendo;
+    if (escalationPeriods.length <= 1) return escalationPeriods[0]?.total ?? totalArriendo;
     const durationMonths = version.duration_months;
-    if (durationMonths <= 0) return totalArriendo;
+    if (durationMonths <= 0) return escalationPeriods[0]?.total ?? totalArriendo;
     const graceMonths = version.grace_months || 0;
     const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
-    
+
     let weightedSum = 0;
     for (const p of escalationPeriods) {
       const match = p.label.match(/M(\d+)-M(\d+)/);
@@ -678,10 +691,10 @@ export function CommercialConditionsSummary({
         weightedSum += p.total * months;
       }
     }
-    
+
     const totalMonths = durationMonths - (initialStart - 1);
-    return totalMonths > 0 ? weightedSum / totalMonths : totalArriendo;
-  }, [hasEscalations, escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
+    return totalMonths > 0 ? weightedSum / totalMonths : (escalationPeriods[0]?.total ?? totalArriendo);
+  }, [escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
 
   // Calculate guarantee amount based on type
   const guaranteeAmount = useMemo(() => {
@@ -779,20 +792,26 @@ export function CommercialConditionsSummary({
     doc.text("Detalle Total Arriendo", pageWidth / 2, y, { align: "center" });
     y += 10;
 
-    // Summary
+    // Summary: Actual (mes en curso, sujeto a gracia) y Promedio, igual que en pantalla
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    const pdfDisplayTotal = hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
-    const totalLabel = hasEscalations && escalationPeriods.length > 1
-      ? `Total Arriendo Promedio: ${formatPrimary(pdfDisplayTotal)}`
-      : `Total Arriendo: ${formatPrimary(pdfDisplayTotal)}`;
-    doc.text(totalLabel, 14, y);
+    doc.text(`Total Arriendo Actual: ${formatPrimary(totalArriendo)}`, 14, y);
     y += 5;
-    
-    if (superficieEdificadaLocal && superficieEdificadaLocal > 0) {
+    if (formatPerM2(totalArriendo)) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text(`(${(pdfDisplayTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`, 14, y);
+      doc.text(`(${formatPerM2(totalArriendo)})`, 14, y);
+      y += 5;
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(`Total Arriendo Promedio: ${formatPrimary(totalArriendoPromedio)}`, 14, y);
+    y += 5;
+    if (formatPerM2(totalArriendoPromedio)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`(${formatPerM2(totalArriendoPromedio)})`, 14, y);
       y += 5;
     }
 
@@ -967,31 +986,33 @@ export function CommercialConditionsSummary({
             </Badge>
           </div>
 
-          {/* Total Arriendo */}
+          {/* Total Arriendo: Actual (mes en curso, sujeto a gracia) vs. Promedio (representativo del contrato) en 2 columnas */}
           <div className="space-y-1 col-span-2 md:col-span-1 bg-primary/5 rounded-lg p-3 -m-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              {escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
-            </div>
-            <p className="text-lg font-bold text-primary">
-              {formatPrimary(escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
-            </p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {(() => {
-                const displayTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
-                return (
-                  <>
-                    <span>{formatSecondary(displayTotal)}</span>
-                    {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
-                      <span>
-                        ({displayCurrency === "CLP" 
-                          ? `$${Math.round(displayTotal / superficieEdificadaLocal).toLocaleString("es-CL")}/m²` 
-                          : `${(displayTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`})
-                      </span>
-                    )}
-                  </>
-                );
-              })()}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <DollarSign className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Total Arriendo Actual</span>
+                </div>
+                <p className="text-base font-bold text-primary leading-tight truncate">
+                  {formatPrimary(totalArriendo)}
+                </p>
+                {formatPerM2(totalArriendo) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatPerM2(totalArriendo)}</p>
+                )}
+              </div>
+              <div className="min-w-0 border-l border-border/50 pl-2">
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <DollarSign className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Total Arriendo Promedio</span>
+                </div>
+                <p className="text-base font-bold text-primary leading-tight truncate">
+                  {formatPrimary(totalArriendoPromedio)}
+                </p>
+                {formatPerM2(totalArriendoPromedio) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatPerM2(totalArriendoPromedio)}</p>
+                )}
+              </div>
             </div>
             {/* Composición colapsable */}
             <div className="flex items-center justify-between pt-1 border-t border-border/50">
