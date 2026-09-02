@@ -4177,6 +4177,7 @@ export type Database = {
       }
       oc_payment_plans: {
         Row: {
+          amount_clp: number | null
           amount_uf: number
           created_at: string
           description: string | null
@@ -4190,6 +4191,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          amount_clp?: number | null
           amount_uf?: number
           created_at?: string
           description?: string | null
@@ -4203,6 +4205,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          amount_clp?: number | null
           amount_uf?: number
           created_at?: string
           description?: string | null
@@ -4452,6 +4455,7 @@ export type Database = {
           input_currency: string | null
           is_multi_contract: boolean | null
           line_name: string
+          migo_choice: string | null
           opex_master_id: string | null
           project_name: string
           purchase_order_id: string | null
@@ -4459,6 +4463,7 @@ export type Database = {
           quotation_url: string | null
           request_date: string
           request_number: string
+          sequence_number: number | null
           status: string
           supplier_id: string | null
           supplier_name: string | null
@@ -4480,6 +4485,7 @@ export type Database = {
           input_currency?: string | null
           is_multi_contract?: boolean | null
           line_name: string
+          migo_choice?: string | null
           opex_master_id?: string | null
           project_name: string
           purchase_order_id?: string | null
@@ -4487,6 +4493,7 @@ export type Database = {
           quotation_url?: string | null
           request_date?: string
           request_number: string
+          sequence_number?: number | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
@@ -4508,6 +4515,7 @@ export type Database = {
           input_currency?: string | null
           is_multi_contract?: boolean | null
           line_name?: string
+          migo_choice?: string | null
           opex_master_id?: string | null
           project_name?: string
           purchase_order_id?: string | null
@@ -4515,6 +4523,7 @@ export type Database = {
           quotation_url?: string | null
           request_date?: string
           request_number?: string
+          sequence_number?: number | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null

@@ -225,6 +225,7 @@ export const CentralizedOrderCreator = ({
   const [activeTab, setActiveTab] = useState("basic");
   const [loading, setLoading] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [opexMasterLines, setOpexMasterLines] = useState<OpexMasterLine[]>([]);
@@ -852,6 +853,7 @@ export const CentralizedOrderCreator = ({
             payment_number: idx + 1,
             description: p.description,
             amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            amount_clp: Math.round(p.amountClp),
             due_date: p.dueDate,
             status: "pending"
           }));
@@ -863,11 +865,12 @@ export const CentralizedOrderCreator = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: totalAmountClp,
             due_date: null,
             status: "pending"
           });
         }
-        
+
         toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
 
         setShareData({
@@ -884,7 +887,9 @@ export const CentralizedOrderCreator = ({
           totalAmountClp,
           payments: resolvedPayments,
           supplierName: formData.supplier_name,
+          sequenceNumber: requestData?.sequence_number,
         });
+        setShareRequestId(requestData?.id);
       } else {
         // El disponible por línea es real: nunca se puede asignar a una línea
         // más de lo que le queda disponible (autorizado - ya consumido). Se
@@ -1756,6 +1761,7 @@ export const CentralizedOrderCreator = ({
       open={!!shareData}
       onOpenChange={(o) => { if (!o) setShareData(null); }}
       data={shareData}
+      requestId={shareRequestId}
     />
     </>
   );

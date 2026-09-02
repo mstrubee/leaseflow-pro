@@ -77,6 +77,7 @@ export const OCRequestDialog = ({
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [templateFileName, setTemplateName] = useState<string | null>(null);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const { toast } = useToast();
 
   // Load active template
@@ -273,6 +274,7 @@ export const OCRequestDialog = ({
             payment_number: idx + 1,
             description: p.description,
             amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            amount_clp: Math.round(p.amountClp),
             due_date: p.dueDate,
             status: "pending"
           }));
@@ -284,6 +286,7 @@ export const OCRequestDialog = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: amountClp,
             due_date: null,
             status: "pending"
           });
@@ -310,7 +313,9 @@ export const OCRequestDialog = ({
         totalAmountClp: amountClp,
         payments: resolvedPayments,
         supplierName: form.supplier_name,
+        sequenceNumber: requestData?.sequence_number,
       });
+      setShareRequestId(requestData?.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -620,6 +625,7 @@ export const OCRequestDialog = ({
       open={!!shareData}
       onOpenChange={(o) => { if (!o) setShareData(null); }}
       data={shareData}
+      requestId={shareRequestId}
     />
     </>
   );

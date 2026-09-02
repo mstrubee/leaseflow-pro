@@ -23,7 +23,9 @@ import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatCLP } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarWidget } from "@/components/ui/calendar";
+import { formatCLP, cn } from "@/lib/utils";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData } from "@/lib/ocRequestShare";
@@ -48,6 +50,8 @@ interface OCRequest {
   quotation_url?: string | null;
   quotation_file_name?: string | null;
   uf_value_at_entry?: number;
+  migo_choice?: "con" | "sin" | null;
+  sequence_number?: number | null;
 }
 
 interface EditableLine {
@@ -110,6 +114,7 @@ interface PaymentPlan {
   payment_number: number;
   description: string | null;
   amount_uf: number;
+  amount_clp: number | null;
   due_date: string | null;
   status: "pending" | "paid" | "overdue";
   paid_date: string | null;
@@ -132,6 +137,12 @@ const getEffectiveUf = (request: OCRequest | null, fallbackUf: number) =>
 // Helper: convert UF to CLP using request's locked UF
 const ufToClp = (uf: number, request: OCRequest | null, fallbackUf: number) =>
   Math.round(uf * getEffectiveUf(request, fallbackUf));
+
+// Helper: CLP de un pago. Usa el monto en CLP guardado directamente si existe
+// (evita el redondeo de ida y vuelta por UF, que podía perder $1 o más);
+// pagos antiguos sin amount_clp caen al cálculo vía UF como antes.
+const paymentClp = (plan: PaymentPlan, request: OCRequest | null, fallbackUf: number) =>
+  plan.amount_clp ?? ufToClp(plan.amount_uf, request, fallbackUf);
 
 export const OCRequestViewDialog = ({
   open,
@@ -678,10 +689,12 @@ export const OCRequestViewDialog = ({
         totalAmountClp: request.amount_clp || Math.round(request.amount_uf * effectiveUf),
         payments: paymentPlans.map((p) => ({
           description: p.description || "Pago",
-          amountClp: Math.round(ufToClp(p.amount_uf, request, ufValue)),
+          amountClp: paymentClp(p, request, ufValue),
           dueDate: p.due_date,
         })),
         supplierName,
+        sequenceNumber: request.sequence_number,
+        migoChoice: request.migo_choice,
       });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -759,6 +772,7 @@ export const OCRequestViewDialog = ({
         payment_number: nextNumber,
         description: newPayment.description || `Pago ${nextNumber}`,
         amount_uf: Math.round(amountUf * 10000) / 10000,
+        amount_clp: Math.round(amountClp),
         due_date: newPayment.due_date || null,
         status: "pending"
       });
@@ -791,7 +805,7 @@ export const OCRequestViewDialog = ({
     setEditingPaymentId(plan.id);
     setEditingPaymentField(field);
     if (field === "amount") {
-      setEditingPaymentValue(String(ufToClp(plan.amount_uf, request, ufValue)));
+      setEditingPaymentValue(String(paymentClp(plan, request, ufValue)));
     } else {
       setEditingPaymentValue(plan.description || "");
     }
@@ -817,7 +831,7 @@ export const OCRequestViewDialog = ({
         const amountUf = amountClp / effectiveUf;
         await supabase
           .from("oc_payment_plans")
-          .update({ amount_uf: Math.round(amountUf * 10000) / 10000 })
+          .update({ amount_uf: Math.round(amountUf * 10000) / 10000, amount_clp: Math.round(amountClp) })
           .eq("id", editingPaymentId);
       } else {
         await supabase
@@ -859,8 +873,8 @@ export const OCRequestViewDialog = ({
 
   // All CLP-based calculations
   const effectiveUfVal = getEffectiveUf(request, ufValue);
-  const totalPlannedClp = paymentPlans.reduce((sum, p) => sum + ufToClp(p.amount_uf, request, ufValue), 0);
-  const totalPaidClp = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + ufToClp(p.amount_uf, request, ufValue), 0);
+  const totalPlannedClp = paymentPlans.reduce((sum, p) => sum + paymentClp(p, request, ufValue), 0);
+  const totalPaidClp = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + paymentClp(p, request, ufValue), 0);
   const totalRequestClp = request?.amount_clp || ufToClp(request?.amount_uf || 0, request, ufValue);
   const remainingClp = totalRequestClp - totalPlannedClp;
 
@@ -886,8 +900,18 @@ export const OCRequestViewDialog = ({
               </Badge>
             )}
           </DialogTitle>
-          <DialogDescription>
-            {request?.request_number}
+          <DialogDescription className="flex items-center gap-2 flex-wrap">
+            <span>{request?.request_number}</span>
+            {request?.sequence_number != null && (
+              <Badge variant="outline" className="text-xs font-mono">
+                N° {String(request.sequence_number).padStart(6, "0")}
+              </Badge>
+            )}
+            {request && (
+              <Badge variant="secondary" className="text-xs">
+                {request.migo_choice === "con" ? "Con Migo" : request.migo_choice === "sin" ? "Sin Migo" : "Sin definir"}
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -1560,7 +1584,7 @@ export const OCRequestViewDialog = ({
                               />
                             ) : (
                               <div className="flex flex-col items-end">
-                                <span>{formatCLP(ufToClp(plan.amount_uf, request, ufValue))}</span>
+                                <span>{formatCLP(paymentClp(plan, request, ufValue))}</span>
                                 <span className="text-[10px] text-muted-foreground">{formatUF(plan.amount_uf)}</span>
                               </div>
                             )}
@@ -1671,16 +1695,38 @@ export const OCRequestViewDialog = ({
                     </div>
                     <div className="col-span-2 space-y-1">
                       <Label className="text-xs">Vencimiento</Label>
-                      <Input
-                        type="date"
-                        value={newPayment.due_date}
-                        onChange={(e) => setNewPayment(prev => ({ ...prev, due_date: e.target.value }))}
-                      />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className={cn(
+                              "w-full h-9 justify-start text-left font-normal px-2 text-xs",
+                              !newPayment.due_date && "text-muted-foreground"
+                            )}
+                          >
+                            <Calendar className="mr-1 h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">
+                              {newPayment.due_date
+                                ? format(new Date(`${newPayment.due_date}T00:00:00`), "dd/MM/yyyy", { locale: es })
+                                : "Fecha"}
+                            </span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarWidget
+                            mode="single"
+                            selected={newPayment.due_date ? new Date(`${newPayment.due_date}T00:00:00`) : undefined}
+                            onSelect={(date) => setNewPayment(prev => ({ ...prev, due_date: date ? format(date, "yyyy-MM-dd") : "" }))}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div className="col-span-2 flex items-end">
-                      <Button 
-                        size="sm" 
-                        onClick={handleAddPayment} 
+                      <Button
+                        size="sm"
+                        onClick={handleAddPayment}
                         disabled={addingPayment}
                         className="w-full gap-1"
                       >

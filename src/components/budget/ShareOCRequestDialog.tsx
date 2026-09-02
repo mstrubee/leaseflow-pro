@@ -36,6 +36,8 @@ interface ShareOCRequestDialogProps {
   data: OCRequestShareData | null;
   /** false = no pide elegir Con Migo/Sin Migo (uso en Ver/Editar Solicitud, ya se eligió al crearla). Default true. */
   requireMigoChoice?: boolean;
+  /** id en oc_requests — con requireMigoChoice se usa para persistir la elección apenas se hace. */
+  requestId?: string;
 }
 
 /**
@@ -55,7 +57,7 @@ interface ShareOCRequestDialogProps {
  */
 type MigoChoice = "con" | "sin" | null;
 
-export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoice = true }: ShareOCRequestDialogProps) {
+export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoice = true, requestId }: ShareOCRequestDialogProps) {
   const [recipientEmail, setRecipientEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -71,8 +73,23 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
     onOpenChange(isOpen);
   };
 
+  const handleMigoChoice = (choice: "con" | "sin") => {
+    setMigoChoice(choice);
+    if (requestId) {
+      supabase.from("oc_requests").update({ migo_choice: choice }).eq("id", requestId)
+        .then(({ error }) => {
+          if (error) console.error("Error al guardar Con Migo/Sin Migo:", error);
+        });
+    }
+  };
+
+  const shareData = (): OCRequestShareData => ({
+    ...data!,
+    migoChoice: requireMigoChoice ? migoChoice : data!.migoChoice,
+  });
+
   const buildBlob = (): Blob => {
-    const doc = buildOCRequestPdf(data!);
+    const doc = buildOCRequestPdf(shareData());
     return doc.output("blob");
   };
 
@@ -175,7 +192,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
               <Button
                 type="button"
                 variant={migoChoice === "con" ? "default" : "outline"}
-                onClick={() => setMigoChoice("con")}
+                onClick={() => handleMigoChoice("con")}
                 disabled={busy}
                 className="flex-1"
               >
@@ -184,7 +201,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
               <Button
                 type="button"
                 variant={migoChoice === "sin" ? "default" : "outline"}
-                onClick={() => setMigoChoice("sin")}
+                onClick={() => handleMigoChoice("sin")}
                 disabled={busy}
                 className="flex-1"
               >

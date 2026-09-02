@@ -123,6 +123,7 @@ export const OCRequestsList = ({
   });
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
@@ -605,14 +606,16 @@ export const OCRequestsList = ({
             .filter(p => parseFloat(p.amount) > 0)
             .map((p, idx) => {
               const pAmount = parseFloat(p.amount);
-              const amountUf = inputCurrency === "CLP" && currentUfValue > 0 
-                ? Math.round((pAmount / currentUfValue) * 10000) / 10000 
+              const amountUf = inputCurrency === "CLP" && currentUfValue > 0
+                ? Math.round((pAmount / currentUfValue) * 10000) / 10000
                 : pAmount;
+              const amountClp = inputCurrency === "CLP" ? Math.round(pAmount) : Math.round(pAmount * currentUfValue);
               return {
                 oc_request_id: requestData.id,
                 payment_number: idx + 1,
                 description: p.description || `Pago ${idx + 1}`,
                 amount_uf: amountUf,
+                amount_clp: amountClp,
                 due_date: p.due_date || null,
                 status: "pending"
               };
@@ -627,6 +630,7 @@ export const OCRequestsList = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: totalAmountClp,
             due_date: null,
             status: "pending"
           });
@@ -648,6 +652,7 @@ export const OCRequestsList = ({
           amountClp: Math.round(l.amount * currentUfValue),
         })),
         totalAmountClp,
+        sequenceNumber: requestData?.sequence_number,
         payments: paymentPlan
           .filter((p) => parseFloat(p.amount) > 0)
           .map((p) => ({
@@ -659,6 +664,7 @@ export const OCRequestsList = ({
           })),
         supplierName: newRequestForm.supplier_name,
       });
+      setShareRequestId(requestData?.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -1419,6 +1425,7 @@ export const OCRequestsList = ({
         open={!!shareData}
         onOpenChange={(o) => { if (!o) setShareData(null); }}
         data={shareData}
+        requestId={shareRequestId}
       />
     </div>
   );

@@ -32,6 +32,21 @@ export interface OCRequestShareData {
   payments: OCRequestSharePayment[];
   supplierName?: string | null;
   requestedBy?: string | null;
+  /** Correlativo global, independiente de dónde se creó la solicitud (oc_requests.sequence_number). */
+  sequenceNumber?: number | null;
+  /** Elegido al compartir la solicitud recién creada. */
+  migoChoice?: "con" | "sin" | null;
+}
+
+function fmtSequenceNumber(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  return String(n).padStart(6, "0");
+}
+
+function fmtMigoChoice(choice: "con" | "sin" | null | undefined): string {
+  if (choice === "con") return "Con Migo";
+  if (choice === "sin") return "Sin Migo";
+  return "—";
 }
 
 function fmtClp(n: number): string {
@@ -72,8 +87,10 @@ export function buildOCRequestPdf(data: OCRequestShareData): jsPDF {
   doc.setTextColor(0, 0, 0);
 
   const headerRows: [string, string][] = [
+    ["N° SOLICITUD", fmtSequenceNumber(data.sequenceNumber)],
     ["FECHA", fmtDate(data.requestDate)],
     ["MONEDA", data.currency],
+    ["MIGO", fmtMigoChoice(data.migoChoice)],
     ["CONTRATO(S)", data.contractNames.join(", ") || "—"],
   ];
   if (data.supplierName) headerRows.push(["PROVEEDOR", data.supplierName]);
@@ -85,8 +102,8 @@ export function buildOCRequestPdf(data: OCRequestShareData): jsPDF {
     theme: "grid",
     styles: { fontSize: 10, cellPadding: 4 },
     columnStyles: {
-      0: { cellWidth: 35, fontStyle: "bold", fillColor: [240, 240, 240] },
-      1: { cellWidth: pageW - 63 },
+      0: { cellWidth: 40, fontStyle: "bold", fillColor: [240, 240, 240] },
+      1: { cellWidth: pageW - 68 },
     },
   });
 
@@ -103,8 +120,8 @@ export function buildOCRequestPdf(data: OCRequestShareData): jsPDF {
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4, minCellHeight: 20 },
     columnStyles: {
-      0: { cellWidth: 35, fontStyle: "bold", fillColor: [240, 240, 240], valign: "top" },
-      1: { cellWidth: pageW - 63 },
+      0: { cellWidth: 40, fontStyle: "bold", fillColor: [240, 240, 240], valign: "top" },
+      1: { cellWidth: pageW - 68 },
     },
   });
 
