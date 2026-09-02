@@ -34,6 +34,8 @@ interface ShareOCRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: OCRequestShareData | null;
+  /** false = no pide elegir Con Migo/Sin Migo (uso en Ver/Editar Solicitud, ya se eligió al crearla). Default true. */
+  requireMigoChoice?: boolean;
 }
 
 /**
@@ -53,7 +55,7 @@ interface ShareOCRequestDialogProps {
  */
 type MigoChoice = "con" | "sin" | null;
 
-export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCRequestDialogProps) {
+export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoice = true }: ShareOCRequestDialogProps) {
   const [recipientEmail, setRecipientEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -141,7 +143,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCReques
   };
 
   const busy = sending || downloading;
-  const actionsDisabled = busy || migoChoice === null;
+  const actionsDisabled = busy || (requireMigoChoice && migoChoice === null);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -166,34 +168,36 @@ export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCReques
           </p>
         </div>
 
-        <div className="space-y-2">
-          <Label>Migo</Label>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={migoChoice === "con" ? "default" : "outline"}
-              onClick={() => setMigoChoice("con")}
-              disabled={busy}
-              className="flex-1"
-            >
-              Con Migo
-            </Button>
-            <Button
-              type="button"
-              variant={migoChoice === "sin" ? "default" : "outline"}
-              onClick={() => setMigoChoice("sin")}
-              disabled={busy}
-              className="flex-1"
-            >
-              Sin Migo
-            </Button>
+        {requireMigoChoice && (
+          <div className="space-y-2">
+            <Label>Migo</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={migoChoice === "con" ? "default" : "outline"}
+                onClick={() => setMigoChoice("con")}
+                disabled={busy}
+                className="flex-1"
+              >
+                Con Migo
+              </Button>
+              <Button
+                type="button"
+                variant={migoChoice === "sin" ? "default" : "outline"}
+                onClick={() => setMigoChoice("sin")}
+                disabled={busy}
+                className="flex-1"
+              >
+                Sin Migo
+              </Button>
+            </div>
+            {migoChoice === null && (
+              <p className="text-xs text-muted-foreground">
+                Elige una opción para habilitar la descarga o el envío.
+              </p>
+            )}
           </div>
-          {migoChoice === null && (
-            <p className="text-xs text-muted-foreground">
-              Elige una opción para habilitar la descarga o el envío.
-            </p>
-          )}
-        </div>
+        )}
 
         <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-2">
           <Button

@@ -25,6 +25,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCLP } from "@/lib/utils";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData } from "@/lib/ocRequestShare";
 
 interface OCRequest {
   id: string;
@@ -160,6 +162,7 @@ export const OCRequestViewDialog = ({
   const [description, setDescription] = useState("");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   
   // New payment form
   const [newPayment, setNewPayment] = useState({ description: "", amount: "", due_date: "", input_mode: "clp" as "clp" | "percent" | "balance" });
@@ -654,9 +657,32 @@ export const OCRequestViewDialog = ({
         .eq("id", request.id);
       
       if (error) throw error;
-      
+
       toast({ title: "Solicitud actualizada" });
       onRefresh?.();
+
+      // Se ofrece descargar/enviar de nuevo con los datos ya actualizados —
+      // igual que al crearla, pero sin pedir Con Migo/Sin Migo otra vez.
+      const effectiveUf = getEffectiveUf(request, ufValue);
+      setShareData({
+        requestDate: request.request_date,
+        currency: "CLP",
+        contractNames: contractAllocations.length > 0
+          ? contractAllocations.map((a) => a.contract_name)
+          : [request.project_name].filter(Boolean),
+        description,
+        lines: budgetLines.map((l) => ({
+          lineName: l.line_name || "Línea",
+          amountClp: Math.round(l.amount_uf * effectiveUf),
+        })),
+        totalAmountClp: request.amount_clp || Math.round(request.amount_uf * effectiveUf),
+        payments: paymentPlans.map((p) => ({
+          description: p.description || "Pago",
+          amountClp: Math.round(ufToClp(p.amount_uf, request, ufValue)),
+          dueDate: p.due_date,
+        })),
+        supplierName,
+      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -1704,6 +1730,13 @@ export const OCRequestViewDialog = ({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+      requireMigoChoice={false}
+    />
     </>
   );
 };
