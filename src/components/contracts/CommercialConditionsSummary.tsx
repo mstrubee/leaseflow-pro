@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight, RefreshCw, Download } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight, RefreshCw, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logosHeader from "@/assets/logos-header.png";
 import { CompactEscalationChart } from "./CompactEscalationChart";
@@ -746,6 +746,51 @@ export function CommercialConditionsSummary({
     [escalationPeriods],
   );
 
+  // Cronograma para el PDF de "Resumen del Contrato": igual que
+  // escalationPeriods (cada fila = valor mensual vigente en ese rango, ya
+  // sea gracia o pago), pero separando el Mes 1 en su propia fila
+  // prorrateada por día cuando el contrato no arranca el día 1 del mes --
+  // ej. inicio el 16: Mes 1 solo cubre 16 días de N, Mes 2 en adelante ya
+  // es un mes completo. El prorrateo aplica a cualquier cargo vigente ese
+  // mes (canon si no hay gracia, o GGCC si la gracia lo incluye).
+  const paymentSchedule = useMemo(() => {
+    if (!dates?.startDate || escalationPeriods.length === 0) return escalationPeriods;
+    const startDay = dates.startDate.getDate();
+    if (startDay <= 1) return escalationPeriods;
+
+    const daysInStartMonth = new Date(dates.startDate.getFullYear(), dates.startDate.getMonth() + 1, 0).getDate();
+    const daysRemaining = daysInStartMonth - startDay + 1;
+    const factor = daysRemaining / daysInStartMonth;
+
+    const [first, ...rest] = escalationPeriods;
+    const range = parsePeriodMonthRange(first.label);
+    if (!range) return escalationPeriods;
+
+    const graceSuffix = first.isGrace ? " (Gracia)" : "";
+    const prorated = {
+      ...first,
+      label: `Mes 1 (parcial, ${daysRemaining} de ${daysInStartMonth} días)${graceSuffix}`,
+      canon: first.canon * factor,
+      ggcc: first.ggcc * factor,
+      fProm: first.fProm * factor,
+      otros: first.otros * factor,
+      total: first.total * factor,
+      ufM2: first.ufM2 !== null ? first.ufM2 * factor : null,
+    };
+
+    if (range.end === range.start) {
+      // El primer tramo era solo el mes 1: queda reemplazado por la fila prorrateada
+      return [prorated, ...rest];
+    }
+
+    const remainderLabel = (range.start + 1) === range.end
+      ? `M${range.start + 1}${graceSuffix}`
+      : `M${range.start + 1}-M${range.end}${graceSuffix}`;
+    const remainder = { ...first, label: remainderLabel };
+
+    return [prorated, remainder, ...rest];
+  }, [escalationPeriods, dates?.startDate]);
+
   // Weighted average total arriendo across paying periods (excluye la fila
   // de gracia). El fallback de 1 período usa payingPeriods[0].total (canon
   // real, sin gracia) y no totalArriendo (snapshot de HOY, 0 durante la
@@ -943,6 +988,151 @@ export function CommercialConditionsSummary({
     doc.save("total-arriendo.pdf");
   };
 
+  // PDF export: resumen completo del contrato (fechas, garantía, cronograma
+  // de pagos con el mes 1 prorrateado por día, y gastos de entrada aparte).
+  const handleDownloadContractSummaryPDF = async () => {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 10;
+
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, "PNG", 14, y, 50, 20);
+    } catch {}
+    y += 25;
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Resumen del Contrato", pageWidth / 2, y, { align: "center" });
+    y += 10;
+
+    // Fechas y plazos
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Fechas y Plazos", 14, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+
+    const dateLines: string[] = [];
+    if (signedDate) dateLines.push(`Fecha Firma: ${format(parseISO(signedDate), "dd MMM yyyy", { locale: es })}`);
+    if (dates?.startDate) dateLines.push(`Fecha Inicio: ${formatDateShort(dates.startDate)}`);
+    if (dates?.paymentStartDate) {
+      const graceNote = (version.grace_months || 0) > 0 ? ` (tras ${version.grace_months} ${version.grace_months === 1 ? "mes" : "meses"} de gracia)` : "";
+      dateLines.push(`Inicio Pago Arriendo: ${formatDateShort(dates.paymentStartDate)}${graceNote}`);
+    }
+    if (dates?.endDate) dateLines.push(`Fecha Término: ${formatDateShort(dates.endDate)} (${version.duration_months} meses)`);
+    if (version.auto_renewal) {
+      dateLines.push(`Renovación Automática: ${version.auto_renewal_months ? `${version.auto_renewal_months} meses` : "sin plazo definido"} (${version.auto_renewal_type === "bilateral" ? "Bilateral" : "Unilateral GP"})`);
+    }
+    if (dates?.noticeDate) dateLines.push(`Fecha Tope Aviso: ${formatDateShort(dates.noticeDate)}`);
+
+    for (const line of dateLines) {
+      doc.text(line, 14, y);
+      y += 4.5;
+    }
+    y += 3;
+
+    // Garantía
+    if (guaranteeAmount !== null) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Garantía", 14, y);
+      y += 5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const guaranteeDesc = guaranteeType === "avg_rent"
+        ? `${version.guarantee_multiplier}x canon promedio`
+        : guaranteeType === "multiplier"
+          ? `${version.guarantee_multiplier}x canon`
+          : `monto fijo en ${version.guarantee_fixed_currency === "CLP" ? "$" : "UF"}`;
+      doc.text(`${formatPrimary(guaranteeAmount)} (${guaranteeDesc})`, 14, y);
+      y += 7;
+    }
+
+    // Cronograma de pagos (mes 1 prorrateado por día si el inicio no es el día 1)
+    if (paymentSchedule.length > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Cronograma de Pagos", 14, y);
+      y += 4;
+
+      const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
+      const hasAnyGGCC = paymentSchedule.some(p => p.ggcc > 0);
+      const hasAnyFProm = paymentSchedule.some(p => p.fProm > 0);
+      const hasAnyOtros = paymentSchedule.some(p => p.otros > 0);
+
+      const schedHead: string[] = ["Periodo", "Canon"];
+      if (hasAnyGGCC) schedHead.push("GGCC");
+      if (hasAnyFProm) schedHead.push("F.Prom");
+      if (hasAnyOtros) schedHead.push("Otros");
+      schedHead.push("Total");
+      if (hasSurface) schedHead.push("UF/m²");
+
+      const fmt2 = (v: number) => v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
+
+      const schedBody = paymentSchedule.map(p => {
+        const row: string[] = [p.label, fmt2(p.canon)];
+        if (hasAnyGGCC) row.push(p.ggcc > 0 ? fmt2(p.ggcc) : "-");
+        if (hasAnyFProm) row.push(p.fProm > 0 ? fmt2(p.fProm) : "-");
+        if (hasAnyOtros) row.push(p.otros > 0 ? fmt2(p.otros) : "-");
+        row.push(fmt2(p.total));
+        if (hasSurface) row.push(fmt3(p.ufM2));
+        return row;
+      });
+
+      const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify" }>> = {};
+      for (let i = 0; i < schedHead.length; i++) {
+        schedColStyles[i.toString()] = { halign: i === 0 ? "left" : "right" };
+      }
+
+      autoTable(doc, {
+        startY: y,
+        head: [schedHead],
+        body: schedBody,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
+        columnStyles: schedColStyles,
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    }
+
+    // Gastos de Entrada -- aparte, son un pago único al inicio, no parte del cronograma mensual
+    if (entryExpenses.length > 0) {
+      if (y > 260) { doc.addPage(); y = 14; }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(`Gastos de Entrada (pago único): ${formatPrimary(entryExpensesTotal)}`, 14, y);
+      y += 4;
+
+      const entryBody = entryExpenses.map(e => [
+        e.name + (e.description ? ` (${e.description})` : ""),
+        e.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      ]);
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Concepto", "Monto"]],
+        body: entryBody,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
+        columnStyles: { "0": { halign: "left" }, "1": { halign: "right" } },
+        margin: { left: 14, right: 14 },
+      });
+    }
+
+    doc.save("resumen-contrato.pdf");
+  };
+
   return <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
@@ -1127,19 +1317,34 @@ export function CommercialConditionsSummary({
                   {totalArriendoExpanded ? "Ocultar detalle" : "Ver detalle"}
                 </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDownloadTotalArriendoPDF();
-                }}
-                title="Descargar PDF"
-              >
-                <Download className="h-3 w-3 text-muted-foreground" />
-              </Button>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDownloadTotalArriendoPDF();
+                  }}
+                  title="Descargar PDF (Total Arriendo)"
+                >
+                  <Download className="h-3 w-3 text-muted-foreground" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDownloadContractSummaryPDF();
+                  }}
+                  title="Descargar Resumen del Contrato"
+                >
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              </div>
             </div>
             {totalArriendoExpanded && (
               <div className="text-[10px] text-muted-foreground space-y-0.5 animate-in slide-in-from-top-1 duration-200">
