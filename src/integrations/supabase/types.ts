@@ -1328,6 +1328,61 @@ export type Database = {
           },
         ]
       }
+      contract_fixed_assets: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          contract_id: string
+          created_at: string
+          fixed_asset_id: string
+          id: string
+          notes: string | null
+          quantity: number
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          contract_id: string
+          created_at?: string
+          fixed_asset_id: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          contract_id?: string
+          created_at?: string
+          fixed_asset_id?: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_fixed_assets_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_fixed_assets_fixed_asset_id_fkey"
+            columns: ["fixed_asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_fixed_assets_fixed_asset_id_fkey"
+            columns: ["fixed_asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets_with_availability"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_import_audit: {
         Row: {
           category: string
@@ -1924,6 +1979,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      fixed_assets: {
+        Row: {
+          acquisition_date: string | null
+          acquisition_value: number | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          location: string | null
+          name: string
+          notes: string | null
+          photo_url: string | null
+          sku: string | null
+          status: string
+          total_quantity: number
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          acquisition_date?: string | null
+          acquisition_value?: number | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          location?: string | null
+          name: string
+          notes?: string | null
+          photo_url?: string | null
+          sku?: string | null
+          status?: string
+          total_quantity?: number
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          acquisition_date?: string | null
+          acquisition_value?: number | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          location?: string | null
+          name?: string
+          notes?: string | null
+          photo_url?: string | null
+          sku?: string | null
+          status?: string
+          total_quantity?: number
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       folder_statuses: {
         Row: {
@@ -6432,6 +6544,28 @@ export type Database = {
           name?: string | null
           provider?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      fixed_assets_with_availability: {
+        Row: {
+          acquisition_date: string | null
+          acquisition_value: number | null
+          available_quantity: number | null
+          category: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string | null
+          location: string | null
+          name: string | null
+          notes: string | null
+          photo_url: string | null
+          sku: string | null
+          status: string | null
+          total_quantity: number | null
+          unit: string | null
+          updated_at: string | null
         }
         Relationships: []
       }

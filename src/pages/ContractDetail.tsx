@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, BarChart3 } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, BarChart3, Archive } from "lucide-react";
 import { BusinessCaseDialog } from "@/components/contracts/BusinessCaseDialog";
 import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
 import { generateOfferLetter } from "@/lib/generateOfferLetter";
@@ -22,6 +22,7 @@ import { NegotiationNotesCard } from "@/components/contracts/NegotiationNotesCar
 import { EntryExpensesSection } from "@/components/contracts/EntryExpensesSection";
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
+import { ContractFixedAssetsSection } from "@/components/contracts/ContractFixedAssetsSection";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
@@ -227,6 +228,7 @@ const ContractDetail = () => {
     budget: "contract_budget",
     gantt: "contract_gantt",
     alerts: "contract_alerts",
+    fixedAssets: "contract_fixed_assets",
   };
   
   const [contract, setContract] = useState<Contract | null>(null);
@@ -1539,6 +1541,29 @@ const ContractDetail = () => {
                   );
                 }
 
+                case "fixedAssets": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <SelectableElement
+                      key={sectionKey}
+                      elementId={permId}
+                      label="Activos Fijos Asignados"
+                    >
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Activos Fijos Asignados"
+                        icon={<Archive className="h-5 w-5 text-slate-500" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <ContractFixedAssetsSection contractId={contract.id} />
+                      </CollapsibleSection>
+                    </SelectableElement>
+                  );
+                }
 
                 default:
                   return null;

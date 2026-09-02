@@ -212,6 +212,7 @@ const MAIN_RESOURCES = [
   { id: "patents", label: "Patentes", category: "principal" },
   { id: "special_attention", label: "Atención Especial", category: "principal" },
   { id: "geoloc", label: "GEOLOC", category: "principal" },
+  { id: "fixed_assets", label: "Activos Fijos", category: "principal" },
 ];
 
 // Secciones del Dashboard
@@ -234,6 +235,7 @@ const CONTRACT_SECTIONS = [
   { id: "contract_gantt", label: "Línea de Tiempo / Gantt", category: "contrato" },
   { id: "contract_alerts", label: "Alertas y Recordatorios", category: "contrato" },
   { id: "contract_patents", label: "Patentes (Contrato)", category: "contrato" },
+  { id: "contract_fixed_assets", label: "Activos Fijos Asignados", category: "contrato" },
 ];
 
 // Todos los recursos combinados

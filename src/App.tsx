@@ -40,6 +40,7 @@ const GoogleDriveCallback = lazy(() => import("./pages/GoogleDriveCallback"));
 const GeoLocPage = lazy(() => import("./pages/GeoLocPage"));
 const MaintenanceRoutesPage = lazy(() => import("./pages/MaintenanceRoutesPage"));
 const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
+const FixedAssetsDashboard = lazy(() => import("./pages/FixedAssetsDashboard"));
 
 const queryClient = new QueryClient();
 
@@ -93,6 +94,7 @@ const App = () => (
                   <Route path="/kpi" element={<ProtectedRoute resource="kpi"><KPIDashboard /></ProtectedRoute>} />
                   <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
                   <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
+                  <Route path="/fixed-assets" element={<ProtectedRoute resource="fixed_assets"><FixedAssetsDashboard /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
                   <Route path="/maintenance/routes" element={<ProtectedRoute resource="maintenance"><MaintenanceRoutesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute><RouteExecutionPage /></ProtectedRoute>} />
