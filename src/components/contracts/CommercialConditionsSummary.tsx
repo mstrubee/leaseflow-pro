@@ -58,6 +58,7 @@ interface ContractVersion {
   gastos_comunes_fixed_admin_uf?: number | null;
   has_extended_gastos_comunes?: boolean | null;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
   notice_bilaterality?: string | null;
   otros_egresos_amount?: number | null;
   otros_egresos_description?: string | null;
@@ -547,23 +548,45 @@ export function CommercialConditionsSummary({
     const otros = version.otros_egresos_amount || 0;
     const ggcc = gastosComunesTotalUF || 0;
     const durationMonths = version.duration_months;
+    // Los meses de gracia eximen el canon (y por lo tanto el Fondo de
+    // Promoción, que es % del canon), pero los GGCC siguen aplicando salvo
+    // que se marque explícitamente lo contrario (default true = histórico).
+    // "Otros Egresos" nunca se exime por gracia (no se pidió esa excepción).
+    const graceGgccApplies = version.grace_ggcc_applies !== false;
+    const graceGgcc = graceGgccApplies ? ggcc : 0;
 
-    // When no escalations/adjustments, return a single period row. Usa el
-    // canon de régimen (actualInitialRent||actualRegimeRent), NO
-    // currentRent -- currentRent es el snapshot de HOY (0 durante los
-    // meses de gracia), pero este detalle debe reflejar el arriendo real
-    // vigente durante el contrato, igual que ya hace la rama con
-    // escalonamiento/reajustes de más abajo (que arranca sus milestones en
-    // graceMonths+1 en vez de mostrar $0 para todo el contrato). Antes
-    // esto hacía que "Arriendo Inicial" y el detalle por período mostraran
-    // 0 en TODOS los meses de un contrato con meses de gracia, no solo en
-    // los meses de gracia — caso real: Osorno (2026), 2 meses de gracia.
+    // Fila del período de gracia (canon $0, GGCC según el flag), para que
+    // "Ver detalle" muestre explícitamente qué meses están exentos en vez
+    // de saltarlos en silencio. isGrace marca la fila para excluirla de los
+    // cálculos de promedio (ver payingPeriods más abajo).
+    const graceRow = graceMonths > 0 ? {
+      label: graceMonths === 1 ? "M1 (Gracia)" : `M1-M${graceMonths} (Gracia)`,
+      canon: 0,
+      ggcc: graceGgcc,
+      fProm: 0,
+      otros,
+      total: graceGgcc + otros,
+      ufM2: superficie > 0 ? (graceGgcc + otros) / superficie : null,
+      isGrace: true as const,
+    } : null;
+
+    // When no escalations/adjustments, return the grace row (if any) plus a
+    // single period row for the rest of the contract. Usa el canon de
+    // régimen (actualInitialRent||actualRegimeRent), NO currentRent --
+    // currentRent es el snapshot de HOY (0 durante los meses de gracia),
+    // pero este detalle debe reflejar el arriendo real vigente durante el
+    // contrato, igual que ya hace la rama con escalonamiento/reajustes de
+    // más abajo (que arranca sus milestones en graceMonths+1 en vez de
+    // mostrar $0 para todo el contrato). Antes esto hacía que "Arriendo
+    // Inicial" y el detalle por período mostraran 0 en TODOS los meses de
+    // un contrato con meses de gracia, no solo en los meses de gracia —
+    // caso real: Osorno (2026), 2 meses de gracia.
     if (!hasEscalations && !hasAdjustments) {
       const periodCanon = actualInitialRent || actualRegimeRent;
       const periodFProm = periodCanon * (fondoPct / 100);
       const periodTotal = periodCanon + ggcc + periodFProm + otros;
       const startMonth = graceMonths > 0 ? graceMonths + 1 : 1;
-      return [{
+      const mainRow = {
         label: `M${startMonth}-M${durationMonths}`,
         canon: periodCanon,
         ggcc,
@@ -571,7 +594,8 @@ export function CommercialConditionsSummary({
         otros,
         total: periodTotal,
         ufM2: superficie > 0 ? periodTotal / superficie : null,
-      }];
+      };
+      return graceRow ? [graceRow, mainRow] : [mainRow];
     }
     const escalations = version.rent_escalations || [];
     const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
@@ -646,7 +670,8 @@ export function CommercialConditionsSummary({
       otros: number;
       total: number;
       ufM2: number | null;
-    }> = [];
+      isGrace?: true;
+    }> = graceRow ? [graceRow] : [];
 
     for (let i = 0; i < sortedMilestones.length; i++) {
       const startMonth = sortedMilestones[i];
@@ -671,20 +696,29 @@ export function CommercialConditionsSummary({
     return periods;
   }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
 
-  // Weighted average total arriendo across all escalation periods. El
-  // fallback de 1 período usa escalationPeriods[0].total (canon real, sin
-  // gracia) y no totalArriendo (snapshot de HOY, 0 durante la gracia) --
-  // mismo motivo que el fix de escalationPeriods: un contrato sin
-  // escalonamiento en gracia debe promediar el arriendo real, no $0.
+  // escalationPeriods incluye la fila de gracia (para mostrarla en "Ver
+  // detalle"), pero los promedios/"primer período que paga" deben excluirla
+  // -- si no, un contrato con gracia promediaría de menos (suma sobre más
+  // meses de los que cuenta el denominador, que ya excluye la gracia).
+  const payingPeriods = useMemo(
+    () => escalationPeriods.filter((p) => !p.isGrace),
+    [escalationPeriods],
+  );
+
+  // Weighted average total arriendo across paying periods (excluye la fila
+  // de gracia). El fallback de 1 período usa payingPeriods[0].total (canon
+  // real, sin gracia) y no totalArriendo (snapshot de HOY, 0 durante la
+  // gracia) -- mismo motivo que el fix de escalationPeriods: un contrato
+  // sin escalonamiento en gracia debe promediar el arriendo real, no $0.
   const totalArriendoPromedio = useMemo(() => {
-    if (escalationPeriods.length <= 1) return escalationPeriods[0]?.total ?? totalArriendo;
+    if (payingPeriods.length <= 1) return payingPeriods[0]?.total ?? totalArriendo;
     const durationMonths = version.duration_months;
-    if (durationMonths <= 0) return escalationPeriods[0]?.total ?? totalArriendo;
+    if (durationMonths <= 0) return payingPeriods[0]?.total ?? totalArriendo;
     const graceMonths = version.grace_months || 0;
     const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
 
     let weightedSum = 0;
-    for (const p of escalationPeriods) {
+    for (const p of payingPeriods) {
       const match = p.label.match(/M(\d+)-M(\d+)/);
       if (match) {
         const months = parseInt(match[2]) - parseInt(match[1]) + 1;
@@ -693,8 +727,8 @@ export function CommercialConditionsSummary({
     }
 
     const totalMonths = durationMonths - (initialStart - 1);
-    return totalMonths > 0 ? weightedSum / totalMonths : (escalationPeriods[0]?.total ?? totalArriendo);
-  }, [escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
+    return totalMonths > 0 ? weightedSum / totalMonths : (payingPeriods[0]?.total ?? totalArriendo);
+  }, [payingPeriods, totalArriendo, version.duration_months, version.grace_months]);
 
   // Calculate guarantee amount based on type
   const guaranteeAmount = useMemo(() => {
@@ -703,13 +737,14 @@ export function CommercialConditionsSummary({
       return version.guarantee_multiplier * baseRent;
     }
     if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
-      // Weighted average of CANON only (not total arriendo)
-      if (escalationPeriods.length > 1) {
+      // Weighted average of CANON only (not total arriendo), excluyendo la
+      // gracia (payingPeriods)
+      if (payingPeriods.length > 1) {
         const durationMonths = version.duration_months;
         const graceMonths = version.grace_months || 0;
         const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
         let weightedSum = 0;
-        for (const p of escalationPeriods) {
+        for (const p of payingPeriods) {
           const match = p.label.match(/M(\d+)-M(\d+)/);
           if (match) {
             const months = parseInt(match[2]) - parseInt(match[1]) + 1;
@@ -717,10 +752,10 @@ export function CommercialConditionsSummary({
           }
         }
         const totalMonths = durationMonths - (initialStart - 1);
-        const avgCanon = totalMonths > 0 ? weightedSum / totalMonths : currentRent;
+        const avgCanon = totalMonths > 0 ? weightedSum / totalMonths : (payingPeriods[0]?.canon ?? currentRent);
         return version.guarantee_multiplier * avgCanon;
       }
-      return version.guarantee_multiplier * currentRent;
+      return version.guarantee_multiplier * (payingPeriods[0]?.canon ?? currentRent);
     }
     if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
       if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
@@ -734,17 +769,17 @@ export function CommercialConditionsSummary({
       return version.guarantee_fixed_amount;
     }
     return null;
-  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee, escalationPeriods, totalArriendoPromedio, totalArriendo]);
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, currentRent, displayCurrency, ufValue, historicalUFForGuarantee, payingPeriods, version.duration_months, version.grace_months]);
 
   const fondoPromocionPromedio = useMemo(() => {
-    if (!hasEscalations || escalationPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
+    if (!hasEscalations || payingPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
     const durationMonths = version.duration_months;
     if (durationMonths <= 0) return fondoPromocionAmount;
     const graceMonths = version.grace_months || 0;
     const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
 
     let weightedSum = 0;
-    for (const p of escalationPeriods) {
+    for (const p of payingPeriods) {
       const match = p.label.match(/M(\d+)-M(\d+)/);
       if (match) {
         const months = parseInt(match[2]) - parseInt(match[1]) + 1;
@@ -754,7 +789,7 @@ export function CommercialConditionsSummary({
 
     const totalMonths = durationMonths - (initialStart - 1);
     return totalMonths > 0 ? weightedSum / totalMonths : fondoPromocionAmount;
-  }, [hasEscalations, escalationPeriods, fondoPromocionAmount, version.duration_months, version.grace_months]);
+  }, [hasEscalations, payingPeriods, fondoPromocionAmount, version.duration_months, version.grace_months]);
 
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
@@ -1096,7 +1131,7 @@ export function CommercialConditionsSummary({
 
           {/* Total Arriendo Inicial (canon + GGCC + F.Prom + Otros, sin meses de gracia) */}
           {(() => {
-            const firstPeriod = escalationPeriods[0];
+            const firstPeriod = payingPeriods[0];
             const initialTotal = firstPeriod ? firstPeriod.total : (actualInitialRent || actualRegimeRent);
             return (
               <div className="space-y-1">
@@ -1215,13 +1250,13 @@ export function CommercialConditionsSummary({
           {fondoPromocionAmount !== null && fondoPromocionAmount > 0 && <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Megaphone className="h-3 w-3" />
-                Fondo Promoción{hasEscalations && escalationPeriods.length > 1 ? " (Promedio)" : ""}
+                Fondo Promoción{hasEscalations && payingPeriods.length > 1 ? " (Promedio)" : ""}
               </div>
               <p className="text-sm font-medium">
-                {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
+                {formatPrimary(hasEscalations && payingPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatSecondary(hasEscalations && escalationPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
+                {formatSecondary(hasEscalations && payingPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
                 ({version.fondo_promocion_percentage}% del canon)
