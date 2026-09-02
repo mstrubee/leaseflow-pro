@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Archive, FileText, Upload } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { FixedAssetForm } from "./FixedAssetForm";
 import { FixedAssetsList } from "./FixedAssetsList";
 import { FixedAssetContractsTab } from "./FixedAssetContractsTab";
@@ -55,46 +54,44 @@ export const FixedAssetsModule = () => {
 
   return (
     <>
-      <SelectableElement elementId="fixed_assets.module" label="Módulo de Activos Fijos">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between py-3">
-            <div className="flex items-center gap-2">
-              <Archive className="h-5 w-5 text-muted-foreground" />
-              <CardTitle className="text-lg">Activos Fijos</CardTitle>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={handleBulk}>
-                <Upload className="h-4 w-4 mr-1" />
-                Carga Masiva
-              </Button>
-              <Button size="sm" onClick={handleNew}>
-                <Plus className="h-4 w-4 mr-1" />
-                Nuevo Activo
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <Tabs defaultValue="inventory">
-              <TabsList className="mb-4">
-                <TabsTrigger value="inventory" className="gap-1">
-                  <Archive className="h-3 w-3" />
-                  Inventario
-                </TabsTrigger>
-                <TabsTrigger value="contracts" className="gap-1">
-                  <FileText className="h-3 w-3" />
-                  Contratos con activos
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="inventory">
-                <FixedAssetsList onEdit={handleEdit} refreshKey={refreshKey} />
-              </TabsContent>
-              <TabsContent value="contracts">
-                <FixedAssetContractsTab />
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      </SelectableElement>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between py-3">
+          <div className="flex items-center gap-2">
+            <Archive className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-lg">Activos Fijos</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleBulk}>
+              <Upload className="h-4 w-4 mr-1" />
+              Carga Masiva
+            </Button>
+            <Button size="sm" onClick={handleNew}>
+              <Plus className="h-4 w-4 mr-1" />
+              Nuevo Activo
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Tabs defaultValue="inventory">
+            <TabsList className="mb-4">
+              <TabsTrigger value="inventory" className="gap-1">
+                <Archive className="h-3 w-3" />
+                Inventario
+              </TabsTrigger>
+              <TabsTrigger value="contracts" className="gap-1">
+                <FileText className="h-3 w-3" />
+                Contratos con activos
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="inventory">
+              <FixedAssetsList onEdit={handleEdit} refreshKey={refreshKey} />
+            </TabsContent>
+            <TabsContent value="contracts">
+              <FixedAssetContractsTab />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

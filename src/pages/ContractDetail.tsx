@@ -1516,23 +1516,18 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Activos Fijos Asignados"
+                      id={sectionKey}
+                      title="Activos Fijos Asignados"
+                      icon={<Archive className="h-5 w-5 text-slate-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Activos Fijos Asignados"
-                        icon={<Archive className="h-5 w-5 text-slate-500" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
-                        <ContractFixedAssetsSection contractId={contract.id} />
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      <ContractFixedAssetsSection contractId={contract.id} />
+                    </CollapsibleSection>
                   );
                 }
 
