@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { format, parseISO } from "date-fns";
 import { GanttTask } from "@/hooks/useGantt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,6 +152,12 @@ export function DependencyDialog({
       guard++;
     }
     return segs.join("  /  ");
+  };
+
+  /** "12/03/2026 → 20/03/2026" — fechas efectivas de la tarea, para decidir con contexto al elegir una predecesora. */
+  const datesOf = (task: GanttTask | undefined | null): string => {
+    if (!task?.start_date || !task?.end_date) return "sin fechas";
+    return `${format(parseISO(task.start_date), "dd/MM/yyyy")} → ${format(parseISO(task.end_date), "dd/MM/yyyy")}`;
   };
 
   const taskId = selectedTask?.id ?? null;
@@ -398,6 +405,11 @@ export function DependencyDialog({
           )}
           <span className={cn("truncate", hasKids && "font-medium", node.task.status === "discarded" && "line-through text-muted-foreground")}>{node.task.name}</span>
           {node.task.status === "discarded" && <StatusDot status="discarded" className="shrink-0" />}
+          {!isForbidden && (
+            <span className="ml-1.5 text-[10px] text-muted-foreground/80 shrink-0 whitespace-nowrap">
+              {datesOf(node.task)}
+            </span>
+          )}
           {isExisting && <span className="ml-2 text-[10px] text-muted-foreground shrink-0">(ya es dependencia)</span>}
         </div>
         {hasKids && isExpanded && kids.map((c) => renderNode(c, level + 1))}
@@ -539,6 +551,7 @@ export function DependencyDialog({
                             )}
                           </p>
                           <p className="text-[11px] text-muted-foreground truncate">{pathOf(dep.depends_on_task_id) || "—"}</p>
+                          <p className="text-[11px] text-muted-foreground/80 truncate">{datesOf(target)}</p>
                         </div>
                         <Button
                           variant="ghost"
@@ -588,6 +601,7 @@ export function DependencyDialog({
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{byId.get(predecessorId)?.name}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{pathOf(predecessorId)}</p>
+                        <p className="text-[11px] text-muted-foreground/80 truncate">{datesOf(byId.get(predecessorId))}</p>
                       </div>
                       <button
                         type="button"

@@ -415,7 +415,10 @@ export const MultipleLinesSelector = ({
 
   return (
     <div className="space-y-3">
-      <Label>Seleccionar Línea(s) de Imputación</Label>
+      {/* OPEX no tiene "línea" por contrato como CAPEX: es una categoría de
+          gasto de la empresa (opex_master_budget). Mismo componente, texto
+          distinto para no confundir los dos conceptos. */}
+      <Label>{budgetId === "opex_master" ? "Seleccionar Categoría(s) OPEX" : "Seleccionar Línea(s) de Imputación"}</Label>
 
       {/* Search input */}
       <div className="relative">

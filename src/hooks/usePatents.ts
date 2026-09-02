@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   ContractWithPatent, 
@@ -62,9 +62,14 @@ export function usePatents() {
   const [statuses, setStatuses] = useState<PatentStatus[]>([]);
   const [sharedItems, setSharedItems] = useState<PatentSharedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // `loading` significa solo "carga inicial". Las recargas disparadas por una
+  // mutación deben ser silenciosas: PatentsModule hace un early return con un
+  // spinner de página completa mientras loading es true, lo que desmontaba el
+  // panel de administración a mitad de una acción y le borraba su estado.
+  const hasLoadedRef = useRef(false);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       // Execute all queries in parallel for better performance
       const [
@@ -154,6 +159,7 @@ export function usePatents() {
     } catch (error) {
       console.error("Error loading patents data:", error);
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
   }, []);

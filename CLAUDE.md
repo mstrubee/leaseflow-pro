@@ -121,3 +121,4 @@ Antes de entregar cualquier código, ejecutar internamente:
 - Cuando haya más de una forma de hacer algo, presentar opciones con trade-offs antes de implementar.
 - Si algo no está claro sobre datos de usuarios reales, preguntar antes de asumir.
 - Al correr SQL en la DB oficial, siempre confirmar que el proyecto destino es `ilcumthwzhmtumaklgvo`.
+- Comunicarse siempre en español genérico/neutro, nunca con modismos ni tono argentino (nada de "vos", "che", etc.).

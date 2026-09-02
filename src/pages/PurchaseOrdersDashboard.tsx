@@ -57,6 +57,7 @@ import {
   ChevronsUpDown,
   X,
   FileText,
+  FileX,
   Receipt,
   Trash2,
   ExternalLink,
@@ -83,10 +84,12 @@ import {
   FileSpreadsheet,
   Wrench,
   Eye,
+  Paperclip,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
+import { OCBulkAttachDialog } from "@/components/budget/OCBulkAttachDialog";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -146,6 +149,7 @@ interface PurchaseOrder {
   is_multi_contract?: boolean;
   allocations?: ContractAllocation[];
   import_batch_id?: string | null;
+  attachment_url?: string | null;
 }
 
 interface OCRequest {
@@ -207,6 +211,9 @@ interface GroupedOrder {
   year: number;
   is_multi_contract: boolean;
   is_imported: boolean;
+  /** true solo si TODAS las filas del grupo tienen PDF adjunto — en una OC
+   *  multi-contrato, si falta en cualquiera, se considera incompleta. */
+  has_attachment: boolean;
   orders: PurchaseOrder[]; // Individual orders that make up this group
   contracts: { contract_id: string; contract_name: string; amount_uf: number; order_id: string }[];
 }
@@ -245,7 +252,12 @@ type OCSortField = "local" | "order_number" | "description" | "supplier" | "type
 
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
-  const { user, loading: authLoading, isAdmin } = useAuth();
+  const { user, loading: authLoading, isAdmin, hasPermission } = useAuth();
+  // Mismo criterio que ya usan las políticas RLS de purchase_orders
+  // (hasPermission ya cubre "all" internamente, no solo "edit"): cualquier
+  // perfil con ese permiso asignado desde Admin > Roles (p. ej. "Equipo
+  // Desarrollo") queda habilitado acá, sin hardcodear el nombre del rol.
+  const canManagePurchaseOrders = hasPermission("purchase_orders", "edit");
   const { ufValue } = useEconomicIndicators();
   const { openFile, getSecureUrl } = useSecureFileAccess();
   const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
@@ -321,6 +333,7 @@ const PurchaseOrdersDashboard = () => {
 
   // Edit OC dialog states
   const [showEditOCDialog, setShowEditOCDialog] = useState(false);
+  const [showBulkAttachDialog, setShowBulkAttachDialog] = useState(false);
   const [editingOCData, setEditingOCData] = useState({
     order_number: "",
     description: "",
@@ -384,6 +397,8 @@ const PurchaseOrdersDashboard = () => {
   const [categoryFilter, setCategoryFilter] = useState("todos");
   const [classificationFilter, setClassificationFilter] = useState("todos");
   const [amountFilter, setAmountFilter] = useState("todos");
+  const [originFilter, setOriginFilter] = useState("todos");
+  const [attachmentFilter, setAttachmentFilter] = useState("todos");
   const [requestStatusFilter, setRequestStatusFilter] = useState("todos");
 
   // Chart-based filters
@@ -523,6 +538,7 @@ const PurchaseOrdersDashboard = () => {
           supplier_name,
           is_multi_contract,
           import_batch_id,
+          attachment_url,
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
@@ -1021,14 +1037,29 @@ const PurchaseOrdersDashboard = () => {
         year: firstOrder.year || yearNum,
         is_multi_contract: isMulti,
         is_imported: !!firstOrder.import_batch_id,
+        has_attachment: ordersList.every((o) => !!o.attachment_url),
         orders: ordersList,
         contracts,
       });
     });
 
+    // Filtro de Origen: se aplica sobre el resultado YA agrupado, no fila por
+    // fila — is_imported se calcula recién al agrupar (una OC multi-contrato
+    // podría tener filas mezcladas), así que filtrar antes podría no
+    // coincidir con lo que la columna "Origen" muestra en pantalla.
+    const originFiltered = originFilter === "todos"
+      ? result
+      : result.filter((g) => (originFilter === "importada" ? g.is_imported : !g.is_imported));
+
+    // Mismo criterio que el filtro de Origen: se aplica sobre el resultado ya
+    // agrupado, porque has_attachment también se calcula recién al agrupar.
+    const attachmentFiltered = attachmentFilter === "todos"
+      ? originFiltered
+      : originFiltered.filter((g) => (attachmentFilter === "con_pdf" ? g.has_attachment : !g.has_attachment));
+
     // Sort based on current sort state
     const dir = sortDirection === "asc" ? 1 : -1;
-    return result.sort((a, b) => {
+    return attachmentFiltered.sort((a, b) => {
       switch (sortField) {
         case "local": {
           const aName = a.contracts[0]?.contract_name || "";
@@ -1060,7 +1091,7 @@ const PurchaseOrdersDashboard = () => {
         }
       }
     });
-  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
+  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, originFilter, attachmentFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -1101,6 +1132,8 @@ const PurchaseOrdersDashboard = () => {
     setCategoryFilter("todos");
     setClassificationFilter("todos");
     setAmountFilter("todos");
+    setOriginFilter("todos");
+    setAttachmentFilter("todos");
     setRequestStatusFilter("todos");
     setChartContractFilter(null);
     setChartCategoryFilter(null);
@@ -1112,6 +1145,8 @@ const PurchaseOrdersDashboard = () => {
     categoryFilter !== "todos" ||
     classificationFilter !== "todos" ||
     amountFilter !== "todos" ||
+    originFilter !== "todos" ||
+    attachmentFilter !== "todos" ||
     requestStatusFilter !== "todos" ||
     chartContractFilter ||
     chartCategoryFilter;
@@ -1753,6 +1788,82 @@ const PurchaseOrdersDashboard = () => {
     });
   };
 
+  const [changingTypeOrderNumber, setChangingTypeOrderNumber] = useState<string | null>(null);
+  // Tipo original de las filas de orders antes de reflejar optimistamente un
+  // cambio de CAPEX/OPEX pendiente de completar en el diálogo. Si el diálogo
+  // se cierra sin guardar (Cancelar, X, clic afuera), se revierte con esto en
+  // vez de dejar el listado mostrando un tipo que nunca se persistió.
+  const pendingTypeRevertRef = useRef<{ orderIds: string[]; previousType: string | null } | null>(null);
+
+  const closeEditOCDialog = () => {
+    if (pendingTypeRevertRef.current) {
+      const { orderIds, previousType } = pendingTypeRevertRef.current;
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: previousType } : o
+      ));
+      pendingTypeRevertRef.current = null;
+    }
+    setShowEditOCDialog(false);
+  };
+
+  /**
+   * Cambio directo de CAPEX/OPEX desde el badge de la fila, sin pasar por el
+   * diálogo completo. Solo se permite cuando el dato adicional que exige el
+   * nuevo tipo ya existe en TODAS las filas de la OC (línea de presupuesto
+   * para CAPEX, categoría para OPEX): si falta, se abre el diálogo de edición
+   * en vez de guardar a medias, para no dejar una OC CAPEX sin línea o una
+   * OPEX sin categoría.
+   */
+  const handleChangeOCType = async (groupedOrder: GroupedOrder, newType: "CAPEX" | "OPEX") => {
+    if (groupedOrder.budget_classification === newType) return;
+
+    const missingRequiredField = newType === "CAPEX"
+      ? groupedOrder.orders.some(o => !o.budget_line_id)
+      : groupedOrder.orders.some(o => !o.opex_category_id);
+
+    const orderIds = groupedOrder.orders.map(o => o.id);
+
+    if (missingRequiredField) {
+      // El diálogo deriva "es CAPEX" leyendo orders en vivo (ver
+      // editingOCFirstOrder más abajo), así que para que abra ya con el tipo
+      // elegido hay que reflejarlo ahí ANTES de abrirlo — no existe un campo
+      // de tipo en editingOCData. El valor se persiste recién al Guardar del
+      // diálogo, así que hasta entonces sigue siendo solo un estado local.
+      pendingTypeRevertRef.current = { orderIds, previousType: groupedOrder.budget_classification };
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: newType } : o
+      ));
+      toast.info(
+        newType === "CAPEX"
+          ? "Falta asignar la línea de presupuesto: se abre el editor para completarla."
+          : "Falta asignar la categoría OPEX: se abre el editor para completarla."
+      );
+      await handleOpenEditOCDialog({ ...groupedOrder, budget_classification: newType });
+      return;
+    }
+
+    setChangingTypeOrderNumber(groupedOrder.order_number);
+    try {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ budget_classification: newType } as any)
+        .in("id", orderIds);
+
+      if (error) {
+        console.error("Error al cambiar el tipo de la OC:", error);
+        toast.error(`No se pudo cambiar el tipo: ${error.message}`);
+        return;
+      }
+
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: newType } : o
+      ));
+      toast.success(`OC ${groupedOrder.order_number} marcada como ${newType}`);
+    } finally {
+      setChangingTypeOrderNumber(null);
+    }
+  };
+
   const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
@@ -2125,6 +2236,7 @@ const PurchaseOrdersDashboard = () => {
       }
 
       toast.success("OC actualizada correctamente");
+      pendingTypeRevertRef.current = null;
       setShowEditOCDialog(false);
       setEditingOCId(null);
       setEditingOCOriginalOrderNumber("");
@@ -2250,6 +2362,12 @@ const PurchaseOrdersDashboard = () => {
                 <FileSpreadsheet className="h-4 w-4 mr-1" />
                 Carga Masiva de OOCC
               </Button>
+              {canManagePurchaseOrders && (
+                <Button variant="outline" size="sm" onClick={() => setShowBulkAttachDialog(true)}>
+                  <Paperclip className="h-4 w-4 mr-1" />
+                  Adjuntar PDFs
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
                 Expandir
@@ -2735,6 +2853,30 @@ const PurchaseOrdersDashboard = () => {
                 triggerClassName="w-[150px]"
               />
 
+              <SearchableSelect
+                value={originFilter}
+                onValueChange={setOriginFilter}
+                options={[
+                  { value: "todos", label: "Todos los orígenes" },
+                  { value: "importada", label: "Importada (I)" },
+                  { value: "digitada", label: "Digitada (D)" },
+                ]}
+                placeholder="Origen"
+                triggerClassName="w-[140px]"
+              />
+
+              <SearchableSelect
+                value={attachmentFilter}
+                onValueChange={setAttachmentFilter}
+                options={[
+                  { value: "todos", label: "Todas (PDF)" },
+                  { value: "con_pdf", label: "Con PDF" },
+                  { value: "sin_pdf", label: "Sin PDF" },
+                ]}
+                placeholder="PDF"
+                triggerClassName="w-[130px]"
+              />
+
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   <X className="h-4 w-4 mr-1" />
@@ -2902,10 +3044,14 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell
                                 className="font-medium cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => handleOpenOCViewer(groupedOrder)}
-                                title="Ver PDF de OC"
+                                title={groupedOrder.has_attachment ? "Ver PDF de OC" : "Sin PDF adjunto"}
                               >
                                 <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  {groupedOrder.has_attachment ? (
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                  ) : (
+                                    <FileX className="h-4 w-4 text-destructive" />
+                                  )}
                                   {groupedOrder.order_number}
                                   {groupedOrder.is_multi_contract && (
                                     <Badge variant="outline" className="text-[10px] gap-1">
@@ -2923,14 +3069,34 @@ const PurchaseOrdersDashboard = () => {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
-                                  {groupedOrder.budget_classification ? (
+                                  {canManagePurchaseOrders && groupedOrder.is_imported ? (
+                                    <Select
+                                      value={groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
+                                      disabled={changingTypeOrderNumber === groupedOrder.order_number}
+                                      onValueChange={(v) => handleChangeOCType(groupedOrder, v as "CAPEX" | "OPEX")}
+                                    >
+                                      <SelectTrigger
+                                        className="h-6 w-[90px] px-2 border-none shadow-none focus:ring-0 [&>svg]:opacity-50"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Badge
+                                          variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                          className="pointer-events-none"
+                                        >
+                                          {groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
+                                        </Badge>
+                                      </SelectTrigger>
+                                      <SelectContent onClick={(e) => e.stopPropagation()}>
+                                        <SelectItem value="OPEX">OPEX</SelectItem>
+                                        <SelectItem value="CAPEX">CAPEX</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
                                     <Badge
                                       variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
                                     >
-                                      {groupedOrder.budget_classification}
+                                      {groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
                                     </Badge>
-                                  ) : (
-                                    <Badge variant="secondary">OPEX</Badge>
                                   )}
                                   {groupedOrder.budget_classification === "CAPEX" && !groupedOrder.budget_line_name && (
                                     <span className="text-[10px] text-destructive font-medium">sin línea</span>
@@ -3002,7 +3168,7 @@ const PurchaseOrdersDashboard = () => {
                                 {groupedOrder.is_imported ? (
                                   <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px] px-1.5 font-mono" title="Importada desde Excel">I</Badge>
                                 ) : (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 font-mono text-muted-foreground" title="Digitada manualmente">D</Badge>
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 text-[10px] px-1.5 font-mono" title="Digitada manualmente">D</Badge>
                                 )}
                               </TableCell>
                               <TableCell>
@@ -4268,8 +4434,14 @@ const PurchaseOrdersDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <OCBulkAttachDialog
+        open={showBulkAttachDialog}
+        onOpenChange={setShowBulkAttachDialog}
+        onComplete={loadData}
+      />
+
       {/* Edit OC Dialog */}
-      <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
+      <Dialog open={showEditOCDialog} onOpenChange={(o) => { if (!o) closeEditOCDialog(); }}>
         <DialogContent className={cn(
           // NOTE: `h-[90vh]` (not only `max-h`) is required so the internal ScrollArea
           // gets a real height to scroll within.
@@ -4686,7 +4858,7 @@ const PurchaseOrdersDashboard = () => {
           </div>
 
           <DialogFooter className="flex-shrink-0 gap-2 sm:gap-0 pt-4 border-t">
-            <Button variant="outline" onClick={() => setShowEditOCDialog(false)} disabled={updatingOC}>
+            <Button variant="outline" onClick={closeEditOCDialog} disabled={updatingOC}>
               Cancelar
             </Button>
             <Button onClick={handleUpdateOC} disabled={updatingOC || !editingOCData.order_number}>
