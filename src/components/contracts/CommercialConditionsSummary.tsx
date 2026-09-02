@@ -352,6 +352,11 @@ export function CommercialConditionsSummary({
       noticeDateLabel = "vencido";
     }
     
+    // Fecha en que efectivamente empieza a pagarse el arriendo: fecha de
+    // inicio del contrato (no la de firma) + meses de gracia. Con 0 meses
+    // de gracia coincide con startDate.
+    const paymentStartDate = addMonths(startDate, version.grace_months || 0);
+
     return {
       startDate,
       endDate,
@@ -360,7 +365,8 @@ export function CommercialConditionsSummary({
       noticeDateLabel,
       isInAutoRenewal,
       currentRenewalNumber,
-      currentRenewalEndDate
+      currentRenewalEndDate,
+      paymentStartDate
     };
   }, [version, signedDate, noticeRanges]);
   const formatDateShort = (date: Date) => {
@@ -955,6 +961,24 @@ export function CommercialConditionsSummary({
             <p className="text-sm font-medium">
               {dates?.startDate ? formatDateShort(dates.startDate) : "Sin definir"}
             </p>
+          </div>
+
+          {/* Inicio Pago Arriendo: fecha de inicio del contrato + meses de
+              gracia (no la fecha de firma). Con 0 meses de gracia coincide
+              con Fecha Inicio. */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <DollarSign className="h-3 w-3" />
+              Inicio Pago Arriendo
+            </div>
+            <p className="text-sm font-medium">
+              {dates?.paymentStartDate ? formatDateShort(dates.paymentStartDate) : "Sin definir"}
+            </p>
+            {(version.grace_months || 0) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                (tras {version.grace_months} {version.grace_months === 1 ? "mes" : "meses"} de gracia)
+              </p>
+            )}
           </div>
 
           {/* Fecha Término */}
