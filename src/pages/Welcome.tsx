@@ -11,6 +11,7 @@ import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
   BarChart3, Wrench, Shield, Users, UserCog, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle, CalendarDays,
+  Archive,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -36,6 +37,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "kpi",            label: "KPI",                      desc: "Indicadores de gestión",                       icon: BarChart3,   path: "/kpi",              resource: "kpi",             color: "text-indigo-600 bg-indigo-100" },
   { id: "suppliers",      label: "Proveedores",              desc: "Gestión de proveedores",                       icon: Users,       path: "/suppliers",        resource: "suppliers",       color: "text-teal-600 bg-teal-100" },
   { id: "maintenance",    label: "Mantenciones",             desc: "Mantenciones preventivas y correctivas",       icon: Wrench,      path: "/maintenance",      resource: "maintenance",     color: "text-rose-600 bg-rose-100" },
+  { id: "fixed_assets",   label: "Activos Fijos",            desc: "Inventario de activos fijos",                  icon: Archive,     path: "/fixed-assets",     resource: "fixed_assets",    color: "text-slate-600 bg-slate-100" },
   { id: "geoloc",         label: "GEOLOC",                   desc: "Sistema de información geográfica",            icon: MapPin,      path: "/geoloc",           resource: "geoloc",          color: "text-green-600 bg-green-100" },
   { id: "service_contracts", label: "Contratos de Servicio", desc: "Contratos recurrentes con proveedores",         icon: Handshake,   path: "/service-contracts", resource: "service_contracts", color: "text-violet-600 bg-violet-100" },
   { id: "special_attention", label: "Atención Especial",     desc: "Seguimiento de contratos con atención especial", icon: AlertTriangle, path: "/special-attention", resource: "special_attention", color: "text-amber-600 bg-amber-100" },
