@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -41,10 +42,18 @@ export const GraceMonthsInput = ({
   value,
   onChange,
   maxMonths,
+  ggccAppliesInGrace,
+  onGgccAppliesInGraceChange,
 }: {
   value: number;
   onChange: (months: number) => void;
   maxMonths: number;
+  // Si hay meses de gracia: ¿los gastos comunes se siguen cobrando igual
+  // (true, default -- solo el canon queda exento) o también quedan
+  // eximidos durante la gracia (false)? Opcional -- si no se pasa
+  // onGgccAppliesInGraceChange, el control no se muestra.
+  ggccAppliesInGrace?: boolean;
+  onGgccAppliesInGraceChange?: (applies: boolean) => void;
 }) => {
   const [unit, setUnit] = useState<DurationUnit>("months");
   
@@ -101,6 +110,18 @@ export const GraceMonthsInput = ({
       </div>
       {equivalentText && (
         <p className="text-xs text-primary font-medium">{equivalentText}</p>
+      )}
+      {value > 0 && onGgccAppliesInGraceChange && (
+        <div className="flex items-center gap-2 pt-1">
+          <Switch
+            id="ggcc-applies-in-grace"
+            checked={ggccAppliesInGrace ?? true}
+            onCheckedChange={onGgccAppliesInGraceChange}
+          />
+          <Label htmlFor="ggcc-applies-in-grace" className="text-xs font-normal text-muted-foreground cursor-pointer">
+            Gastos comunes se pagan durante la gracia (si aplica)
+          </Label>
+        </div>
       )}
     </div>
   );
@@ -310,6 +331,8 @@ interface RentEscalationsProps {
   currency?: "UF" | "CLP";
   graceMonths?: number;
   onGraceMonthsChange?: (months: number) => void;
+  ggccAppliesInGrace?: boolean;
+  onGgccAppliesInGraceChange?: (applies: boolean) => void;
   effectiveDate?: string;
   hasPeriodicAdjustments?: boolean;
   adjustmentType?: "percentage" | "fixed";
@@ -359,6 +382,8 @@ export const RentEscalations = ({
   currency = "UF",
   graceMonths = 0,
   onGraceMonthsChange,
+  ggccAppliesInGrace,
+  onGgccAppliesInGraceChange,
   effectiveDate,
   hasPeriodicAdjustments = false,
   adjustmentType = "percentage",
@@ -709,6 +734,8 @@ export const RentEscalations = ({
             value={graceMonths}
             onChange={onGraceMonthsChange}
             maxMonths={durationMonths - 1}
+            ggccAppliesInGrace={ggccAppliesInGrace}
+            onGgccAppliesInGraceChange={onGgccAppliesInGraceChange}
           />
         </div>
       )}

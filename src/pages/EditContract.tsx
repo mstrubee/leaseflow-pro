@@ -101,6 +101,7 @@ const EditContract = () => {
   const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
   const [graceMonths, setGraceMonths] = useState(0);
+  const [graceGgccApplies, setGraceGgccApplies] = useState(true);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
   const [isRegimeRentUfM2, setIsRegimeRentUfM2] = useState(false);
@@ -289,6 +290,7 @@ const EditContract = () => {
           (version.initial_rent !== null && version.initial_rent !== version.regime_rent);
         setHasEscalation(hasEscalationsData);
         setGraceMonths((version as any).grace_months || 0);
+        setGraceGgccApplies((version as any).grace_ggcc_applies ?? true);
         setInitialRent(version.initial_rent?.toString() || "");
         setRegimeRent(version.regime_rent.toString());
         setVariableRentPercentage(version.variable_rent_percentage?.toString() || "");
@@ -561,6 +563,7 @@ const EditContract = () => {
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
             notice_bilaterality: noticeType === "sin_termino" ? contractEndNoticeBilaterality : noticeBilaterality,
             grace_months: graceMonths || 0,
+            grace_ggcc_applies: graceGgccApplies,
             otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
             regime_rent_is_uf_m2: isRegimeRentUfM2,
@@ -1301,6 +1304,8 @@ const EditContract = () => {
                                           currency={currency}
                                           graceMonths={graceMonths}
                                           onGraceMonthsChange={setGraceMonths}
+                                          ggccAppliesInGrace={graceGgccApplies}
+                                          onGgccAppliesInGraceChange={setGraceGgccApplies}
                                           effectiveDate={effectiveDate}
                                           hasPeriodicAdjustments={hasPeriodicAdjustments}
                                           adjustmentType={adjustmentType}
@@ -1338,6 +1343,8 @@ const EditContract = () => {
                                         value={graceMonths}
                                         onChange={setGraceMonths}
                                         maxMonths={parseInt(duration) || 12}
+                                        ggccAppliesInGrace={graceGgccApplies}
+                                        onGgccAppliesInGraceChange={setGraceGgccApplies}
                                       />
                                     </div>
                                   </>

@@ -59,6 +59,7 @@ const NewContract = () => {
   const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
   const [graceMonths, setGraceMonths] = useState(0);
+  const [graceGgccApplies, setGraceGgccApplies] = useState(true);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
@@ -227,6 +228,7 @@ const NewContract = () => {
             gastos_comunes_fixed_admin_uf: gastosComunesMethodology === "uf_m2" && gastosComunesFixedAdminUf ? parseFloat(gastosComunesFixedAdminUf) : null,
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
             grace_months: graceMonths || 0,
+            grace_ggcc_applies: graceGgccApplies,
             otros_egresos_amount: otrosEgresosAmount ? getUFValue(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
             auto_renewal: autoRenewal,
@@ -641,6 +643,8 @@ const NewContract = () => {
                         currency={currency}
                         graceMonths={graceMonths}
                         onGraceMonthsChange={setGraceMonths}
+                        ggccAppliesInGrace={graceGgccApplies}
+                        onGgccAppliesInGraceChange={setGraceGgccApplies}
                         effectiveDate={fechaInicio}
                         hasPeriodicAdjustments={hasPeriodicAdjustments}
                         adjustmentType={adjustmentType}
@@ -672,6 +676,8 @@ const NewContract = () => {
                       value={graceMonths}
                       onChange={setGraceMonths}
                       maxMonths={parseInt(duration) || 12}
+                      ggccAppliesInGrace={graceGgccApplies}
+                      onGgccAppliesInGraceChange={setGraceGgccApplies}
                     />
                   </div>
                 </>

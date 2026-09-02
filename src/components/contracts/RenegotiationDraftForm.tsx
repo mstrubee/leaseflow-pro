@@ -64,6 +64,7 @@ export function RenegotiationDraftForm({
   // Canon arriendo
   const [hasEscalation, setHasEscalation] = useState(false);
   const [graceMonths, setGraceMonths] = useState(0);
+  const [graceGgccApplies, setGraceGgccApplies] = useState(true);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
@@ -124,6 +125,7 @@ export function RenegotiationDraftForm({
       setHasEscalation(hasEsc);
       
       setGraceMonths(draft.grace_months || 0);
+      setGraceGgccApplies(draft.grace_ggcc_applies ?? true);
       setInitialRent(draft.initial_rent?.toString() || "");
       setRegimeRent(draft.regime_rent?.toString() || "");
       setVariableRentPercentage(draft.variable_rent_percentage?.toString() || "");
@@ -220,6 +222,7 @@ export function RenegotiationDraftForm({
       variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
       guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
       grace_months: graceMonths || null,
+      grace_ggcc_applies: graceGgccApplies,
       has_periodic_adjustments: hasPeriodicAdjustments,
       adjustment_type: hasPeriodicAdjustments ? adjustmentType : null,
       adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
@@ -470,6 +473,8 @@ export function RenegotiationDraftForm({
                           currency={currency}
                           graceMonths={graceMonths}
                           onGraceMonthsChange={setGraceMonths}
+                          ggccAppliesInGrace={graceGgccApplies}
+                          onGgccAppliesInGraceChange={setGraceGgccApplies}
                           effectiveDate={effectiveFromSignature ? undefined : effectiveDate}
                           hasPeriodicAdjustments={hasPeriodicAdjustments}
                           adjustmentType={adjustmentType}
@@ -498,6 +503,8 @@ export function RenegotiationDraftForm({
                         value={graceMonths}
                         onChange={setGraceMonths}
                         maxMonths={parseInt(durationMonths) || 12}
+                        ggccAppliesInGrace={graceGgccApplies}
+                        onGgccAppliesInGraceChange={setGraceGgccApplies}
                       />
                     </div>
                   </>
