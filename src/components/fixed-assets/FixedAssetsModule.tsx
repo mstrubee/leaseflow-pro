@@ -2,26 +2,38 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Archive, FileText } from "lucide-react";
+import { Plus, Archive, FileText, Upload } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { FixedAssetForm } from "./FixedAssetForm";
 import { FixedAssetsList } from "./FixedAssetsList";
 import { FixedAssetContractsTab } from "./FixedAssetContractsTab";
+import { FixedAssetBulkUpload } from "./FixedAssetBulkUpload";
 import { FixedAsset } from "./types";
+
+type DialogMode = "form" | "bulk";
 
 export const FixedAssetsModule = () => {
   const [showDialog, setShowDialog] = useState(false);
+  const [dialogMode, setDialogMode] = useState<DialogMode>("form");
   const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleEdit = (asset: FixedAsset) => {
     setEditingAsset(asset);
+    setDialogMode("form");
     setShowDialog(true);
   };
 
   const handleNew = () => {
     setEditingAsset(null);
+    setDialogMode("form");
+    setShowDialog(true);
+  };
+
+  const handleBulk = () => {
+    setEditingAsset(null);
+    setDialogMode("bulk");
     setShowDialog(true);
   };
 
@@ -36,6 +48,11 @@ export const FixedAssetsModule = () => {
     setEditingAsset(null);
   };
 
+  const handleBulkUploadComplete = () => {
+    setShowDialog(false);
+    setRefreshKey((prev) => prev + 1);
+  };
+
   return (
     <>
       <SelectableElement elementId="fixed_assets.module" label="Módulo de Activos Fijos">
@@ -45,10 +62,16 @@ export const FixedAssetsModule = () => {
               <Archive className="h-5 w-5 text-muted-foreground" />
               <CardTitle className="text-lg">Activos Fijos</CardTitle>
             </div>
-            <Button size="sm" onClick={handleNew}>
-              <Plus className="h-4 w-4 mr-1" />
-              Nuevo Activo
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={handleBulk}>
+                <Upload className="h-4 w-4 mr-1" />
+                Carga Masiva
+              </Button>
+              <Button size="sm" onClick={handleNew}>
+                <Plus className="h-4 w-4 mr-1" />
+                Nuevo Activo
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="pt-0">
             <Tabs defaultValue="inventory">
@@ -76,9 +99,20 @@ export const FixedAssetsModule = () => {
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingAsset ? "Editar Activo" : "Nuevo Activo"}</DialogTitle>
+            <DialogTitle>
+              {dialogMode === "bulk"
+                ? "Carga Masiva de Activos Fijos"
+                : editingAsset
+                  ? "Editar Activo"
+                  : "Nuevo Activo"}
+            </DialogTitle>
           </DialogHeader>
-          <FixedAssetForm asset={editingAsset} onSave={handleSave} onCancel={handleCancel} />
+
+          {dialogMode === "form" ? (
+            <FixedAssetForm asset={editingAsset} onSave={handleSave} onCancel={handleCancel} />
+          ) : (
+            <FixedAssetBulkUpload onComplete={handleBulkUploadComplete} onCancel={handleCancel} />
+          )}
         </DialogContent>
       </Dialog>
     </>
