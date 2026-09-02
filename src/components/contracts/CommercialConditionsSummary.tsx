@@ -99,6 +99,17 @@ interface CommercialConditionsSummaryProps {
   displayCurrency?: "UF" | "CLP";
   terminationNotices?: TerminationNoticeForChart[];
 }
+
+// Parsea el rango de meses de una fila de escalationPeriods a partir de su
+// label: "M3-M120" -> {start:3,end:120}; "M1 (Gracia)" (gracia de 1 mes,
+// sin guión) -> {start:1,end:1}; "M1-M2 (Gracia)" -> {start:1,end:2}.
+function parsePeriodMonthRange(label: string): { start: number; end: number } | null {
+  const match = label.match(/^M(\d+)(?:-M(\d+))?/);
+  if (!match) return null;
+  const start = parseInt(match[1], 10);
+  const end = match[2] ? parseInt(match[2], 10) : start;
+  return { start, end };
+}
 export function CommercialConditionsSummary({
   version,
   signedDate,
@@ -390,6 +401,23 @@ export function CommercialConditionsSummary({
     return today < startDate;
   }, [version.effective_date, signedDate]);
 
+  // Mes actual del contrato (1 = mes de inicio); null si no hay fecha de
+  // inicio conocida (ni effective_date ni signedDate). Único punto donde se
+  // calcula "qué mes es hoy" -- currentRent y totalArriendo ("Actual") lo
+  // reusan para no divergir entre sí.
+  const currentMonth = useMemo(() => {
+    const startDate = version.effective_date
+      ? new Date(version.effective_date)
+      : signedDate
+        ? new Date(signedDate)
+        : null;
+    if (!startDate) return null;
+
+    const today = new Date();
+    const diffTime = today.getTime() - startDate.getTime();
+    return Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
+  }, [version.effective_date, signedDate]);
+
   // Calculate current rent based on escalations, periodic adjustments, and current month
   // initial_rent siempre tiene prioridad sobre regime_rent cuando está
   // cargado (mismo criterio que rentField en buildSeed.ts): en la práctica
@@ -399,22 +427,7 @@ export function CommercialConditionsSummary({
   // contrato SIN escalaciones (o que aún no arrancó) mostraba canon $0
   // —el de regime_rent— aunque initial_rent tuviera el valor real cargado.
   const currentRent = useMemo(() => {
-    // Calculate current month
-    const startDate = version.effective_date
-      ? new Date(version.effective_date)
-      : signedDate
-        ? new Date(signedDate)
-        : null;
-
-    if (!startDate) {
-      return actualInitialRent || actualRegimeRent;
-    }
-
-    const today = new Date();
-    const diffTime = today.getTime() - startDate.getTime();
-    const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-
-    if (currentMonth < 1) {
+    if (currentMonth === null || currentMonth < 1) {
       return actualInitialRent || actualRegimeRent;
     }
 
@@ -476,7 +489,7 @@ export function CommercialConditionsSummary({
     }
     
     return rent;
-  }, [version, signedDate, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent, superficieEdificadaLocal]);
+  }, [currentMonth, version, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent, superficieEdificadaLocal]);
 
   // Label: "Canon Actual" when contract is active with escalations/adjustments,
   // "Canon Inicial" when not started but has escalations, otherwise "Canon de Arriendo"
@@ -536,9 +549,6 @@ export function CommercialConditionsSummary({
 
   // Otros egresos
   const otrosEgresosAmount = version.otros_egresos_amount || 0;
-
-  // Total arriendo calculation (Canon actual + GGCC + FP + Otros)
-  const totalArriendo = currentRent + (gastosComunesTotalUF || 0) + (fondoPromocionAmount || 0) + otrosEgresosAmount;
 
   // Full periods breakdown: escalations + periodic adjustments through contract end
   const escalationPeriods = useMemo(() => {
@@ -695,6 +705,28 @@ export function CommercialConditionsSummary({
 
     return periods;
   }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
+
+  // "Total Arriendo Actual": identifica el mes de HOY (currentMonth) y toma
+  // el total de la fila de escalationPeriods que lo contiene -- incluida la
+  // fila de gracia, con su propio criterio de GGCC (grace_ggcc_applies).
+  // Antes esto se recalculaba por separado (currentRent + gastosComunesTotalUF
+  // + fondoPromocionAmount + otros), lo que ignoraba grace_ggcc_applies para
+  // GGCC y podía divergir de lo que mostraba "Ver detalle" para ese mismo mes.
+  const totalArriendo = useMemo(() => {
+    if (currentMonth === null || currentMonth < 1) {
+      // Contrato aún no arranca: preview del arriendo real (sin gracia)
+      const canon = actualInitialRent || actualRegimeRent;
+      const fProm = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * canon : 0;
+      return canon + (gastosComunesTotalUF || 0) + fProm + otrosEgresosAmount;
+    }
+    const matched = escalationPeriods.find((p) => {
+      const range = parsePeriodMonthRange(p.label);
+      return range !== null && currentMonth >= range.start && currentMonth <= range.end;
+    });
+    if (matched) return matched.total;
+    // Más allá de la duración del contrato (ya venció, sin dato de renovación): último período
+    return escalationPeriods[escalationPeriods.length - 1]?.total ?? 0;
+  }, [currentMonth, escalationPeriods, actualInitialRent, actualRegimeRent, gastosComunesTotalUF, otrosEgresosAmount, version.fondo_promocion_percentage]);
 
   // escalationPeriods incluye la fila de gracia (para mostrarla en "Ver
   // detalle"), pero los promedios/"primer período que paga" deben excluirla
