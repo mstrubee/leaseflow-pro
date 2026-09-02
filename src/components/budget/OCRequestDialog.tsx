@@ -171,6 +171,11 @@ export const OCRequestDialog = ({
       return;
     }
 
+    if (paymentPlan.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe agregar al menos un pago al plan de pagos" });
+      return;
+    }
+
     // Amount is always entered in basic tab
     const amount = parseFloat(form.amount) || 0;
     if (amount <= 0) {
@@ -492,7 +497,7 @@ export const OCRequestDialog = ({
 
           <TabsContent value="payments" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
-              <Label>Plan de Pagos (opcional)</Label>
+              <Label>Plan de Pagos *</Label>
               <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
                 <Plus className="h-3 w-3" />
                 Agregar Pago
@@ -502,7 +507,7 @@ export const OCRequestDialog = ({
             {paymentPlan.length === 0 ? (
               <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
                 <p>No hay pagos planificados.</p>
-                <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
+                <p className="text-xs mt-1">Debes agregar al menos un pago para poder crear la solicitud.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -613,7 +618,7 @@ export const OCRequestDialog = ({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleCreate} disabled={loading}>
+          <Button onClick={handleCreate} disabled={loading || paymentPlan.length === 0} title={paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}>
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Crear Solicitud
           </Button>

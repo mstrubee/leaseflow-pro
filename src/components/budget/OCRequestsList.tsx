@@ -510,6 +510,11 @@ export const OCRequestsList = ({
       return;
     }
 
+    if (paymentPlan.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe agregar al menos un pago al plan de pagos" });
+      return;
+    }
+
     const validLines = selectedLines.filter(l => l.lineId);
     if (validLines.length === 0) {
       toast({
@@ -1255,7 +1260,7 @@ export const OCRequestsList = ({
 
               <TabsContent value="payments" className="space-y-4 mt-4">
                 <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos (opcional)</Label>
+                  <Label>Plan de Pagos *</Label>
                   <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
                     <Plus className="h-3 w-3" />
                     Agregar Pago
@@ -1265,7 +1270,7 @@ export const OCRequestsList = ({
                 {paymentPlan.length === 0 ? (
                   <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
                     <p>No hay pagos planificados.</p>
-                    <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
+                    <p className="text-xs mt-1">Debes agregar al menos un pago para poder crear la solicitud.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1409,7 +1414,8 @@ export const OCRequestsList = ({
                     !newRequestForm.amount ||
                     parseFloat(newRequestForm.amount) <= 0 ||
                     !newRequestForm.supplier_id ||
-                    (paymentPlan.length > 0 && Math.abs(totalPlanned - totalSelected) > 0.01)
+                    paymentPlan.length === 0 ||
+                    Math.abs(totalPlanned - totalSelected) > 0.01
                   }
                 >
                   {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

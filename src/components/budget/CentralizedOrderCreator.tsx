@@ -678,7 +678,12 @@ export const CentralizedOrderCreator = ({
       toast({ title: "Error", description: "Ingrese un monto válido", variant: "destructive" });
       return;
     }
-    
+
+    if (mode === "request" && paymentPlan.length === 0) {
+      toast({ title: "Error", description: "Debe agregar al menos un pago al plan de pagos", variant: "destructive" });
+      return;
+    }
+
     if (budgetType === "opex" && !selectedCategoryId) {
       toast({ title: "Error", description: "Seleccione una categoría OPEX", variant: "destructive" });
       return;
@@ -1633,16 +1638,18 @@ export const CentralizedOrderCreator = ({
               
               <TabsContent value="payments" className="mt-4 space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos (opcional)</Label>
+                  <Label>Plan de Pagos{mode === "request" ? " *" : " (opcional)"}</Label>
                   <Button type="button" variant="outline" size="sm" onClick={handleAddPaymentItem}>
                     <Plus className="h-4 w-4 mr-1" />
                     Agregar Pago
                   </Button>
                 </div>
-                
+
                 {paymentPlan.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    Sin plan de pagos definido (se creará pago único automáticamente)
+                    {mode === "request"
+                      ? "Debes agregar al menos un pago para poder crear la solicitud."
+                      : "Sin plan de pagos definido (se creará pago único automáticamente)"}
                   </p>
                 ) : (
                   <Table>
@@ -1704,7 +1711,11 @@ export const CentralizedOrderCreator = ({
           <Button variant="outline" onClick={handleClose} disabled={loading}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || loadingData}>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading || loadingData || (mode === "request" && paymentPlan.length === 0)}
+            title={mode === "request" && paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}
+          >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {mode === "request" ? "Crear Solicitud" : "Crear OC"}
           </Button>
