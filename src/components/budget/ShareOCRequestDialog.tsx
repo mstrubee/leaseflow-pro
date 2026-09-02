@@ -51,15 +51,21 @@ interface ShareOCRequestDialogProps {
  * servidor — funciona igual en cualquier dispositivo y garantiza que el
  * único canal sea el correo indicado acá.
  */
+type MigoChoice = "con" | "sin" | null;
+
 export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCRequestDialogProps) {
   const [recipientEmail, setRecipientEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [lastMethod] = useState<ShareMethod>(getLastMethod);
+  const [migoChoice, setMigoChoice] = useState<MigoChoice>(null);
 
   const handleClose = (isOpen: boolean) => {
     if (sending || downloading) return;
-    if (!isOpen) setRecipientEmail("");
+    if (!isOpen) {
+      setRecipientEmail("");
+      setMigoChoice(null);
+    }
     onOpenChange(isOpen);
   };
 
@@ -135,6 +141,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCReques
   };
 
   const busy = sending || downloading;
+  const actionsDisabled = busy || migoChoice === null;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -159,11 +166,40 @@ export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCReques
           </p>
         </div>
 
+        <div className="space-y-2">
+          <Label>Migo</Label>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={migoChoice === "con" ? "default" : "outline"}
+              onClick={() => setMigoChoice("con")}
+              disabled={busy}
+              className="flex-1"
+            >
+              Con Migo
+            </Button>
+            <Button
+              type="button"
+              variant={migoChoice === "sin" ? "default" : "outline"}
+              onClick={() => setMigoChoice("sin")}
+              disabled={busy}
+              className="flex-1"
+            >
+              Sin Migo
+            </Button>
+          </div>
+          {migoChoice === null && (
+            <p className="text-xs text-muted-foreground">
+              Elige una opción para habilitar la descarga o el envío.
+            </p>
+          )}
+        </div>
+
         <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-2">
           <Button
             variant={lastMethod === "download" ? "default" : "outline"}
             onClick={handleDownload}
-            disabled={busy}
+            disabled={actionsDisabled}
             className="w-full sm:w-auto"
           >
             {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
@@ -172,7 +208,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data }: ShareOCReques
           <Button
             variant={lastMethod === "email" ? "default" : "outline"}
             onClick={handleSend}
-            disabled={busy}
+            disabled={actionsDisabled}
             className="w-full sm:w-auto"
           >
             {sending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Mail className="h-4 w-4 mr-1" />}
