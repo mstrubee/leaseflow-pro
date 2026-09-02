@@ -712,13 +712,16 @@ export function CommercialConditionsSummary({
   // Antes esto se recalculaba por separado (currentRent + gastosComunesTotalUF
   // + fondoPromocionAmount + otros), lo que ignoraba grace_ggcc_applies para
   // GGCC y podía divergir de lo que mostraba "Ver detalle" para ese mismo mes.
+  //
+  // Contrato que aún no arranca (fecha futura, típico "en negociación"):
+  // "Actual" = $0, porque hoy literalmente no hay obligación de pago -- el
+  // contrato no ha comenzado. Antes mostraba una proyección del arriendo
+  // futuro, lo que contradecía "lo que efectivamente se esté pagando hoy" y
+  // se veía como un monto arbitrario para contratos aún en negociación. La
+  // proyección real sigue disponible en "Total Arriendo Promedio",
+  // "Arriendo Inicial" y "Ver detalle" (ninguno de esos cambia).
   const totalArriendo = useMemo(() => {
-    if (currentMonth === null || currentMonth < 1) {
-      // Contrato aún no arranca: preview del arriendo real (sin gracia)
-      const canon = actualInitialRent || actualRegimeRent;
-      const fProm = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * canon : 0;
-      return canon + (gastosComunesTotalUF || 0) + fProm + otrosEgresosAmount;
-    }
+    if (currentMonth === null || currentMonth < 1) return 0;
     const matched = escalationPeriods.find((p) => {
       const range = parsePeriodMonthRange(p.label);
       return range !== null && currentMonth >= range.start && currentMonth <= range.end;
@@ -726,7 +729,7 @@ export function CommercialConditionsSummary({
     if (matched) return matched.total;
     // Más allá de la duración del contrato (ya venció, sin dato de renovación): último período
     return escalationPeriods[escalationPeriods.length - 1]?.total ?? 0;
-  }, [currentMonth, escalationPeriods, actualInitialRent, actualRegimeRent, gastosComunesTotalUF, otrosEgresosAmount, version.fondo_promocion_percentage]);
+  }, [currentMonth, escalationPeriods]);
 
   // escalationPeriods incluye la fila de gracia (para mostrarla en "Ver
   // detalle"), pero los promedios/"primer período que paga" deben excluirla
