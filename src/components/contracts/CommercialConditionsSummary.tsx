@@ -239,6 +239,25 @@ export function CommercialConditionsSummary({
       : `${perM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`;
   };
 
+  // UF/m² real: la columna "UF/m²" del detalle SIEMPRE debe ser UF, aunque
+  // el contrato esté en CLP -- antes dividía el monto crudo en CLP por la
+  // superficie y lo mostraba como si fuera UF (ej. "$4.000.000/380m²" =
+  // 10.526, etiquetado "10.526 UF/m²", un valor absurdo para UF/m²).
+  const toRealUfPerM2 = (amount: number): number | null => {
+    if (!superficieEdificadaLocal || superficieEdificadaLocal <= 0) return null;
+    if (displayCurrency === "CLP") {
+      return ufValue > 0 ? amount / ufValue / superficieEdificadaLocal : null;
+    }
+    return amount / superficieEdificadaLocal;
+  };
+
+  // Monto con decimales según la moneda del contrato: sin decimales en CLP,
+  // 2 decimales en UF. Antes las tablas de detalle forzaban 2 decimales
+  // siempre, mostrando "4.000.000,00" para un contrato en CLP.
+  const fmtAmount = (v: number) => displayCurrency === "CLP"
+    ? Math.round(v).toLocaleString("es-CL")
+    : v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   // Secondary format for guarantee - always uses historical UF from signed date
   const formatSecondaryGuarantee = (amount: number) => {
     if (displayCurrency === "CLP") {
@@ -571,6 +590,17 @@ export function CommercialConditionsSummary({
     const graceGgccApplies = version.grace_ggcc_applies !== false;
     const graceGgcc = graceGgccApplies ? ggcc : 0;
 
+    // UF/m² real: el monto de cada fila está en displayCurrency (CLP o UF),
+    // pero esta columna siempre debe representar UF/m² -- si el contrato
+    // está en CLP, primero se convierte a UF antes de dividir por m².
+    const toUfM2 = (amount: number): number | null => {
+      if (superficie <= 0) return null;
+      if (displayCurrency === "CLP") {
+        return ufValue > 0 ? amount / ufValue / superficie : null;
+      }
+      return amount / superficie;
+    };
+
     // Fila del período de gracia (canon $0, GGCC según el flag), para que
     // "Ver detalle" muestre explícitamente qué meses están exentos en vez
     // de saltarlos en silencio. isGrace marca la fila para excluirla de los
@@ -582,7 +612,7 @@ export function CommercialConditionsSummary({
       fProm: 0,
       otros,
       total: graceGgcc + otros,
-      ufM2: superficie > 0 ? (graceGgcc + otros) / superficie : null,
+      ufM2: toUfM2(graceGgcc + otros),
       isGrace: true as const,
     } : null;
 
@@ -609,7 +639,7 @@ export function CommercialConditionsSummary({
         fProm: periodFProm,
         otros,
         total: periodTotal,
-        ufM2: superficie > 0 ? periodTotal / superficie : null,
+        ufM2: toUfM2(periodTotal),
       };
       return graceRow ? [graceRow, mainRow] : [mainRow];
     }
@@ -705,12 +735,12 @@ export function CommercialConditionsSummary({
         fProm: periodFProm,
         otros,
         total: periodTotal,
-        ufM2: superficie > 0 ? periodTotal / superficie : null,
+        ufM2: toUfM2(periodTotal),
       });
     }
 
     return periods;
-  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
+  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent, displayCurrency, ufValue]);
 
   // "Total Arriendo Actual": identifica el mes de HOY (currentMonth) y toma
   // el total de la fila de escalationPeriods que lo contiene -- incluida la
@@ -918,6 +948,12 @@ export function CommercialConditionsSummary({
     doc.setFont("helvetica", "bold");
     doc.text(`Total Arriendo Actual: ${formatPrimary(totalArriendo)}`, 14, y);
     y += 5;
+    if (displayCurrency === "CLP" && formatSecondary(totalArriendo)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`(${formatSecondary(totalArriendo)})`, 14, y);
+      y += 5;
+    }
     if (formatPerM2(totalArriendo)) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
@@ -929,6 +965,12 @@ export function CommercialConditionsSummary({
     doc.setFontSize(10);
     doc.text(`Total Arriendo Promedio: ${formatPrimary(totalArriendoPromedio)}`, 14, y);
     y += 5;
+    if (displayCurrency === "CLP" && formatSecondary(totalArriendoPromedio)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`(${formatSecondary(totalArriendoPromedio)})`, 14, y);
+      y += 5;
+    }
     if (formatPerM2(totalArriendoPromedio)) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
@@ -956,7 +998,7 @@ export function CommercialConditionsSummary({
       periodHead.push("Total");
       if (hasSurface) periodHead.push("UF/m²");
 
-      const fmt2 = (v: number) => v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmt2 = fmtAmount;
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const periodBody = escalationPeriods.map(p => {
@@ -1074,7 +1116,7 @@ export function CommercialConditionsSummary({
       schedHead.push("Total");
       if (hasSurface) schedHead.push("UF/m²");
 
-      const fmt2 = (v: number) => v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmt2 = fmtAmount;
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const schedBody = paymentSchedule.map(p => {
@@ -1281,6 +1323,9 @@ export function CommercialConditionsSummary({
                 <p className="text-base font-bold text-primary leading-tight truncate">
                   {formatPrimary(totalArriendo)}
                 </p>
+                {displayCurrency === "CLP" && formatSecondary(totalArriendo) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatSecondary(totalArriendo)}</p>
+                )}
                 {formatPerM2(totalArriendo) && (
                   <p className="text-[10px] text-muted-foreground truncate">{formatPerM2(totalArriendo)}</p>
                 )}
@@ -1293,6 +1338,9 @@ export function CommercialConditionsSummary({
                 <p className="text-base font-bold text-primary leading-tight truncate">
                   {formatPrimary(totalArriendoPromedio)}
                 </p>
+                {displayCurrency === "CLP" && formatSecondary(totalArriendoPromedio) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatSecondary(totalArriendoPromedio)}</p>
+                )}
                 {formatPerM2(totalArriendoPromedio) && (
                   <p className="text-[10px] text-muted-foreground truncate">{formatPerM2(totalArriendoPromedio)}</p>
                 )}
@@ -1370,11 +1418,11 @@ export function CommercialConditionsSummary({
                       {escalationPeriods.map((p, idx) => (
                         <tr key={idx} className="border-t border-border/30">
                           <td className="py-0.5 text-muted-foreground">{p.label}</td>
-                          <td className="py-0.5 text-right">{p.canon.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-0.5 text-right">{p.ggcc > 0 ? p.ggcc.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                          <td className="py-0.5 text-right">{p.fProm > 0 ? p.fProm.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                          <td className="py-0.5 text-right">{p.otros > 0 ? p.otros.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                          <td className="py-0.5 text-right font-medium text-foreground">{p.total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-0.5 text-right">{fmtAmount(p.canon)}</td>
+                          <td className="py-0.5 text-right">{p.ggcc > 0 ? fmtAmount(p.ggcc) : "-"}</td>
+                          <td className="py-0.5 text-right">{p.fProm > 0 ? fmtAmount(p.fProm) : "-"}</td>
+                          <td className="py-0.5 text-right">{p.otros > 0 ? fmtAmount(p.otros) : "-"}</td>
+                          <td className="py-0.5 text-right font-medium text-foreground">{fmtAmount(p.total)}</td>
                           {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
                             <td className="py-0.5 text-right text-muted-foreground">{p.ufM2?.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td>
                           )}
@@ -1412,9 +1460,9 @@ export function CommercialConditionsSummary({
                 <p className="text-xs text-muted-foreground">
                   {formatSecondary(initialTotal)}
                 </p>
-                {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                {toRealUfPerM2(initialTotal) !== null && (
                   <p className="text-xs text-muted-foreground">
-                    ({(initialTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
+                    ({toRealUfPerM2(initialTotal)!.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
                   </p>
                 )}
               </div>
@@ -1493,9 +1541,9 @@ export function CommercialConditionsSummary({
               </div>
               <p className="text-sm font-medium">
                 {formatPrimary(gastosComunesTotalUF)}
-                {gastosComunesMethodology === "uf_m2" && superficieEdificadaLocal > 0 && gastosComunesTotalUF > 0 && (
+                {gastosComunesMethodology === "uf_m2" && gastosComunesTotalUF > 0 && toRealUfPerM2(gastosComunesTotalUF) !== null && (
                   <span className="text-xs font-normal text-muted-foreground ml-1">
-                    ({(gastosComunesTotalUF / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
+                    ({toRealUfPerM2(gastosComunesTotalUF)!.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
                   </span>
                 )}
               </p>
