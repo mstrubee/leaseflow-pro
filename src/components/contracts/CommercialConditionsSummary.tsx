@@ -539,13 +539,23 @@ export function CommercialConditionsSummary({
     const ggcc = gastosComunesTotalUF || 0;
     const durationMonths = version.duration_months;
 
-    // When no escalations/adjustments, return a single period row
+    // When no escalations/adjustments, return a single period row. Usa el
+    // canon de régimen (actualInitialRent||actualRegimeRent), NO
+    // currentRent -- currentRent es el snapshot de HOY (0 durante los
+    // meses de gracia), pero este detalle debe reflejar el arriendo real
+    // vigente durante el contrato, igual que ya hace la rama con
+    // escalonamiento/reajustes de más abajo (que arranca sus milestones en
+    // graceMonths+1 en vez de mostrar $0 para todo el contrato). Antes
+    // esto hacía que "Arriendo Inicial" y el detalle por período mostraran
+    // 0 en TODOS los meses de un contrato con meses de gracia, no solo en
+    // los meses de gracia — caso real: Osorno (2026), 2 meses de gracia.
     if (!hasEscalations && !hasAdjustments) {
-      const periodCanon = currentRent;
+      const periodCanon = actualInitialRent || actualRegimeRent;
       const periodFProm = periodCanon * (fondoPct / 100);
       const periodTotal = periodCanon + ggcc + periodFProm + otros;
+      const startMonth = graceMonths > 0 ? graceMonths + 1 : 1;
       return [{
-        label: `M1-M${durationMonths}`,
+        label: `M${startMonth}-M${durationMonths}`,
         canon: periodCanon,
         ggcc,
         fProm: periodFProm,
@@ -650,7 +660,7 @@ export function CommercialConditionsSummary({
     }
 
     return periods;
-  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent, currentRent]);
+  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
 
   // Weighted average total arriendo across all escalation periods
   const totalArriendoPromedio = useMemo(() => {
