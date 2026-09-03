@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, addDays, differenceInDays } from "date-fns";
-import { calculateEndDate, applyLag, addBusinessDays } from "@/lib/ganttDateUtils";
+import { calculateEndDate, applyLag, addBusinessDays, applyCarryOverRule } from "@/lib/ganttDateUtils";
 
 export interface GanttTask {
   id: string;
@@ -68,7 +68,22 @@ export interface GanttTaskDependency {
   dep_type: "start" | "end";
   lag_days: number;
   lag_type: "calendar" | "business";
+  // Regla "traslado al mes siguiente" -- solo tiene efecto con dep_type "end".
+  carry_over_enabled: boolean;
+  carry_over_threshold_day: number | null;
+  carry_over_landing_business_day: number;
   depends_on_task?: GanttTask;
+}
+
+// Campos editables de una dependencia -- compartido entre addDependency,
+// updateDependency y DependencyDialog para no repetir el shape en 3 lugares.
+export interface GanttDependencyOptions {
+  dep_type?: "start" | "end";
+  lag_days?: number;
+  lag_type?: "calendar" | "business";
+  carry_over_enabled?: boolean;
+  carry_over_threshold_day?: number | null;
+  carry_over_landing_business_day?: number;
 }
 
 // Una entrada del historial de undo (Ctrl+Z) del Gantt. "snapshot" cubre
@@ -731,6 +746,18 @@ export function useGantt(
           ? addBusinessDays(parseISO(anchorStr), lag, holidays)
           : addDays(parseISO(anchorStr), lag);
       }
+      // Traslado al mes siguiente: si la predecesora terminó después del día
+      // umbral, reemplaza el cálculo normal (fin + lag) por el día hábil N
+      // del mes siguiente. Solo aplica a "al término" (depType === "end").
+      if (dep.carry_over_enabled && dep.carry_over_threshold_day != null) {
+        const carryOverDate = applyCarryOverRule(
+          parseISO(anchorStr),
+          dep.carry_over_threshold_day,
+          dep.carry_over_landing_business_day ?? 1,
+          holidays,
+        );
+        if (carryOverDate) return carryOverDate;
+      }
       return applyLag(anchorStr, lag, lagType, holidays);
     };
 
@@ -1059,7 +1086,7 @@ export function useGantt(
       const list = ids.join(",");
       const { data } = await (supabase as any)
         .from("gantt_task_dependencies")
-        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type")
+        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type, carry_over_enabled, carry_over_threshold_day, carry_over_landing_business_day")
         .or(`task_id.in.(${list}),depends_on_task_id.in.(${list})`);
       snapDeps = data ?? [];
     } catch { /* sin deps */ }
@@ -1182,6 +1209,8 @@ export function useGantt(
             const { error } = await supabase.from("gantt_task_dependencies").insert({
               id: d.id, task_id: d.task_id, depends_on_task_id: d.depends_on_task_id,
               dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type,
+              carry_over_enabled: d.carry_over_enabled, carry_over_threshold_day: d.carry_over_threshold_day,
+              carry_over_landing_business_day: d.carry_over_landing_business_day,
             } as any);
             if (error) throw error;
           }
@@ -1194,9 +1223,17 @@ export function useGantt(
         }
         for (const d of prevDeps) {
           const cur = curDeps.find((c) => c.id === d.id);
-          if (cur && (cur.dep_type !== d.dep_type || cur.lag_days !== d.lag_days || cur.lag_type !== d.lag_type)) {
+          if (cur && (
+            cur.dep_type !== d.dep_type || cur.lag_days !== d.lag_days || cur.lag_type !== d.lag_type ||
+            cur.carry_over_enabled !== d.carry_over_enabled || cur.carry_over_threshold_day !== d.carry_over_threshold_day ||
+            cur.carry_over_landing_business_day !== d.carry_over_landing_business_day
+          )) {
             const { error } = await supabase.from("gantt_task_dependencies")
-              .update({ dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type } as any)
+              .update({
+                dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type,
+                carry_over_enabled: d.carry_over_enabled, carry_over_threshold_day: d.carry_over_threshold_day,
+                carry_over_landing_business_day: d.carry_over_landing_business_day,
+              } as any)
               .eq("id", d.id);
             if (error) throw error;
           }
@@ -1228,7 +1265,7 @@ export function useGantt(
   const addDependency = async (
     taskId: string,
     dependsOnTaskId: string,
-    options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
+    options?: GanttDependencyOptions
   ) => {
     pushHistory("Agregar dependencia");
     setSaving(true);
@@ -1246,6 +1283,9 @@ export function useGantt(
       const dep_type = options?.dep_type ?? "end";
       const lag_days = options?.lag_days ?? 0;
       const lag_type = options?.lag_type ?? "calendar";
+      const carry_over_enabled = options?.carry_over_enabled ?? false;
+      const carry_over_threshold_day = carry_over_enabled ? options?.carry_over_threshold_day ?? null : null;
+      const carry_over_landing_business_day = options?.carry_over_landing_business_day ?? 1;
 
       const { data: inserted, error } = await supabase
         .from("gantt_task_dependencies")
@@ -1255,8 +1295,11 @@ export function useGantt(
           dep_type,
           lag_days,
           lag_type,
+          carry_over_enabled,
+          carry_over_threshold_day,
+          carry_over_landing_business_day,
         } as any)
-        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type")
+        .select("id, task_id, depends_on_task_id, dep_type, lag_days, lag_type, carry_over_enabled, carry_over_threshold_day, carry_over_landing_business_day")
         .single();
 
       if (error) throw error;
@@ -1386,7 +1429,7 @@ export function useGantt(
 
   const updateDependency = async (
     dependencyId: string,
-    updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
+    updates: GanttDependencyOptions
   ) => {
     pushHistory("Editar dependencia");
     setSaving(true);

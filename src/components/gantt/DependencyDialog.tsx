@@ -1,19 +1,20 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { format, parseISO } from "date-fns";
-import { GanttTask } from "@/hooks/useGantt";
+import { GanttTask, GanttDependencyOptions } from "@/hooks/useGantt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   ChevronRight, ChevronDown, Search, Unlink, Link2, ChevronsDownUp, ChevronsUpDown, X, CornerDownRight,
-  ListChecks, Zap, Loader2, Sparkles, Ban,
+  ListChecks, Zap, Loader2, Sparkles, Ban, CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusDot } from "./TaskStatusActions";
 
-type DepOptions = { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" };
+type DepOptions = GanttDependencyOptions;
 
 interface DependencyDialogProps {
   open: boolean;
@@ -40,6 +41,10 @@ interface DraftDep {
   dep_type: "start" | "end";
   lag_days: number;
   lag_type: "calendar" | "business";
+  // Traslado al mes siguiente -- solo tiene efecto con dep_type "end".
+  carry_over_enabled: boolean;
+  carry_over_threshold_day: number | null;
+  carry_over_landing_business_day: number;
   isNew?: boolean;
 }
 
@@ -116,6 +121,9 @@ export function DependencyDialog({
   const [predecessorId, setPredecessorId] = useState<string>("");
   const [depType, setDepType] = useState<"start" | "end">("end");
   const [lag, setLag] = useState(0);
+  const [carryOverEnabled, setCarryOverEnabled] = useState(false);
+  const [carryOverThresholdDay, setCarryOverThresholdDay] = useState(8);
+  const [carryOverLandingDay, setCarryOverLandingDay] = useState(1);
   const [search, setSearch] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -176,6 +184,9 @@ export function DependencyDialog({
         dep_type: d.dep_type ?? "end",
         lag_days: d.lag_days ?? 0,
         lag_type: d.lag_type ?? "calendar",
+        carry_over_enabled: d.carry_over_enabled ?? false,
+        carry_over_threshold_day: d.carry_over_threshold_day ?? null,
+        carry_over_landing_business_day: d.carry_over_landing_business_day ?? 1,
       }));
       setDraftDeps(initial);
       setOriginalDeps(initial);
@@ -184,6 +195,9 @@ export function DependencyDialog({
       setPredecessorId("");
       setDepType("end");
       setLag(0);
+      setCarryOverEnabled(false);
+      setCarryOverThresholdDay(8);
+      setCarryOverLandingDay(1);
       setSearch("");
       setPendingAction(null);
       const parentIds = allTasks.filter((t) => (childrenOf.get(t.id) ?? []).length > 0).map((t) => t.id);
@@ -292,21 +306,38 @@ export function DependencyDialog({
     }
   };
 
-  // Agrega la predecesora elegida al borrador (no persiste todavía).
+  // Agrega la predecesora elegida al borrador (no persiste todavía). El
+  // traslado al mes siguiente solo tiene sentido "al término" -- si quedó
+  // tildado con depType "al inicio" (raro, pero posible si cambia el select
+  // después de tildar), se descarta acá para no guardar un estado inválido.
   const handleAddToDraft = () => {
     if (!predecessorId) return;
+    const carryOver = depType === "end" && carryOverEnabled;
     setDraftDeps((prev) => [
       ...prev,
-      { id: `draft-${crypto.randomUUID()}`, depends_on_task_id: predecessorId, dep_type: depType, lag_days: lag, lag_type: "calendar", isNew: true },
+      {
+        id: `draft-${crypto.randomUUID()}`,
+        depends_on_task_id: predecessorId,
+        dep_type: depType,
+        lag_days: lag,
+        lag_type: "calendar",
+        carry_over_enabled: carryOver,
+        carry_over_threshold_day: carryOver ? carryOverThresholdDay : null,
+        carry_over_landing_business_day: carryOverLandingDay,
+        isNew: true,
+      },
     ]);
     setPredecessorId("");
     setDepType("end");
     setLag(0);
+    setCarryOverEnabled(false);
+    setCarryOverThresholdDay(8);
+    setCarryOverLandingDay(1);
   };
 
   const handleRemoveFromDraft = (id: string) => setDraftDeps((prev) => prev.filter((d) => d.id !== id));
 
-  const handleUpdateDraft = (id: string, updates: Partial<Pick<DraftDep, "dep_type" | "lag_days" | "lag_type">>) =>
+  const handleUpdateDraft = (id: string, updates: Partial<Omit<DraftDep, "id" | "depends_on_task_id" | "isNew">>) =>
     setDraftDeps((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)));
 
   // ¿Hay cambios sin guardar respecto al estado original de la tarea?
@@ -317,7 +348,11 @@ export function DependencyDialog({
     for (const d of draftDeps) {
       const o = origById.get(d.id);
       if (!o) return true;
-      if (o.dep_type !== d.dep_type || o.lag_days !== d.lag_days || o.lag_type !== d.lag_type) return true;
+      if (
+        o.dep_type !== d.dep_type || o.lag_days !== d.lag_days || o.lag_type !== d.lag_type ||
+        o.carry_over_enabled !== d.carry_over_enabled || o.carry_over_threshold_day !== d.carry_over_threshold_day ||
+        o.carry_over_landing_business_day !== d.carry_over_landing_business_day
+      ) return true;
     }
     return false;
   }, [draftDeps, originalDeps, draftJoinMode, originalJoinMode]);
@@ -349,12 +384,22 @@ export function DependencyDialog({
       const added = draftDeps.filter((d) => !origById.has(d.id));
       const updated = draftDeps.filter((d) => {
         const o = origById.get(d.id);
-        return !!o && (o.dep_type !== d.dep_type || o.lag_days !== d.lag_days || o.lag_type !== d.lag_type);
+        return !!o && (
+          o.dep_type !== d.dep_type || o.lag_days !== d.lag_days || o.lag_type !== d.lag_type ||
+          o.carry_over_enabled !== d.carry_over_enabled || o.carry_over_threshold_day !== d.carry_over_threshold_day ||
+          o.carry_over_landing_business_day !== d.carry_over_landing_business_day
+        );
+      });
+
+      const toOptions = (d: DraftDep): DepOptions => ({
+        dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type,
+        carry_over_enabled: d.carry_over_enabled, carry_over_threshold_day: d.carry_over_threshold_day,
+        carry_over_landing_business_day: d.carry_over_landing_business_day,
       });
 
       for (const d of removed) await onRemoveDependency(d.id);
-      for (const d of added) await onAddDependency(taskId, d.depends_on_task_id, { dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type });
-      for (const d of updated) await onUpdateDependency?.(d.id, { dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type });
+      for (const d of added) await onAddDependency(taskId, d.depends_on_task_id, toOptions(d));
+      for (const d of updated) await onUpdateDependency?.(d.id, toOptions(d));
       if (draftJoinMode !== originalJoinMode) await onUpdateTask?.(taskId, { dependency_join_mode: draftJoinMode });
 
       setPendingAction(null);
@@ -591,6 +636,44 @@ export function DependencyDialog({
                         />
                         <span className="text-xs text-muted-foreground">días</span>
                       </div>
+                      {dep.dep_type === "end" && (
+                        <div className="pl-5 space-y-1.5">
+                          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                            <Checkbox
+                              checked={dep.carry_over_enabled}
+                              onCheckedChange={(checked) => handleUpdateDraft(dep.id, {
+                                carry_over_enabled: !!checked,
+                                carry_over_threshold_day: checked ? (dep.carry_over_threshold_day ?? 8) : null,
+                              })}
+                            />
+                            <CalendarClock className="h-3 w-3 shrink-0" />
+                            Trasladar al mes siguiente si termina tarde
+                          </label>
+                          {dep.carry_over_enabled && (
+                            <div className="flex items-center gap-1.5 pl-5 text-xs text-muted-foreground flex-wrap">
+                              <span>Si termina después del día</span>
+                              <Input
+                                type="number" min={1} max={31}
+                                className={cn("h-7 w-14 text-xs px-1.5", FOCUS_RING)}
+                                value={dep.carry_over_threshold_day ?? 8}
+                                onChange={(e) => handleUpdateDraft(dep.id, {
+                                  carry_over_threshold_day: Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)),
+                                })}
+                              />
+                              <span>del mes, pasar al día hábil</span>
+                              <Input
+                                type="number" min={1}
+                                className={cn("h-7 w-14 text-xs px-1.5", FOCUS_RING)}
+                                value={dep.carry_over_landing_business_day}
+                                onChange={(e) => handleUpdateDraft(dep.id, {
+                                  carry_over_landing_business_day: Math.max(1, parseInt(e.target.value, 10) || 1),
+                                })}
+                              />
+                              <span>del mes siguiente.</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     );
                   })}
@@ -645,6 +728,34 @@ export function DependencyDialog({
                   Agregar
                 </Button>
               </div>
+              {depType === "end" && (
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                    <Checkbox checked={carryOverEnabled} onCheckedChange={(checked) => setCarryOverEnabled(!!checked)} />
+                    <CalendarClock className="h-3 w-3 shrink-0" />
+                    Trasladar al mes siguiente si termina tarde
+                  </label>
+                  {carryOverEnabled && (
+                    <div className="flex items-center gap-1.5 pl-5 text-xs text-muted-foreground flex-wrap">
+                      <span>Si termina después del día</span>
+                      <Input
+                        type="number" min={1} max={31}
+                        className={cn("h-7 w-14 text-xs px-1.5", FOCUS_RING)}
+                        value={carryOverThresholdDay}
+                        onChange={(e) => setCarryOverThresholdDay(Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                      />
+                      <span>del mes, pasar al día hábil</span>
+                      <Input
+                        type="number" min={1}
+                        className={cn("h-7 w-14 text-xs px-1.5", FOCUS_RING)}
+                        value={carryOverLandingDay}
+                        onChange={(e) => setCarryOverLandingDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      />
+                      <span>del mes siguiente.</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="text-[11px] text-muted-foreground">
                 Desfase positivo retrasa, negativo adelanta. "Al término" empieza después de que termine la otra; "al inicio" se ancla a su inicio.
               </p>

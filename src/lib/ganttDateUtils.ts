@@ -1,4 +1,4 @@
-import { addDays, isWeekend, format, parseISO, differenceInDays } from "date-fns";
+import { addDays, isWeekend, format, parseISO, differenceInDays, addMonths, startOfMonth } from "date-fns";
 
 export interface Holiday {
   date: string;
@@ -131,6 +131,42 @@ export function applyLag(
   } else {
     return addDays(baseDate, lagDays + 1);
   }
+}
+
+/**
+ * Enésimo día hábil de un mes, contando desde el día 1 (n=1 -> primer día hábil).
+ */
+export function nthBusinessDayOfMonth(monthStart: Date, n: number, holidays: Holiday[]): Date {
+  let d = startOfMonth(monthStart);
+  let count = 0;
+  // Tope defensivo: un mes nunca tiene más de ~31 días hábiles, así que 60
+  // iteraciones alcanzan de sobra incluso con un n absurdamente alto.
+  for (let i = 0; i < 60; i++) {
+    if (isBusinessDay(d, holidays)) {
+      count++;
+      if (count >= n) return d;
+    }
+    d = addDays(d, 1);
+  }
+  return d;
+}
+
+/**
+ * Regla de "traslado al mes siguiente" para dependencias de Gantt: si la
+ * predecesora termina después del día `thresholdDay` de su mes, la
+ * dependiente pasa al día hábil `landingBusinessDay` del mes SIGUIENTE al
+ * de término. Si no se supera el umbral, retorna null (no aplica -- se usa
+ * el cálculo normal de lag).
+ */
+export function applyCarryOverRule(
+  predecessorEndDate: Date,
+  thresholdDay: number,
+  landingBusinessDay: number,
+  holidays: Holiday[]
+): Date | null {
+  if (predecessorEndDate.getDate() <= thresholdDay) return null;
+  const nextMonthStart = startOfMonth(addMonths(predecessorEndDate, 1));
+  return nthBusinessDayOfMonth(nextMonthStart, landingBusinessDay, holidays);
 }
 
 /**
