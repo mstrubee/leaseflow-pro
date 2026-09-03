@@ -71,6 +71,13 @@ export interface GanttTaskDependency {
   depends_on_task?: GanttTask;
 }
 
+// Una entrada del historial de undo (Ctrl+Z) del Gantt. "snapshot" cubre
+// ediciones/reordenamientos/dependencias (foto completa de `tasks` antes del
+// cambio); "delete" reusa el mismo shape que ya usaba lastDeletedRef.
+export type GanttHistoryEntry =
+  | { kind: "snapshot"; label: string; before: GanttTask[] }
+  | { kind: "delete"; label: string; tasks: any[]; deps: any[] };
+
 export interface GanttTaskPurchaseOrder {
   id: string;
   task_id: string;
@@ -157,6 +164,50 @@ export function useGantt(
   // la siguiente lea el estado ya con los cambios previos aplicados.
   const tasksRef = useRef<GanttTask[]>([]);
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+  // Historial de undo (Ctrl+Z), hasta 10 pasos, mezclando ediciones y
+  // eliminaciones en el orden real en que ocurrieron. Cada mutator relevante
+  // (updateTask, reorderTask, addDependency, removeDependency,
+  // updateDependency, deleteTask) empuja una entrada antes de aplicar su
+  // cambio. Se limpia al cambiar de cronograma (ver loadTimeline).
+  const MAX_GANTT_HISTORY = 10;
+  const historyRef = useRef<GanttHistoryEntry[]>([]);
+  // Agrupa varias mutaciones seguidas de un mismo gesto (ej. guardar el
+  // diálogo de dependencias, o arrastrar una fila que dispara cascada en
+  // ancestros) en UNA sola entrada de historial — sin esto, cada `await`
+  // interno empujaría su propio snapshot y un solo Ctrl+Z no alcanzaría
+  // para deshacer el gesto completo.
+  const groupOpenRef = useRef(false);
+  const pendingGroupRef = useRef<{ label: string; before: GanttTask[] } | null>(null);
+
+  const pushHistoryEntry = useCallback((entry: GanttHistoryEntry) => {
+    historyRef.current.push(entry);
+    if (historyRef.current.length > MAX_GANTT_HISTORY) historyRef.current.shift();
+  }, []);
+
+  const pushHistory = useCallback((label: string) => {
+    if (groupOpenRef.current) return; // el snapshot del grupo ya lo tomó beginUndoGroup
+    pushHistoryEntry({ kind: "snapshot", label, before: tasksRef.current });
+  }, [pushHistoryEntry]);
+
+  const beginUndoGroup = useCallback((label: string) => {
+    if (groupOpenRef.current) return; // no anidar grupos
+    pendingGroupRef.current = { label, before: tasksRef.current };
+    groupOpenRef.current = true;
+  }, []);
+
+  const endUndoGroup = useCallback(() => {
+    if (!groupOpenRef.current) return;
+    groupOpenRef.current = false;
+    const pending = pendingGroupRef.current;
+    pendingGroupRef.current = null;
+    // Solo se empuja si de verdad cambió algo (referencia distinta = hubo
+    // al menos un setTasks nuevo durante el grupo)
+    if (pending && pending.before !== tasksRef.current) {
+      pushHistoryEntry({ kind: "snapshot", label: pending.label, before: pending.before });
+    }
+  }, [pushHistoryEntry]);
+
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
@@ -222,6 +273,11 @@ export function useGantt(
   }, []);
 
   const loadTimeline = useCallback(async () => {
+    // Un (re)cargado del cronograma invalida cualquier snapshot de undo
+    // anterior (podría apuntar a otro timeline, o a un estado ya obsoleto).
+    historyRef.current = [];
+    groupOpenRef.current = false;
+    pendingGroupRef.current = null;
     setLoading(true);
     try {
       // Un contrato puede tener varios cronogramas. Se cargan todos (el
@@ -866,6 +922,11 @@ export function useGantt(
       updates.dependency_join_mode !== undefined ||
       updates.reprog_offset_days !== undefined;
 
+    // Undo: solo fechas/plazo/posición/nombre entran al historial -- status,
+    // progreso, color, notas o responsable quedan afuera a propósito (no
+    // pedidos, y evita ensuciar los 10 pasos con toggles de estado).
+    if (scheduleRelevant || updates.name !== undefined) pushHistory("Editar tarea");
+
     // Estado más fresco (ver nota en tasksRef): garantiza que si esta llamada
     // llega justo después de agregar dependencias en el mismo guardado por
     // lotes del diálogo (ej. al cambiar además el modo "esperar todas"), el
@@ -957,9 +1018,6 @@ export function useGantt(
     return cascade;
   };
 
-  // Snapshot de la última eliminación para poder deshacer (Ctrl/Cmd+Z)
-  const lastDeletedRef = useRef<{ tasks: any[]; deps: any[] } | null>(null);
-
   const pickTaskCols = (t: GanttTask) => ({
     id: t.id, timeline_id: t.timeline_id, parent_id: t.parent_id, template_task_id: t.template_task_id,
     name: t.name, start_date: t.start_date, end_date: t.end_date, duration_days: t.duration_days,
@@ -968,7 +1026,22 @@ export function useGantt(
     responsible_member_id: t.responsible_member_id, origin: t.origin,
     dependency_join_mode: t.dependency_join_mode,
     discarded_at: t.discarded_at,
+    // Antes faltaban estas 3 -- deshacer una eliminación o una edición de
+    // fecha dejaba baseline/offset desincronizados en la DB (aunque
+    // start_date/end_date se restauraran bien), lo que podía corromper el
+    // próximo cálculo de cascada (ver política de baseline en updateTask).
+    baseline_start_date: t.baseline_start_date, baseline_end_date: t.baseline_end_date,
+    reprog_offset_days: t.reprog_offset_days,
   });
+
+  // Columnas de gantt_tasks que le importan al diff de undo (todas las de
+  // pickTaskCols salvo id/timeline_id, que nunca cambian por edición).
+  const GANTT_TASK_DIFF_COLS = [
+    "parent_id", "template_task_id", "name", "start_date", "end_date", "duration_days",
+    "duration_type", "progress", "status", "has_lag", "lag_days", "lag_type", "notes", "color",
+    "display_order", "responsible_member_id", "origin", "dependency_join_mode", "discarded_at",
+    "baseline_start_date", "baseline_end_date", "reprog_offset_days",
+  ] as const;
 
   const deleteTask = async (taskId: string) => {
     // ids a eliminar: la tarea + sus descendientes (la BD cascada; lo replicamos local)
@@ -990,7 +1063,7 @@ export function useGantt(
         .or(`task_id.in.(${list}),depends_on_task_id.in.(${list})`);
       snapDeps = data ?? [];
     } catch { /* sin deps */ }
-    lastDeletedRef.current = { tasks: snapTasks, deps: snapDeps };
+    pushHistoryEntry({ kind: "delete", label: "Eliminar tarea", tasks: snapTasks, deps: snapDeps });
 
     // Actualización local optimista (instantánea, sin recargar la sección)
     setTasks((prev) => prev.filter((t) => !idsToRemove.has(t.id)));
@@ -1015,10 +1088,9 @@ export function useGantt(
     }
   };
 
-  const undoDelete = async () => {
-    const snap = lastDeletedRef.current;
-    if (!snap || snap.tasks.length === 0) return;
-    lastDeletedRef.current = null;
+  // Restaura una entrada kind:"delete" (misma lógica que antes tenía undoDelete).
+  const restoreDeletedSnapshot = async (snap: { tasks: any[]; deps: any[] }) => {
+    if (snap.tasks.length === 0) return;
 
     // 1) Restaurar en el estado local de inmediato (sin recargar la sección)
     const nowIso = new Date().toISOString();
@@ -1072,11 +1144,93 @@ export function useGantt(
     }
   };
 
+  // Restaura una entrada kind:"snapshot" (edición de fecha/nombre/orden o
+  // dependencias): compara la foto de "antes" contra el estado actual, y
+  // escribe en Supabase solo lo que efectivamente cambió.
+  const restoreSnapshot = async (before: GanttTask[]) => {
+    const current = tasksRef.current;
+    const beforeById = new Map(before.map((t) => [t.id, t]));
+    const currentById = new Map(current.map((t) => [t.id, t]));
+
+    // 1) Restauración optimista local, antes de escribir en Supabase
+    tasksRef.current = before;
+    setTasks(before);
+
+    // 2) Persistir en segundo plano solo lo que cambió
+    setSaving(true);
+    try {
+      for (const [id, prevTask] of beforeById) {
+        const curTask = currentById.get(id);
+        if (!curTask) continue; // la tarea no existía en el estado actual (fuera de alcance: creación de tareas)
+
+        const changed: Record<string, unknown> = {};
+        for (const col of GANTT_TASK_DIFF_COLS) {
+          if ((prevTask as any)[col] !== (curTask as any)[col]) changed[col] = (prevTask as any)[col];
+        }
+        if (Object.keys(changed).length > 0) {
+          const { error } = await supabase.from("gantt_tasks").update(changed as any).eq("id", id);
+          if (error) throw error;
+        }
+
+        const prevDeps = prevTask.dependencies || [];
+        const curDeps = curTask.dependencies || [];
+        const prevDepIds = new Set(prevDeps.map((d) => d.id));
+        const curDepIds = new Set(curDeps.map((d) => d.id));
+
+        for (const d of prevDeps) {
+          if (!curDepIds.has(d.id)) {
+            const { error } = await supabase.from("gantt_task_dependencies").insert({
+              id: d.id, task_id: d.task_id, depends_on_task_id: d.depends_on_task_id,
+              dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type,
+            } as any);
+            if (error) throw error;
+          }
+        }
+        for (const d of curDeps) {
+          if (!prevDepIds.has(d.id)) {
+            const { error } = await supabase.from("gantt_task_dependencies").delete().eq("id", d.id);
+            if (error) throw error;
+          }
+        }
+        for (const d of prevDeps) {
+          const cur = curDeps.find((c) => c.id === d.id);
+          if (cur && (cur.dep_type !== d.dep_type || cur.lag_days !== d.lag_days || cur.lag_type !== d.lag_type)) {
+            const { error } = await supabase.from("gantt_task_dependencies")
+              .update({ dep_type: d.dep_type, lag_days: d.lag_days, lag_type: d.lag_type } as any)
+              .eq("id", d.id);
+            if (error) throw error;
+          }
+        }
+      }
+      toast({ title: "Cambio deshecho" });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo deshacer el cambio" });
+      await loadTimeline(); // resync solo si falló
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Deshacer general (Ctrl/Cmd+Z): saca la última entrada del historial y la
+  // despacha según su tipo. Bloqueado mientras `saving` es true, para no
+  // pisar una escritura en curso del cambio original con la del undo.
+  const undoLastChange = async () => {
+    if (saving) return;
+    const entry = historyRef.current.pop();
+    if (!entry) return;
+    if (entry.kind === "delete") {
+      await restoreDeletedSnapshot(entry);
+    } else {
+      await restoreSnapshot(entry.before);
+    }
+  };
+
   const addDependency = async (
     taskId: string,
     dependsOnTaskId: string,
     options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
   ) => {
+    pushHistory("Agregar dependencia");
     setSaving(true);
     try {
       // Estado más fresco (incluye dependencias agregadas en llamadas previas
@@ -1151,6 +1305,7 @@ export function useGantt(
   };
 
   const removeDependency = async (dependencyId: string) => {
+    pushHistory("Quitar dependencia");
     setSaving(true);
     try {
       // Estado más fresco (ver nota en tasksRef).
@@ -1233,6 +1388,7 @@ export function useGantt(
     dependencyId: string,
     updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
   ) => {
+    pushHistory("Editar dependencia");
     setSaving(true);
     try {
       // Estado más fresco (ver nota en tasksRef).
@@ -1486,6 +1642,7 @@ export function useGantt(
   const taskTree = buildTaskTree(tasks);
 
   const reorderTask = async (taskId: string, newIndex: number, siblingIds: string[]) => {
+    pushHistory("Reordenar tarea");
     // 1) Actualización local optimista (instantánea, sin recargar toda la sección)
     const orderMap = new Map(siblingIds.map((id, idx) => [id, idx]));
     setTasks((prev) =>
@@ -2126,7 +2283,9 @@ export function useGantt(
     addTask,
     updateTask,
     deleteTask,
-    undoDelete,
+    undoLastChange,
+    beginUndoGroup,
+    endUndoGroup,
     addDependency,
     removeDependency,
     updateDependency,

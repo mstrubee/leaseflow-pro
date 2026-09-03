@@ -61,7 +61,9 @@ export function GanttModule({ contractId, serviceContractId, category = "general
     addTask,
     updateTask,
     deleteTask,
-    undoDelete,
+    undoLastChange,
+    beginUndoGroup,
+    endUndoGroup,
     addDependency,
     updateDependency,
     removeDependency,
@@ -163,6 +165,27 @@ export function GanttModule({ contractId, serviceContractId, category = "general
   useEffect(() => {
     if (capexScope === "select") setSelectedCapexLineIds(getAllCapexLineIds(capexLines));
   }, [capexScope, capexLines]);
+
+  // Deshacer (Ctrl/Cmd+Z) el último cambio del Gantt -- fechas, plazo,
+  // nombre, orden de filas o dependencias, hasta 10 pasos. Vive acá (no
+  // dentro de GanttChart) porque este es el padre común de ambas pestañas
+  // ("Diagrama Gantt" y "Lista de Tareas"): así funciona sin importar cuál
+  // esté activa. Mismo permiso que edita el Gantt, no solo admin.
+  useEffect(() => {
+    if (!canEdit) return;
+    const onKey = (e: KeyboardEvent) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z");
+      if (!isUndo) return;
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      const typing = tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement | null)?.isContentEditable;
+      if (typing) return; // dejar que el navegador deshaga el texto
+      e.preventDefault();
+      undoLastChange();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEdit, undoLastChange]);
 
   const handleDeleteTimeline = async () => {
     const ok = await deleteTimeline();
@@ -828,7 +851,8 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               onUpdateTask={updateTask}
               onAddTask={addTask}
               onDeleteTask={deleteTask}
-              onUndoDelete={undoDelete}
+              beginUndoGroup={beginUndoGroup}
+              endUndoGroup={endUndoGroup}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onUpdateDependency={updateDependency}
@@ -886,6 +910,8 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               onDiscardTask={discardTask}
               onRestoreTask={restoreTask}
               getDescendantCount={getDescendantCount}
+              beginUndoGroup={beginUndoGroup}
+              endUndoGroup={endUndoGroup}
               onLinkPurchaseOrder={linkPurchaseOrder}
               onUnlinkPurchaseOrder={unlinkPurchaseOrder}
               canAdd={canEdit}

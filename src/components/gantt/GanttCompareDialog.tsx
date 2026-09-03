@@ -20,7 +20,8 @@ interface GanttCompareDialogProps {
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>, opts?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
   onAddTask: (timelineId: string, name: string, parentId?: string | null, opts?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
-  onUndoDelete: () => Promise<void>;
+  beginUndoGroup: (label: string) => void;
+  endUndoGroup: () => void;
   onAddDependency: (taskId: string, dependsOnTaskId: string, opts?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (depId: string) => Promise<void>;
   onUpdateDependency: (depId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
@@ -39,7 +40,8 @@ export function GanttCompareDialog({
   onUpdateTask,
   onAddTask,
   onDeleteTask,
-  onUndoDelete,
+  beginUndoGroup,
+  endUndoGroup,
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
@@ -203,7 +205,8 @@ export function GanttCompareDialog({
                   onUpdateTask={onUpdateTask}
                   onAddTask={(name, parentId, opts) => onAddTask(tl.id, name, parentId ?? null, opts)}
                   onDeleteTask={onDeleteTask}
-                  onUndoDelete={onUndoDelete}
+                  beginUndoGroup={beginUndoGroup}
+                  endUndoGroup={endUndoGroup}
                   onAddDependency={onAddDependency}
                   onRemoveDependency={onRemoveDependency}
                   onUpdateDependency={onUpdateDependency}

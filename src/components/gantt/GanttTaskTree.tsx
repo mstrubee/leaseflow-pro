@@ -36,6 +36,8 @@ interface GanttTaskTreeProps {
   onDiscardTask?: (taskId: string) => Promise<void>;
   onRestoreTask?: (taskId: string) => Promise<void>;
   getDescendantCount?: (taskId: string) => number;
+  beginUndoGroup?: (label: string) => void;
+  endUndoGroup?: () => void;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
@@ -63,6 +65,8 @@ export function GanttTaskTree({
   onDiscardTask,
   onRestoreTask,
   getDescendantCount,
+  beginUndoGroup,
+  endUndoGroup,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
   onExportPDF,
@@ -685,6 +689,8 @@ export function GanttTaskTree({
         onRemoveDependency={onRemoveDependency}
         onUpdateDependency={onUpdateDependency}
         onUpdateTask={onUpdateTask}
+        beginUndoGroup={beginUndoGroup}
+        endUndoGroup={endUndoGroup}
       />
 
       {/* Purchase Orders Dialog */}

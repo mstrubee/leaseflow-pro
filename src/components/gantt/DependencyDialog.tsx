@@ -24,6 +24,8 @@ interface DependencyDialogProps {
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: DepOptions) => Promise<void>;
   onUpdateTask?: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
+  beginUndoGroup?: (label: string) => void;
+  endUndoGroup?: () => void;
 }
 
 interface TreeNode {
@@ -100,6 +102,8 @@ export function DependencyDialog({
   onRemoveDependency,
   onUpdateDependency,
   onUpdateTask,
+  beginUndoGroup,
+  endUndoGroup,
 }: DependencyDialogProps) {
   // --- Borrador local: nada de esto se persiste hasta que el usuario confirma Guardar ---
   const [draftDeps, setDraftDeps] = useState<DraftDep[]>([]);
@@ -334,6 +338,10 @@ export function DependencyDialog({
   const handleConfirmSave = async () => {
     if (!taskId) return;
     setCommitting(true);
+    // Un "Guardar" puede aplicar varios cambios de dependencias de una vez
+    // -- agruparlos en una sola entrada de undo para que un solo Ctrl+Z
+    // revierta todo el guardado, no fila por fila.
+    beginUndoGroup?.("Guardar dependencias");
     try {
       const origById = new Map(originalDeps.map((d) => [d.id, d]));
       const draftById = new Map(draftDeps.map((d) => [d.id, d]));
@@ -355,6 +363,8 @@ export function DependencyDialog({
     } catch {
       setCommitting(false);
       setPendingAction(null);
+    } finally {
+      endUndoGroup?.();
     }
   };
 

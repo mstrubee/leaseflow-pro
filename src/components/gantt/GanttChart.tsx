@@ -299,7 +299,8 @@ interface GanttChartProps {
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean; isReprogram?: boolean }) => Promise<Map<string, Partial<GanttTask>> | void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
-  onUndoDelete?: () => Promise<void>;
+  beginUndoGroup: (label: string) => void;
+  endUndoGroup: () => void;
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
@@ -359,7 +360,8 @@ export function GanttChart({
   onUpdateTask,
   onAddTask,
   onDeleteTask,
-  onUndoDelete,
+  beginUndoGroup,
+  endUndoGroup,
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
@@ -530,24 +532,6 @@ export function GanttChart({
       nameInputRef.current.focus();
     }
   }, [newTaskRow]);
-
-  // Deshacer la última eliminación con Ctrl+Z (PC) / Cmd+Z (Mac).
-  // No interferir cuando se está escribiendo en un campo de texto.
-  useEffect(() => {
-    if (!onUndoDelete || !isAdmin) return;
-    const onKey = (e: KeyboardEvent) => {
-      const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z");
-      if (!isUndo) return;
-      const el = document.activeElement;
-      const tag = el?.tagName;
-      const typing = tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement | null)?.isContentEditable;
-      if (typing) return; // dejar que el navegador deshaga el texto
-      e.preventDefault();
-      onUndoDelete();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onUndoDelete, isAdmin]);
 
   const allParentTaskIds = useMemo(() => {
     const ids: string[] = [];
@@ -1098,6 +1082,18 @@ export function GanttChart({
       handleRowDragEnd();
       return;
     }
+
+    // Reparentar puede disparar cascada en varios ancestros (viejo y nuevo
+    // padre) — agrupar todo el gesto en una sola entrada de undo.
+    beginUndoGroup("Mover tarea");
+    try {
+      await handleRowDropInner();
+    } finally {
+      endUndoGroup();
+    }
+  };
+
+  const handleRowDropInner = async () => {
 
     // Prevent dropping into own descendant
     const isDescendant = (potentialAncestorId: string, candidateId: string): boolean => {
@@ -3187,6 +3183,8 @@ export function GanttChart({
         onRemoveDependency={onRemoveDependency}
         onUpdateDependency={onUpdateDependency}
         onUpdateTask={async (taskId, updates) => { await onUpdateTask(taskId, updates); }}
+        beginUndoGroup={beginUndoGroup}
+        endUndoGroup={endUndoGroup}
       />
 
       {/* Export PDF dialog */}
