@@ -100,15 +100,36 @@ interface CommercialConditionsSummaryProps {
   terminationNotices?: TerminationNoticeForChart[];
 }
 
-// Parsea el rango de meses de una fila de escalationPeriods a partir de su
-// label: "M3-M120" -> {start:3,end:120}; "M1 (Gracia)" (gracia de 1 mes,
-// sin guión) -> {start:1,end:1}; "M1-M2 (Gracia)" -> {start:1,end:2}.
+// Parsea el rango de meses de una fila de escalationPeriods/paymentSchedule a
+// partir de su label: "M3-M120" -> {start:3,end:120}; "M1 (Gracia)" (gracia de
+// 1 mes, sin guión) -> {start:1,end:1}; "M1-M2 (Gracia)" -> {start:1,end:2};
+// "Mes 1 (parcial...)" (fila especial del PDF para el mes 1 prorrateado) ->
+// {start:1,end:1}.
 function parsePeriodMonthRange(label: string): { start: number; end: number } | null {
-  const match = label.match(/^M(\d+)(?:-M(\d+))?/);
+  const match = label.match(/^(?:Mes\s+|M)(\d+)(?:-M(\d+))?/);
   if (!match) return null;
   const start = parseInt(match[1], 10);
   const end = match[2] ? parseInt(match[2], 10) : start;
   return { start, end };
+}
+
+// "Agosto '26" -- nombre completo del mes en español, capitalizado, con año
+// abreviado a 2 dígitos. monthNumber es 1-based y relativo a startDate (mes 1
+// = el mes calendario de startDate).
+function monthYearLabel(monthNumber: number, startDate: Date): string {
+  const d = addMonths(startDate, monthNumber - 1);
+  const raw = format(d, "MMMM ''yy", { locale: es });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+// "Agosto '26" o, si el rango cubre más de un mes, "Agosto '26 - Julio '27".
+function periodDateLabel(label: string, startDate: Date | undefined | null): string {
+  if (!startDate) return "";
+  const range = parsePeriodMonthRange(label);
+  if (!range) return "";
+  return range.start === range.end
+    ? monthYearLabel(range.start, startDate)
+    : `${monthYearLabel(range.start, startDate)} - ${monthYearLabel(range.end, startDate)}`;
 }
 
 interface PeriodRow {
@@ -1201,18 +1222,25 @@ export function CommercialConditionsSummary({
 
       const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
 
-      // Columnas fijas: Periodo, Canon, GGCC, F.Prom, Total, UF/m² -- GGCC y
-      // F.Prom se muestran siempre en 0,00 cuando no aplican (antes se
+      // Columnas fijas: Periodo, Mes, Canon, GGCC, F.Prom, Total, UF/m² --
+      // GGCC y F.Prom se muestran siempre en 0,00 cuando no aplican (antes se
       // ocultaba la columna entera si todas las filas daban 0, lo que corría
       // el resto de las columnas de lugar entre contratos).
-      const schedHead: string[] = ["Periodo", "Canon", "GGCC", "F.Prom", "Total"];
+      const schedHead: string[] = ["Periodo", "Mes", "Canon", "GGCC", "F.Prom", "Total"];
       if (hasSurface) schedHead.push("UF/m²");
 
       const fmt2 = fmtAmount;
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const schedBody = paymentSchedule.map(p => {
-        const row: string[] = [p.label, fmt2(p.canon), fmt2(p.ggcc), fmt2(p.fProm), fmt2(p.total)];
+        const row: string[] = [
+          p.label,
+          periodDateLabel(p.label, dates?.startDate),
+          fmt2(p.canon),
+          fmt2(p.ggcc),
+          fmt2(p.fProm),
+          fmt2(p.total),
+        ];
         if (hasSurface) row.push(fmt3(p.ufM2));
         return row;
       });
@@ -1221,8 +1249,9 @@ export function CommercialConditionsSummary({
       // (26 días de gracia. Pago parcial de 5/31 días)") no queden cortadas.
       const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify"; cellWidth: number }>> = {
         "0": { halign: "left", cellWidth: 68 },
+        "1": { halign: "left", cellWidth: 30 },
       };
-      for (let i = 1; i < schedHead.length; i++) {
+      for (let i = 2; i < schedHead.length; i++) {
         schedColStyles[i.toString()] = { halign: "right" };
       }
 
