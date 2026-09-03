@@ -163,35 +163,36 @@ function splitAtGraceBoundary(
   // escalationPeriods (misma GGCC/Otros mensuales, el canon siempre es $0).
   const graceRate = target.isGrace ? target : fullPeriods.find((p) => p.isGrace) ?? { ...target, canon: 0, fProm: 0 };
 
-  const graceRow: PeriodRow = {
-    ...graceRate,
-    label: `M${targetMonth} (parcial, ${graceDays} de ${daysInTargetMonth} días) (Gracia)`,
-    canon: graceRate.canon * factorGrace,
-    ggcc: graceRate.ggcc * factorGrace,
-    fProm: graceRate.fProm * factorGrace,
-    otros: graceRate.otros * factorGrace,
-    total: (graceRate.canon + graceRate.ggcc + graceRate.fProm + graceRate.otros) * factorGrace,
-    ufM2: graceRate.ufM2 !== null ? graceRate.ufM2 * factorGrace : null,
-    isGrace: true,
-  };
+  // Una sola fila para el mes de transición (no dos): "N días de gracia" +
+  // "pago parcial de N/N días" describen el mismo mes calendario, mostrarlo
+  // en dos líneas es redundante y confunde más de lo que aclara.
+  const graceCanon = graceRate.canon * factorGrace;
+  const graceGgcc = graceRate.ggcc * factorGrace;
+  const graceFProm = graceRate.fProm * factorGrace;
+  const graceOtros = graceRate.otros * factorGrace;
+  const payingCanon = target.canon * factorPaying;
+  const payingGgcc = target.ggcc * factorPaying;
+  const payingFProm = target.fProm * factorPaying;
+  const payingOtros = target.otros * factorPaying;
 
-  const payingRow: PeriodRow = {
-    ...target,
-    label: `M${targetMonth} (parcial, ${payingDays} de ${daysInTargetMonth} días)`,
-    canon: target.canon * factorPaying,
-    ggcc: target.ggcc * factorPaying,
-    fProm: target.fProm * factorPaying,
-    otros: target.otros * factorPaying,
-    total: target.total * factorPaying,
-    ufM2: target.ufM2 !== null ? target.ufM2 * factorPaying : null,
-    isGrace: undefined,
+  const mergedRow: PeriodRow = {
+    label: `M${targetMonth} (${graceDays} días de gracia. Pago parcial de ${payingDays}/${daysInTargetMonth} días)`,
+    canon: graceCanon + payingCanon,
+    ggcc: graceGgcc + payingGgcc,
+    fProm: graceFProm + payingFProm,
+    otros: graceOtros + payingOtros,
+    total: graceCanon + graceGgcc + graceFProm + graceOtros + payingCanon + payingGgcc + payingFProm + payingOtros,
+    ufM2:
+      graceRate.ufM2 !== null && target.ufM2 !== null
+        ? graceRate.ufM2 * factorGrace + target.ufM2 * factorPaying
+        : null,
   };
 
   const rangeLabel = (start: number, end: number) => (start === end ? `M${start}${suffix}` : `M${start}-M${end}${suffix}`);
   const before: PeriodRow[] = range.start < targetMonth ? [{ ...target, label: rangeLabel(range.start, targetMonth - 1) }] : [];
   const after: PeriodRow[] = range.end > targetMonth ? [{ ...target, label: rangeLabel(targetMonth + 1, range.end) }] : [];
 
-  return [...rows.slice(0, idx), ...before, graceRow, payingRow, ...after, ...rows.slice(idx + 1)];
+  return [...rows.slice(0, idx), ...before, mergedRow, ...after, ...rows.slice(idx + 1)];
 }
 export function CommercialConditionsSummary({
   version,
@@ -1199,33 +1200,30 @@ export function CommercialConditionsSummary({
       y += 4;
 
       const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
-      const hasAnyGGCC = paymentSchedule.some(p => p.ggcc > 0);
-      const hasAnyFProm = paymentSchedule.some(p => p.fProm > 0);
-      const hasAnyOtros = paymentSchedule.some(p => p.otros > 0);
 
-      const schedHead: string[] = ["Periodo", "Canon"];
-      if (hasAnyGGCC) schedHead.push("GGCC");
-      if (hasAnyFProm) schedHead.push("F.Prom");
-      if (hasAnyOtros) schedHead.push("Otros");
-      schedHead.push("Total");
+      // Columnas fijas: Periodo, Canon, GGCC, F.Prom, Total, UF/m² -- GGCC y
+      // F.Prom se muestran siempre en 0,00 cuando no aplican (antes se
+      // ocultaba la columna entera si todas las filas daban 0, lo que corría
+      // el resto de las columnas de lugar entre contratos).
+      const schedHead: string[] = ["Periodo", "Canon", "GGCC", "F.Prom", "Total"];
       if (hasSurface) schedHead.push("UF/m²");
 
       const fmt2 = fmtAmount;
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const schedBody = paymentSchedule.map(p => {
-        const row: string[] = [p.label, fmt2(p.canon)];
-        if (hasAnyGGCC) row.push(p.ggcc > 0 ? fmt2(p.ggcc) : "-");
-        if (hasAnyFProm) row.push(p.fProm > 0 ? fmt2(p.fProm) : "-");
-        if (hasAnyOtros) row.push(p.otros > 0 ? fmt2(p.otros) : "-");
-        row.push(fmt2(p.total));
+        const row: string[] = [p.label, fmt2(p.canon), fmt2(p.ggcc), fmt2(p.fProm), fmt2(p.total)];
         if (hasSurface) row.push(fmt3(p.ufM2));
         return row;
       });
 
-      const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify" }>> = {};
-      for (let i = 0; i < schedHead.length; i++) {
-        schedColStyles[i.toString()] = { halign: i === 0 ? "left" : "right" };
+      // Periodo con ancho fijo generoso para que las etiquetas largas ("M3
+      // (26 días de gracia. Pago parcial de 5/31 días)") no queden cortadas.
+      const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify"; cellWidth: number }>> = {
+        "0": { halign: "left", cellWidth: 68 },
+      };
+      for (let i = 1; i < schedHead.length; i++) {
+        schedColStyles[i.toString()] = { halign: "right" };
       }
 
       autoTable(doc, {
