@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import logosHeader from "@/assets/logos-header.png";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
-import { addMonths, format, subMonths, parseISO } from "date-fns";
+import { addMonths, differenceInCalendarMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { supabase } from "@/integrations/supabase/client";
@@ -109,6 +109,89 @@ function parsePeriodMonthRange(label: string): { start: number; end: number } | 
   const start = parseInt(match[1], 10);
   const end = match[2] ? parseInt(match[2], 10) : start;
   return { start, end };
+}
+
+interface PeriodRow {
+  label: string;
+  canon: number;
+  ggcc: number;
+  fProm: number;
+  otros: number;
+  total: number;
+  ufM2: number | null;
+  isGrace?: true;
+}
+
+// Parte en dos la fila de escalationPeriods que contiene el mes calendario en
+// que termina la gracia (dates.paymentStartDate = fecha inicio + meses de
+// gracia, "días corridos" -- NO el número de filas etiquetadas "Gracia").
+// Sin esto, cuando el contrato no arranca el día 1, la gracia se cortaba en
+// el límite de la fila M{graceMonths} (mes calendario, no aniversario), lo
+// que subestimaba los días de gracia reales cada vez que el día de inicio no
+// era el 1: ej. inicio 27-ago con 2 meses de gracia real llega hasta el
+// 27-oct, pero antes se cobraba TODO octubre como si la gracia hubiera
+// terminado el 30-sep.
+function splitAtGraceBoundary(
+  rows: PeriodRow[],
+  paymentStartDate: Date,
+  contractStartDate: Date,
+  fullPeriods: PeriodRow[]
+): PeriodRow[] {
+  const payDay = paymentStartDate.getDate();
+  if (payDay <= 1) return rows; // el límite ya cae justo al inicio de un mes: nada que partir
+
+  const daysInTargetMonth = new Date(paymentStartDate.getFullYear(), paymentStartDate.getMonth() + 1, 0).getDate();
+  const graceDays = payDay - 1;
+  const payingDays = daysInTargetMonth - payDay + 1;
+  const factorGrace = graceDays / daysInTargetMonth;
+  const factorPaying = payingDays / daysInTargetMonth;
+
+  const targetMonth = differenceInCalendarMonths(paymentStartDate, contractStartDate) + 1;
+  const idx = rows.findIndex((r) => {
+    const range = parsePeriodMonthRange(r.label);
+    return range !== null && targetMonth >= range.start && targetMonth <= range.end;
+  });
+  if (idx === -1) return rows;
+
+  const target = rows[idx];
+  const range = parsePeriodMonthRange(target.label)!;
+  const suffix = target.isGrace ? " (Gracia)" : "";
+
+  // Tasa de gracia mensual: si la fila que se parte ya es de gracia, usa sus
+  // propios valores; si no (el caso reportado -- la gracia termina a mitad de
+  // una fila que hoy se ve 100% pagada), usa la fila de gracia original de
+  // escalationPeriods (misma GGCC/Otros mensuales, el canon siempre es $0).
+  const graceRate = target.isGrace ? target : fullPeriods.find((p) => p.isGrace) ?? { ...target, canon: 0, fProm: 0 };
+
+  const graceRow: PeriodRow = {
+    ...graceRate,
+    label: `M${targetMonth} (parcial, ${graceDays} de ${daysInTargetMonth} días) (Gracia)`,
+    canon: graceRate.canon * factorGrace,
+    ggcc: graceRate.ggcc * factorGrace,
+    fProm: graceRate.fProm * factorGrace,
+    otros: graceRate.otros * factorGrace,
+    total: (graceRate.canon + graceRate.ggcc + graceRate.fProm + graceRate.otros) * factorGrace,
+    ufM2: graceRate.ufM2 !== null ? graceRate.ufM2 * factorGrace : null,
+    isGrace: true,
+  };
+
+  const payingRow: PeriodRow = {
+    ...target,
+    label: `M${targetMonth} (parcial, ${payingDays} de ${daysInTargetMonth} días)`,
+    canon: target.canon * factorPaying,
+    ggcc: target.ggcc * factorPaying,
+    fProm: target.fProm * factorPaying,
+    otros: target.otros * factorPaying,
+    total: target.total * factorPaying,
+    ufM2: target.ufM2 !== null ? target.ufM2 * factorPaying : null,
+    isGrace: undefined,
+  };
+
+  const rangeLabel = (start: number, end: number) => (start === end ? `M${start}${suffix}` : `M${start}-M${end}${suffix}`);
+  const before: PeriodRow[] = range.start < targetMonth ? [{ ...target, label: rangeLabel(range.start, targetMonth - 1) }] : [];
+  const after: PeriodRow[] = range.end > targetMonth ? [{ ...target, label: rangeLabel(targetMonth + 1, range.end) }] : [];
+
+  return [...rows.slice(0, idx), ...before, graceRow, payingRow, ...after, ...rows.slice(idx + 1)];
 }
 export function CommercialConditionsSummary({
   version,
@@ -818,8 +901,19 @@ export function CommercialConditionsSummary({
       : `M${range.start + 1}-M${range.end}${graceSuffix}`;
     const remainder = { ...first, label: remainderLabel };
 
-    return [prorated, remainder, ...rest];
-  }, [escalationPeriods, dates?.startDate]);
+    let built = [prorated, remainder, ...rest];
+
+    // La gracia es "días corridos" desde la fecha de inicio (dates.paymentStartDate
+    // = inicio + meses de gracia), no un número de filas etiquetadas "Gracia" --
+    // si ese límite cae a mitad de un mes calendario, esa fila se parte en un
+    // tramo aún exento y un tramo ya pagado.
+    const graceMonths = version.grace_months || 0;
+    if (graceMonths > 0 && dates.paymentStartDate) {
+      built = splitAtGraceBoundary(built, dates.paymentStartDate, dates.startDate, escalationPeriods);
+    }
+
+    return built;
+  }, [escalationPeriods, dates?.startDate, dates?.paymentStartDate, version.grace_months]);
 
   // Weighted average total arriendo across paying periods (excluye la fila
   // de gracia). El fallback de 1 período usa payingPeriods[0].total (canon
