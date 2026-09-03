@@ -443,6 +443,9 @@ export function GanttChart({
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | "into" | null>(null);
+  // Soltar "dentro" de otra fila reparenta -- se confirma antes de aplicar
+  // (fácil soltar sin querer justo en el centro de la fila).
+  const [pendingReparent, setPendingReparent] = useState<{ sourceId: string; targetId: string } | null>(null);
 
   // State for "change parent" dialog
   const [parentDialogTaskId, setParentDialogTaskId] = useState<string | null>(null);
@@ -1063,10 +1066,12 @@ export function GanttChart({
     const y = e.clientY - rect.top;
     const ratio = y / rect.height;
     let pos: "above" | "into" | "below";
-    if (ratio < 0.25) pos = "above";
-    else if (ratio > 0.75) pos = "below";
+    // Zona "into" angosta (35%-65%, antes 25%-75%): reparentar por accidente
+    // al pasar por el centro de una fila era demasiado fácil.
+    if (ratio < 0.35) pos = "above";
+    else if (ratio > 0.65) pos = "below";
     else pos = "into";
-    
+
     setRowDragOverId(taskId);
     setDropPosition(pos);
   };
@@ -1093,65 +1098,98 @@ export function GanttChart({
     }
   };
 
+  // Prevent dropping into/before-after-under own descendant (evita ciclos).
+  const isDescendant = (potentialAncestorId: string, candidateId: string): boolean => {
+    let current = tasks.find((t) => t.id === candidateId);
+    while (current?.parent_id) {
+      if (current.parent_id === potentialAncestorId) return true;
+      current = tasks.find((t) => t.id === current!.parent_id);
+    }
+    return false;
+  };
+
   const handleRowDropInner = async () => {
-
-    // Prevent dropping into own descendant
-    const isDescendant = (potentialAncestorId: string, candidateId: string): boolean => {
-      let current = tasks.find((t) => t.id === candidateId);
-      while (current?.parent_id) {
-        if (current.parent_id === potentialAncestorId) return true;
-        current = tasks.find((t) => t.id === current!.parent_id);
-      }
-      return false;
-    };
-
-    // REPARENTING: drop "into" => set new parent
+    // REPARENTING: drop "into" => pide confirmación antes de aplicar (ver
+    // handleConfirmReparent). No se aplica acá directo -- es fácil soltar
+    // sin querer justo en el centro de una fila.
     if (dropPosition === "into") {
       if (isDescendant(rowDragSource, rowDragOverId)) {
         handleRowDragEnd();
         return;
       }
-      const sourceTask = tasks.find((t) => t.id === rowDragSource);
-      const newParent = tasks.find((t) => t.id === rowDragOverId);
-      if (!sourceTask || !newParent) {
-        handleRowDragEnd();
-        return;
-      }
-      const oldParentId = sourceTask.parent_id;
-      const updates: Partial<GanttTask> = { parent_id: rowDragOverId };
-      // Inherit color from new parent if source had no custom color
-      if (!sourceTask.color && newParent.color) {
-        updates.color = newParent.color;
-      }
+      setPendingReparent({ sourceId: rowDragSource, targetId: rowDragOverId });
+      handleRowDragEnd();
+      return;
+    }
+
+    // REORDER (above/below): la tarea pasa a ser hermana de la tarea
+    // objetivo, en la posición indicada. Si la objetivo pertenece a OTRO
+    // padre, esto también reparenta -- soltar entre dos filas de otra rama
+    // significa "quiero estar acá", lo que incluye esa rama. El orden se
+    // recalcula solo entre los hermanos REALES del padre resultante (nunca
+    // sobre la lista plana de todo el árbol -- eso es lo que rompía el
+    // reordenamiento al cruzar de padre).
+    const sourceTask = tasks.find((t) => t.id === rowDragSource);
+    const targetTask = tasks.find((t) => t.id === rowDragOverId);
+    if (!sourceTask || !targetTask) {
+      handleRowDragEnd();
+      return;
+    }
+    const newParentId = targetTask.parent_id;
+    if (newParentId && (newParentId === rowDragSource || isDescendant(rowDragSource, newParentId))) {
+      handleRowDragEnd();
+      return;
+    }
+    const oldParentId = sourceTask.parent_id;
+    const reparenting = oldParentId !== newParentId;
+
+    const siblingIds = tasks
+      .filter((t) => t.parent_id === newParentId && t.id !== rowDragSource)
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((t) => t.id);
+    const targetIdx = siblingIds.indexOf(rowDragOverId);
+    const insertIdx = dropPosition === "above" ? targetIdx : targetIdx + 1;
+    siblingIds.splice(insertIdx, 0, rowDragSource);
+
+    if (reparenting) {
+      const updates: Partial<GanttTask> = { parent_id: newParentId };
+      if (!sourceTask.color && targetTask.color) updates.color = targetTask.color;
       await onUpdateTask(rowDragSource, updates, { skipPropagation: true });
-      // Sync new ancestors (extend to fit) and old ancestors (shrink if needed)
-      await syncAncestorsDates(rowDragOverId);
-      if (oldParentId && oldParentId !== rowDragOverId) {
-        await syncAncestorsDates(oldParentId);
-      }
-      handleRowDragEnd();
-      return;
     }
-
-    // REORDER: drop above/below
-    const flatTaskIds = visibleTasks.filter(vt => vt.task).map(vt => vt.task!.id);
-    const sourceIdx = flatTaskIds.indexOf(rowDragSource);
-    const targetIdx = flatTaskIds.indexOf(rowDragOverId);
-    
-    if (sourceIdx === -1 || targetIdx === -1) {
-      handleRowDragEnd();
-      return;
+    await onReorderTask(rowDragSource, insertIdx, siblingIds);
+    if (reparenting) {
+      if (newParentId) await syncAncestorsDates(newParentId);
+      if (oldParentId && oldParentId !== newParentId) await syncAncestorsDates(oldParentId);
     }
-
-    const newOrder = [...flatTaskIds];
-    newOrder.splice(sourceIdx, 1);
-    const insertIdx = dropPosition === "above" 
-      ? (targetIdx > sourceIdx ? targetIdx - 1 : targetIdx)
-      : (targetIdx > sourceIdx ? targetIdx : targetIdx + 1);
-    newOrder.splice(insertIdx, 0, rowDragSource);
-
-    await onReorderTask(rowDragSource, insertIdx, newOrder);
     handleRowDragEnd();
+  };
+
+  // Confirmación del drop "into": recién acá se aplica el reparenting.
+  const handleConfirmReparent = async () => {
+    if (!pendingReparent) return;
+    const { sourceId, targetId } = pendingReparent;
+    setPendingReparent(null);
+    beginUndoGroup("Mover tarea");
+    try {
+      const sourceTask = tasks.find((t) => t.id === sourceId);
+      const newParent = tasks.find((t) => t.id === targetId);
+      if (!sourceTask || !newParent) return;
+      const oldParentId = sourceTask.parent_id;
+      const updates: Partial<GanttTask> = { parent_id: targetId };
+      if (!sourceTask.color && newParent.color) updates.color = newParent.color;
+      await onUpdateTask(sourceId, updates, { skipPropagation: true });
+      // Al final de las hermanas reales del nuevo padre (display_order limpio)
+      const newSiblingIds = tasks
+        .filter((t) => t.parent_id === targetId && t.id !== sourceId)
+        .sort((a, b) => a.display_order - b.display_order)
+        .map((t) => t.id);
+      newSiblingIds.push(sourceId);
+      await onReorderTask(sourceId, newSiblingIds.length - 1, newSiblingIds);
+      await syncAncestorsDates(targetId);
+      if (oldParentId && oldParentId !== targetId) await syncAncestorsDates(oldParentId);
+    } finally {
+      endUndoGroup();
+    }
   };
 
   const handleRowDragEnd = () => {
@@ -3061,6 +3099,26 @@ export function GanttChart({
             >
               Mover en cascada
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmación al soltar una fila "dentro" de otra (reparenting por drag) */}
+      <AlertDialog open={!!pendingReparent} onOpenChange={(o) => { if (!o) setPendingReparent(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Convertir en tarea hija?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingReparent && (() => {
+                const source = tasks.find((t) => t.id === pendingReparent.sourceId);
+                const target = tasks.find((t) => t.id === pendingReparent.targetId);
+                return `Este movimiento convierte "${source?.name ?? "esta tarea"}" en tarea hija de "${target?.name ?? "la tarea seleccionada"}".`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingReparent(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmReparent}>Confirmar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
