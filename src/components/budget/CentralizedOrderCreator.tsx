@@ -20,6 +20,8 @@ import { uploadFileToStorage } from "@/lib/storageUtils";
 import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { formatCLP } from "@/lib/utils";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 interface Contract {
   id: string;
   name: string;
@@ -222,6 +224,8 @@ export const CentralizedOrderCreator = ({
   
   const [activeTab, setActiveTab] = useState("basic");
   const [loading, setLoading] = useState(false);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [opexMasterLines, setOpexMasterLines] = useState<OpexMasterLine[]>([]);
@@ -674,7 +678,12 @@ export const CentralizedOrderCreator = ({
       toast({ title: "Error", description: "Ingrese un monto válido", variant: "destructive" });
       return;
     }
-    
+
+    if (mode === "request" && paymentPlan.length === 0) {
+      toast({ title: "Error", description: "Debe agregar al menos un pago al plan de pagos", variant: "destructive" });
+      return;
+    }
+
     if (budgetType === "opex" && !selectedCategoryId) {
       toast({ title: "Error", description: "Seleccione una categoría OPEX", variant: "destructive" });
       return;
@@ -759,6 +768,20 @@ export const CentralizedOrderCreator = ({
       const primaryContractId = isMultiContract ? contractAllocations[0]?.contractId : singleContractId;
       
       if (mode === "request") {
+        // El plan de pagos debe sumar EXACTO el total, no solo no excederlo —
+        // antes nada lo garantizaba y un plan incompleto dejaba un pago sin
+        // registrar. Se resuelve una sola vez y se reutiliza para el insert
+        // y para el PDF que se comparte, en vez de recalcularlo dos veces.
+        const resolvedPayments = paymentPlan.map((p, idx) => {
+          const pAmount = parseFloat(p.amount) || 0;
+          const amountClp = formData.currency === "CLP" ? Math.round(pAmount) : Math.round(pAmount * ufValue);
+          return { description: p.description || `Pago ${idx + 1}`, amountClp, dueDate: p.due_date || null };
+        });
+        const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), totalAmountClp);
+        if (planError) {
+          throw new Error(planError);
+        }
+
         // Create OC Request
         const { number, correlative } = await generateNumber();
         
@@ -829,24 +852,16 @@ export const CentralizedOrderCreator = ({
         }
         
         // Create payment plan
-        if (paymentPlan.length > 0) {
-          const planItems = paymentPlan.map((p, idx) => {
-            const pAmount = parseFloat(p.amount) || 0;
-            let pUf: number;
-            if (formData.currency === "CLP") {
-              pUf = ufValue > 0 ? pAmount / ufValue : 0;
-            } else {
-              pUf = pAmount;
-            }
-            return {
-              oc_request_id: requestData.id,
-              payment_number: idx + 1,
-              description: p.description || `Pago ${idx + 1}`,
-              amount_uf: Math.round(pUf * 10000) / 10000,
-              due_date: p.due_date || null,
-              status: "pending"
-            };
-          });
+        if (resolvedPayments.length > 0) {
+          const planItems = resolvedPayments.map((p, idx) => ({
+            oc_request_id: requestData.id,
+            payment_number: idx + 1,
+            description: p.description,
+            amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            amount_clp: Math.round(p.amountClp),
+            due_date: p.dueDate,
+            status: "pending"
+          }));
           await supabase.from("oc_payment_plans").insert(planItems);
         } else {
           // Create single payment
@@ -855,12 +870,31 @@ export const CentralizedOrderCreator = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: totalAmountClp,
             due_date: null,
             status: "pending"
           });
         }
-        
-        toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+
+        toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
+
+        setShareData({
+          requestDate: new Date().toISOString().split("T")[0],
+          currency: formData.currency as "UF" | "CLP",
+          contractNames: isMultiContract
+            ? contractAllocations.map((a) => a.contractName)
+            : [contracts.find((c) => c.id === primaryContractId)?.name || ""].filter(Boolean),
+          description: formData.description,
+          lines: [{
+            lineName: opexCategories.find((c) => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
+            amountClp: totalAmountClp,
+          }],
+          totalAmountClp,
+          payments: resolvedPayments,
+          supplierName: formData.supplier_name,
+          sequenceNumber: requestData?.sequence_number,
+        });
+        setShareRequestId(requestData?.id);
       } else {
         // El disponible por línea es real: nunca se puede asignar a una línea
         // más de lo que le queda disponible (autorizado - ya consumido). Se
@@ -1604,16 +1638,18 @@ export const CentralizedOrderCreator = ({
               
               <TabsContent value="payments" className="mt-4 space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos (opcional)</Label>
+                  <Label>Plan de Pagos{mode === "request" ? " *" : " (opcional)"}</Label>
                   <Button type="button" variant="outline" size="sm" onClick={handleAddPaymentItem}>
                     <Plus className="h-4 w-4 mr-1" />
                     Agregar Pago
                   </Button>
                 </div>
-                
+
                 {paymentPlan.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    Sin plan de pagos definido (se creará pago único automáticamente)
+                    {mode === "request"
+                      ? "Debes agregar al menos un pago para poder crear la solicitud."
+                      : "Sin plan de pagos definido (se creará pago único automáticamente)"}
                   </p>
                 ) : (
                   <Table>
@@ -1675,7 +1711,11 @@ export const CentralizedOrderCreator = ({
           <Button variant="outline" onClick={handleClose} disabled={loading}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || loadingData}>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading || loadingData || (mode === "request" && paymentPlan.length === 0)}
+            title={mode === "request" && paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}
+          >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {mode === "request" ? "Crear Solicitud" : "Crear OC"}
           </Button>
@@ -1727,6 +1767,13 @@ export const CentralizedOrderCreator = ({
         )}
       </DialogContent>
     </Dialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+      requestId={shareRequestId}
+    />
     </>
   );
 };

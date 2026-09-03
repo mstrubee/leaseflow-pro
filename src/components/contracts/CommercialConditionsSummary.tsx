@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import logosHeader from "@/assets/logos-header.png";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
-import { addMonths, format, subMonths, parseISO } from "date-fns";
+import { addMonths, differenceInCalendarMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { supabase } from "@/integrations/supabase/client";
@@ -100,15 +100,120 @@ interface CommercialConditionsSummaryProps {
   terminationNotices?: TerminationNoticeForChart[];
 }
 
-// Parsea el rango de meses de una fila de escalationPeriods a partir de su
-// label: "M3-M120" -> {start:3,end:120}; "M1 (Gracia)" (gracia de 1 mes,
-// sin guión) -> {start:1,end:1}; "M1-M2 (Gracia)" -> {start:1,end:2}.
+// Parsea el rango de meses de una fila de escalationPeriods/paymentSchedule a
+// partir de su label: "M3-M120" -> {start:3,end:120}; "M1 (Gracia)" (gracia de
+// 1 mes, sin guión) -> {start:1,end:1}; "M1-M2 (Gracia)" -> {start:1,end:2};
+// "Mes 1 (parcial...)" (fila especial del PDF para el mes 1 prorrateado) ->
+// {start:1,end:1}.
 function parsePeriodMonthRange(label: string): { start: number; end: number } | null {
-  const match = label.match(/^M(\d+)(?:-M(\d+))?/);
+  const match = label.match(/^(?:Mes\s+|M)(\d+)(?:-M(\d+))?/);
   if (!match) return null;
   const start = parseInt(match[1], 10);
   const end = match[2] ? parseInt(match[2], 10) : start;
   return { start, end };
+}
+
+// "Agosto '26" -- nombre completo del mes en español, capitalizado, con año
+// abreviado a 2 dígitos. monthNumber es 1-based y relativo a startDate (mes 1
+// = el mes calendario de startDate).
+function monthYearLabel(monthNumber: number, startDate: Date): string {
+  const d = addMonths(startDate, monthNumber - 1);
+  const raw = format(d, "MMMM ''yy", { locale: es });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+// "Agosto '26" o, si el rango cubre más de un mes, "Agosto '26 - Julio '27".
+function periodDateLabel(label: string, startDate: Date | undefined | null): string {
+  if (!startDate) return "";
+  const range = parsePeriodMonthRange(label);
+  if (!range) return "";
+  return range.start === range.end
+    ? monthYearLabel(range.start, startDate)
+    : `${monthYearLabel(range.start, startDate)} - ${monthYearLabel(range.end, startDate)}`;
+}
+
+interface PeriodRow {
+  label: string;
+  canon: number;
+  ggcc: number;
+  fProm: number;
+  otros: number;
+  total: number;
+  ufM2: number | null;
+  isGrace?: true;
+}
+
+// Parte en dos la fila de escalationPeriods que contiene el mes calendario en
+// que termina la gracia (dates.paymentStartDate = fecha inicio + meses de
+// gracia, "días corridos" -- NO el número de filas etiquetadas "Gracia").
+// Sin esto, cuando el contrato no arranca el día 1, la gracia se cortaba en
+// el límite de la fila M{graceMonths} (mes calendario, no aniversario), lo
+// que subestimaba los días de gracia reales cada vez que el día de inicio no
+// era el 1: ej. inicio 27-ago con 2 meses de gracia real llega hasta el
+// 27-oct, pero antes se cobraba TODO octubre como si la gracia hubiera
+// terminado el 30-sep.
+function splitAtGraceBoundary(
+  rows: PeriodRow[],
+  paymentStartDate: Date,
+  contractStartDate: Date,
+  fullPeriods: PeriodRow[]
+): PeriodRow[] {
+  const payDay = paymentStartDate.getDate();
+  if (payDay <= 1) return rows; // el límite ya cae justo al inicio de un mes: nada que partir
+
+  const daysInTargetMonth = new Date(paymentStartDate.getFullYear(), paymentStartDate.getMonth() + 1, 0).getDate();
+  const graceDays = payDay - 1;
+  const payingDays = daysInTargetMonth - payDay + 1;
+  const factorGrace = graceDays / daysInTargetMonth;
+  const factorPaying = payingDays / daysInTargetMonth;
+
+  const targetMonth = differenceInCalendarMonths(paymentStartDate, contractStartDate) + 1;
+  const idx = rows.findIndex((r) => {
+    const range = parsePeriodMonthRange(r.label);
+    return range !== null && targetMonth >= range.start && targetMonth <= range.end;
+  });
+  if (idx === -1) return rows;
+
+  const target = rows[idx];
+  const range = parsePeriodMonthRange(target.label)!;
+  const suffix = target.isGrace ? " (Gracia)" : "";
+
+  // Tasa de gracia mensual: si la fila que se parte ya es de gracia, usa sus
+  // propios valores; si no (el caso reportado -- la gracia termina a mitad de
+  // una fila que hoy se ve 100% pagada), usa la fila de gracia original de
+  // escalationPeriods (misma GGCC/Otros mensuales, el canon siempre es $0).
+  const graceRate = target.isGrace ? target : fullPeriods.find((p) => p.isGrace) ?? { ...target, canon: 0, fProm: 0 };
+
+  // Una sola fila para el mes de transición (no dos): "N días de gracia" +
+  // "pago parcial de N/N días" describen el mismo mes calendario, mostrarlo
+  // en dos líneas es redundante y confunde más de lo que aclara.
+  const graceCanon = graceRate.canon * factorGrace;
+  const graceGgcc = graceRate.ggcc * factorGrace;
+  const graceFProm = graceRate.fProm * factorGrace;
+  const graceOtros = graceRate.otros * factorGrace;
+  const payingCanon = target.canon * factorPaying;
+  const payingGgcc = target.ggcc * factorPaying;
+  const payingFProm = target.fProm * factorPaying;
+  const payingOtros = target.otros * factorPaying;
+
+  const mergedRow: PeriodRow = {
+    label: `M${targetMonth} (${graceDays} días de gracia. Pago parcial de ${payingDays}/${daysInTargetMonth} días)`,
+    canon: graceCanon + payingCanon,
+    ggcc: graceGgcc + payingGgcc,
+    fProm: graceFProm + payingFProm,
+    otros: graceOtros + payingOtros,
+    total: graceCanon + graceGgcc + graceFProm + graceOtros + payingCanon + payingGgcc + payingFProm + payingOtros,
+    ufM2:
+      graceRate.ufM2 !== null && target.ufM2 !== null
+        ? graceRate.ufM2 * factorGrace + target.ufM2 * factorPaying
+        : null,
+  };
+
+  const rangeLabel = (start: number, end: number) => (start === end ? `M${start}${suffix}` : `M${start}-M${end}${suffix}`);
+  const before: PeriodRow[] = range.start < targetMonth ? [{ ...target, label: rangeLabel(range.start, targetMonth - 1) }] : [];
+  const after: PeriodRow[] = range.end > targetMonth ? [{ ...target, label: rangeLabel(targetMonth + 1, range.end) }] : [];
+
+  return [...rows.slice(0, idx), ...before, mergedRow, ...after, ...rows.slice(idx + 1)];
 }
 export function CommercialConditionsSummary({
   version,
@@ -818,8 +923,19 @@ export function CommercialConditionsSummary({
       : `M${range.start + 1}-M${range.end}${graceSuffix}`;
     const remainder = { ...first, label: remainderLabel };
 
-    return [prorated, remainder, ...rest];
-  }, [escalationPeriods, dates?.startDate]);
+    let built = [prorated, remainder, ...rest];
+
+    // La gracia es "días corridos" desde la fecha de inicio (dates.paymentStartDate
+    // = inicio + meses de gracia), no un número de filas etiquetadas "Gracia" --
+    // si ese límite cae a mitad de un mes calendario, esa fila se parte en un
+    // tramo aún exento y un tramo ya pagado.
+    const graceMonths = version.grace_months || 0;
+    if (graceMonths > 0 && dates.paymentStartDate) {
+      built = splitAtGraceBoundary(built, dates.paymentStartDate, dates.startDate, escalationPeriods);
+    }
+
+    return built;
+  }, [escalationPeriods, dates?.startDate, dates?.paymentStartDate, version.grace_months]);
 
   // Weighted average total arriendo across paying periods (excluye la fila
   // de gracia). El fallback de 1 período usa payingPeriods[0].total (canon
@@ -1105,33 +1221,38 @@ export function CommercialConditionsSummary({
       y += 4;
 
       const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
-      const hasAnyGGCC = paymentSchedule.some(p => p.ggcc > 0);
-      const hasAnyFProm = paymentSchedule.some(p => p.fProm > 0);
-      const hasAnyOtros = paymentSchedule.some(p => p.otros > 0);
 
-      const schedHead: string[] = ["Periodo", "Canon"];
-      if (hasAnyGGCC) schedHead.push("GGCC");
-      if (hasAnyFProm) schedHead.push("F.Prom");
-      if (hasAnyOtros) schedHead.push("Otros");
-      schedHead.push("Total");
+      // Columnas fijas: Periodo, Mes, Canon, GGCC, F.Prom, Total, UF/m² --
+      // GGCC y F.Prom se muestran siempre en 0,00 cuando no aplican (antes se
+      // ocultaba la columna entera si todas las filas daban 0, lo que corría
+      // el resto de las columnas de lugar entre contratos).
+      const schedHead: string[] = ["Periodo", "Mes", "Canon", "GGCC", "F.Prom", "Total"];
       if (hasSurface) schedHead.push("UF/m²");
 
       const fmt2 = fmtAmount;
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const schedBody = paymentSchedule.map(p => {
-        const row: string[] = [p.label, fmt2(p.canon)];
-        if (hasAnyGGCC) row.push(p.ggcc > 0 ? fmt2(p.ggcc) : "-");
-        if (hasAnyFProm) row.push(p.fProm > 0 ? fmt2(p.fProm) : "-");
-        if (hasAnyOtros) row.push(p.otros > 0 ? fmt2(p.otros) : "-");
-        row.push(fmt2(p.total));
+        const row: string[] = [
+          p.label,
+          periodDateLabel(p.label, dates?.startDate),
+          fmt2(p.canon),
+          fmt2(p.ggcc),
+          fmt2(p.fProm),
+          fmt2(p.total),
+        ];
         if (hasSurface) row.push(fmt3(p.ufM2));
         return row;
       });
 
-      const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify" }>> = {};
-      for (let i = 0; i < schedHead.length; i++) {
-        schedColStyles[i.toString()] = { halign: i === 0 ? "left" : "right" };
+      // Periodo con ancho fijo generoso para que las etiquetas largas ("M3
+      // (26 días de gracia. Pago parcial de 5/31 días)") no queden cortadas.
+      const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify"; cellWidth: number }>> = {
+        "0": { halign: "left", cellWidth: 68 },
+        "1": { halign: "left", cellWidth: 30 },
+      };
+      for (let i = 2; i < schedHead.length; i++) {
+        schedColStyles[i.toString()] = { halign: "right" };
       }
 
       autoTable(doc, {
