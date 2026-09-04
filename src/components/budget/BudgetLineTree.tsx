@@ -291,6 +291,9 @@ interface BudgetLineTreeProps {
   internalTransferSupplierIds?: Set<string>;
   /** When true, show a checkbox at the start of every line for bulk move. */
   selectionMode?: boolean;
+  /** Con selectionMode activo, restringe qué líneas se pueden tildar a las
+   *  que estén "autorizado" (flujo "OC Requerida" > seleccionar adicionales). */
+  restrictSelectionToAuthorized?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
@@ -327,6 +330,7 @@ export const BudgetLineTree = ({
   superficieEdificada = 0,
   internalTransferSupplierIds,
   selectionMode = false,
+  restrictSelectionToAuthorized = false,
   selectedIds,
   onToggleSelect,
   onReload,
@@ -415,6 +419,7 @@ export const BudgetLineTree = ({
       superficieEdificada={superficieEdificada}
       internalTransferSupplierIds={internalTransferSupplierIds}
       selectionMode={selectionMode}
+      restrictSelectionToAuthorized={restrictSelectionToAuthorized}
       selectedIds={selectedIds}
       onToggleSelect={onToggleSelect}
       onReload={onReload}
@@ -501,6 +506,7 @@ const BudgetLineItemInner = ({
   superficieEdificada = 0,
   internalTransferSupplierIds,
   selectionMode = false,
+  restrictSelectionToAuthorized = false,
   selectedIds,
   onToggleSelect,
   onReload,
@@ -1047,12 +1053,17 @@ const BudgetLineItemInner = ({
     );
   }
 
+  // Con restrictSelectionToAuthorized (flujo "OC Requerida" > seleccionar
+  // líneas adicionales), solo las líneas "Autorizado" se pueden tildar -- el
+  // resto queda visible pero inerte para la selección.
+  const isSelectable = selectionMode && (!restrictSelectionToAuthorized || line.status === "autorizado");
+
   return <div>
       <div
         ref={setDragNodeRef}
         style={dragStyle}
         data-line-id={line.id}
-        onClick={selectionMode ? (e) => {
+        onClick={isSelectable ? (e) => {
           // Ignore clicks on interactive children (inputs, buttons, dropdowns, etc.)
           const target = e.target as HTMLElement;
           if (target.closest('button, a, input, textarea, select, [role="button"], [role="checkbox"], [role="combobox"], [role="menuitem"], [data-no-select]')) return;
@@ -1072,7 +1083,8 @@ const BudgetLineItemInner = ({
         level >= 3 && hasChildren && "bg-muted/35",
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
-        selectionMode && "cursor-pointer select-none",
+        isSelectable && "cursor-pointer select-none",
+        selectionMode && !isSelectable && "opacity-50",
         // Drag-to-reorder visual state: dim the source, dnd-kit slides the rest
         isDragging && "opacity-40 z-10 relative",
       )}>
@@ -1080,9 +1092,11 @@ const BudgetLineItemInner = ({
           <Checkbox
             aria-label={`Seleccionar ${line.name}`}
             checked={isSelected}
+            disabled={!isSelectable}
             onCheckedChange={() => onToggleSelect?.(line.id)}
             onClick={(e) => e.stopPropagation()}
             className="flex-shrink-0"
+            title={!isSelectable ? "Solo se pueden seleccionar líneas Autorizadas" : undefined}
           />
         )}
         {canDragLine && (
@@ -1671,7 +1685,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (

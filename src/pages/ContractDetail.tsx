@@ -27,6 +27,8 @@ import { ContractFixedAssetsSection } from "@/components/contracts/ContractFixed
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
+import { CapexLineSelectionProvider, useCapexLineSelection } from "@/contexts/CapexLineSelectionContext";
+import { cn } from "@/lib/utils";
 
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
@@ -178,6 +180,7 @@ interface CustomField {
 }
 
 const ContractDetail = () => {
+  const { active: capexLineSelectionActive } = useCapexLineSelection();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -817,7 +820,7 @@ const ContractDetail = () => {
 
   // Filter documents: show signed docs always, drafts for renegotiation, and regular drafts for signed contracts
   const documents = isSigned ? allDocuments.filter(d => d.document_type === "firmado" || d.document_type === "firmado_r" || d.document_type === "borrador" || d.document_type === "borrador_final" || hasActiveRenegotiation && (d.document_type === "borrador_r" || d.document_type === "borrador_final_r")) : allDocuments;
-  return <div className="min-h-screen bg-background">
+  return <div className={cn("min-h-screen bg-background", capexLineSelectionActive && "pointer-events-none")}>
       {fromMaintenance && (
         <Button
           onClick={() => navigate("/maintenance")}
@@ -1555,4 +1558,11 @@ const ContractDetail = () => {
       <SpecialAttentionReturnButton />
     </div>;
 };
-export default ContractDetail;
+
+export default function ContractDetailPage() {
+  return (
+    <CapexLineSelectionProvider>
+      <ContractDetail />
+    </CapexLineSelectionProvider>
+  );
+}
