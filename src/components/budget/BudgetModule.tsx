@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useCapexLineSelection } from "@/contexts/CapexLineSelectionContext";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +67,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
 
   // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
-  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; newStatusId: string } | null>(null);
+  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string } | null>(null);
   
   // Update template state
   const [showUpdateTemplateDialog, setShowUpdateTemplateDialog] = useState(false);
@@ -76,10 +79,20 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [showStatePropagation, setShowStatePropagation] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
 
-  // Bulk-move (line selection) state
+  // Bulk-move (line selection) state -- también se reutiliza para "OC
+  // Requerida" > seleccionar líneas adicionales (selectionPurpose distingue
+  // qué hacer al confirmar).
   const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionPurpose, setSelectionPurpose] = useState<"move" | "capexOc" | null>(null);
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const { setActive: setCapexLineSelectionActive } = useCapexLineSelection();
+
+  // Líneas adicionales elegidas para "OC Requerida" -- additionalLinesVersion
+  // se incrementa cada vez que el usuario termina de seleccionar (incluso si
+  // no eligió ninguna), para que el diálogo sepa que debe avanzar al resumen.
+  const [capexAdditionalLines, setCapexAdditionalLines] = useState<{ id: string; name: string; amount_uf: number; status: string }[]>([]);
+  const [capexAdditionalLinesVersion, setCapexAdditionalLinesVersion] = useState(0);
 
   // Ocultar líneas con monto 0
   const [hideZeroLines, setHideZeroLines] = useState(false);
@@ -131,7 +144,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const handleExitSelectionMode = useCallback(() => {
     setSelectionMode(false);
     setSelectedLineIds(new Set());
-  }, []);
+    setSelectionPurpose(null);
+    setCapexLineSelectionActive(false);
+  }, [setCapexLineSelectionActive]);
 
   const handleConfirmMove = useCallback(async (targetParentId: string | null) => {
     const ids = Array.from(selectedLineIds);
@@ -381,6 +396,27 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     walk(items);
     return out;
   }, []);
+
+  // El usuario entra en modo selección de líneas CAPEX para "OC Requerida"
+  // (botón "Seleccionar líneas adicionales" del diálogo).
+  const handleEnterCapexLineSelection = useCallback(() => {
+    setSelectedLineIds(new Set());
+    setSelectionPurpose("capexOc");
+    setSelectionMode(true);
+    setCapexLineSelectionActive(true);
+  }, [setCapexLineSelectionActive]);
+
+  // Terminó de elegir (botón flotante "Terminar selección") -- resuelve los
+  // ids a objetos completos y se los pasa al diálogo, que estaba esperando
+  // en su paso "selecting".
+  const handleFinishCapexLineSelection = useCallback(() => {
+    const chosen = flattenLines(lines)
+      .filter((l) => selectedLineIds.has(l.id))
+      .map((l) => ({ id: l.id, name: l.name, amount_uf: l.amount_uf, status: l.status }));
+    setCapexAdditionalLines(chosen);
+    setCapexAdditionalLinesVersion((v) => v + 1);
+    handleExitSelectionMode();
+  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode]);
 
   // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
   // sin tener que expandir el árbol completo y marcarlas una por una.
@@ -2052,7 +2088,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     Descargar Proveedores
                   </Button>
                 )}
-                {!isClosed && !forceReadOnly && canEditLines && (
+                {selectionPurpose === "capexOc" && (
+                  <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
+                    Selecciona líneas "Autorizado" en el árbol — usa el botón flotante para terminar
+                  </span>
+                )}
+                {!isClosed && !forceReadOnly && canEditLines && selectionPurpose !== "capexOc" && (
                   selectionMode ? (
                     <>
                       <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
@@ -2124,49 +2165,60 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
               </div>
             )}
 
-            <BudgetLineTreeWithDrag
-              lines={displayLines}
-              onAddLine={canEditLines ? handleAddLine : undefined}
-              onUpdateLine={canEditLines ? handleUpdateLine : undefined}
-              onDeleteLine={canEditLines ? handleDeleteLine : undefined}
-              onCreateOC={canManageOC ? handleCreateOCFromLine : undefined}
-              onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
-              onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
-              onViewLineDetails={handleViewLineDetails}
-              onOcRequired={budgetType === "capex" ? (lineId, newStatusId) => {
-                const findLine = (items: BudgetLine[]): BudgetLine | null => {
-                  for (const item of items) {
-                    if (item.id === lineId) return item;
-                    if (item.children?.length) {
-                      const found = findLine(item.children);
-                      if (found) return found;
+            <div className={cn(selectionPurpose === "capexOc" && "pointer-events-auto")}>
+              <BudgetLineTreeWithDrag
+                lines={displayLines}
+                onAddLine={canEditLines ? handleAddLine : undefined}
+                onUpdateLine={canEditLines ? handleUpdateLine : undefined}
+                onDeleteLine={canEditLines ? handleDeleteLine : undefined}
+                onCreateOC={canManageOC ? handleCreateOCFromLine : undefined}
+                onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
+                onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
+                onViewLineDetails={handleViewLineDetails}
+                onOcRequired={budgetType === "capex" ? (lineId, newStatusId) => {
+                  const findLine = (items: BudgetLine[]): BudgetLine | null => {
+                    for (const item of items) {
+                      if (item.id === lineId) return item;
+                      if (item.children?.length) {
+                        const found = findLine(item.children);
+                        if (found) return found;
+                      }
                     }
-                  }
-                  return null;
-                };
-                const line = findLine(lines);
-                setOcRequiredPrompt({ lineId, lineName: line?.name ?? "", newStatusId });
-              } : undefined}
-              linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
-              readOnly={isClosed || forceReadOnly || !canEditLines}
-              compactView={forceReadOnly || !canEditLines}
-              focusNewLineId={focusNewLineId}
-              globalExpandState={globalExpandState}
-              templatePricesMap={templatePricesMap}
-              collapsedIds={collapsedIds}
-              onToggleExpand={handleToggleExpand}
-              superficieEdificada={superficieEdificada}
-              selectionMode={selectionMode}
-              selectedIds={selectedLineIds}
-              onToggleSelect={handleToggleSelectLine}
-              onReload={() => currentBudget && loadLines(currentBudget.id)}
-              onMoveLine={(lineId) => {
-                setSelectedLineIds(new Set([lineId]));
-                setShowMoveDialog(true);
-              }}
-              onReorderLine={!(isClosed || forceReadOnly) && canEditLines ? handleReorderLines : undefined}
-              consumedByLineClp={consumedByLineClp ?? undefined}
-            />
+                    return null;
+                  };
+                  const line = findLine(lines);
+                  setCapexAdditionalLines([]);
+                  setCapexAdditionalLinesVersion(0);
+                  setOcRequiredPrompt({
+                    lineId,
+                    lineName: line?.name ?? "",
+                    lineAmountUf: line?.amount_uf ?? 0,
+                    lineStatus: line?.status ?? "no_autorizado",
+                    newStatusId,
+                  });
+                } : undefined}
+                linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
+                readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
+                compactView={forceReadOnly || !canEditLines}
+                focusNewLineId={focusNewLineId}
+                globalExpandState={globalExpandState}
+                templatePricesMap={templatePricesMap}
+                collapsedIds={collapsedIds}
+                onToggleExpand={handleToggleExpand}
+                superficieEdificada={superficieEdificada}
+                selectionMode={selectionMode}
+                restrictSelectionToAuthorized={selectionPurpose === "capexOc"}
+                selectedIds={selectedLineIds}
+                onToggleSelect={handleToggleSelectLine}
+                onReload={() => currentBudget && loadLines(currentBudget.id)}
+                onMoveLine={(lineId) => {
+                  setSelectedLineIds(new Set([lineId]));
+                  setShowMoveDialog(true);
+                }}
+                onReorderLine={!(isClosed || forceReadOnly) && canEditLines ? handleReorderLines : undefined}
+                consumedByLineClp={consumedByLineClp ?? undefined}
+              />
+            </div>
 
             <MoveLinesDialog
               open={showMoveDialog}
@@ -2702,19 +2754,41 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       {ocRequiredPrompt && currentBudget && (
         <CapexOCRequiredDialog
           open={!!ocRequiredPrompt}
-          onOpenChange={(open) => { if (!open) setOcRequiredPrompt(null); }}
+          onOpenChange={(open) => {
+            if (!open) {
+              setOcRequiredPrompt(null);
+              handleExitSelectionMode();
+            }
+          }}
           contractId={contractId}
           projectName={contractName}
-          originLine={{ id: ocRequiredPrompt.lineId, name: ocRequiredPrompt.lineName }}
-          siblingLines={flattenLines(lines)
-            .filter((l) => l.id !== ocRequiredPrompt.lineId && !l.children?.length)
-            .map((l) => ({ id: l.id, name: l.name }))}
+          originLine={{
+            id: ocRequiredPrompt.lineId,
+            name: ocRequiredPrompt.lineName,
+            amount_uf: ocRequiredPrompt.lineAmountUf,
+            status: ocRequiredPrompt.lineStatus,
+          }}
           ocRequeridaStatusId={ocRequiredPrompt.newStatusId}
+          onRequestLineSelection={handleEnterCapexLineSelection}
+          additionalLines={capexAdditionalLines}
+          additionalLinesVersion={capexAdditionalLinesVersion}
           onComplete={() => {
             setOcRequiredPrompt(null);
             loadLines(currentBudget.id);
           }}
         />
+      )}
+
+      {/* Botón flotante para terminar de seleccionar líneas adicionales CAPEX */}
+      {selectionPurpose === "capexOc" && createPortal(
+        <Button
+          onClick={handleFinishCapexLineSelection}
+          className="fixed bottom-6 right-6 z-50 gap-2 shadow-lg"
+        >
+          <CheckSquare className="h-4 w-4" />
+          Terminar selección ({selectedLineIds.size})
+        </Button>,
+        document.body
       )}
 
       {/* OC Request Dialog */}
