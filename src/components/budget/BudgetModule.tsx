@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
+import { CapexOCRequiredDialog } from "./CapexOCRequiredDialog";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -58,6 +59,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+
+  // "Ver Ppto/OC/Factura": líneas CAPEX con cotización/OC/factura asociada
+  const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
+
+  // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
+  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; newStatusId: string } | null>(null);
   
   // Update template state
   const [showUpdateTemplateDialog, setShowUpdateTemplateDialog] = useState(false);
@@ -574,6 +581,67 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     }
   };
 
+  /**
+   * Líneas CAPEX que tienen algo que mostrar en "Ver Ppto/OC/Factura":
+   * cotización (oc_quotations), OC/solicitud de OC (directa o vía tabla
+   * puente) o factura de alguna de esas OC. Mismas tablas que
+   * handleViewLineDetails, pero en lote para todas las líneas del
+   * presupuesto de una vez (no una consulta por línea).
+   */
+  const computeLinesWithDetails = async (lineIds: string[]): Promise<Set<string>> => {
+    if (lineIds.length === 0) return new Set();
+    try {
+      const [
+        { data: quotations },
+        { data: directPOs },
+        { data: poJunction },
+        { data: directRequests },
+        { data: reqJunction },
+      ] = await Promise.all([
+        supabase.from("oc_quotations").select("budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("purchase_orders").select("id, budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("purchase_order_budget_lines").select("purchase_order_id, budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("oc_requests").select("id, budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("oc_budget_lines").select("oc_request_id, budget_line_id").in("budget_line_id", lineIds),
+      ]);
+
+      const result = new Set<string>();
+      (quotations || []).forEach((q: any) => q.budget_line_id && result.add(q.budget_line_id));
+      (directRequests || []).forEach((r: any) => r.budget_line_id && result.add(r.budget_line_id));
+      (reqJunction || []).forEach((r: any) => r.budget_line_id && result.add(r.budget_line_id));
+
+      // Mapa po_id -> lineIds (directo + vía tabla puente), para saber a qué
+      // líneas asociar las facturas de cada OC en el siguiente paso.
+      const poToLines = new Map<string, Set<string>>();
+      const addPoLine = (poId: string | null, lineId: string | null) => {
+        if (!poId || !lineId) return;
+        result.add(lineId);
+        const set = poToLines.get(poId) ?? new Set<string>();
+        set.add(lineId);
+        poToLines.set(poId, set);
+      };
+      (directPOs || []).forEach((po: any) => addPoLine(po.id, po.budget_line_id));
+      (poJunction || []).forEach((j: any) => addPoLine(j.purchase_order_id, j.budget_line_id));
+
+      const allPoIds = Array.from(poToLines.keys());
+      if (allPoIds.length > 0) {
+        const { data: invoicedPOs } = await supabase
+          .from("invoices")
+          .select("purchase_order_id")
+          .in("purchase_order_id", allPoIds);
+        (invoicedPOs || []).forEach((inv: any) => {
+          const lineIdsForPo = poToLines.get(inv.purchase_order_id);
+          lineIdsForPo?.forEach((id) => result.add(id));
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error computing lines with details:", error);
+      return new Set();
+    }
+  };
+
   const loadLines = async (budgetId: string) => {
     try {
       const { data, error } = await supabase
@@ -587,6 +655,10 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       const flatLines = (data || []) as BudgetLine[];
       const tree = buildTree(flatLines);
       setLines(tree);
+
+      if (budgetType === "capex") {
+        computeLinesWithDetails(flatLines.map((l) => l.id)).then(setLinesWithDetails);
+      }
 
       // Estado inicial: al abrir este presupuesto por primera vez, colapsar todas
       // las ramas. Solo la primera carga de cada budgetId; recargas posteriores
@@ -2061,6 +2133,21 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
               onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
               onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
               onViewLineDetails={handleViewLineDetails}
+              onOcRequired={budgetType === "capex" ? (lineId, newStatusId) => {
+                const findLine = (items: BudgetLine[]): BudgetLine | null => {
+                  for (const item of items) {
+                    if (item.id === lineId) return item;
+                    if (item.children?.length) {
+                      const found = findLine(item.children);
+                      if (found) return found;
+                    }
+                  }
+                  return null;
+                };
+                const line = findLine(lines);
+                setOcRequiredPrompt({ lineId, lineName: line?.name ?? "", newStatusId });
+              } : undefined}
+              linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
               readOnly={isClosed || forceReadOnly || !canEditLines}
               compactView={forceReadOnly || !canEditLines}
               focusNewLineId={focusNewLineId}
@@ -2610,6 +2697,25 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Diálogo de cotización al marcar una línea CAPEX como "OC Requerida" */}
+      {ocRequiredPrompt && currentBudget && (
+        <CapexOCRequiredDialog
+          open={!!ocRequiredPrompt}
+          onOpenChange={(open) => { if (!open) setOcRequiredPrompt(null); }}
+          contractId={contractId}
+          projectName={contractName}
+          originLine={{ id: ocRequiredPrompt.lineId, name: ocRequiredPrompt.lineName }}
+          siblingLines={flattenLines(lines)
+            .filter((l) => l.id !== ocRequiredPrompt.lineId && !l.children?.length)
+            .map((l) => ({ id: l.id, name: l.name }))}
+          ocRequeridaStatusId={ocRequiredPrompt.newStatusId}
+          onComplete={() => {
+            setOcRequiredPrompt(null);
+            loadLines(currentBudget.id);
+          }}
+        />
+      )}
 
       {/* OC Request Dialog */}
       <OCRequestDialog

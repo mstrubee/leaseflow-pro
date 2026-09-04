@@ -135,7 +135,7 @@ export interface BudgetLine {
   children?: BudgetLine[];
 }
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, onOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; onOcRequired?: (lineId: string, newStatusId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -156,6 +156,17 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
     else toast.success("Estado actualizado");
   };
 
+  // "OC Requerida" no se aplica directo: el padre (CAPEX) pide la cotización
+  // PDF primero -- si el usuario cancela ese diálogo, el badge no cambia.
+  const handleSelect = (s: { id: string; name: string }) => {
+    if (onOcRequired && s.name.trim().toLowerCase() === "oc requerida") {
+      setOpen(false);
+      onOcRequired(lineId, s.id);
+    } else {
+      handleChange(s.id);
+    }
+  };
+
   const badge = (
     <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", readOnly ? "cursor-default" : "cursor-pointer", getProgressColorClass(current?.color))}>
       {current?.name || "Sin estado"}
@@ -171,7 +182,7 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
         <div className="space-y-1">
           <button type="button" onClick={() => handleChange(null)} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent text-muted-foreground">Sin estado</button>
           {selectable.map(s => (
-            <button key={s.id} type="button" onClick={() => handleChange(s.id)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
+            <button key={s.id} type="button" onClick={() => handleSelect(s)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
               <Badge className={cn("text-[10px] px-2 py-0", getProgressColorClass(s.color))}>{s.name}</Badge>
             </button>
           ))}
@@ -257,6 +268,14 @@ interface BudgetLineTreeProps {
   onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
+  /** Se llama en vez de cambiar el estado directo cuando el usuario elige "OC
+   *  Requerida" -- el padre debe abrir el diálogo de cotización antes de
+   *  aplicar el cambio. Solo se pasa desde presupuestos CAPEX. */
+  onOcRequired?: (lineId: string, newStatusId: string) => void;
+  /** Ids de líneas que tienen algo que mostrar en "Ver Ppto/OC/Factura"
+   *  (cotización, OC/solicitud o factura asociada) -- controla si el botón
+   *  está habilitado. */
+  linesWithDetails?: Set<string>;
   level?: number;
   readOnly?: boolean;
   compactView?: boolean;
@@ -294,6 +313,8 @@ export const BudgetLineTree = ({
   onCreateOCRequest,
   onCreateInvoice,
   onViewLineDetails,
+  onOcRequired,
+  linesWithDetails,
   level = 0,
   readOnly = false,
   compactView = false,
@@ -382,6 +403,8 @@ export const BudgetLineTree = ({
       onCreateOCRequest={onCreateOCRequest}
       onCreateInvoice={onCreateInvoice}
       onViewLineDetails={onViewLineDetails}
+      onOcRequired={onOcRequired}
+      linesWithDetails={linesWithDetails}
       readOnly={readOnly}
       compactView={compactView}
       parentCategoryId={line.category_id || parentCategoryId}
@@ -427,6 +450,8 @@ interface BudgetLineItemProps {
   onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
+  onOcRequired?: (lineId: string, newStatusId: string) => void;
+  linesWithDetails?: Set<string>;
   readOnly?: boolean;
   compactView?: boolean;
   parentCategoryId?: string | null;
@@ -464,6 +489,8 @@ const BudgetLineItemInner = ({
   onCreateOCRequest,
   onCreateInvoice,
   onViewLineDetails,
+  onOcRequired,
+  linesWithDetails,
   readOnly = false,
   compactView = false,
   parentCategoryId = null,
@@ -1499,24 +1526,34 @@ const BudgetLineItemInner = ({
             </TooltipProvider>}
           
           {/* View details button - for leaf lines */}
-          {!isParent && !effectiveReadOnly && onViewLineDetails && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onViewLineDetails(line.id, line.name)}
-                    className="h-6 px-2 text-[10px] border-muted-foreground/30 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    <FileText className="h-3 w-3 mr-1" />
-                    Ver OC/Fact.
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Ver Órdenes de Compra y Facturas</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+          {!isParent && !effectiveReadOnly && onViewLineDetails && (() => {
+            const hasDetails = !linesWithDetails || linesWithDetails.has(line.id);
+            return (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onViewLineDetails(line.id, line.name)}
+                        disabled={!hasDetails}
+                        className="h-6 px-2 text-[10px] border-muted-foreground/30 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Ver Ppto/OC/Factura
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {hasDetails
+                      ? "Ver Presupuesto (cotización), Órdenes de Compra y Facturas"
+                      : "Sin presupuesto, OC ni factura asociada"}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })()}
 
           {/* Supplier dropdown - for all lines (parent and leaf) */}
           {!effectiveReadOnly && (
@@ -1546,6 +1583,7 @@ const BudgetLineItemInner = ({
               currentStatusId={line.progress_status_id}
               readOnly={effectiveReadOnly || !canEditEstado}
               isParent={isParent}
+              onOcRequired={onOcRequired}
             />
           )}
 
@@ -1633,7 +1671,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
