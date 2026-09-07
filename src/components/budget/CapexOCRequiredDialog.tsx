@@ -24,6 +24,9 @@ interface CapexOCRequiredDialogProps {
   projectName: string;
   originLine: CapexLineRef;
   ocRequeridaStatusId: string;
+  ufValue: number;
+  formatCLP: (amount: number) => string;
+  convertUFToPesos: (uf: number) => number;
   /** El padre entra en modo selección de líneas directamente en la página.
    *  initialIds queda pre-tildado (incluye siempre la línea de origen, que
    *  además queda bloqueada para no poder destildarla). */
@@ -74,6 +77,9 @@ export function CapexOCRequiredDialog({
   projectName,
   originLine,
   ocRequeridaStatusId,
+  ufValue,
+  formatCLP,
+  convertUFToPesos,
   onRequestLineSelection,
   additionalLines,
   additionalLinesVersion,
@@ -133,14 +139,17 @@ export function CapexOCRequiredDialog({
     setStep("amount");
   };
 
-  const montoNum = parseFloat(monto.replace(",", ".")) || 0;
-  const montoValido = montoNum > 0;
+  // El monto requerido se ingresa en pesos -- se limpia todo lo que no sea
+  // dígito (el usuario puede escribir puntos de miles, "$", etc.).
+  const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
+  const montoValido = montoClp > 0;
 
   const targetLines = [originLine, ...finalAdditionalLines];
-  const authorizedTotal = targetLines
+  const authorizedTotalUf = targetLines
     .filter((l) => l.status === "autorizado")
     .reduce((sum, l) => sum + (l.amount_uf || 0), 0);
-  const sufficient = authorizedTotal >= montoNum;
+  const authorizedTotalClp = convertUFToPesos(authorizedTotalUf);
+  const sufficient = authorizedTotalClp >= montoClp;
 
   const handleSave = async (mode: "final" | "temp") => {
     if (!file) return;
@@ -169,7 +178,8 @@ export function CapexOCRequiredDialog({
         file_path: upload.driveUrl,
         file_name: file.name,
         quotation_date: today,
-        amount_uf: montoNum,
+        amount_clp: montoClp,
+        amount_uf: ufValue > 0 ? montoClp / ufValue : 0,
       }));
 
       const { error: quotationsError } = await (supabase as any).from("oc_quotations").insert(quotationRows);
@@ -264,11 +274,11 @@ export function CapexOCRequiredDialog({
             </div>
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="capex-oc-monto">Monto requerido de la OC (UF)</Label>
+                <Label htmlFor="capex-oc-monto">Monto requerido de la OC ($)</Label>
                 <Input
                   id="capex-oc-monto"
                   type="text"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   value={monto}
                   onChange={(e) => setMonto(e.target.value)}
                   placeholder="0"
@@ -290,7 +300,10 @@ export function CapexOCRequiredDialog({
                   <span className="truncate">{line.name}</span>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={cn(line.status !== "autorizado" && "text-muted-foreground line-through")}>
-                      UF {line.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {formatCLP(convertUFToPesos(line.amount_uf))}{" "}
+                      <span className="text-muted-foreground font-normal">
+                        (UF {line.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                      </span>
                     </span>
                     <span className="text-[10px] uppercase text-muted-foreground">
                       {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
@@ -301,11 +314,16 @@ export function CapexOCRequiredDialog({
             </div>
             <div className="flex items-center justify-between text-sm font-medium">
               <span>Total autorizado</span>
-              <span>UF {authorizedTotal.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>
+                {formatCLP(authorizedTotalClp)}{" "}
+                <span className="text-muted-foreground font-normal">
+                  (UF {authorizedTotalUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                </span>
+              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Monto requerido de la OC</span>
-              <span>UF {montoNum.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>{formatCLP(montoClp)}</span>
             </div>
             {sufficient ? (
               <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 dark:bg-green-950/30 rounded-md px-3 py-2">

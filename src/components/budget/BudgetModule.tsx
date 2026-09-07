@@ -413,9 +413,13 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // ids a objetos completos y se los pasa al diálogo, que estaba esperando
   // en su paso "selecting". Se excluye la línea de origen: el diálogo ya la
   // maneja aparte (originLine) y quedaría duplicada si también viniera acá.
+  // También se excluyen las líneas madre: la cascada de selección (ver
+  // handleToggleSelectLine) marca una madre cuando TODOS sus hijos quedan
+  // tildados, pero acá solo interesan las líneas hoja -- si no, la madre
+  // aparecía duplicada junto a su única hija en el resumen.
   const handleFinishCapexLineSelection = useCallback(() => {
     const chosen = flattenLines(lines)
-      .filter((l) => selectedLineIds.has(l.id) && l.id !== ocRequiredPrompt?.lineId)
+      .filter((l) => selectedLineIds.has(l.id) && l.id !== ocRequiredPrompt?.lineId && !l.children?.length)
       .map((l) => ({ id: l.id, name: l.name, amount_uf: l.amount_uf, status: l.status }));
     setCapexAdditionalLines(chosen);
     setCapexAdditionalLinesVersion((v) => v + 1);
@@ -2774,6 +2778,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
             status: ocRequiredPrompt.lineStatus,
           }}
           ocRequeridaStatusId={ocRequiredPrompt.newStatusId}
+          ufValue={ufValue}
+          formatCLP={formatCLP}
+          convertUFToPesos={convertUFToPesos}
           onRequestLineSelection={handleEnterCapexLineSelection}
           additionalLines={capexAdditionalLines}
           additionalLinesVersion={capexAdditionalLinesVersion}
