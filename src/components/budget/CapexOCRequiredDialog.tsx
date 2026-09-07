@@ -325,7 +325,14 @@ export function CapexOCRequiredDialog({
               <Button variant="outline" onClick={() => handleClose(false)}>
                 Cancelar
               </Button>
-              <Button variant="outline" disabled={!montoValido} onClick={onRequestLineSelection}>
+              <Button
+                variant="outline"
+                disabled={!montoValido}
+                onClick={() => {
+                  setStep("selecting");
+                  onRequestLineSelection();
+                }}
+              >
                 Seleccionar líneas adicionales
               </Button>
               <Button disabled={!montoValido} onClick={() => { setFinalAdditionalLines([]); setStep("summary"); }}>
