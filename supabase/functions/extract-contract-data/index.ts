@@ -85,10 +85,10 @@ serve(async (req) => {
 
   try {
     let { documentContent, documentUrl } = await req.json();
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
     console.log("Starting contract data extraction...");
@@ -192,22 +192,26 @@ IMPORTANTE:
 - SIEMPRE responde con JSON válido, sin texto adicional
 - Usa confianza "alta" para la mayoría de campos que puedas leer`;
 
-    let messages: any[] = [];
+    let messages: any[] = [
+      { role: "system", content: systemPrompt }
+    ];
 
     // Build the user message based on available content
     if (fileBase64 && mimeType.includes('pdf')) {
-      // Claude lee el PDF directo (document understanding nativo)
+      // For PDFs, use Gemini's document understanding
       console.log("Using multimodal processing for PDF");
       messages.push({
         role: "user",
         content: [
           {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: fileBase64 }
-          },
-          {
             type: "text",
             text: `Analiza este contrato de arriendo comercial chileno y extrae todos los datos relevantes. El archivo es: ${fileName}`
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${mimeType};base64,${fileBase64}`
+            }
           }
         ]
       });
@@ -217,12 +221,14 @@ IMPORTANTE:
         role: "user",
         content: [
           {
-            type: "image",
-            source: { type: "base64", media_type: mimeType, data: fileBase64 }
-          },
-          {
             type: "text",
             text: `Analiza este documento de contrato de arriendo y extrae todos los datos relevantes.`
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${mimeType};base64,${fileBase64}`
+            }
           }
         ]
       });
@@ -250,17 +256,14 @@ Nombre del archivo: ${fileName}`
 
     console.log("Sending to AI with", fileBase64 ? "file attachment" : "text content");
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 4096,
-        system: systemPrompt,
+        model: "google/gemini-2.5-flash",
         messages,
       }),
     });
@@ -287,12 +290,12 @@ Nombre del archivo: ${fileName}`
         });
       }
       const errorText = await response.text();
-      console.error("Anthropic API error:", response.status, errorText);
-      throw new Error(`Anthropic API error: ${response.status}`);
+      console.error("AI gateway error:", response.status, errorText);
+      throw new Error(`AI gateway error: ${response.status}`);
     }
 
     const data = await response.json();
-    const content = data.content?.find((b: { type: string }) => b.type === "text")?.text;
+    const content = data.choices?.[0]?.message?.content;
     
     console.log("AI response received:", content?.substring(0, 1000));
 

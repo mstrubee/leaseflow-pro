@@ -17,11 +17,13 @@ La migración está completa, Lovable retirado:
 - ✅ Etapa 5: Refactoring — sistema SelectableElement/PermissionSelection eliminado (-834 líneas)
 - ✅ Etapa 6: Profesionalización (este archivo + README + CHANGELOG)
 - ✅ Etapa 7: Sync Lovable → Oficial (`main` congelada, ya no aplica — ver abajo)
-- ✅ Etapa 8: Certificación final — cerrados los caveats pendientes de la certificación 2026-06-29:
-  - `extract-contract-data` y `match-contracts` migradas de `ai.gateway.lovable.dev` a la API directa de Anthropic (`ANTHROPIC_API_KEY`)
+- 🟡 Etapa 8: Certificación final — de los caveats pendientes de la certificación 2026-06-29, resueltos:
   - CORS `*.lovable.app` removido de las 6 Edge Functions que lo tenían
   - `process-alerts` ahora arma los links de email con `APP_URL` (default `gplanet.vercel.app`), no con `.lovable.app`
-  - Pendiente aparte (no bloqueante): confirmar si queda algo en la DB de Lovable (`tgxiqvfpirwvhktgqqfa`) sin reflejar en la oficial antes de darla de baja — requiere una comparación puntual, no se ejecutó todavía
+
+  Pendientes, sin resolver (decisión de Matias, 2026-09-07):
+  - `extract-contract-data` y `match-contracts` **siguen llamando a `ai.gateway.lovable.dev`** (Gemini) — es una dependencia real de infraestructura de Lovable, pero cambiar de proveedor de IA no es viable por ahora. Sigue siendo un riesgo: si Lovable da de baja ese gateway, estas 2 funciones (extracción de datos de contratos e importación de Excel con matching) dejan de funcionar.
+  - Confirmar si queda algo en la DB de Lovable (`tgxiqvfpirwvhktgqqfa`) sin reflejar en la oficial antes de darla de baja — requiere una comparación puntual con SQL de solo lectura, que necesita confirmación explícita de Matias antes de ejecutarse (ver regla de seguridad abajo)
 
 **`main` (Lovable) queda congelada** — no se espera desarrollo nuevo ahí. El workflow de `docs/sync-lovable-a-oficial.md` ya no aplica en el día a día (queda como referencia histórica).
 

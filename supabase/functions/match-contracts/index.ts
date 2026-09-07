@@ -28,8 +28,8 @@ serve(async (req) => {
       });
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not configured");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     // Build contract reference for the prompt
     const contractList = contracts.map(c => {
@@ -64,46 +64,49 @@ ${textsToMatch}
 
 Analiza cada texto y encuentra el contrato correspondiente usando las reglas de matching.`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 4096,
-        system: systemPrompt,
+        model: "google/gemini-3-flash-preview",
         messages: [
+          { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         tools: [
           {
-            name: "return_matches",
-            description: "Retorna los matches encontrados entre textos del Excel y contratos",
-            input_schema: {
-              type: "object",
-              properties: {
-                matches: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      textIndex: { type: "number", description: "Índice del texto en la lista" },
-                      contractId: { type: "string", description: "ID UUID del contrato matcheado" },
-                      contractName: { type: "string", description: "Nombre del contrato matcheado" },
-                      confidence: { type: "string", enum: ["high", "medium"], description: "Nivel de confianza" },
+            type: "function",
+            function: {
+              name: "return_matches",
+              description: "Retorna los matches encontrados entre textos del Excel y contratos",
+              parameters: {
+                type: "object",
+                properties: {
+                  matches: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        textIndex: { type: "number", description: "Índice del texto en la lista" },
+                        contractId: { type: "string", description: "ID UUID del contrato matcheado" },
+                        contractName: { type: "string", description: "Nombre del contrato matcheado" },
+                        confidence: { type: "string", enum: ["high", "medium"], description: "Nivel de confianza" },
+                      },
+                      required: ["textIndex", "contractId", "contractName", "confidence"],
+                      additionalProperties: false,
                     },
-                    required: ["textIndex", "contractId", "contractName", "confidence"],
                   },
                 },
+                required: ["matches"],
+                additionalProperties: false,
               },
-              required: ["matches"],
             },
           },
         ],
-        tool_choice: { type: "tool", name: "return_matches" },
+        tool_choice: { type: "function", function: { name: "return_matches" } },
       }),
     });
 
@@ -115,8 +118,14 @@ Analiza cada texto y encuentra el contrato correspondiente usando las reglas de 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+      if (status === 402) {
+        return new Response(JSON.stringify({ error: "Créditos de IA agotados." }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const text = await response.text();
-      console.error("Anthropic API error:", status, text);
+      console.error("AI gateway error:", status, text);
       return new Response(JSON.stringify({ error: "Error en servicio de IA", matches: [] }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -124,15 +133,15 @@ Analiza cada texto y encuentra el contrato correspondiente usando las reglas de 
     }
 
     const data = await response.json();
-    const toolUse = data.content?.find((b: { type: string }) => b.type === "tool_use");
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
 
-    if (!toolUse?.input) {
+    if (!toolCall?.function?.arguments) {
       return new Response(JSON.stringify({ matches: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const result = toolUse.input;
+    const result = JSON.parse(toolCall.function.arguments);
 
     // Map back: textIndex → original text + contractId
     const mappedMatches = (result.matches || [])
