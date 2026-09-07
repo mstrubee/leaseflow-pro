@@ -12,7 +12,8 @@ import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
 import { DeletedOrdersModule } from "./DeletedOrdersModule";
-import { OCRequestsList } from "./OCRequestsList";
+import { OCRequestsList, OCRequestPrefillDraft } from "./OCRequestsList";
+import { OCRequiredList } from "./OCRequiredList";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -107,6 +108,9 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   // Refresh key to force BudgetModule to reload
   const [refreshKey, setRefreshKey] = useState(0);
   const [superficieEdificada, setSuperficieEdificada] = useState(0);
+  // Draft para "Convertir a Solicitud" desde OCRequiredList -- se lo pasa a
+  // OCRequestsList, que abre su propio diálogo de "Nueva Solicitud" prellenado.
+  const [ocRequiredConvertDraft, setOcRequiredConvertDraft] = useState<OCRequestPrefillDraft | null>(null);
 
   useEffect(() => {
     loadAvailableYears();
@@ -970,6 +974,28 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4 space-y-6">
+          {/* OC Requeridas Section -- primer eslabón: Requerimiento de OC → Solicitud de OC → OC */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-indigo-500" />
+                OC Requeridas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OCRequiredList
+                key={`oc-req-${refreshKey}`}
+                contractId={contractId}
+                contractName={contractName}
+                ufValue={ufValue}
+                formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
+                onConvert={(draft) => setOcRequiredConvertDraft(draft)}
+                refreshKey={refreshKey}
+                onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+              />
+            </CardContent>
+          </Card>
+
           {/* OC Requests Section */}
           <Card>
             <CardHeader className="pb-2">
@@ -989,6 +1015,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
                 isAdmin={isAdmin}
                 allowCreate={isAdmin || hasPermission("budget_ordenes_compra", "edit")}
+                prefillDraft={ocRequiredConvertDraft}
+                onPrefillConsumed={() => setOcRequiredConvertDraft(null)}
               />
             </CardContent>
           </Card>

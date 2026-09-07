@@ -56,6 +56,18 @@ interface SelectedLine {
   maxAmount: number;
 }
 
+/** Prellenado al convertir una "OC Requerida" (ver OCRequiredList.tsx) en
+ *  Solicitud de OC: abre el mismo diálogo de "Nueva Solicitud" ya existente,
+ *  con las líneas/monto/archivo del requerimiento ya cargados -- el usuario
+ *  solo debe elegir proveedor y completar el plan de pagos, igual que hoy. */
+export interface OCRequestPrefillDraft {
+  quotationNumber: string;
+  lines: { lineId: string; lineName: string; amountUf: number }[];
+  totalAmountClp: number;
+  fileUrl: string | null;
+  fileName: string | null;
+}
+
 interface PaymentPlanItem {
   description: string;
   amount: string;
@@ -74,6 +86,8 @@ interface OCRequestsListProps {
   isAdmin?: boolean;
   budgetLineId?: string;
   allowCreate?: boolean;
+  prefillDraft?: OCRequestPrefillDraft | null;
+  onPrefillConsumed?: () => void;
 }
 
 export const OCRequestsList = ({
@@ -87,7 +101,9 @@ export const OCRequestsList = ({
   onRefresh,
   isAdmin = false,
   budgetLineId,
-  allowCreate = true
+  allowCreate = true,
+  prefillDraft,
+  onPrefillConsumed
 }: OCRequestsListProps) => {
   const [requests, setRequests] = useState<OCRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +137,11 @@ export const OCRequestsList = ({
     supplier_id: null as string | null,
     supplier_name: null as string | null
   });
+  // Al convertir una "OC Requerida" en Solicitud (ver OCRequiredList.tsx):
+  // archivo a transferir y quotation_number de origen, para marcarlo
+  // "Convertida" una vez creada la solicitud.
+  const [prefillFile, setPrefillFile] = useState<{ url: string | null; name: string | null }>({ url: null, name: null });
+  const [conversionQuotationNumber, setConversionQuotationNumber] = useState<string | null>(null);
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
@@ -375,6 +396,8 @@ export const OCRequestsList = ({
     setPaymentPlan([]);
     setCancelConfirm(false);
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
+    setPrefillFile({ url: null, name: null });
+    setConversionQuotationNumber(null);
     setLoadingBudgets(true);
 
     try {
@@ -460,6 +483,33 @@ export const OCRequestsList = ({
     const budget = availableBudgets.find(b => b.type === type);
     setSelectedBudgetId(budget?.id || "");
   };
+
+  // Llega un draft desde "Convertir a Solicitud" en OCRequiredList: abre el
+  // diálogo de siempre y lo prellena (líneas, monto, archivo) -- el usuario
+  // solo tiene que elegir proveedor y completar el plan de pagos.
+  useEffect(() => {
+    if (!prefillDraft) return;
+    (async () => {
+      await handleOpenNewRequestDialog();
+      setSelectedLines(
+        prefillDraft.lines.map((l) => ({
+          lineId: l.lineId,
+          lineName: l.lineName,
+          amount: l.amountUf,
+          maxAmount: l.amountUf,
+        }))
+      );
+      setNewRequestForm((prev) => ({
+        ...prev,
+        amount: String(Math.round(prefillDraft.totalAmountClp)),
+        currency: "CLP",
+      }));
+      setPrefillFile({ url: prefillDraft.fileUrl, name: prefillDraft.fileName });
+      setConversionQuotationNumber(prefillDraft.quotationNumber);
+      onPrefillConsumed?.();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillDraft]);
 
   const addPaymentItem = () => {
     setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
@@ -591,10 +641,21 @@ export const OCRequestsList = ({
         supplier_name: newRequestForm.supplier_name,
         year: year,
         status: "pending",
-        created_by: user?.id
+        created_by: user?.id,
+        quotation_url: prefillFile.url,
+        quotation_file_name: prefillFile.name,
       }).select().single();
 
       if (error) throw error;
+
+      // Viene de "Convertir a Solicitud" en OCRequiredList -- marca el
+      // requerimiento de origen como convertido.
+      if (requestData && conversionQuotationNumber) {
+        await supabase
+          .from("oc_requests")
+          .update({ source_quotation_number: conversionQuotationNumber } as any)
+          .eq("id", requestData.id);
+      }
 
       // Create budget line assignments
       if (requestData) {
@@ -644,6 +705,8 @@ export const OCRequestsList = ({
 
       toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
       setShowNewRequestDialog(false);
+      setPrefillFile({ url: null, name: null });
+      setConversionQuotationNumber(null);
       loadRequests();
       onRefresh?.();
 
