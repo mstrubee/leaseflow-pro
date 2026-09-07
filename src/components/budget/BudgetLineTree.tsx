@@ -1861,6 +1861,12 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
   if (prev.consumedByLineClp !== next.consumedByLineClp) return false;
   if (prev.siblingIds !== next.siblingIds) return false;
+  // "Ver Ppto/OC/Factura" depende de linesWithDetails -- sin este chequeo
+  // quedaba con el estado (des)habilitado obsoleto tras cargar/recargar,
+  // porque ningún otro prop comparado arriba cambia en ese momento.
+  if (prev.linesWithDetails !== next.linesWithDetails) return false;
+  if (prev.restrictSelectionToAuthorized !== next.restrictSelectionToAuthorized) return false;
+  if (prev.lockedLineId !== next.lockedLineId) return false;
   // Callbacks are stable (useCallback in parent), skip comparing
   return true;
 });
