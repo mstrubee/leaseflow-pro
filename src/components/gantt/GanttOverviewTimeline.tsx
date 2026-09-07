@@ -21,8 +21,23 @@ interface TimelineProject {
   companyNames: string[];
   endDate: string;
   capexUF: number;
-  overviewStatus: "active" | "paused" | "completed";
+  /** Color configurado del estado en Admin (uno de PROGRESS_COLOR_OPTIONS) -- null si no tiene. */
+  overviewStatusColor: string | null;
 }
+
+// Variante "clara" (borde+fondo suave) de la paleta de PROGRESS_COLOR_OPTIONS,
+// para los chips de esta línea de tiempo -- el rojo queda reservado para
+// "vencido" (por fecha), independiente del color del estado.
+const LIGHT_COLOR_CLASSES: Record<string, string> = {
+  red: "bg-red-50 border-red-200 text-red-700",
+  yellow: "bg-yellow-50 border-yellow-200 text-yellow-700",
+  blue: "bg-blue-50 border-blue-200 text-blue-700",
+  green: "bg-green-50 border-green-200 text-green-700",
+  purple: "bg-purple-50 border-purple-200 text-purple-700",
+  orange: "bg-orange-50 border-orange-200 text-orange-700",
+  gray: "bg-gray-50 border-gray-200 text-gray-700",
+};
+const getLightColorClass = (color: string | null) => LIGHT_COLOR_CLASSES[color ?? ""] ?? LIGHT_COLOR_CLASSES.blue;
 
 interface GanttOverviewTimelineProps {
   projects: TimelineProject[];
@@ -135,22 +150,18 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
                 >
                   {items.map((p) => {
                     const d = parseISO(p.endDate);
-                    const overdue = d < today && p.overviewStatus !== "completed";
+                    const overdue = d < today;
                     return (
                       <button
                         key={p.contractId}
                         type="button"
                         onClick={() => onSelect(p.contractId)}
                         title={`${p.contractName} — término ${format(d, "dd/MM/yyyy")}${
-                          p.overviewStatus === "completed" ? " · Terminado" : ""
-                        }${p.companyNames.length ? ` · ${p.companyNames.join(", ")}` : ""}`}
+                          p.companyNames.length ? ` · ${p.companyNames.join(", ")}` : ""
+                        }`}
                         className={cn(
                           "text-left text-[10px] leading-tight rounded border px-1.5 py-1 truncate transition-shadow hover:shadow-sm hover:border-primary/50",
-                          p.overviewStatus === "completed"
-                            ? "bg-green-50 border-green-200 text-green-700"
-                            : overdue
-                              ? "bg-red-50 border-red-200 text-red-700"
-                              : "bg-blue-50 border-blue-200 text-blue-700"
+                          overdue ? "bg-red-50 border-red-200 text-red-700" : getLightColorClass(p.overviewStatusColor)
                         )}
                       >
                         <div className="font-semibold">{format(d, "dd MMM", { locale: es })}</div>

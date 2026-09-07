@@ -29,6 +29,7 @@ import { BusinessCaseAdminConfig } from "@/components/admin/BusinessCaseAdminCon
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
+import { GanttOverviewStatusManager } from "@/components/admin/GanttOverviewStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
 import { ServiceContractApproversManager } from "@/components/admin/ServiceContractApproversManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
@@ -956,6 +957,15 @@ const AdminPanel = () => {
               defaultOpen={false}
             >
               <BudgetProgressStatusManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Estados de Gantt General"
+              description="Estados para las líneas de Cartas Gantt - Vista General en Reportes, y su color de badge"
+              icon={<ListChecks className="h-5 w-5 text-indigo-500" />}
+              defaultOpen={false}
+            >
+              <GanttOverviewStatusManager />
             </CollapsibleCard>
           </div>
         </CollapsibleCard>
