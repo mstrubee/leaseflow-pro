@@ -73,7 +73,7 @@ const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
 - `user_permissions` table: permisos granulares por usuario
 - `user_profile_templates` + `profile_template_permissions`: roles reutilizables
 - `PermissionTreeEditor`: árbol jerárquico de permisos con herencia
-- `useUserPermissions.ts`: wrapper deprecado, aún en uso en DashboardStats y ContractDetail — migrar a `hasPermission` cuando se toque esos archivos
+- `useUserPermissions.ts` (wrapper deprecado) eliminado 2026-09-07 — `DashboardStats.tsx` y `ContractDetail.tsx` ya usan `useAuth()` directo (`hasPermission`, `isHidden`), único sistema de permisos en todo el código
 
 ---
 

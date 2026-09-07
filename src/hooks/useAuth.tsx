@@ -18,6 +18,7 @@ interface AuthContextValue {
   roleLoaded: boolean;
   permissions: UserPermission[];
   hasPermission: (resource: string, requiredPermission: "view" | "edit" | "all") => boolean;
+  isHidden: (elementId: string) => boolean;
   signOut: () => Promise<void>;
 }
 
@@ -192,6 +193,37 @@ function useProvideAuth(): AuthContextValue {
     return false;
   };
 
+  // Secciones que solo se ocultan (en vez de mostrarse deshabilitadas) cuando
+  // el usuario tiene un perfil de permisos "curado" — si nunca se le asignó
+  // ningún permiso dentro del grupo, se asume acceso total por defecto (perfil
+  // legacy sin restricciones); apenas tiene UNO dentro del grupo, pasa a modo
+  // allowlist y el resto de ese mismo grupo se oculta.
+  const CONTRACT_SECTION_IDS = [
+    "contract_address", "contract_contact", "contract_commercial",
+    "contract_renegotiation", "contract_surfaces", "contract_documents",
+    "contract_repository", "contract_gantt", "contract_budget",
+    "contract_alerts", "contract_patents",
+  ];
+  const DASHBOARD_SECTION_IDS = [
+    "dashboard_stats", "dashboard_map", "dashboard_economic", "dashboard_patents",
+  ];
+
+  const isHidden = (elementId: string): boolean => {
+    if (isAdmin) return false;
+    if (permissions.length === 0) return false;
+
+    const hasContractPermissions = permissions.some((p) => CONTRACT_SECTION_IDS.includes(p.resource));
+    const hasDashboardPermissions = permissions.some((p) => DASHBOARD_SECTION_IDS.includes(p.resource));
+
+    if (hasContractPermissions && CONTRACT_SECTION_IDS.includes(elementId)) {
+      return !permissions.some((p) => p.resource === elementId);
+    }
+    if (hasDashboardPermissions && DASHBOARD_SECTION_IDS.includes(elementId)) {
+      return !permissions.some((p) => p.resource === elementId);
+    }
+    return false;
+  };
+
   const signOut = async () => {
     // Global scope invalidates the session on every device for this user
     await supabase.auth.signOut({ scope: "global" });
@@ -208,6 +240,7 @@ function useProvideAuth(): AuthContextValue {
     roleLoaded,
     permissions,
     hasPermission,
+    isHidden,
     signOut,
   }), [user, session, loading, isAdmin, isOperador, isGerente, isEquipoGerencia, roleLoaded, permissions]);
 }

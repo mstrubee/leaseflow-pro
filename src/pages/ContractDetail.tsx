@@ -44,7 +44,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { buildBCSeed } from "@/lib/businessCase/buildSeed";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
-import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
 import {
   DndContext,
@@ -212,8 +211,9 @@ const ContractDetail = () => {
 
   const { toast } = useToast();
   const { ufValue } = useEconomicIndicators();
-  const { isAdmin, isEquipoGerencia, roleLoaded, hasPermission } = useAuth();
-  const { isHidden, canEdit: canEditSection, loading: permissionsLoading } = useUserPermissions();
+  const { isAdmin, isEquipoGerencia, roleLoaded, hasPermission, isHidden } = useAuth();
+  const permissionsLoading = !roleLoaded;
+  const canEditSection = (resource: string) => hasPermission(resource, "edit");
   const {
     sections,
     reorderSections,

@@ -16,7 +16,7 @@ import {
 import { FileText, CheckCircle, Clock, AlertTriangle, Shield, ArrowRight } from "lucide-react";
 import { usePatents } from "@/hooks/usePatents";
 import { EconomicIndicators } from "./EconomicIndicators";
-import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { useAuth } from "@/hooks/useAuth";
 import { CommuneContractsDialog } from "./CommuneContractsDialog";
 import * as XLSX from "xlsx";
 
@@ -189,7 +189,8 @@ const PatentsMirrorCards = () => {
 
 export const DashboardStats = () => {
   const navigate = useNavigate();
-  const { isHidden, loading: permissionsLoading } = useUserPermissions();
+  const { isHidden, roleLoaded } = useAuth();
+  const permissionsLoading = !roleLoaded;
   const [stats, setStats] = useState<Stats>({
     totalContracts: 0,
     totalVigentes: 0,
