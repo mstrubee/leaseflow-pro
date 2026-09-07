@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { FileUp, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { FileUp, FileText, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
@@ -36,9 +36,27 @@ interface CapexOCRequiredDialogProps {
 
 type Step = "upload" | "amount" | "selecting" | "summary";
 
+// Extensiones aceptadas para la cotización -- PDF, imágenes, Excel y Word.
+// Se valida por extensión (no solo por MIME type) porque algunos navegadores
+// no informan el tipo para .xls/.doc.
+const ACCEPTED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".doc", ".docx"];
+const ACCEPT_ATTR =
+  ".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx," +
+  "application/pdf,image/jpeg,image/png," +
+  "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
+  "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+type PreviewKind = "pdf" | "image" | "none";
+function previewKindOf(fileName: string): PreviewKind {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
+  if (ext === ".pdf") return "pdf";
+  if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image";
+  return "none";
+}
+
 /**
  * Se abre al marcar una línea CAPEX como "OC Requerida". Flujo:
- * 1) subir la cotización PDF: 2) previsualizarla e ingresar el monto
+ * 1) subir la cotización (PDF, JPEG, PNG, Excel o Word); 2) previsualizarla (si el tipo lo permite) e ingresar el monto
  * requerido de la OC; 3) opcionalmente salir a seleccionar líneas
  * adicionales "Autorizado" directamente en la página del contrato (ver
  * BudgetModule.tsx + CapexLineSelectionContext); 4) resumen con el total
@@ -102,8 +120,9 @@ export function CapexOCRequiredDialog({
 
   const handleFileChange = (f: File | null) => {
     if (!f) return;
-    if (f.type && f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
-      toast.error("El archivo debe ser un PDF");
+    const ext = f.name.toLowerCase().slice(f.name.lastIndexOf("."));
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+      toast.error("El archivo debe ser PDF, JPEG, PNG, Excel o Word");
       return;
     }
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -197,7 +216,7 @@ export function CapexOCRequiredDialog({
         {step === "upload" && (
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="capex-oc-quote-file">Cotización (PDF)</Label>
+              <Label htmlFor="capex-oc-quote-file">Cotización</Label>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" asChild className="cursor-pointer">
                   <label htmlFor="capex-oc-quote-file" className="flex items-center gap-1.5">
@@ -207,10 +226,11 @@ export function CapexOCRequiredDialog({
                 </Button>
                 <span className="text-sm text-muted-foreground truncate">Ningún archivo seleccionado</span>
               </div>
+              <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word</p>
               <input
                 id="capex-oc-quote-file"
                 type="file"
-                accept="application/pdf,.pdf"
+                accept={ACCEPT_ATTR}
                 className="hidden"
                 onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
               />
@@ -222,7 +242,22 @@ export function CapexOCRequiredDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Cotización</Label>
-              <iframe src={previewUrl} title="Previsualización de la cotización" className="w-full h-72 rounded-md border" />
+              {previewKindOf(file.name) === "pdf" && (
+                <iframe src={previewUrl} title="Previsualización de la cotización" className="w-full h-72 rounded-md border" />
+              )}
+              {previewKindOf(file.name) === "image" && (
+                <img
+                  src={previewUrl}
+                  alt="Previsualización de la cotización"
+                  className="w-full h-72 rounded-md border object-contain bg-muted/30"
+                />
+              )}
+              {previewKindOf(file.name) === "none" && (
+                <div className="w-full h-72 rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
+                  <FileText className="h-10 w-10" />
+                  <span className="text-xs">Sin previsualización disponible para este tipo de archivo</span>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground truncate">{file.name}</p>
             </div>
             <div className="space-y-4">
