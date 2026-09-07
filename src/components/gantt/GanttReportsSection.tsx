@@ -581,18 +581,36 @@ export function GanttReportsSection() {
         .eq("year", currentYear);
       if (bErr) throw bErr;
 
-      if (!budgets || budgets.length === 0) {
-        setData([]);
-        return;
-      }
-
       // Un presupuesto por contrato (primero encontrado)
       const budgetByContract = new Map<string, { id: string; amount_uf: number | null }>();
       (budgets || []).forEach((b) => {
         if (!budgetByContract.has(b.contract_id))
           budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
       });
-      const contractIds = Array.from(budgetByContract.keys());
+
+      // 1b) Contratos "En negociación" con Comité GP "Aceptada"/"Aceptado" (o
+      // cualquier variante que contenga esa raíz, ej. "Aceptada 2027") se
+      // incluyen también, aunque todavía no tengan un presupuesto CAPEX del
+      // año en curso -- para poder cargarles su carta Gantt desde ya.
+      const { data: acceptedNegotiationContracts, error: negErr } = await supabase
+        .from("contracts")
+        .select("id")
+        .eq("status", "en_negociacion")
+        .is("deleted_at", null)
+        .ilike("comite_gp_status", "%acepta%");
+      if (negErr) throw negErr;
+      const negotiationAcceptedIds = new Set(
+        (acceptedNegotiationContracts || []).map((c: any) => c.id as string)
+      );
+
+      const contractIds = Array.from(
+        new Set([...budgetByContract.keys(), ...negotiationAcceptedIds])
+      );
+
+      if (contractIds.length === 0) {
+        setData([]);
+        return;
+      }
 
       // 2) Datos del contrato (nombre, superficie, verificar no eliminado)
       const { data: contractRows, error: cErr } = await supabase
@@ -715,15 +733,16 @@ export function GanttReportsSection() {
         capexByContract.set(contractId, fromTree > 0 ? fromTree : budget.amount_uf || 0);
       });
 
-      // 6) Ensamblar resultado — incluye TODOS los contratos con capex,
-      //    con o sin Gantt, con o sin tareas.
+      // 6) Ensamblar resultado — incluye TODOS los contratos con capex, con o
+      //    sin Gantt, con o sin tareas, más los "En negociación" ya aceptados
+      //    en Comité GP (esos se dejan pasar sin CAPEX real, ver 1b).
       const result: GanttContractData[] = [];
       for (const contractId of contractIds) {
         const contract = contractMap.get(contractId);
         if (!contract) continue; // contrato eliminado o no encontrado
 
         const capexUF = capexByContract.get(contractId) || 0;
-        if (capexUF <= 0) continue; // sin monto de capex real, omitir
+        if (capexUF <= 0 && !negotiationAcceptedIds.has(contractId)) continue; // sin monto de capex real, omitir
 
         const timeline = timelineByContract.get(contractId);
         const tasks = timeline
