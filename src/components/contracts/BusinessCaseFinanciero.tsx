@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -55,12 +55,27 @@ function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: n
 }
 
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contractName, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, dirty, update, updateArr, updateVentaConCrecimiento, updateEscalationAmount, setFormato, setInvOverride, save } =
+  const { config, inputs, result, loading, saving, dirty, update, updateArr, updateVentaConCrecimiento, updateEscalationAmount, setFormato, setInvOverride, undo, save } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
   const [syncingGeo, setSyncingGeo] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+
+  // Ctrl+Z / Cmd+Z deshace la última edición mientras el diálogo está abierto
+  // y es editable — sin esto, el undo nativo del navegador no sirve porque
+  // estos son inputs controlados por React.
+  useEffect(() => {
+    if (!open || ro) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, ro, undo]);
 
   // Cerrar es siempre una acción explícita (botón "Cerrar"): si hay cambios
   // sin guardar se pregunta antes, en vez de perderlos en silencio.

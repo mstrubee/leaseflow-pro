@@ -16,6 +16,24 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const loadedRef = useRef(false);
+  // Historial de deshacer (Ctrl+Z) — snapshots de `inputs` previos a cada
+  // edición. Ediciones consecutivas sobre el mismo campo dentro de una
+  // "ráfaga" (ej. tipear dígito a dígito) se colapsan en un solo paso de
+  // undo, para no tener que apretar Ctrl+Z una vez por tecla.
+  const historyRef = useRef<BCInputs[]>([]);
+  const lastEditRef = useRef<{ key: string; time: number } | null>(null);
+  const initialInputsRef = useRef<BCInputs | null>(null);
+  const UNDO_BURST_MS = 800;
+  const UNDO_MAX = 50;
+  const pushHistory = useCallback((prev: BCInputs, editKey: string) => {
+    const now = Date.now();
+    const last = lastEditRef.current;
+    if (!last || last.key !== editKey || now - last.time > UNDO_BURST_MS) {
+      historyRef.current.push(prev);
+      if (historyRef.current.length > UNDO_MAX) historyRef.current.shift();
+    }
+    lastEditRef.current = { key: editKey, time: now };
+  }, []);
   // Últimos valores de los campos que vienen del contrato, para detectar
   // ediciones reales del usuario (vs. el simple re-render) y no reescribir el
   // contrato con el mismo valor que ya tenía.
@@ -65,8 +83,15 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
           merged.escalations.filter((e) => e.id).map((e) => [e.id as string, e.amount]),
         );
         setInputs(merged);
+        initialInputsRef.current = merged;
+        historyRef.current = [];
+        lastEditRef.current = null;
       } catch {
-        setInputs(buildDefaultBCInputs(seed, config));
+        const fallback = buildDefaultBCInputs(seed, config);
+        setInputs(fallback);
+        initialInputsRef.current = fallback;
+        historyRef.current = [];
+        lastEditRef.current = null;
       } finally {
         setLoading(false);
       }
@@ -77,19 +102,24 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const result = useMemo(() => (inputs ? computeBC(inputs, config) : null), [inputs, config]);
 
   const update = useCallback(<K extends keyof BCInputs>(key: K, value: BCInputs[K]) => {
-    setInputs((p) => (p ? { ...p, [key]: value } : p));
+    setInputs((p) => {
+      if (!p) return p;
+      pushHistory(p, String(key));
+      return { ...p, [key]: value };
+    });
     setDirty(true);
-  }, []);
+  }, [pushHistory]);
 
   const updateArr = useCallback((key: keyof BCInputs, idx: number, value: number) => {
     setInputs((p) => {
       if (!p) return p;
+      pushHistory(p, `${String(key)}.${idx}`);
       const a = [...((p[key] as unknown as number[]) || [])];
       a[idx] = value;
       return { ...p, [key]: a } as BCInputs;
     });
     setDirty(true);
-  }, []);
+  }, [pushHistory]);
 
   // Editar la venta de un año recalcula los demás años hacia adelante y hacia
   // atrás usando el Crecimiento Ventas % ya ingresado (ventaGrowthPct[i] =
@@ -99,6 +129,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const updateVentaConCrecimiento = useCallback((idx: number, value: number) => {
     setInputs((p) => {
       if (!p) return p;
+      pushHistory(p, `ventaMes.${idx}`);
       const ventas = [...p.ventaMes];
       ventas[idx] = value;
       // Los años propagados se redondean hacia arriba (sin decimales); el año
@@ -118,7 +149,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       return { ...p, ventaMes: ventas, ocupPct: ocupPctFromVenta(p.formato, ventas[0]) };
     });
     setDirty(true);
-  }, []);
+  }, [pushHistory]);
 
   // Cambiar de formato precarga dotación, inventario y Ocupación % (calibrado
   // sobre la Venta Año 1 vigente) en una sola operación. Todos quedan
@@ -126,6 +157,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const setFormato = useCallback((formato: FormatoLocal) => {
     setInputs((p) => {
       if (!p) return p;
+      pushHistory(p, "formato");
       const preset = FORMATO_PRESETS[formato];
       return {
         ...p,
@@ -136,7 +168,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       };
     });
     setDirty(true);
-  }, []);
+  }, [pushHistory]);
 
   // Edita solo el MONTO de un tramo de escalonamiento (nunca el mes/plazo,
   // que sigue siendo de solo lectura acá). Recalcula el modelo al toque
@@ -146,21 +178,33 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const updateEscalationAmount = useCallback((idx: number, amount: number) => {
     setInputs((p) => {
       if (!p) return p;
+      pushHistory(p, `escalation.${idx}`);
       const escalations = p.escalations.map((e, i) => (i === idx ? { ...e, amount } : e));
       return { ...p, escalations };
     });
     setDirty(true);
-  }, []);
+  }, [pushHistory]);
 
   const setInvOverride = useCallback((lineId: string, value: number | null) => {
     setInputs((p) => {
       if (!p) return p;
+      pushHistory(p, `inv.${lineId}`);
       const ov = { ...p.invOverrides };
       if (value === null || !Number.isFinite(value)) delete ov[lineId];
       else ov[lineId] = value;
       return { ...p, invOverrides: ov };
     });
     setDirty(true);
+  }, [pushHistory]);
+
+  // Ctrl+Z / Cmd+Z — restaura el snapshot anterior más reciente. No hay
+  // límite hacia "redo": es deshacer simple, no un historial bidireccional.
+  const undo = useCallback(() => {
+    if (historyRef.current.length === 0) return;
+    const prev = historyRef.current.pop() as BCInputs;
+    lastEditRef.current = null;
+    setInputs(prev);
+    setDirty(initialInputsRef.current ? JSON.stringify(prev) !== JSON.stringify(initialInputsRef.current) : true);
   }, []);
 
   // Guardado manual — se dispara solo desde el botón "Guardar" (o "Guardar y
@@ -239,6 +283,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         };
       }
 
+      initialInputsRef.current = inputs;
       setDirty(false);
     } finally {
       setSaving(false);
@@ -258,6 +303,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     updateEscalationAmount,
     setFormato,
     setInvOverride,
+    undo,
     save,
   };
 }
