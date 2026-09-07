@@ -398,9 +398,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   }, []);
 
   // El usuario entra en modo selección de líneas CAPEX para "OC Requerida"
-  // (botón "Seleccionar líneas adicionales" del diálogo).
-  const handleEnterCapexLineSelection = useCallback(() => {
-    setSelectedLineIds(new Set());
+  // (botón "Seleccionar líneas adicionales" del diálogo, o "Editar selección"
+  // desde el resumen). initialIds siempre incluye la línea de origen (queda
+  // marcada y bloqueada, ver lockedLineId) más lo ya elegido si se está
+  // reeditando una selección previa.
+  const handleEnterCapexLineSelection = useCallback((initialIds: string[]) => {
+    setSelectedLineIds(new Set(initialIds));
     setSelectionPurpose("capexOc");
     setSelectionMode(true);
     setCapexLineSelectionActive(true);
@@ -408,15 +411,16 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
   // Terminó de elegir (botón flotante "Terminar selección") -- resuelve los
   // ids a objetos completos y se los pasa al diálogo, que estaba esperando
-  // en su paso "selecting".
+  // en su paso "selecting". Se excluye la línea de origen: el diálogo ya la
+  // maneja aparte (originLine) y quedaría duplicada si también viniera acá.
   const handleFinishCapexLineSelection = useCallback(() => {
     const chosen = flattenLines(lines)
-      .filter((l) => selectedLineIds.has(l.id))
+      .filter((l) => selectedLineIds.has(l.id) && l.id !== ocRequiredPrompt?.lineId)
       .map((l) => ({ id: l.id, name: l.name, amount_uf: l.amount_uf, status: l.status }));
     setCapexAdditionalLines(chosen);
     setCapexAdditionalLinesVersion((v) => v + 1);
     handleExitSelectionMode();
-  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode]);
+  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt]);
 
   // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
   // sin tener que expandir el árbol completo y marcarlas una por una.
@@ -2208,6 +2212,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 superficieEdificada={superficieEdificada}
                 selectionMode={selectionMode}
                 restrictSelectionToAuthorized={selectionPurpose === "capexOc"}
+                lockedLineId={selectionPurpose === "capexOc" ? ocRequiredPrompt?.lineId : undefined}
                 selectedIds={selectedLineIds}
                 onToggleSelect={handleToggleSelectLine}
                 onReload={() => currentBudget && loadLines(currentBudget.id)}

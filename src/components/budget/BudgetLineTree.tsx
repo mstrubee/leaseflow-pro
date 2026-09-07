@@ -294,6 +294,9 @@ interface BudgetLineTreeProps {
   /** Con selectionMode activo, restringe qué líneas se pueden tildar a las
    *  que estén "autorizado" (flujo "OC Requerida" > seleccionar adicionales). */
   restrictSelectionToAuthorized?: boolean;
+  /** Línea que ya viene seleccionada y no se puede destildar (la línea de
+   *  origen del flujo "OC Requerida" > seleccionar adicionales). */
+  lockedLineId?: string;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
@@ -331,6 +334,7 @@ export const BudgetLineTree = ({
   internalTransferSupplierIds,
   selectionMode = false,
   restrictSelectionToAuthorized = false,
+  lockedLineId,
   selectedIds,
   onToggleSelect,
   onReload,
@@ -420,6 +424,7 @@ export const BudgetLineTree = ({
       internalTransferSupplierIds={internalTransferSupplierIds}
       selectionMode={selectionMode}
       restrictSelectionToAuthorized={restrictSelectionToAuthorized}
+      lockedLineId={lockedLineId}
       selectedIds={selectedIds}
       onToggleSelect={onToggleSelect}
       onReload={onReload}
@@ -507,6 +512,7 @@ const BudgetLineItemInner = ({
   internalTransferSupplierIds,
   selectionMode = false,
   restrictSelectionToAuthorized = false,
+  lockedLineId,
   selectedIds,
   onToggleSelect,
   onReload,
@@ -517,8 +523,11 @@ const BudgetLineItemInner = ({
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
   const { isAdmin, hasPermission } = useAuth();
-  const canEditCantidades = isAdmin || hasPermission("budget_editar_cantidades", "edit");
-  const canEditMontos     = isAdmin || hasPermission("budget_editar_montos", "edit");
+  // Una línea "autorizada" solo la puede editar (monto/cantidad) un admin --
+  // ningún otro permiso la habilita, aunque tenga budget_editar_montos/cantidades.
+  const isAuthorizedLine = line.status === "autorizado";
+  const canEditCantidades = isAdmin || (!isAuthorizedLine && hasPermission("budget_editar_cantidades", "edit"));
+  const canEditMontos     = isAdmin || (!isAuthorizedLine && hasPermission("budget_editar_montos", "edit"));
   const canEditEstado     = isAdmin || hasPermission("budget_editar_estado", "edit");
   const canAutorizar      = isAdmin || hasPermission("budget_autorizar", "edit");
   const canEditLineas     = isAdmin || hasPermission("budget_editar_lineas", "edit");
@@ -1055,8 +1064,10 @@ const BudgetLineItemInner = ({
 
   // Con restrictSelectionToAuthorized (flujo "OC Requerida" > seleccionar
   // líneas adicionales), solo las líneas "Autorizado" se pueden tildar -- el
-  // resto queda visible pero inerte para la selección.
-  const isSelectable = selectionMode && (!restrictSelectionToAuthorized || line.status === "autorizado");
+  // resto queda visible pero inerte para la selección. lockedLineId (la línea
+  // de origen del mismo flujo) siempre queda tildada y no se puede destildar.
+  const isLocked = !!lockedLineId && line.id === lockedLineId;
+  const isSelectable = selectionMode && !isLocked && (!restrictSelectionToAuthorized || line.status === "autorizado");
 
   return <div>
       <div
@@ -1084,19 +1095,20 @@ const BudgetLineItemInner = ({
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
         isSelectable && "cursor-pointer select-none",
-        selectionMode && !isSelectable && "opacity-50",
+        selectionMode && !isSelectable && !isLocked && "opacity-50",
+        isLocked && "ring-1 ring-primary/40 bg-primary/5",
         // Drag-to-reorder visual state: dim the source, dnd-kit slides the rest
         isDragging && "opacity-40 z-10 relative",
       )}>
         {selectionMode && (
           <Checkbox
             aria-label={`Seleccionar ${line.name}`}
-            checked={isSelected}
+            checked={isSelected || isLocked}
             disabled={!isSelectable}
             onCheckedChange={() => onToggleSelect?.(line.id)}
             onClick={(e) => e.stopPropagation()}
             className="flex-shrink-0"
-            title={!isSelectable ? "Solo se pueden seleccionar líneas Autorizadas" : undefined}
+            title={isLocked ? "Línea de origen — siempre incluida" : !isSelectable ? "Solo se pueden seleccionar líneas Autorizadas" : undefined}
           />
         )}
         {canDragLine && (
@@ -1244,7 +1256,7 @@ const BudgetLineItemInner = ({
               <span 
                 className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[50px] text-right cursor-text hover:bg-accent/50"
                 onDoubleClick={() => !effectiveReadOnly && canEditCantidades && setIsEditingQuantity(true)}
-                title={canEditCantidades ? "Doble clic para editar" : "Sin permiso para editar cantidades"}
+                title={canEditCantidades ? "Doble clic para editar" : isAuthorizedLine ? "Línea autorizada: solo un admin puede editar cantidades" : "Sin permiso para editar cantidades"}
               >
                 {line.quantity || 0}
               </span>
@@ -1266,7 +1278,7 @@ const BudgetLineItemInner = ({
               <span 
                 className="text-xs text-muted-foreground min-w-[24px] cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
                 onDoubleClick={() => !effectiveReadOnly && canEditCantidades && setIsEditingUnit(true)}
-                title={canEditCantidades ? "Doble clic para editar" : "Sin permiso para editar cantidades"}
+                title={canEditCantidades ? "Doble clic para editar" : isAuthorizedLine ? "Línea autorizada: solo un admin puede editar cantidades" : "Sin permiso para editar cantidades"}
               >
                 {line.unit_type === "m2" ? "m²" : line.unit_type || "m²"}
               </span>
@@ -1685,7 +1697,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
