@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   ContractWithPatent, 
@@ -62,9 +62,13 @@ export function usePatents() {
   const [statuses, setStatuses] = useState<PatentStatus[]>([]);
   const [sharedItems, setSharedItems] = useState<PatentSharedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // `loading` means "initial load" only. Refetches triggered by mutations must
+  // stay silent: consumers early-return a full-page spinner while it is true,
+  // which would unmount any open dialog mid-action (see PatentsModule).
+  const hasLoadedRef = useRef(false);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       // Execute all queries in parallel for better performance
       const [
@@ -154,6 +158,7 @@ export function usePatents() {
     } catch (error) {
       console.error("Error loading patents data:", error);
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
   }, []);
