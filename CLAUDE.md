@@ -2,13 +2,13 @@
 
 ## Qué es este proyecto
 
-LeaseFlow-pro es un CRM para administración de contratos de arriendo, presupuestos y mantención de propiedades. Con usuarios activos en producción. Originado en Lovable; la **Plataforma Oficial** corre en Vercel + Supabase propio.
+LeaseFlow-pro es un CRM para administración de contratos de arriendo, presupuestos y mantención de propiedades. Con usuarios activos en producción. Originado en Lovable; la **Plataforma Oficial** corre en Vercel + Supabase propio. **Lovable está retirado** (nadie lo usa, confirmado 2026-09-07) — `main` queda congelada como archivo histórico.
 
 ---
 
-## Estado actual de la migración (2026-06-29)
+## Estado actual de la migración (actualizado 2026-09-07)
 
-La migración estructural está completa. La Plataforma Oficial (`migration`) es la versión canónica:
+La migración está completa, Lovable retirado:
 
 - ✅ Etapa 1: Auditoría de código completada
 - ✅ Etapa 2: Dependencias Lovable eliminadas (GeoLocSyncDialog, Ver Backend, lovable-tagger, .env, localStorage keys, etc.)
@@ -16,8 +16,14 @@ La migración estructural está completa. La Plataforma Oficial (`migration`) es
 - ✅ Etapa 4: Auditoría funcional — código muerto identificado
 - ✅ Etapa 5: Refactoring — sistema SelectableElement/PermissionSelection eliminado (-834 líneas)
 - ✅ Etapa 6: Profesionalización (este archivo + README + CHANGELOG)
-- ⏳ Etapa 7: Diseño "Sync a Oficial" (pendiente)
-- ⏳ Etapa 8: Certificación final (pendiente)
+- ✅ Etapa 7: Sync Lovable → Oficial (`main` congelada, ya no aplica — ver abajo)
+- ✅ Etapa 8: Certificación final — cerrados los caveats pendientes de la certificación 2026-06-29:
+  - `extract-contract-data` y `match-contracts` migradas de `ai.gateway.lovable.dev` a la API directa de Anthropic (`ANTHROPIC_API_KEY`)
+  - CORS `*.lovable.app` removido de las 6 Edge Functions que lo tenían
+  - `process-alerts` ahora arma los links de email con `APP_URL` (default `gplanet.vercel.app`), no con `.lovable.app`
+  - Pendiente aparte (no bloqueante): confirmar si queda algo en la DB de Lovable (`tgxiqvfpirwvhktgqqfa`) sin reflejar en la oficial antes de darla de baja — requiere una comparación puntual, no se ejecutó todavía
+
+**`main` (Lovable) queda congelada** — no se espera desarrollo nuevo ahí. El workflow de `docs/sync-lovable-a-oficial.md` ya no aplica en el día a día (queda como referencia histórica).
 
 ---
 
@@ -27,20 +33,20 @@ La migración estructural está completa. La Plataforma Oficial (`migration`) es
 |---|---|
 | **Plataforma Oficial** | Vercel + rama `migration` |
 | **DB Oficial** | Supabase `ilcumthwzhmtumaklgvo` |
-| **Versión de Estudio** | Lovable + rama `main` + Supabase `tgxiqvfpirwvhktgqqfa` |
-| **Edge Functions** | 17 funciones, todas ACTIVE en DB oficial |
+| **Versión de Estudio (retirada)** | Lovable + rama `main` (congelada) + Supabase `tgxiqvfpirwvhktgqqfa` (legacy, nadie la usa) |
+| **Edge Functions** | 18 funciones, todas ACTIVE en DB oficial |
 
 ---
 
 ## ⛔ REGLAS DE SEGURIDAD — LEER ANTES DE CUALQUIER ACCIÓN
 
-### Rama `main` = Lovable. ES INTOCABLE.
-- **NUNCA** hacer commit a `main`
+### Rama `main` = Lovable, congelada. Se mantiene como archivo histórico.
+- **NUNCA** hacer commit a `main` sin pedirlo explícitamente — ya no recibe desarrollo activo
 - **NUNCA** hacer `git push` a `main` sin confirmación explícita de Matias
 - Todo el trabajo va en rama `migration`
 
 ### DB: solo operar sobre `ilcumthwzhmtumaklgvo`
-- **NUNCA** correr SQL en `tgxiqvfpirwvhktgqqfa` (DB de Lovable)
+- **NUNCA** correr SQL en `tgxiqvfpirwvhktgqqfa` (DB de Lovable, legacy) sin confirmación explícita de Matias — aunque esté retirada, no se debe tocar por default
 - Para SQL en DB oficial: usar Management API con PAT disponible en memoria
 
 ### Antes de cualquier commit verificar:

@@ -3,9 +3,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Secure CORS configuration - only allow explicit trusted origins
 const ALLOWED_ORIGINS = [
-  'https://tgxiqvfpirwvhktgqqfa.lovable.app',
-  'https://id-preview--73a8d508-7010-4c00-aa8e-6eb117cc7286.lovable.app',
-  'https://rental-flow-desk.lovable.app',
   'https://gplanet.vercel.app',
   'https://leaseflow-cx7iispoy-matias-strubes-projects-ad768903.vercel.app',
   'http://localhost:5173',
@@ -88,10 +85,10 @@ serve(async (req) => {
 
   try {
     let { documentContent, documentUrl } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     console.log("Starting contract data extraction...");
@@ -195,26 +192,22 @@ IMPORTANTE:
 - SIEMPRE responde con JSON válido, sin texto adicional
 - Usa confianza "alta" para la mayoría de campos que puedas leer`;
 
-    let messages: any[] = [
-      { role: "system", content: systemPrompt }
-    ];
+    let messages: any[] = [];
 
     // Build the user message based on available content
     if (fileBase64 && mimeType.includes('pdf')) {
-      // For PDFs, use Gemini's document understanding
+      // Claude lee el PDF directo (document understanding nativo)
       console.log("Using multimodal processing for PDF");
       messages.push({
         role: "user",
         content: [
           {
-            type: "text",
-            text: `Analiza este contrato de arriendo comercial chileno y extrae todos los datos relevantes. El archivo es: ${fileName}`
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: fileBase64 }
           },
           {
-            type: "image_url",
-            image_url: {
-              url: `data:${mimeType};base64,${fileBase64}`
-            }
+            type: "text",
+            text: `Analiza este contrato de arriendo comercial chileno y extrae todos los datos relevantes. El archivo es: ${fileName}`
           }
         ]
       });
@@ -224,14 +217,12 @@ IMPORTANTE:
         role: "user",
         content: [
           {
-            type: "text",
-            text: `Analiza este documento de contrato de arriendo y extrae todos los datos relevantes.`
+            type: "image",
+            source: { type: "base64", media_type: mimeType, data: fileBase64 }
           },
           {
-            type: "image_url",
-            image_url: {
-              url: `data:${mimeType};base64,${fileBase64}`
-            }
+            type: "text",
+            text: `Analiza este documento de contrato de arriendo y extrae todos los datos relevantes.`
           }
         ]
       });
@@ -246,8 +237,8 @@ IMPORTANTE:
       console.log("Using filename-based extraction for:", fileName);
       messages.push({
         role: "user",
-        content: `No se pudo leer el contenido del documento "${fileName}". 
-        
+        content: `No se pudo leer el contenido del documento "${fileName}".
+
 Basándote en el nombre del archivo, genera datos de ejemplo realistas para un contrato de arriendo comercial chileno:
 - Si el nombre sugiere una empresa o ubicación, úsalas
 - Genera valores típicos para contratos comerciales en Chile
@@ -259,14 +250,17 @@ Nombre del archivo: ${fileName}`
 
     console.log("Sending to AI with", fileBase64 ? "file attachment" : "text content");
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "claude-sonnet-5",
+        max_tokens: 4096,
+        system: systemPrompt,
         messages,
       }),
     });
@@ -293,12 +287,12 @@ Nombre del archivo: ${fileName}`
         });
       }
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      console.error("Anthropic API error:", response.status, errorText);
+      throw new Error(`Anthropic API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.content?.find((b: { type: string }) => b.type === "text")?.text;
     
     console.log("AI response received:", content?.substring(0, 1000));
 

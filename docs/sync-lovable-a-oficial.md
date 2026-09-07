@@ -1,5 +1,7 @@
 # Sync: Lovable → Plataforma Oficial
 
+> ⚠️ **Archivado (2026-09-07)** — Lovable fue retirado, nadie lo usa y la rama `main` quedó congelada. Este documento se conserva como referencia histórica; el proceso de sync ya no aplica en el día a día.
+
 Proceso para traer cambios desde la Versión de Estudio (Lovable / rama `main`) a la Plataforma Oficial (Vercel / rama `migration`).
 
 ## ¿Cuándo hacer un sync?
