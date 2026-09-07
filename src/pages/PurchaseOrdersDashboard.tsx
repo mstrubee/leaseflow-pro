@@ -181,6 +181,30 @@ interface Contract {
   company_names?: string[];
 }
 
+interface OCRequiredGroupLine {
+  budgetLineId: string;
+  lineName: string;
+  amountUf: number;
+  status: string;
+}
+
+/** Un requerimiento de OC = un quotation_number en oc_quotations, agrupando
+ *  todas las líneas CAPEX que comparten esa cotización. Ver también
+ *  src/components/budget/OCRequiredList.tsx (misma agrupación, pero acotada a
+ *  un solo contrato) -- acá es la vista cross-contrato de /purchase-orders. */
+interface OCRequiredGroup {
+  quotationNumber: string;
+  contractId: string;
+  projectName: string;
+  quotationDate: string;
+  amountClp: number;
+  amountUf: number;
+  filePath: string | null;
+  fileName: string | null;
+  lines: OCRequiredGroupLine[];
+  converted: boolean;
+}
+
 interface OpexCategory {
   id: string;
   name: string;
@@ -280,6 +304,11 @@ const PurchaseOrdersDashboard = () => {
   const [showRequestCreator, setShowRequestCreator] = useState(false);
   const [showOrderCreator, setShowOrderCreator] = useState(false);
   const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
+  const [ocRequiredGroups, setOcRequiredGroups] = useState<OCRequiredGroup[]>([]);
+  const [expandedRequired, setExpandedRequired] = useState<Set<string>>(new Set());
+  const [requeridasSearchTerm, setRequeridasSearchTerm] = useState("");
+  const [requeridasContractFilter, setRequeridasContractFilter] = useState("todos");
+  const [requeridasStatusFilter, setRequeridasStatusFilter] = useState("todos");
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; is_generic: boolean }[]>([]);
@@ -648,6 +677,60 @@ const PurchaseOrdersDashboard = () => {
         year: budget.year,
       }));
       setCapexBudgets(processedCapexBudgets);
+
+      // Load "OC Requeridas" (requerimientos de OC) -- oc_quotations agrupadas
+      // por quotation_number, igual que en OCRequiredList.tsx pero sin filtrar
+      // por contrato (esta vista es cross-contrato).
+      const { data: quotationsData } = await supabase
+        .from("oc_quotations")
+        .select("*")
+        .order("quotation_date", { ascending: false });
+      const quotationRows = (quotationsData || []) as any[];
+
+      if (quotationRows.length > 0) {
+        const lineIds = [...new Set(quotationRows.map((r) => r.budget_line_id))];
+        const { data: linesData } = await supabase
+          .from("budget_lines")
+          .select("id, status")
+          .in("id", lineIds);
+        const statusByLine = new Map((linesData || []).map((l: any) => [l.id, l.status as string]));
+
+        const quotationNumbers = [...new Set(quotationRows.map((r) => r.quotation_number))];
+        const { data: convertedReqsData } = await supabase
+          .from("oc_requests")
+          .select("source_quotation_number")
+          .in("source_quotation_number", quotationNumbers);
+        const convertedSet = new Set((convertedReqsData || []).map((r: any) => r.source_quotation_number).filter(Boolean));
+
+        const groupsByNumber = new Map<string, OCRequiredGroup>();
+        for (const r of quotationRows) {
+          let group = groupsByNumber.get(r.quotation_number);
+          if (!group) {
+            group = {
+              quotationNumber: r.quotation_number,
+              contractId: r.contract_id,
+              projectName: r.project_name,
+              quotationDate: r.quotation_date,
+              amountClp: r.amount_clp || 0,
+              amountUf: r.amount_uf || 0,
+              filePath: r.file_path,
+              fileName: r.file_name,
+              lines: [],
+              converted: convertedSet.has(r.quotation_number),
+            };
+            groupsByNumber.set(r.quotation_number, group);
+          }
+          group.lines.push({
+            budgetLineId: r.budget_line_id,
+            lineName: r.line_name,
+            amountUf: Number(r.amount_uf) || 0,
+            status: statusByLine.get(r.budget_line_id) || "no_autorizado",
+          });
+        }
+        setOcRequiredGroups(Array.from(groupsByNumber.values()));
+      } else {
+        setOcRequiredGroups([]);
+      }
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -1198,6 +1281,31 @@ const PurchaseOrdersDashboard = () => {
 
     return filtered;
   }, [ocRequests, yearFilter, searchTerm, contractFilter, requestStatusFilter, isAdmin]);
+
+  const filteredRequired = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    let filtered = ocRequiredGroups.filter((g) => parseISO(g.quotationDate).getFullYear() === yearNum);
+
+    if (requeridasSearchTerm) {
+      const term = requeridasSearchTerm.toLowerCase();
+      filtered = filtered.filter((g) =>
+        g.quotationNumber.toLowerCase().includes(term) ||
+        g.projectName?.toLowerCase().includes(term) ||
+        g.lines.some((l) => l.lineName.toLowerCase().includes(term))
+      );
+    }
+
+    if (requeridasContractFilter !== "todos") {
+      filtered = filtered.filter((g) => g.contractId === requeridasContractFilter);
+    }
+
+    if (requeridasStatusFilter !== "todos") {
+      const wantConverted = requeridasStatusFilter === "converted";
+      filtered = filtered.filter((g) => g.converted === wantConverted);
+    }
+
+    return filtered;
+  }, [ocRequiredGroups, yearFilter, requeridasSearchTerm, requeridasContractFilter, requeridasStatusFilter]);
 
   // OC Request summary - only count pending for display (converted are hidden)
   const requestSummary = useMemo(() => {
@@ -2911,7 +3019,7 @@ const PurchaseOrdersDashboard = () => {
 
         {/* Tabs for OC and Requests */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsList className="grid w-full grid-cols-3 mb-4">
             <TabsTrigger value="oc" className="gap-2">
               <ShoppingCart className="h-4 w-4" />
               Órdenes de Compra ({groupedOrdersByNumber.length})
@@ -2919,6 +3027,10 @@ const PurchaseOrdersDashboard = () => {
             <TabsTrigger value="requests" className="gap-2">
               <ClipboardList className="h-4 w-4" />
               Solicitudes de OC ({requestSummary.total})
+            </TabsTrigger>
+            <TabsTrigger value="requeridas" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Requerimientos de OC ({ocRequiredGroups.length})
             </TabsTrigger>
           </TabsList>
 
@@ -4097,6 +4209,161 @@ const PurchaseOrdersDashboard = () => {
                               </TableRow>
                             )}
                           </>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="requeridas">
+            {/* Filtros: Buscar, Contrato, Pendientes/Convertidas -- mismo patrón que Solicitudes de OC */}
+            <Card className="mb-4">
+              <CardContent className="pt-4">
+                <div className="flex flex-wrap gap-3 items-center">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por requerimiento, proyecto o línea..."
+                      value={requeridasSearchTerm}
+                      onChange={(e) => setRequeridasSearchTerm(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  <ContractSearchSelect
+                    value={requeridasContractFilter}
+                    onValueChange={setRequeridasContractFilter}
+                    contracts={contracts}
+                    placeholder="Proyecto"
+                    showAllOption
+                    allOptionLabel="Todos los proyectos"
+                    allOptionValue="todos"
+                    triggerClassName="w-[180px]"
+                  />
+                  <SearchableSelect
+                    value={requeridasStatusFilter}
+                    onValueChange={setRequeridasStatusFilter}
+                    options={[
+                      { value: "todos", label: "Todos" },
+                      { value: "pending", label: "Pendientes" },
+                      { value: "converted", label: "Convertidas" },
+                    ]}
+                    placeholder="Estado"
+                    triggerClassName="w-[140px]"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : filteredRequired.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  No se encontraron requerimientos de OC para el año {yearFilter}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[30px]"></TableHead>
+                        <TableHead>Requerimiento</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Proyecto</TableHead>
+                        <TableHead>Líneas</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRequired.map((group) => {
+                        const isOpen = expandedRequired.has(group.quotationNumber);
+                        return (
+                          <React.Fragment key={group.quotationNumber}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-muted/30"
+                              onClick={() =>
+                                setExpandedRequired((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(group.quotationNumber)) next.delete(group.quotationNumber);
+                                  else next.add(group.quotationNumber);
+                                  return next;
+                                })
+                              }
+                            >
+                              <TableCell>
+                                {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">{group.quotationNumber}</TableCell>
+                              <TableCell className="text-sm">
+                                {format(parseISO(group.quotationDate), "dd MMM yyyy", { locale: es })}
+                              </TableCell>
+                              <TableCell className="max-w-[160px] truncate">{group.projectName}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{group.lines.length}</TableCell>
+                              <TableCell className="text-right font-medium">{formatCLP(group.amountClp)}</TableCell>
+                              <TableCell>
+                                <Badge variant={group.converted ? "default" : "secondary"}>
+                                  {group.converted ? "Convertida" : "Pendiente"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 gap-1"
+                                  onClick={() => navigate(`/contracts/${group.contractId}?section=ordenes-compra&returnTo=purchase-orders`)}
+                                  title="Ir al proyecto"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  Ir al proyecto
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                            {isOpen && (
+                              <TableRow>
+                                <TableCell colSpan={8} className="bg-muted/30">
+                                  <div className="py-2 px-2 space-y-2">
+                                    {group.filePath && (
+                                      <div className="flex justify-end">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-6 px-2 gap-1"
+                                          onClick={() => void openFile(group.filePath!)}
+                                        >
+                                          <Download className="h-3 w-3" />
+                                          {group.fileName || "Ver archivo"}
+                                        </Button>
+                                      </div>
+                                    )}
+                                    <div className="rounded-md border divide-y bg-background">
+                                      {group.lines.map((line) => (
+                                        <div key={line.budgetLineId} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                                          <span className="truncate">{line.lineName}</span>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-xs text-muted-foreground">
+                                              UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                            <span className="text-[10px] uppercase text-muted-foreground">
+                                              {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </TableBody>
