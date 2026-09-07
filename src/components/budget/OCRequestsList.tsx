@@ -66,6 +66,9 @@ export interface OCRequestPrefillDraft {
   totalAmountClp: number;
   fileUrl: string | null;
   fileName: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  paymentPlan: PaymentPlanItem[];
 }
 
 interface PaymentPlanItem {
@@ -142,6 +145,10 @@ export const OCRequestsList = ({
   // "Convertida" una vez creada la solicitud.
   const [prefillFile, setPrefillFile] = useState<{ url: string | null; name: string | null }>({ url: null, name: null });
   const [conversionQuotationNumber, setConversionQuotationNumber] = useState<string | null>(null);
+  // Al convertir, las líneas quedan fijas a las que ya traía el requerimiento
+  // -- no se puede agregar ni quitar ninguna (a diferencia de una solicitud
+  // creada desde cero).
+  const [linesLocked, setLinesLocked] = useState(false);
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
@@ -398,6 +405,7 @@ export const OCRequestsList = ({
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
     setPrefillFile({ url: null, name: null });
     setConversionQuotationNumber(null);
+    setLinesLocked(false);
     setLoadingBudgets(true);
 
     try {
@@ -485,8 +493,9 @@ export const OCRequestsList = ({
   };
 
   // Llega un draft desde "Convertir a Solicitud" en OCRequiredList: abre el
-  // diálogo de siempre y lo prellena (líneas, monto, archivo) -- el usuario
-  // solo tiene que elegir proveedor y completar el plan de pagos.
+  // diálogo de siempre y lo prellena por completo (líneas, monto, archivo,
+  // proveedor y plan de pagos ya vienen del requerimiento) -- las líneas
+  // quedan fijas, no se pueden agregar ni quitar.
   useEffect(() => {
     if (!prefillDraft) return;
     (async () => {
@@ -503,9 +512,13 @@ export const OCRequestsList = ({
         ...prev,
         amount: String(Math.round(prefillDraft.totalAmountClp)),
         currency: "CLP",
+        supplier_id: prefillDraft.supplierId,
+        supplier_name: prefillDraft.supplierName,
       }));
+      setPaymentPlan(prefillDraft.paymentPlan);
       setPrefillFile({ url: prefillDraft.fileUrl, name: prefillDraft.fileName });
       setConversionQuotationNumber(prefillDraft.quotationNumber);
+      setLinesLocked(true);
       onPrefillConsumed?.();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1296,17 +1309,35 @@ export const OCRequestsList = ({
               </TabsContent>
 
               <TabsContent value="lines" className="space-y-4 mt-4">
-                {selectedBudgetId && (
-                  <MultipleLinesSelector
-                    budgetId={selectedBudgetId}
-                    selectedLines={selectedLines}
-                    onSelectionChange={setSelectedLines}
-                    formatUF={formatUF}
-                    formatCLP={formatCLP}
-                    year={year}
-                    contractId={contractId}
-                    ufValue={ufValue}
-                  />
+                {linesLocked ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Estas líneas vienen del requerimiento de OC convertido y no se pueden modificar.
+                    </p>
+                    <div className="rounded-md border divide-y">
+                      {selectedLines.map((l) => (
+                        <div key={l.lineId} className="flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="truncate">{l.lineName}</span>
+                          <span className="text-muted-foreground shrink-0">
+                            UF {l.amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  selectedBudgetId && (
+                    <MultipleLinesSelector
+                      budgetId={selectedBudgetId}
+                      selectedLines={selectedLines}
+                      onSelectionChange={setSelectedLines}
+                      formatUF={formatUF}
+                      formatCLP={formatCLP}
+                      year={year}
+                      contractId={contractId}
+                      ufValue={ufValue}
+                    />
+                  )
                 )}
 
                 {selectedLines.length > 0 && (
