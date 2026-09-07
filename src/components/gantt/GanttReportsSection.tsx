@@ -38,13 +38,13 @@ import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
 import { GanttOverviewTimeline } from "@/components/gantt/GanttOverviewTimeline";
+import { useGanttOverviewStatuses } from "@/hooks/useGanttOverviewStatuses";
+import { getProgressColorClass } from "@/hooks/useBudgetProgressStatuses";
 import { cn } from "@/lib/utils";
 
 type FilterGantt = "all" | "con" | "sin";
 type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
 type SortBy2 = "none" | "empresa" | "name" | "capex_desc";
-/** Estado del cronograma principal para esta vista — no afecta al contrato en sí. */
-export type OverviewStatus = "active" | "paused" | "completed";
 
 interface Disbursement {
   startDate: string;   // start_date of "Obras Civiles"
@@ -61,7 +61,8 @@ interface GanttContractData {
   companyNames: string[];
   timelineId: string | null;
   timelineName: string;
-  overviewStatus: OverviewStatus;
+  /** Id del estado en gantt_overview_statuses -- null = "Activo" (el de menor display_order). */
+  overviewStatusId: string | null;
   tasks: GanttTask[];
   taskTree: GanttTask[];
   endDate: string | null;
@@ -424,6 +425,17 @@ function MiniGantt({
 export function GanttReportsSection() {
   const { ufValue } = useEconomicIndicators();
   const { navigateToContractFromReports } = useReportsNavigation();
+  const { statuses: overviewStatuses } = useGanttOverviewStatuses();
+  const overviewStatusesById = useMemo(() => {
+    const map = new Map<string, (typeof overviewStatuses)[number]>();
+    overviewStatuses.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [overviewStatuses]);
+  /** Estado "Activo" por defecto para cronogramas sin overview_status_id -- el de menor display_order. */
+  const defaultOverviewStatus = overviewStatuses[0] ?? null;
+  const resolveOverviewStatus = (statusId: string | null) =>
+    (statusId ? overviewStatusesById.get(statusId) : null) ?? defaultOverviewStatus;
+
   const [data, setData] = useState<GanttContractData[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -525,19 +537,19 @@ export function GanttReportsSection() {
     });
   };
 
-  /** Cambia Pausa/Terminado/Activo del cronograma principal — solo afecta esta vista. */
+  /** Cambia el estado (Activo/En Pausa/Terminado/etc.) del cronograma principal — solo afecta esta vista. */
   const updateOverviewStatus = async (
     contractId: string,
     timelineId: string,
-    status: OverviewStatus
+    statusId: string
   ) => {
     const prev = data;
     setData((cur) =>
-      cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatus: status } : d))
+      cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatusId: statusId } : d))
     );
     const { error } = await supabase
       .from("gantt_timelines")
-      .update({ overview_status: status } as any)
+      .update({ overview_status_id: statusId } as any)
       .eq("id", timelineId);
     if (error) {
       setData(prev);
@@ -649,7 +661,7 @@ export function GanttReportsSection() {
       //    vive en la misma tabla pero no corresponde a esta vista.
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .select("id, name, contract_id, is_priority, overview_status")
+        .select("id, name, contract_id, is_priority, overview_status_id")
         .in("contract_id", contractIds)
         .eq("category", "general")
         .order("is_priority", { ascending: false })
@@ -659,14 +671,14 @@ export function GanttReportsSection() {
       // El cronograma PRINCIPAL de cada contrato (o el más reciente si no lo hay)
       const timelineByContract = new Map<
         string,
-        { id: string; name: string; overviewStatus: OverviewStatus }
+        { id: string; name: string; overviewStatusId: string | null }
       >();
       (timelines || []).forEach((t: any) => {
         if (!timelineByContract.has(t.contract_id))
           timelineByContract.set(t.contract_id, {
             id: t.id,
             name: t.name,
-            overviewStatus: (t.overview_status as OverviewStatus) || "active",
+            overviewStatusId: t.overview_status_id ?? null,
           });
       });
       const timelineIds = Array.from(timelineByContract.values()).map((t) => t.id);
@@ -772,7 +784,7 @@ export function GanttReportsSection() {
           companyNames: companiesByContract.get(contractId) || [],
           timelineId: timeline?.id ?? null,
           timelineName: timeline?.name ?? "",
-          overviewStatus: timeline?.overviewStatus ?? "active",
+          overviewStatusId: timeline?.overviewStatusId ?? null,
           tasks,
           taskTree,
           endDate,
@@ -1129,22 +1141,23 @@ export function GanttReportsSection() {
 
   /**
    * Proyectos con Gantt y fecha de término, para la línea de tiempo general.
-   * Los "En pausa" se excluyen a pedido explícito — siguen en el listado de
-   * abajo, pero no ocupan espacio en la línea de tiempo.
+   * Los estados marcados "Excluir de la línea de tiempo" (configurable en
+   * Admin, ej. "En Pausa") se excluyen — siguen en el listado de abajo, pero
+   * no ocupan espacio en la línea de tiempo.
    */
   const timelineProjects = useMemo(
     () =>
       data
-        .filter((d) => d.tasks.length > 0 && d.endDate && d.overviewStatus !== "paused")
+        .filter((d) => d.tasks.length > 0 && d.endDate && !resolveOverviewStatus(d.overviewStatusId)?.excludes_from_timeline)
         .map((d) => ({
           contractId: d.contractId,
           contractName: d.contractName,
           companyNames: d.companyNames,
           endDate: d.endDate as string,
           capexUF: d.capexUF,
-          overviewStatus: d.overviewStatus,
+          overviewStatusColor: resolveOverviewStatus(d.overviewStatusId)?.color ?? null,
         })),
-    [data]
+    [data, overviewStatusesById]
   );
   const allVisibleOpen =
     displayData.length > 0 && displayData.every((d) => openCards.has(d.contractId));
@@ -1425,33 +1438,30 @@ export function GanttReportsSection() {
                               </div>
                             )}
                             <div className="flex items-center gap-3">
-                              {item.timelineId && (
-                                <Select
-                                  value={item.overviewStatus}
-                                  onValueChange={(v) =>
-                                    updateOverviewStatus(item.contractId, item.timelineId!, v as OverviewStatus)
-                                  }
-                                >
-                                  <SelectTrigger
-                                    onClick={(e) => e.stopPropagation()}
-                                    className={cn(
-                                      "h-7 w-[112px] text-xs gap-1",
-                                      item.overviewStatus === "paused" &&
-                                        "border-amber-300 bg-amber-50 text-amber-800",
-                                      item.overviewStatus === "completed" &&
-                                        "border-green-300 bg-green-50 text-green-800"
-                                    )}
-                                    title="Estado del proyecto en esta vista"
+                              {item.timelineId && (() => {
+                                const currentStatus = resolveOverviewStatus(item.overviewStatusId);
+                                return (
+                                  <Select
+                                    value={currentStatus?.id ?? ""}
+                                    onValueChange={(v) =>
+                                      updateOverviewStatus(item.contractId, item.timelineId!, v)
+                                    }
                                   >
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent onClick={(e) => e.stopPropagation()}>
-                                    <SelectItem value="active">Activo</SelectItem>
-                                    <SelectItem value="paused">En pausa</SelectItem>
-                                    <SelectItem value="completed">Terminado</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              )}
+                                    <SelectTrigger
+                                      onClick={(e) => e.stopPropagation()}
+                                      className={cn("h-7 w-[112px] text-xs gap-1", getProgressColorClass(currentStatus?.color))}
+                                      title="Estado del proyecto en esta vista"
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent onClick={(e) => e.stopPropagation()}>
+                                      {overviewStatuses.map((s) => (
+                                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                );
+                              })()}
                               <div className="text-right text-xs">
                                 <div className="text-muted-foreground">CAPEX Total</div>
                                 <div className="font-semibold text-sm">
