@@ -24,8 +24,10 @@ interface CapexOCRequiredDialogProps {
   projectName: string;
   originLine: CapexLineRef;
   ocRequeridaStatusId: string;
-  /** El padre entra en modo selección de líneas directamente en la página. */
-  onRequestLineSelection: () => void;
+  /** El padre entra en modo selección de líneas directamente en la página.
+   *  initialIds queda pre-tildado (incluye siempre la línea de origen, que
+   *  además queda bloqueada para no poder destildarla). */
+  onRequestLineSelection: (initialIds: string[]) => void;
   /** Se actualiza (junto con additionalLinesVersion) cuando el usuario termina
    *  de seleccionar líneas en la página -- puede ser [] si terminó sin elegir
    *  ninguna. */
@@ -330,7 +332,7 @@ export function CapexOCRequiredDialog({
                 disabled={!montoValido}
                 onClick={() => {
                   setStep("selecting");
-                  onRequestLineSelection();
+                  onRequestLineSelection([originLine.id]);
                 }}
               >
                 Seleccionar líneas adicionales
@@ -344,6 +346,16 @@ export function CapexOCRequiredDialog({
             <>
               <Button variant="outline" onClick={() => handleClose(false)} disabled={!!saving}>
                 Cancelar
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!!saving}
+                onClick={() => {
+                  setStep("selecting");
+                  onRequestLineSelection([originLine.id, ...finalAdditionalLines.map((l) => l.id)]);
+                }}
+              >
+                Agregar o quitar líneas
               </Button>
               <Button
                 variant="secondary"
