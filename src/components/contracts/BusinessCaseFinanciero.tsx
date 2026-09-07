@@ -1,10 +1,15 @@
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Check, FileText, Sheet } from "lucide-react";
+import { Loader2, Check, FileText, Sheet, Save, X, AlertCircle } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
 import { toast } from "sonner";
 import {
@@ -35,18 +40,56 @@ function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { valu
 }
 
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, update, updateArr, setInvOverride } =
+  const { config, inputs, result, loading, saving, dirty, update, updateArr, setInvOverride, undo, save } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+
+  // Cerrar es siempre una acción explícita: si hay cambios sin guardar se
+  // pregunta antes, en vez de perderlos en silencio (ya no hay autoguardado).
+  const requestClose = () => {
+    if (dirty) setConfirmCloseOpen(true);
+    else onOpenChange(false);
+  };
+  const handleSaveAndClose = async () => {
+    await save();
+    setConfirmCloseOpen(false);
+    onOpenChange(false);
+  };
+  const handleDiscardAndClose = () => {
+    setConfirmCloseOpen(false);
+    onOpenChange(false);
+  };
+
+  // Ctrl+Z / Cmd+Z deshace la última edición mientras el diálogo está abierto
+  // y es editable — sin esto, el undo nativo del navegador no sirve porque
+  // estos son inputs controlados por React.
+  useEffect(() => {
+    if (!open || ro) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, ro, undo]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
+      <DialogContent
+        className="max-w-5xl max-h-[92vh] overflow-y-auto"
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Business Case Financiero
-            {saving && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> guardando…</span>}
-            {!saving && !loading && <span className="text-xs text-green-600 inline-flex items-center gap-1"><Check className="h-3 w-3" /> guardado</span>}
+            {saving && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Guardando…</span>}
+            {!saving && dirty && <span className="text-xs text-amber-600 inline-flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Cambios sin guardar</span>}
+            {!saving && !dirty && !loading && <span className="text-xs text-green-600 inline-flex items-center gap-1"><Check className="h-3 w-3" /> Guardado</span>}
             {inputs && result && (
               <div className="ml-auto flex gap-2">
                 <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => exportBusinessCasePDF(inputs, result)}>
@@ -59,6 +102,14 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                     });
                   }}>
                   <Sheet className="h-3.5 w-3.5" /> Excel
+                </Button>
+                {!ro && (
+                  <Button size="sm" className="h-7 gap-1 text-xs" disabled={saving || !dirty} onClick={() => save()}>
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Guardar
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={requestClose}>
+                  <X className="h-3.5 w-3.5" /> Cerrar
                 </Button>
               </div>
             )}
@@ -315,6 +366,21 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
           </Tabs>
         )}
       </DialogContent>
+
+      <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Guardar los cambios?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Hay cambios sin guardar en este Business Case. ¿Querés guardarlos antes de cerrar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDiscardAndClose}>Cerrar sin guardar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSaveAndClose}>Guardar y cerrar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
