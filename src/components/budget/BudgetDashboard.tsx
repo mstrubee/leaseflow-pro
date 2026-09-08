@@ -1008,6 +1008,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               <OCRequestsList
                 contractId={contractId}
                 contractName={contractName}
+                contractCebe={contractCebe}
                 year={selectedYear}
                 ufValue={ufValue}
                 formatUF={formatUF}

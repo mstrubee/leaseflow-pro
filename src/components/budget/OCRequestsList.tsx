@@ -80,6 +80,7 @@ interface PaymentPlanItem {
 interface OCRequestsListProps {
   contractId: string;
   contractName?: string;
+  contractCebe?: string | null;
   budgetId?: string;
   year: number;
   ufValue: number;
@@ -96,6 +97,7 @@ interface OCRequestsListProps {
 export const OCRequestsList = ({
   contractId,
   contractName = "",
+  contractCebe = null,
   budgetId,
   year,
   ufValue,
@@ -723,10 +725,21 @@ export const OCRequestsList = ({
       loadRequests();
       onRefresh?.();
 
+      let supplierRut: string | null = null;
+      if (newRequestForm.supplier_id) {
+        const { data: supplierData } = await supabase
+          .from("suppliers")
+          .select("rut")
+          .eq("id", newRequestForm.supplier_id)
+          .single();
+        supplierRut = supplierData?.rut || null;
+      }
+
       setShareData({
         requestDate: new Date().toISOString().split("T")[0],
         currency: inputCurrency as "UF" | "CLP",
         contractNames: [contractName || ""].filter(Boolean),
+        contractCebe,
         description: newRequestForm.description,
         lines: validLines.map((l) => ({
           lineName: l.lineName,
@@ -744,6 +757,7 @@ export const OCRequestsList = ({
             dueDate: p.due_date || null,
           })),
         supplierName: newRequestForm.supplier_name,
+        supplierRut,
       });
       setShareRequestId(requestData?.id);
     } catch (error: any) {

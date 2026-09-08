@@ -31,6 +31,9 @@ export interface OCRequestShareData {
   /** Plan de pagos ya resuelto a montos concretos en CLP. Vacío = pago único por el total. */
   payments: OCRequestSharePayment[];
   supplierName?: string | null;
+  supplierRut?: string | null;
+  /** CEBE del contrato (campo personalizado), mostrado debajo del nombre del contrato. */
+  contractCebe?: string | null;
   requestedBy?: string | null;
   /** Correlativo global, independiente de dónde se creó la solicitud (oc_requests.sequence_number). */
   sequenceNumber?: number | null;
@@ -91,9 +94,19 @@ export function buildOCRequestPdf(data: OCRequestShareData): jsPDF {
     ["FECHA", fmtDate(data.requestDate)],
     ["MONEDA", data.currency],
     ["MIGO", fmtMigoChoice(data.migoChoice)],
-    ["CONTRATO(S)", data.contractNames.join(", ") || "—"],
+    [
+      "CONTRATO(S)",
+      [data.contractNames.join(", ") || "—", data.contractCebe ? `CEBE: ${data.contractCebe}` : null]
+        .filter(Boolean)
+        .join("\n"),
+    ],
   ];
-  if (data.supplierName) headerRows.push(["PROVEEDOR", data.supplierName]);
+  if (data.supplierName) {
+    headerRows.push([
+      "PROVEEDOR",
+      [data.supplierName, data.supplierRut ? `RUT: ${data.supplierRut}` : null].filter(Boolean).join("\n"),
+    ]);
+  }
   if (data.requestedBy) headerRows.push(["SOLICITA", data.requestedBy]);
 
   autoTable(doc, {

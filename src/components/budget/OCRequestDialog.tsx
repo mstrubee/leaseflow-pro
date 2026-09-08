@@ -302,12 +302,23 @@ export const OCRequestDialog = ({
       onOpenChange(false);
       onSuccess?.();
 
+      let supplierRut: string | null = null;
+      if (form.supplier_id) {
+        const { data: supplierData } = await supabase
+          .from("suppliers")
+          .select("rut")
+          .eq("id", form.supplier_id)
+          .single();
+        supplierRut = supplierData?.rut || null;
+      }
+
       // Se ofrece compartir recién creada, con los mismos datos que se acaban
       // de guardar — así el PDF y lo que quedó en la base nunca se desalinean.
       setShareData({
         requestDate: new Date().toISOString().split("T")[0],
         currency: form.currency as "UF" | "CLP",
         contractNames: [contractName],
+        contractCebe,
         description: form.description,
         lines: useMultipleLines
           ? selectedLines.filter((l) => l.amount > 0).map((l) => ({
@@ -318,6 +329,7 @@ export const OCRequestDialog = ({
         totalAmountClp: amountClp,
         payments: resolvedPayments,
         supplierName: form.supplier_name,
+        supplierRut,
         sequenceNumber: requestData?.sequence_number,
       });
       setShareRequestId(requestData?.id);
