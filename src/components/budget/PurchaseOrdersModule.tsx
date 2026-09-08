@@ -21,6 +21,7 @@ import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { cn } from "@/lib/utils";
 import { backupOCFileToRepository } from "@/lib/repositoryBackup";
 import { syncOCRequestLinesFromPurchaseOrder } from "@/lib/ocRequestLines";
+import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 
 interface PurchaseOrder {
@@ -115,6 +116,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   const [editLineSearch, setEditLineSearch] = useState("");
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
   const [editOrder, setEditOrder] = useState<PurchaseOrder | null>(null);
+  // Líneas asociadas al abrir "Editar OC" -- para saber, al guardar, cuáles
+  // se agregaron/quitaron y así actualizar el badge de cada una.
+  const [originalEditLineIds, setOriginalEditLineIds] = useState<string[]>([]);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [budgetWarning, setBudgetWarning] = useState<string | null>(null);
   
@@ -711,6 +715,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
         }));
         
         await supabase.from("purchase_order_budget_lines").insert(lineInserts);
+        await syncBudgetLineOcStatus({ addedLineIds: newOrder.budget_line_ids });
       }
 
       // Upload OC file to Drive if selected
@@ -864,7 +869,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     const lineIds = existingLineAssocs?.map(a => a.budget_line_id) || [];
     // Fallback to single budget_line_id if no associations exist
     const budgetLineIds = lineIds.length > 0 ? lineIds : (order.budget_line_id ? [order.budget_line_id] : []);
-    
+    setOriginalEditLineIds(budgetLineIds);
+
     setEditFormData({
       order_number: order.order_number,
       supplier_name: order.supplier_name || "",
@@ -1002,6 +1008,13 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
           
           await supabase.from("purchase_order_budget_lines").insert(lineInserts);
         }
+
+        const addedLineIds = editFormData.budget_line_ids.filter((id) => !originalEditLineIds.includes(id));
+        const removedLineIds = originalEditLineIds.filter((id) => !editFormData.budget_line_ids.includes(id));
+        await syncBudgetLineOcStatus({ addedLineIds, removedLineIds });
+      } else if (originalEditLineIds.length > 0) {
+        // La OC pasó de CAPEX a OPEX: las líneas que tenía ya no están asociadas.
+        await syncBudgetLineOcStatus({ removedLineIds: originalEditLineIds });
       }
 
       // Si esta OC nació de una solicitud, la solicitud tiene que quedar
@@ -1054,6 +1067,15 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
       const { data: { user } } = await supabase.auth.getUser();
       const userId = user?.id || null;
 
+      // Líneas CAPEX asociadas -- se resetea su badge si quedan sin ninguna OC.
+      const { data: deletedOrderLines } = await supabase
+        .from("purchase_order_budget_lines")
+        .select("budget_line_id")
+        .eq("purchase_order_id", deleteOrder.id);
+      const linkedLineIds = deletedOrderLines?.length
+        ? deletedOrderLines.map((l) => l.budget_line_id)
+        : (deleteOrder.budget_line_id ? [deleteOrder.budget_line_id] : []);
+
       // Soft delete all credit notes for this order
       const { error: creditNoteError } = await supabase
         .from("credit_notes")
@@ -1087,6 +1109,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
       if (error) {
         console.error("Error soft deleting purchase order:", error);
         throw error;
+      }
+
+      if (linkedLineIds.length > 0) {
+        await syncBudgetLineOcStatus({ removedLineIds: linkedLineIds });
       }
 
       toast({ title: "OC enviada a eliminados", description: `Orden de compra ${deleteOrder.order_number} movida a eliminados` });
