@@ -260,7 +260,12 @@ export function CapexOCRequiredDialog({
 
   return (
     <Dialog open={dialogOpen} onOpenChange={saving ? undefined : handleClose}>
-      <DialogContent className={cn(step === "amount" || step === "summary" ? "max-w-2xl" : "max-w-md")}>
+      <DialogContent
+        className={cn(
+          "max-h-[90vh] overflow-y-auto",
+          step === "amount" || step === "summary" ? "max-w-2xl" : "max-w-md"
+        )}
+      >
         <DialogHeader>
           <DialogTitle>Marcar "OC Requerida"</DialogTitle>
           <DialogDescription>
@@ -315,7 +320,7 @@ export function CapexOCRequiredDialog({
               )}
               <p className="text-xs text-muted-foreground truncate">{file.name}</p>
             </div>
-            <div className="space-y-4 max-h-[28rem] overflow-y-auto pr-1">
+            <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="capex-oc-monto">Monto requerido de la OC ($)</Label>
                 <Input

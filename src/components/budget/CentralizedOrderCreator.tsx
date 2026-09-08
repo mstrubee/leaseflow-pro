@@ -22,6 +22,7 @@ import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo
 import { formatCLP } from "@/lib/utils";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 interface Contract {
   id: string;
   name: string;
@@ -1046,6 +1047,7 @@ export const CentralizedOrderCreator = ({
                     amount_uf: allocSplit[lineId] ?? (allocUf / allocCapexLineIds.length),
                   }))
                 );
+                await syncBudgetLineOcStatus({ addedLineIds: allocCapexLineIds });
               }
               
               // Sync maintenance forms with supplier and OC info
@@ -1118,6 +1120,7 @@ export const CentralizedOrderCreator = ({
                 amount_uf: singleSplit[lineId] ?? (totalAmountUf / singleCapexLineIds.length),
               }))
             );
+            await syncBudgetLineOcStatus({ addedLineIds: singleCapexLineIds });
           }
 
           // Sync maintenance forms with supplier and OC info
