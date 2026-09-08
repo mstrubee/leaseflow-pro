@@ -878,12 +878,25 @@ export const CentralizedOrderCreator = ({
 
         toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
 
+        let supplierRut: string | null = null;
+        if (formData.supplier_id) {
+          const { data: supplierData } = await supabase
+            .from("suppliers")
+            .select("rut")
+            .eq("id", formData.supplier_id)
+            .single();
+          supplierRut = supplierData?.rut || null;
+        }
+
         setShareData({
           requestDate: new Date().toISOString().split("T")[0],
           currency: formData.currency as "UF" | "CLP",
           contractNames: isMultiContract
             ? contractAllocations.map((a) => a.contractName)
             : [contracts.find((c) => c.id === primaryContractId)?.name || ""].filter(Boolean),
+          contractCebe: isMultiContract
+            ? contractAllocations.map((a) => a.cebe).filter(Boolean).join(", ") || null
+            : contracts.find((c) => c.id === primaryContractId)?.cebe || null,
           description: formData.description,
           lines: [{
             lineName: opexCategories.find((c) => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
@@ -892,6 +905,7 @@ export const CentralizedOrderCreator = ({
           totalAmountClp,
           payments: resolvedPayments,
           supplierName: formData.supplier_name,
+          supplierRut,
           sequenceNumber: requestData?.sequence_number,
         });
         setShareRequestId(requestData?.id);
