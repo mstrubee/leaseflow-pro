@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Loader2, Check, FileText, Sheet, MapPin, Save, X, AlertCircle } from "lucide-react";
+import { Loader2, Check, FileText, Sheet, MapPin, Save, X, AlertCircle, ChevronUp, ChevronDown, Wand2, TriangleAlert } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
 import { listSavedIsochrones, fetchSalesProjection, normalizeIsochroneName } from "@/lib/geochile/client";
 import { toast } from "sonner";
@@ -20,9 +20,14 @@ import {
   XAxis, YAxis, Tooltip as RTooltip, Legend, CartesianGrid,
 } from "recharts";
 import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
-import type { BCSeed, BCInputs, FormatoLocal } from "@/lib/businessCase/model";
+import type { BCSeed, BCInputs, BCEscalation, FormatoLocal } from "@/lib/businessCase/model";
 import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta } from "@/lib/businessCase/model";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
+import {
+  computeEscalationYearTargets, buildSuggestedTiers, buildAdjustedTiers, simulateEscalationProposal,
+  modelYearBounds, modelYearForMonth, EBITDA_TARGET_PCT, ARRIENDO_CAP_PCT, ESCALATION_STEP,
+  type EscalationPreviewYear,
+} from "@/lib/businessCase/escalationSolver";
 
 interface Props {
   open: boolean;
@@ -54,13 +59,67 @@ function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: n
   );
 }
 
+// Variante del NumCell con flechas +/- para el monto de escalonamiento —
+// avanza de a ESCALATION_STEP (0,05 UF) por click, sin tener que tipear.
+function StepperNumCell({ value, onChange, disabled, decimals = 2 }: { value: number; onChange: (v: number) => void; disabled?: boolean; decimals?: number }) {
+  return (
+    <div className="inline-flex items-center gap-0.5">
+      <DecimalInput value={value} decimals={decimals}
+        onChange={(v) => { if (v !== null) onChange(v); }} disabled={disabled}
+        className="h-7 w-20 text-xs text-right px-1" />
+      <div className="flex flex-col">
+        <button type="button" disabled={disabled} tabIndex={-1}
+          onClick={() => onChange(Math.round((value + ESCALATION_STEP) * 100) / 100)}
+          className="h-3.5 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+          <ChevronUp className="h-2.5 w-2.5" />
+        </button>
+        <button type="button" disabled={disabled} tabIndex={-1}
+          onClick={() => onChange(Math.max(0, Math.round((value - ESCALATION_STEP) * 100) / 100))}
+          className="h-3.5 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+          <ChevronDown className="h-2.5 w-2.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contractName, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, dirty, update, updateArr, updateVentaConCrecimiento, updateEscalationAmount, setFormato, setInvOverride, undo, save } =
+  const { config, inputs, result, loading, saving, dirty, update, updateArr, updateVentaConCrecimiento, updateEscalationAmount, applyEscalationTiers, setFormato, setInvOverride, undo, save } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
   const [syncingGeo, setSyncingGeo] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [optimizePreview, setOptimizePreview] = useState<{
+    mode: "crear" | "ajustar"; years: EscalationPreviewYear[]; tiers: BCEscalation[]; aniosNoCubiertos?: number[];
+  } | null>(null);
+
+  // Arma la propuesta de escalonamiento (crea desde cero si no hay tramos
+  // cargados, o ajusta el monto de los ya existentes) y la deja en preview —
+  // recién se aplica si el usuario confirma en el diálogo. El antes/después
+  // que se muestra sale de simular el modelo completo con los tramos
+  // propuestos (simulateEscalationProposal), no de una fórmula por año
+  // aislada: un solo tramo puede seguir vigente por varios años y mover el
+  // EBITDA de todos ellos a la vez.
+  const handleOptimizeRentClick = () => {
+    if (!inputs || !result) return;
+    const rawTargets = computeEscalationYearTargets(inputs, result);
+    if (inputs.escalations.length === 0) {
+      const tiers = buildSuggestedTiers(inputs, result, rawTargets);
+      const years = simulateEscalationProposal(inputs, result, config, tiers);
+      setOptimizePreview({ mode: "crear", years, tiers });
+    } else {
+      const { tiers, aniosNoCubiertos } = buildAdjustedTiers(inputs, result, rawTargets);
+      const years = simulateEscalationProposal(inputs, result, config, tiers);
+      setOptimizePreview({ mode: "ajustar", years, tiers, aniosNoCubiertos });
+    }
+  };
+  const handleApplyOptimizedRent = () => {
+    if (!optimizePreview) return;
+    applyEscalationTiers(optimizePreview.tiers);
+    toast.success("Escalonamiento aplicado — Ctrl+Z para deshacer, Guardar para confirmar", { duration: 6000 });
+    setOptimizePreview(null);
+  };
 
   // Ctrl+Z / Cmd+Z deshace la última edición mientras el diálogo está abierto
   // y es editable — sin esto, el undo nativo del navegador no sirve porque
@@ -479,7 +538,14 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
 
             {/* ───────── SUPUESTOS ───────── */}
             <TabsContent value="supuestos" className="space-y-4">
-              <Card title="Contrato">
+              <Card
+                title="Contrato"
+                action={!ro && (
+                  <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs shrink-0" onClick={handleOptimizeRentClick}>
+                    <Wand2 className="h-3.5 w-3.5" /> Optimizar renta a {EBITDA_TARGET_PCT}% EBITDA
+                  </Button>
+                )}
+              >
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
                   <FieldConv
@@ -506,22 +572,36 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                   </FieldConv>
                 </div>
 
-                {inputs.escalations.length > 0 && (
-                  <div className="mt-3 pt-3 border-t">
-                    <div className="text-xs text-muted-foreground mb-1.5">
-                      Escalonamiento de renta — solo el monto es editable acá (los plazos se gestionan desde el contrato); sincroniza con el contrato
+                {inputs.escalations.length > 0 && (() => {
+                  const bounds = modelYearBounds(inputs, result);
+                  return (
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="text-xs text-muted-foreground mb-1.5">
+                        Escalonamiento de renta — solo el monto es editable acá (los plazos se gestionan desde el contrato); sincroniza con el contrato
+                      </div>
+                      <div className="space-y-1.5">
+                        {inputs.escalations.map((esc, i) => {
+                          const fueraDeVentana = modelYearForMonth(esc.monthNumber, bounds) == null;
+                          return (
+                            <div key={esc.id ?? i} className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground w-24 shrink-0">Desde mes {esc.monthNumber}</span>
+                              <StepperNumCell value={esc.amount} disabled={ro} onChange={(v) => updateEscalationAmount(i, v)} />
+                              <span className="text-[10px] text-muted-foreground">{esc.isUfM2 ? "UF/m²" : "UF"}</span>
+                              {fueraDeVentana && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px] text-amber-600"
+                                  title="Este tramo empieza después del horizonte de 5 años que modela el Business Case — cambiar su monto no afecta el EBITDA/VAN/TIR que ves acá."
+                                >
+                                  <TriangleAlert className="h-3 w-3" /> fuera de la ventana de 5 años
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      {inputs.escalations.map((esc, i) => (
-                        <div key={esc.id ?? i} className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground w-24 shrink-0">Desde mes {esc.monthNumber}</span>
-                          <NumCell value={esc.amount} disabled={ro} w="w-24" step="0.01" onChange={(v) => updateEscalationAmount(i, v)} />
-                          <span className="text-[10px] text-muted-foreground">{esc.isUfM2 ? "UF/m²" : "UF"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </Card>
 
               <Card title="UF y económico">
@@ -594,6 +674,15 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                           );
                         })}
                       </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-[10px] text-muted-foreground" title="EBITDA / Ingresos del mismo año">EBITDA / año</td>
+                        {[1, 2, 3, 4, 5].map((y) => {
+                          const ratio = result.ingresos[y] > 0 ? result.ebitda[y] / result.ingresos[y] : 0;
+                          return (
+                            <td key={y} className="px-1 text-center text-[10px] font-medium text-green-700">{fmtPct(ratio)}</td>
+                          );
+                        })}
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -650,6 +739,65 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
           </Tabs>
         )}
       </DialogContent>
+
+      <Dialog open={!!optimizePreview} onOpenChange={(next) => { if (!next) setOptimizePreview(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {optimizePreview?.mode === "crear" ? "Escalonado sugerido" : "Ajuste de escalonado existente"}
+            </DialogTitle>
+          </DialogHeader>
+          {optimizePreview && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Objetivo: EBITDA {EBITDA_TARGET_PCT}% por año, con Arriendo/Vta% ≤ {ARRIENDO_CAP_PCT}%.
+                Los montos se redondean a pasos de {fmtMM(ESCALATION_STEP, 2)} UF. Los números de abajo son el resultado real de simular el modelo completo con la propuesta — no siempre da exacto el {EBITDA_TARGET_PCT}%: un mismo tramo puede seguir vigente varios años, y el tope de {ARRIENDO_CAP_PCT}% tiene prioridad sobre el objetivo de EBITDA.
+              </p>
+              {optimizePreview.mode === "ajustar" && optimizePreview.aniosNoCubiertos && optimizePreview.aniosNoCubiertos.length > 0 && (
+                <p className="text-xs text-amber-600 flex items-start gap-1.5">
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  Año{optimizePreview.aniosNoCubiertos.length > 1 ? "s" : ""} {optimizePreview.aniosNoCubiertos.join(", ")} sin un tramo propio — toma{optimizePreview.aniosNoCubiertos.length > 1 ? "n" : ""} el valor de un tramo de un año anterior. Si querés que cada año tenga su propio escalón, quitá los tramos actuales del contrato y volvé a usar "Optimizar" para generar uno nuevo desde cero.
+                </p>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-muted-foreground border-b">
+                    <th className="text-left py-1">Año</th>
+                    <th className="text-right px-2">Canon UF/m² actual → propuesto</th>
+                    <th className="text-right px-2">EBITDA actual → propuesto</th>
+                    <th className="text-right px-2">Arriendo/Vta actual → propuesto</th>
+                  </tr></thead>
+                  <tbody>
+                    {optimizePreview.years.map((y) => {
+                      const sinCambio = Math.abs(y.canonUfM2Propuesto - y.canonUfM2Actual) < 0.001;
+                      return (
+                        <tr key={y.year} className="border-b border-gray-50">
+                          <td className="py-1.5">Año {y.year}</td>
+                          <td className="text-right px-2">
+                            {sinCambio ? fmtMM(y.canonUfM2Actual, 2) : `${fmtMM(y.canonUfM2Actual, 2)} → ${fmtMM(y.canonUfM2Propuesto, 2)}`}
+                          </td>
+                          <td className="text-right px-2">
+                            {sinCambio ? fmtPct(y.ebitdaPctActual) : `${fmtPct(y.ebitdaPctActual)} → `}
+                            {!sinCambio && <span className="font-medium text-green-700">{fmtPct(y.ebitdaPctPropuesto)}</span>}
+                          </td>
+                          <td className="text-right px-2">
+                            {sinCambio ? fmtPct(y.arriendoPctActual) : `${fmtPct(y.arriendoPctActual)} → `}
+                            {!sinCambio && <span className="font-medium text-amber-600">{fmtPct(y.arriendoPctPropuesto)}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOptimizePreview(null)}>Cancelar</Button>
+            <Button onClick={handleApplyOptimizedRent}>Aplicar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
         <AlertDialogContent>

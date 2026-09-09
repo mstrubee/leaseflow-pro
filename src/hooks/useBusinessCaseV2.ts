@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
-import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, ocupPctFromVenta } from "@/lib/businessCase/model";
+import { BCEscalation, BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, ocupPctFromVenta } from "@/lib/businessCase/model";
 
 interface Args {
   contractId: string;
@@ -185,6 +185,19 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     setDirty(true);
   }, [pushHistory]);
 
+  // Reemplaza TODOS los tramos de escalonamiento de una vez (botón "Optimizar
+  // renta") en un solo paso de undo — a diferencia de updateEscalationAmount,
+  // que edita un tramo a la vez. Los tramos nuevos (sin id) se insertan en
+  // rent_escalations recién al guardar (ver save()).
+  const applyEscalationTiers = useCallback((tiers: BCEscalation[]) => {
+    setInputs((p) => {
+      if (!p) return p;
+      pushHistory(p, "escalations-bulk");
+      return { ...p, escalations: tiers };
+    });
+    setDirty(true);
+  }, [pushHistory]);
+
   const setInvOverride = useCallback((lineId: string, value: number | null) => {
     setInputs((p) => {
       if (!p) return p;
@@ -270,7 +283,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       }
 
       // Montos de escalonamiento editados acá → de vuelta a rent_escalations
-      // (solo el monto; mes/plazo no es editable desde el Business Case).
+      // (solo el monto; mes/plazo no es editable a mano desde el Business Case).
       const lastEsc = lastSyncedEscalationAmountsRef.current;
       const changedEsc = inputs.escalations.filter((e) => e.id && e.amount !== lastEsc[e.id]);
       if (changedEsc.length > 0) {
@@ -283,7 +296,34 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         };
       }
 
-      initialInputsRef.current = inputs;
+      // Tramos NUEVOS (sin id) — los crea "Optimizar renta" al armar un
+      // escalonado desde cero. Se insertan recién acá, nunca antes, para no
+      // tocar el contrato con una sugerencia que el usuario todavía no aplicó
+      // ni guardó.
+      let finalEscalations = inputs.escalations;
+      const newEsc = inputs.escalations.filter((e) => !e.id);
+      if (newEsc.length > 0 && contractVersionId) {
+        const { data: inserted, error: insertError } = await supabase
+          .from("rent_escalations")
+          .insert(newEsc.map((e) => ({
+            version_id: contractVersionId,
+            month_number: e.monthNumber,
+            amount: e.amount,
+            is_uf_m2: e.isUfM2,
+          })) as never)
+          .select("id, month_number, amount, is_uf_m2");
+        if (!insertError && inserted) {
+          const byMonth = new Map((inserted as { id: string; month_number: number; amount: number; is_uf_m2: boolean }[]).map((r) => [r.month_number, r.id]));
+          finalEscalations = inputs.escalations.map((e) => (e.id ? e : { ...e, id: byMonth.get(e.monthNumber) ?? e.id }));
+          setInputs((p) => (p ? { ...p, escalations: finalEscalations } : p));
+          lastSyncedEscalationAmountsRef.current = {
+            ...lastSyncedEscalationAmountsRef.current,
+            ...Object.fromEntries(finalEscalations.filter((e) => e.id).map((e) => [e.id as string, e.amount])),
+          };
+        }
+      }
+
+      initialInputsRef.current = { ...inputs, escalations: finalEscalations };
       setDirty(false);
     } finally {
       setSaving(false);
@@ -301,6 +341,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     updateArr,
     updateVentaConCrecimiento,
     updateEscalationAmount,
+    applyEscalationTiers,
     setFormato,
     setInvOverride,
     undo,
