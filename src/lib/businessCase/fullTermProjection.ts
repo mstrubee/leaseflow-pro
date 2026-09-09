@@ -157,18 +157,30 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
   const v = inputs.ventaMes || [];
   const ventaVida = [v[0] ?? 60, v[1] ?? 80, v[2] ?? 90, v[3] ?? 95, v[4] ?? 99.75];
   const tasaVida = (idx: number) => ventaVida[Math.min(Math.max(idx, 0), 4)];
+  // Más allá del año 5, el local ya está en régimen y computeBC no modela
+  // nada más lejos — pero eso no significa que la venta se congele para
+  // siempre: se sigue creciendo a la última tasa de maduración cargada
+  // ("Crec. Ventas %" del año 5, 3% por defecto), igual que ya venía
+  // desacelerando en los años 3-5. Años 1-5 quedan intactos (idéntico a
+  // computeBC, ya verificado) — el cambio de método aplica solo desde el
+  // año 6 en adelante.
+  const lastGrowthRate = (inputs.ventaGrowthPct?.[inputs.ventaGrowthPct.length - 1] ?? 0) / 100;
   let vidaAcumulada = 0;
   const ingresos = [0];
   for (let i = 1; i <= totalYears; i++) {
     const meses = mesesOperArr[i];
     if (meses <= 0) { ingresos.push(0); continue; }
-    const anoVidaInicio = Math.floor(vidaAcumulada / 12);
-    const mesesRestantesAnoVida = (anoVidaInicio + 1) * 12 - vidaAcumulada;
-    const ing = meses <= mesesRestantesAnoVida
-      ? tasaVida(anoVidaInicio) * meses
-      : tasaVida(anoVidaInicio) * mesesRestantesAnoVida + tasaVida(anoVidaInicio + 1) * (meses - mesesRestantesAnoVida);
-    ingresos.push(round(ing * sf, 2));
-    vidaAcumulada += meses;
+    if (i <= 5) {
+      const anoVidaInicio = Math.floor(vidaAcumulada / 12);
+      const mesesRestantesAnoVida = (anoVidaInicio + 1) * 12 - vidaAcumulada;
+      const ing = meses <= mesesRestantesAnoVida
+        ? tasaVida(anoVidaInicio) * meses
+        : tasaVida(anoVidaInicio) * mesesRestantesAnoVida + tasaVida(anoVidaInicio + 1) * (meses - mesesRestantesAnoVida);
+      ingresos.push(round(ing * sf, 2));
+      vidaAcumulada += meses;
+    } else {
+      ingresos.push(round(ingresos[i - 1] * (1 + lastGrowthRate), 2));
+    }
   }
 
   const mDir = (inputs.margenDir || 0) / 100;

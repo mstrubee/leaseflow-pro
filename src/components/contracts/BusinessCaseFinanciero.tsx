@@ -822,7 +822,8 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
               <p className="text-xs text-muted-foreground">
                 Extiende los mismos supuestos del Business Case (ventas, costos, escalonamiento de renta) a toda la
                 duración del contrato, en vez de los 5 años de Proyecciones/Retorno. Después del año 5 de vida del
-                local, la venta se asume constante al nivel de régimen; la UF sigue creciendo a la última tasa
+                local, la venta sigue creciendo a la última tasa de maduración cargada (Crec. Ventas % del año 5,
+                {" "}{fmtMM(inputs.ventaGrowthPct?.[4] ?? 0, 1)}% por defecto); la UF sigue creciendo a la última tasa
                 cargada. No se guarda ni reemplaza el Business Case oficial a 5 años.
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
