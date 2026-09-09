@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect, SearchableSelectOption } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, ArrowRightLeft } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
@@ -16,6 +16,9 @@ interface SupplierSelectProps {
   /** When true, internal-transfer suppliers (e.g. Grupo Planet) are hidden.
    *  Use in OC / OC-Request / Invoice flows where transfers don't apply. */
   excludeInternalTransfer?: boolean;
+  /** Clase del trigger -- por defecto compacto (uso en celdas de tabla). Pasar
+   *  algo como "w-full h-9 text-sm" en formularios/diálogos con más espacio. */
+  triggerClassName?: string;
 }
 
 interface SupplierOption {
@@ -34,6 +37,7 @@ export const SupplierSelect = ({
   disabled = false,
   supplierName: externalSupplierName,
   excludeInternalTransfer = false,
+  triggerClassName = "h-6 w-36 text-xs",
 }: SupplierSelectProps) => {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +80,7 @@ export const SupplierSelect = ({
       setShowForm(true);
       return;
     }
-    
+
     const supplier = suppliers.find(s => s.id === val);
     onChange(val, supplier?.name || null);
   };
@@ -86,49 +90,51 @@ export const SupplierSelect = ({
     loadSuppliers();
   };
 
-  const selectedSupplier = suppliers.find(s => s.id === value);
-  const displayName = selectedSupplier?.name || externalSupplierName || null;
-
   // If we have an external supplier name but no ID, try to find the matching supplier
   const resolvedValue = value || (externalSupplierName ? suppliers.find(s => s.name === externalSupplierName)?.id : null);
 
+  const renderSupplierLabel = (supplier: SupplierOption) => (
+    <span className="flex items-center gap-1">
+      {supplier.is_internal_transfer && <ArrowRightLeft className="h-3 w-3 text-primary shrink-0" />}
+      <span className="truncate">{supplier.name}</span>
+      {supplier.is_internal_transfer && <span className="text-primary text-xs ml-1 shrink-0">(traslado)</span>}
+      {!supplier.is_internal_transfer && supplier.is_generic && (
+        <span className="text-muted-foreground text-xs ml-1 shrink-0">(genérico)</span>
+      )}
+    </span>
+  );
+
+  const options: SearchableSelectOption[] = [
+    { value: "new", label: "Nuevo Proveedor", icon: <Plus className="h-3.5 w-3.5" /> },
+    ...suppliers.map((supplier) => ({
+      value: supplier.id,
+      label: supplier.name,
+      icon: renderSupplierLabel(supplier),
+    })),
+  ];
+
   return (
     <>
-      <Select 
-        value={resolvedValue || ""} 
+      <SearchableSelect
+        value={resolvedValue || ""}
         onValueChange={handleSupplierChange}
+        options={options}
+        placeholder="Proveedor"
+        searchPlaceholder="Buscar proveedor..."
+        emptyMessage="No se encontró ningún proveedor."
         disabled={disabled || loading}
-      >
-        <SelectTrigger className="h-6 w-36 text-xs">
-          <SelectValue placeholder="Proveedor">
-            {displayName || "Proveedor"}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="new" className="text-primary font-medium">
-            <span className="flex items-center gap-1">
+        triggerClassName={triggerClassName}
+        renderItem={(option) =>
+          option.value === "new" ? (
+            <span className="flex items-center gap-1 text-primary font-medium">
               <Plus className="h-3 w-3" />
               Nuevo Proveedor
             </span>
-          </SelectItem>
-          {suppliers.map(supplier => (
-            <SelectItem key={supplier.id} value={supplier.id}>
-              <span className="flex items-center gap-1">
-                {supplier.is_internal_transfer && (
-                  <ArrowRightLeft className="h-3 w-3 text-primary" />
-                )}
-                {supplier.name}
-                {supplier.is_internal_transfer && (
-                  <span className="text-primary text-xs ml-1">(traslado)</span>
-                )}
-                {!supplier.is_internal_transfer && supplier.is_generic && (
-                  <span className="text-muted-foreground text-xs ml-1">(genérico)</span>
-                )}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          ) : (
+            option.icon
+          )
+        }
+      />
 
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

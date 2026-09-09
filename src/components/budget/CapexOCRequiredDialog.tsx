@@ -263,7 +263,7 @@ export function CapexOCRequiredDialog({
       <DialogContent
         className={cn(
           "max-h-[90vh] overflow-y-auto",
-          step === "amount" || step === "summary" ? "max-w-2xl" : "max-w-md"
+          step === "amount" || step === "summary" ? "max-w-3xl" : "max-w-md"
         )}
       >
         <DialogHeader>
@@ -338,6 +338,7 @@ export function CapexOCRequiredDialog({
                 <SupplierSelect
                   value={supplierId}
                   onChange={(id, name) => { setSupplierId(id); setSupplierName(name); }}
+                  triggerClassName="w-full h-9 text-sm"
                 />
               </div>
 
@@ -359,7 +360,7 @@ export function CapexOCRequiredDialog({
                           value={item.description}
                           onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
                           placeholder="Descripción"
-                          className="h-8 text-xs flex-1"
+                          className="h-8 text-xs flex-1 min-w-[7rem]"
                         />
                         <Input
                           type="number"
