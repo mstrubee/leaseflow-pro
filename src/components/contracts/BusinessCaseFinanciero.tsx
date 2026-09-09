@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Loader2, Check, FileText, Sheet, MapPin, Save, X, AlertCircle, ChevronUp, ChevronDown, Wand2, TriangleAlert } from "lucide-react";
+import { Loader2, Check, FileText, Sheet, MapPin, Save, X, AlertCircle, ChevronUp, ChevronDown, Wand2, TriangleAlert, CalendarRange } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
 import { listSavedIsochrones, fetchSalesProjection, normalizeIsochroneName } from "@/lib/geochile/client";
 import { toast } from "sonner";
@@ -28,6 +28,7 @@ import {
   modelYearBounds, modelYearForMonth, EBITDA_TARGET_PCT, ARRIENDO_CAP_PCT, ESCALATION_STEP,
   type EscalationPreviewYear,
 } from "@/lib/businessCase/escalationSolver";
+import { computeFullTermProjection, type FullTermProjection } from "@/lib/businessCase/fullTermProjection";
 
 interface Props {
   open: boolean;
@@ -93,6 +94,11 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
   const [optimizePreview, setOptimizePreview] = useState<{
     mode: "crear" | "ajustar"; years: EscalationPreviewYear[]; tiers: BCEscalation[]; aniosNoCubiertos?: number[];
   } | null>(null);
+  const [fullTermData, setFullTermData] = useState<FullTermProjection | null>(null);
+  const handleViewFullTerm = () => {
+    if (!inputs) return;
+    setFullTermData(computeFullTermProjection(inputs, config));
+  };
 
   // Arma la propuesta de escalonamiento (crea desde cero si no hay tramos
   // cargados, o ajusta el monto de los ya existentes) y la deja en preview —
@@ -620,18 +626,25 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
               <Card
                 title="Ventas y Supuestos de Crecimiento"
                 sub="Editar cualquiera recalcula el modelo en tiempo real"
-                action={!ro && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 gap-1.5 text-xs shrink-0"
-                    disabled={syncingGeo}
-                    onClick={handleSyncGeoplanet}
-                  >
-                    {syncingGeo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
-                    Sincronizar con GeoPlanet
-                  </Button>
-                )}
+                action={
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={handleViewFullTerm}>
+                      <CalendarRange className="h-3.5 w-3.5" /> Ver negocio completo ({inputs.durContratoAnios || 0} años)
+                    </Button>
+                    {!ro && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1.5 text-xs"
+                        disabled={syncingGeo}
+                        onClick={handleSyncGeoplanet}
+                      >
+                        {syncingGeo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
+                        Sincronizar con GeoPlanet
+                      </Button>
+                    )}
+                  </div>
+                }
               >
                 <div className="overflow-x-auto">
                   <table className="text-xs">
@@ -795,6 +808,77 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
           <DialogFooter>
             <Button variant="outline" onClick={() => setOptimizePreview(null)}>Cancelar</Button>
             <Button onClick={handleApplyOptimizedRent}>Aplicar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!fullTermData} onOpenChange={(next) => { if (!next) setFullTermData(null); }}>
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Negocio completo — {fullTermData?.totalYears} años (solo visualización)</DialogTitle>
+          </DialogHeader>
+          {fullTermData && (
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Extiende los mismos supuestos del Business Case (ventas, costos, escalonamiento de renta) a toda la
+                duración del contrato, en vez de los 5 años de Proyecciones/Retorno. Después del año 5 de vida del
+                local, la venta se asume constante al nivel de régimen; la UF sigue creciendo a la última tasa
+                cargada. No se guarda ni reemplaza el Business Case oficial a 5 años.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Kpi label="Inversión (MM)" value={`$${fmtMM(fullTermData.totalCapex)}`} />
+                <Kpi label={`TIR (${fullTermData.totalYears} años)`} value={fullTermData.tir != null ? fmtPct(fullTermData.tir) : "N/A"} good={fullTermData.tir != null && fullTermData.tir > (inputs.waccRate || 0) / 100} />
+                <Kpi label="VAN (MM CLP)" value={`$${fmtMM(fullTermData.van)}`} good={fullTermData.van > 0} />
+                <Kpi label="Payback" value={fullTermData.paybackAnio > 0 ? `Año ${fullTermData.paybackAnio}` : `>${fullTermData.totalYears}`} />
+              </div>
+              <Card title="Ventas vs EBITDA" sub={`MM CLP por año — ${fullTermData.totalYears} años`}>
+                <div style={{ height: 260 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={fullTermData.years.map((y) => ({ name: `A${y.year}`, Ventas: y.ingresos, EBITDA: y.ebitda }))}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" fontSize={10} /><YAxis fontSize={11} />
+                      <RTooltip /><Legend />
+                      <Bar dataKey="Ventas" fill="#3b82f6" /><Bar dataKey="EBITDA" fill="#10b981" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+              <Card title="EBITDA % vs Arriendo/Vta %" sub="Sobre ventas, por año">
+                <div style={{ height: 240 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={fullTermData.years.map((y) => ({ name: `A${y.year}`, "EBITDA %": +(y.ebitdaPct * 100).toFixed(1), "Arriendo %": +(y.arriendoPct * 100).toFixed(1) }))}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" fontSize={10} /><YAxis fontSize={11} unit="%" />
+                      <RTooltip /><Legend />
+                      <Line type="monotone" dataKey="EBITDA %" stroke="#10b981" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Arriendo %" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+              <Card title="Detalle por año" sub="MM CLP">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs whitespace-nowrap">
+                    <thead><tr className="text-right text-muted-foreground border-b">
+                      <th className="text-left py-1">Línea</th>
+                      {fullTermData.years.map((y) => <th key={y.year} className="px-2">Año {y.year}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      <tr className="border-b border-gray-50 font-semibold"><td className="text-left py-1">Ventas</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ingresos)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">Margen Contribución</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.margenCtrib)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">Canon Arriendo</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.canonArr)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 font-semibold"><td className="text-left py-1">EBITDA</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ebitda)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 text-[10px] text-muted-foreground italic"><td className="text-left py-0.5">% EBITDA / Ventas</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2 py-0.5">{fmtPct(y.ebitdaPct)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 text-[10px] text-amber-600 font-medium"><td className="text-left py-0.5">Arriendo / Vta %</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2 py-0.5">{fmtPct(y.arriendoPct)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">EBIT</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ebit)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">UDI</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.udi)}</td>)}</tr>
+                      <tr><td className="text-left py-1">Flujo acumulado</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.flujoAcumulado)}</td>)}</tr>
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFullTermData(null)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
