@@ -226,7 +226,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                 </Button>
                 <Button size="sm" variant="outline" className="h-7 gap-1 text-xs"
                   onClick={() => {
-                    toast.promise(exportBusinessCaseExcel(inputs, result), {
+                    toast.promise(exportBusinessCaseExcel(inputs, result, config), {
                       loading: "Generando Excel…", success: "Excel generado", error: "No se pudo generar el Excel",
                     });
                   }}>
@@ -863,6 +863,12 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                       {fullTermData.years.map((y) => <th key={y.year} className="px-2">Año {y.year}</th>)}
                     </tr></thead>
                     <tbody>
+                      <tr className="border-b border-gray-50 text-[10px] text-muted-foreground italic"><td className="text-left py-0.5">Venta mensual promedio</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2 py-0.5">{fmtMM(y.ventaMensualPromedio, 1)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 text-[10px] text-muted-foreground italic"><td className="text-left py-0.5">% incremental</td>{fullTermData.years.map((y, i) => {
+                        const prev = i > 0 ? fullTermData.years[i - 1].ingresos : 0;
+                        const pct = prev > 0 ? y.ingresos / prev - 1 : 0;
+                        return <td key={y.year} className="text-right px-2 py-0.5">{i === 0 ? "—" : fmtPct(pct)}</td>;
+                      })}</tr>
                       <tr className="border-b border-gray-50 font-semibold"><td className="text-left py-1">Ventas</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ingresos)}</td>)}</tr>
                       <tr className="border-b border-gray-50"><td className="text-left py-1">Margen Contribución</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.margenCtrib)}</td>)}</tr>
                       <tr className="border-b border-gray-50"><td className="text-left py-1">Canon Arriendo</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.canonArr)}</td>)}</tr>

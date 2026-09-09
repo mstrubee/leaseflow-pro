@@ -1,9 +1,11 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
-import type { BCInputs, BCResult } from "./model";
+import type { AdminConfig, BCInputs, BCResult } from "./model";
+import { defaultAdminConfig } from "./model";
 import { fmtMM, fmtPct } from "./format";
 import { buildResumenEjecutivoRows, buildPnlRows } from "./reportRows";
+import { addNegocioCompletoSheet } from "./exportFullTermSheet";
 import bcTemplateUrl from "@/assets/bc_template.xlsx?url";
 
 // Mismos colores/layout que la lámina "Detalle Capex Plan Expansión" del
@@ -142,7 +144,7 @@ function isoToDate(iso?: string): Date {
  * conservando estilos y fórmulas. Sólo se inyectan las celdas de entrada del proyecto;
  * el resto del modelo (P&L, TIR, VAN, payback…) lo calculan las fórmulas de la planilla.
  */
-export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
+export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, config: AdminConfig = defaultAdminConfig) {
   const buf = await fetch(bcTemplateUrl).then((res) => res.arrayBuffer());
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf);
@@ -152,6 +154,9 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   const res = wb.getWorksheet("Resumen business case");
   if (!datos || !sup || !res) {
     // Fallback defensivo: si la plantilla cambió, descargar igual lo que haya
+    // — la pestaña "Negocio Completo" no depende de la plantilla, así que se
+    // agrega igual.
+    addNegocioCompletoSheet(wb, inputs, config);
     const b = await wb.xlsx.writeBuffer();
     saveBuffer(b, inputs.nombre);
     return;
@@ -350,6 +355,11 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   // multiplicado por la UF base — un valor "pegado" que no corresponde a nada
   // que el usuario haya ingresado acá.
   res.getCell("K42").value = null;
+
+  // Pestaña nueva con el negocio a toda la duración del contrato — no toca
+  // las hojas de la plantilla (Datos/Supuestos/Resumen business case, que
+  // siguen siendo la vista oficial a 5 años).
+  addNegocioCompletoSheet(wb, inputs, config);
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
   wb.calcProperties.fullCalcOnLoad = true;

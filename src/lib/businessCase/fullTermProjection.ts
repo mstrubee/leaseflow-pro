@@ -30,6 +30,9 @@ function calcUFExtended(base: number, rates: number[], years: number): { starts:
 
 export interface FullTermYear {
   year: number;
+  mesesOperacion: number; // meses de venta del año (12, salvo año 1 parcial)
+  mesesRenta: number; // meses de renta del año (12, salvo año 1 parcial) — puede diferir de mesesOperacion si apertura ≠ inicio+gracia
+  ventaMensualPromedio: number; // ingresos / mesesOperacion (MM CLP/mes)
   ingresos: number;
   margenCtrib: number;
   personal: number;
@@ -55,6 +58,7 @@ export interface FullTermProjection {
   totalYears: number;
   years: FullTermYear[]; // 1..totalYears (sin año 0)
   totalCapex: number;
+  fisica: number; // CAPEX depreciable (excluye inventario y garantía)
   tir: number | null;
   van: number;
   paybackAnio: number;
@@ -232,6 +236,9 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
     const arriendoTotal = Math.abs(canonArr[i]) + Math.abs(fondoPromocion[i]) + Math.abs(gastoComun[i]);
     years.push({
       year: i,
+      mesesOperacion: mesesOperArr[i],
+      mesesRenta: mesesArr[i],
+      ventaMensualPromedio: mesesOperArr[i] > 0 ? ingresos[i] / mesesOperArr[i] : 0,
       ingresos: ingresos[i],
       margenCtrib: margenCtrib[i],
       personal: personal[i],
@@ -254,5 +261,5 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
     });
   }
 
-  return { totalYears, years, totalCapex, tir, van, paybackAnio };
+  return { totalYears, years, totalCapex, fisica, tir, van, paybackAnio };
 }
