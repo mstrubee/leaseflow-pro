@@ -80,6 +80,10 @@ export const SupplierSelect = ({
       setShowForm(true);
       return;
     }
+    if (val === "none") {
+      onChange(null, null);
+      return;
+    }
 
     const supplier = suppliers.find(s => s.id === val);
     onChange(val, supplier?.name || null);
@@ -105,6 +109,7 @@ export const SupplierSelect = ({
   );
 
   const options: SearchableSelectOption[] = [
+    { value: "none", label: "Sin proveedor" },
     { value: "new", label: "Nuevo Proveedor", icon: <Plus className="h-3.5 w-3.5" /> },
     ...suppliers.map((supplier) => ({
       value: supplier.id,
@@ -130,6 +135,8 @@ export const SupplierSelect = ({
               <Plus className="h-3 w-3" />
               Nuevo Proveedor
             </span>
+          ) : option.value === "none" ? (
+            <span className="text-muted-foreground">Sin proveedor</span>
           ) : (
             option.icon
           )

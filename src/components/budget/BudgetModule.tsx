@@ -67,7 +67,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
 
   // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
-  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string } | null>(null);
+  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null } | null>(null);
   
   // Update template state
   const [showUpdateTemplateDialog, setShowUpdateTemplateDialog] = useState(false);
@@ -495,6 +495,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [ocRequestLineName, setOcRequestLineName] = useState("");
   const [ocRequestLineAvailable, setOcRequestLineAvailable] = useState(0);
   const [ocRequestLineBudget, setOcRequestLineBudget] = useState(0);
+  const [ocRequestLineSupplierId, setOcRequestLineSupplierId] = useState<string | null>(null);
+  const [ocRequestLineSupplierName, setOcRequestLineSupplierName] = useState<string | null>(null);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
@@ -1350,6 +1352,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     const budgetLine = findLine(lines);
     const lineAmount = budgetLine?.amount_uf || 0;
     setOcRequestLineBudget(lineAmount);
+    setOcRequestLineSupplierId(budgetLine?.supplier_id ?? null);
+    setOcRequestLineSupplierName(budgetLine?.supplier_name ?? null);
     
     // Calculate available (budget - existing OCs - existing requests)
     try {
@@ -2203,6 +2207,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     lineAmountUf: line?.amount_uf ?? 0,
                     lineStatus: line?.status ?? "no_autorizado",
                     newStatusId,
+                    supplierId: line?.supplier_id ?? null,
+                    supplierName: line?.supplier_name ?? null,
                   });
                 } : undefined}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
@@ -2776,6 +2782,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
             name: ocRequiredPrompt.lineName,
             amount_uf: ocRequiredPrompt.lineAmountUf,
             status: ocRequiredPrompt.lineStatus,
+            supplier_id: ocRequiredPrompt.supplierId,
+            supplier_name: ocRequiredPrompt.supplierName,
           }}
           ocRequeridaStatusId={ocRequiredPrompt.newStatusId}
           ufValue={ufValue}
@@ -2815,6 +2823,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         lineName={ocRequestLineName}
         lineAvailable={ocRequestLineAvailable}
         lineBudget={ocRequestLineBudget}
+        initialSupplierId={ocRequestLineSupplierId}
+        initialSupplierName={ocRequestLineSupplierName}
         year={selectedYear}
         ufValue={ufValue}
         formatUF={formatUF}
