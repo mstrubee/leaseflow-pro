@@ -40,6 +40,10 @@ interface OCRequestDialogProps {
   lineName: string;
   lineAvailable: number;
   lineBudget: number;
+  /** Proveedor ya asignado a la línea CAPEX de origen, si tiene uno -- se
+   *  prellena al abrir (el usuario puede cambiarlo o dejarlo en blanco). */
+  initialSupplierId?: string | null;
+  initialSupplierName?: string | null;
   year: number;
   ufValue: number;
   formatUF: (value: number) => string;
@@ -57,6 +61,8 @@ export const OCRequestDialog = ({
   lineName,
   lineAvailable,
   lineBudget,
+  initialSupplierId = null,
+  initialSupplierName = null,
   year,
   ufValue,
   formatUF,
@@ -102,15 +108,15 @@ export const OCRequestDialog = ({
         description: lineName,
         amount: "",
         currency: "CLP",
-        supplier_id: null,
-        supplier_name: null
+        supplier_id: initialSupplierId,
+        supplier_name: initialSupplierName
       });
       setSelectedLines([{ lineId: budgetLineId, lineName, amount: 0, maxAmount: lineAvailable }]);
       setUseMultipleLines(false);
       setPaymentPlan([]);
       setActiveTab("basic");
     }
-  }, [open, lineName, budgetLineId, lineAvailable]);
+  }, [open, lineName, budgetLineId, lineAvailable, initialSupplierId, initialSupplierName]);
 
   const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
     const today = new Date();

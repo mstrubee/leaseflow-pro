@@ -16,6 +16,8 @@ interface PaymentPlanItem {
   description: string;
   amount: string;
   due_date: string;
+  /** % del monto total -- solo se muestra/edita cuando hay más de un pago. */
+  percent: string;
 }
 
 export interface CapexLineRef {
@@ -23,6 +25,8 @@ export interface CapexLineRef {
   name: string;
   amount_uf: number;
   status: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
 }
 
 interface CapexOCRequiredDialogProps {
@@ -123,6 +127,16 @@ export function CapexOCRequiredDialog({
     };
   }, [previewUrl]);
 
+  // Si la línea de origen ya tiene un proveedor asignado, se prellena --
+  // el usuario puede cambiarlo o dejarlo en blanco si es un error.
+  useEffect(() => {
+    if (open && originLine.supplier_id) {
+      setSupplierId(originLine.supplier_id);
+      setSupplierName(originLine.supplier_name ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, originLine.id]);
+
   const reset = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setStep("upload");
@@ -136,10 +150,49 @@ export function CapexOCRequiredDialog({
   };
 
   const addPaymentItem = () =>
-    setPaymentPlan((prev) => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
+    setPaymentPlan((prev) => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "", percent: "" }]);
   const removePaymentItem = (index: number) => setPaymentPlan((prev) => prev.filter((_, i) => i !== index));
+
+  // El monto requerido se ingresa en pesos -- se limpia todo lo que no sea
+  // dígito (el usuario puede escribir puntos de miles, "$", etc.).
+  const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
+
+  // Por defecto el plan de pagos es "un pago por el total" -- se arma solo,
+  // sin que el usuario tenga que agregar nada. Mientras siga habiendo un solo
+  // pago, su monto se mantiene igual al monto requerido si éste cambia.
+  useEffect(() => {
+    if (montoClp <= 0) return;
+    setPaymentPlan((prev) => {
+      if (prev.length === 0) {
+        return [{ description: "Pago único", amount: String(montoClp), due_date: "", percent: "100" }];
+      }
+      if (prev.length === 1) {
+        const pct = parseFloat(prev[0].percent) || 100;
+        const newAmount = String(Math.round((montoClp * pct) / 100));
+        if (prev[0].amount === newAmount) return prev;
+        return [{ ...prev[0], amount: newAmount }];
+      }
+      return prev;
+    });
+  }, [montoClp]);
+
+  // Al agregar un segundo pago (o editar uno ya existente), % y monto quedan
+  // ligados: editar uno recalcula el otro contra el monto total requerido.
   const updatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) =>
-    setPaymentPlan((prev) => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+    setPaymentPlan((prev) => prev.map((item, i) => {
+      if (i !== index) return item;
+      if (field === "amount") {
+        const amt = parseFloat(value) || 0;
+        const percent = montoClp > 0 ? String(Math.round((amt / montoClp) * 10000) / 100) : item.percent;
+        return { ...item, amount: value, percent };
+      }
+      if (field === "percent") {
+        const pct = parseFloat(value) || 0;
+        const amount = montoClp > 0 ? String(Math.round((montoClp * pct) / 100)) : item.amount;
+        return { ...item, percent: value, amount };
+      }
+      return { ...item, [field]: value };
+    }));
 
   const handleClose = (o: boolean) => {
     if (!o) reset();
@@ -159,9 +212,6 @@ export function CapexOCRequiredDialog({
     setStep("amount");
   };
 
-  // El monto requerido se ingresa en pesos -- se limpia todo lo que no sea
-  // dígito (el usuario puede escribir puntos de miles, "$", etc.).
-  const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
   const paymentPlanError = validatePaymentPlanTotal(
     paymentPlan.filter((p) => parseFloat(p.amount) > 0).map((p) => Math.round(parseFloat(p.amount) || 0)),
     montoClp
@@ -362,6 +412,15 @@ export function CapexOCRequiredDialog({
                           placeholder="Descripción"
                           className="h-8 text-xs flex-1 min-w-[7rem]"
                         />
+                        {paymentPlan.length > 1 && (
+                          <Input
+                            type="number"
+                            value={item.percent}
+                            onChange={(e) => updatePaymentItem(idx, "percent", e.target.value)}
+                            placeholder="%"
+                            className="h-8 text-xs w-16"
+                          />
+                        )}
                         <Input
                           type="number"
                           value={item.amount}
