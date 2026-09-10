@@ -109,8 +109,8 @@ export const SupplierSelect = ({
   );
 
   const options: SearchableSelectOption[] = [
+    { value: "none", label: "Sin proveedor" },
     { value: "new", label: "Nuevo Proveedor", icon: <Plus className="h-3.5 w-3.5" /> },
-    ...(resolvedValue ? [{ value: "none", label: "Sin proveedor" }] : []),
     ...suppliers.map((supplier) => ({
       value: supplier.id,
       label: supplier.name,
