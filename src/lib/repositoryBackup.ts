@@ -325,7 +325,7 @@ export async function backupQuotationFileToRepository(
   contractId: string,
   file: File,
   fileName: string
-): Promise<{ success: boolean; fileId?: string; driveUrl?: string; error?: string }> {
+): Promise<{ success: boolean; fileId?: string; driveUrl?: string; storagePath?: string; error?: string }> {
   try {
     const folder = await getOrCreateQuotationsFolder(contractId);
     if (!folder) {
@@ -356,7 +356,10 @@ export async function backupQuotationFileToRepository(
     }
 
     const { data: fileRecord } = await supabase.from("repository_files").select("url").eq("id", record.id).single();
-    return { success: true, fileId: record.id, driveUrl: fileRecord?.url ?? storedUrl };
+    // storagePath (storage://...) se guarda además del link de Drive -- permite
+    // servir/retener el archivo en Storage por 30 días o hasta que el
+    // Requerimiento de OC se convierta en Solicitud (ver cleanup-oc-quotation-files).
+    return { success: true, fileId: record.id, driveUrl: fileRecord?.url ?? storedUrl, storagePath: storedUrl };
   } catch (error: any) {
     console.error("Error backing up quotation file:", error);
     return { success: false, error: error.message };

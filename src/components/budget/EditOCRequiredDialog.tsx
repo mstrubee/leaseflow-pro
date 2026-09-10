@@ -104,6 +104,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
     try {
       let filePath = group.filePath;
       let fileName = group.fileName;
+      let storagePath = group.storagePath ?? null;
       if (file) {
         const upload = await backupQuotationFileToRepository(contractId, file, file.name);
         if (!upload.success || !upload.driveUrl) {
@@ -112,6 +113,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
         }
         filePath = upload.driveUrl;
         fileName = file.name;
+        storagePath = upload.storagePath ?? null;
       }
 
       const originalIds = new Set(group.lines.map((l) => l.budgetLineId));
@@ -132,7 +134,13 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
       if (kept.length > 0) {
         const { error } = await (supabase as any)
           .from("oc_quotations")
-          .update({ amount_clp: montoClp, amount_uf: group.ufValue > 0 ? montoClp / group.ufValue : 0, file_path: filePath, file_name: fileName })
+          .update({
+            amount_clp: montoClp,
+            amount_uf: group.ufValue > 0 ? montoClp / group.ufValue : 0,
+            file_path: filePath,
+            file_name: fileName,
+            ...(file ? { storage_path: storagePath } : {}),
+          })
           .eq("quotation_number", group.quotationNumber)
           .in("budget_line_id", kept);
         if (error) throw error;
@@ -148,6 +156,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
           project_name: projectName,
           file_path: filePath,
           file_name: fileName,
+          storage_path: storagePath,
           quotation_date: group.quotationDate,
           amount_clp: montoClp,
           amount_uf: group.ufValue > 0 ? montoClp / group.ufValue : 0,
