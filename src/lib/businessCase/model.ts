@@ -328,6 +328,35 @@ export function resolveCanonTiers(
   return tiers.sort((a, b) => a.fromMonth - b.fromMonth);
 }
 
+/**
+ * Canon UF/m² promedio a lo largo de TODA la duración del contrato,
+ * ponderado por los meses que dura cada tramo (sin escalonamiento, da
+ * exactamente ufM2 — un solo tramo cubre todo el contrato). Solo considera
+ * el arriendo (los tramos de resolveCanonTiers): gasto común, fondo de
+ * promoción y otros cobros no entran acá, tienen sus propios campos. Se usa
+ * para mostrar en "Supuestos" un UF/m² representativo cuando hay
+ * escalonamiento, en vez de solo el tramo inicial.
+ */
+export function averageCanonUfM2(
+  inputs: Pick<BCInputs, "superficie" | "ufM2" | "escalations" | "regimeRentIsUfM2" | "graciaMeses" | "durContratoAnios">,
+): number {
+  const tiers = resolveCanonTiers(inputs);
+  const totalMonths = Math.round((inputs.durContratoAnios || 0) * 12);
+  if (tiers.length <= 1 || totalMonths <= 0) return inputs.ufM2 || 0;
+  let weightedSum = 0;
+  let coveredMonths = 0;
+  for (let i = 0; i < tiers.length; i++) {
+    const start = tiers[i].fromMonth;
+    if (start > totalMonths) break;
+    const end = i < tiers.length - 1 ? Math.min(tiers[i + 1].fromMonth - 1, totalMonths) : totalMonths;
+    const months = end - start + 1;
+    if (months <= 0) continue;
+    weightedSum += tiers[i].ufM2 * months;
+    coveredMonths += months;
+  }
+  return coveredMonths > 0 ? weightedSum / coveredMonths : inputs.ufM2 || 0;
+}
+
 // ---------- cálculo principal (réplica de recalcAll del HTML) ----------
 export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminConfig): BCResult {
   const superficie = inputs.superficie || 0;

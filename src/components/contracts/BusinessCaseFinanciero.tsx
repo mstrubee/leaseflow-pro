@@ -21,7 +21,7 @@ import {
 } from "recharts";
 import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
 import type { BCSeed, BCInputs, BCEscalation, FormatoLocal } from "@/lib/businessCase/model";
-import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta } from "@/lib/businessCase/model";
+import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta, averageCanonUfM2 } from "@/lib/businessCase/model";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 import {
   computeEscalationYearTargets, buildSuggestedTiers, buildAdjustedTiers, simulateEscalationProposal,
@@ -554,11 +554,22 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
               >
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
-                  <FieldConv
-                    label="UF / m²"
-                    conv={`$${fmtMM((inputs.superficie || 0) * (inputs.ufM2 || 0) * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * (inputs.ufM2 || 0), 2)} UF/mes)`}
-                  >
-                    <NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></FieldConv>
+                  {(() => {
+                    // Con escalonamiento, el UF/m² inicial no representa el
+                    // arriendo real del contrato — se muestra el promedio
+                    // ponderado por los meses de cada tramo (solo arriendo,
+                    // sin gasto común ni fondo de promoción, que tienen sus
+                    // propios campos más abajo).
+                    const hasEscalation = inputs.escalations.length > 0;
+                    const ufM2Display = hasEscalation ? averageCanonUfM2(inputs) : (inputs.ufM2 || 0);
+                    return (
+                      <FieldConv
+                        label={hasEscalation ? "UF / m² (promedio)" : "UF / m²"}
+                        conv={`$${fmtMM((inputs.superficie || 0) * ufM2Display * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * ufM2Display, 2)} UF/mes)${hasEscalation ? " — promedio a toda la duración del contrato" : ""}`}
+                      >
+                        <NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></FieldConv>
+                    );
+                  })()}
                   <Field label="Gasto común (UF/m²)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
                   <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
                   <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
