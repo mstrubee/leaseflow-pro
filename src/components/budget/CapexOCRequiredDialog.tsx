@@ -251,6 +251,7 @@ export function CapexOCRequiredDialog({
         project_name: projectName,
         file_path: upload.driveUrl,
         file_name: file.name,
+        storage_path: upload.storagePath ?? null,
         quotation_date: today,
         amount_clp: montoClp,
         amount_uf: ufValue > 0 ? montoClp / ufValue : 0,

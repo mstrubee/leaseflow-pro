@@ -25,6 +25,10 @@ export interface OCRequiredGroup {
   amountUf: number;
   filePath: string | null;
   fileName: string | null;
+  /** Referencia storage:// del archivo en Supabase Storage -- se limpia (queda
+   *  null) a los 30 días o al convertirse en Solicitud de OC; el archivo sigue
+   *  disponible siempre en Drive vía filePath. */
+  storagePath: string | null;
   projectName: string;
   ufValue: number;
   supplierId: string | null;
@@ -100,6 +104,7 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
             amountUf: r.amount_uf || 0,
             filePath: r.file_path,
             fileName: r.file_name,
+            storagePath: r.storage_path ?? null,
             projectName: r.project_name,
             ufValue,
             supplierId: r.supplier_id ?? null,
