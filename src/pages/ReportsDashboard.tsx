@@ -584,12 +584,12 @@ const ReportsDashboard = () => {
         local: {
           header: 'Local',
           getValue: (c) => c.name,
-          width: 35,
+          width: 25,
         },
         empresa: {
           header: 'Empresa',
           getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa',
-          width: 35,
+          width: 25,
         },
         direccion: {
           header: 'Direccion',
@@ -599,29 +599,29 @@ const ReportsDashboard = () => {
               ? ((address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')).trim()
               : 'Sin direccion';
           },
-          width: 40,
+          width: 30,
         },
         estado_patente: {
           header: 'Estado Patente',
           getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'),
-          width: 25,
+          width: 18,
         },
         prioridad: {
           header: 'Prioridad',
-          getValue: (c) => c.contract_patents?.priority 
+          getValue: (c) => c.contract_patents?.priority
             ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
             : 'Sin Asignar',
-          width: 25,
+          width: 18,
         },
         comentarios: {
           header: 'Comentarios',
           getValue: (c) => c.contract_patents?.comments || '-',
-          width: 65,
+          width: 76,
         },
         proximas_acciones: {
           header: 'Proximas Acciones',
           getValue: (c) => c.contract_patents?.next_actions || '-',
-          width: 65,
+          width: 77,
         },
       };
       
@@ -681,13 +681,13 @@ const ReportsDashboard = () => {
     doc.setTextColor(0);
 
     const columnMapping: Record<string, { header: string; getValue: (c: ContractPatentData) => string; width: number | 'auto' }> = {
-      local: { header: 'Local', getValue: (c) => c.name, width: 35 },
-      empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 35 },
-      direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 40 },
-      estado_patente: { header: 'Estado Patente', getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'), width: 25 },
-      prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 25 },
-      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 65 },
-      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 65 },
+      local: { header: 'Local', getValue: (c) => c.name, width: 25 },
+      empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 25 },
+      direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 30 },
+      estado_patente: { header: 'Estado Patente', getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'), width: 18 },
+      prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 18 },
+      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 76 },
+      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 77 },
     };
 
     const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
@@ -855,13 +855,13 @@ const ReportsDashboard = () => {
         headStyles: { fillColor: [220, 38, 38] },
         margin: { left: 14, right: 14 },
         columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 22 },
-          4: { cellWidth: 22 },
-          5: { cellWidth: 60 },
-          6: { cellWidth: 60 },
+          0: { cellWidth: 25 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 76 },
+          6: { cellWidth: 77 },
         },
         styles: { 
           fontSize: 6.4,
