@@ -312,8 +312,8 @@ export function CapexOCRequiredDialog({
     <Dialog open={dialogOpen} onOpenChange={saving ? undefined : handleClose}>
       <DialogContent
         className={cn(
-          "max-h-[90vh] overflow-y-auto",
-          step === "amount" || step === "summary" ? "max-w-3xl" : "max-w-md"
+          "max-h-[95vh] overflow-y-auto",
+          step === "amount" || step === "summary" ? "max-w-[min(96rem,95vw)]" : "max-w-md"
         )}
       >
         <DialogHeader>
@@ -353,17 +353,17 @@ export function CapexOCRequiredDialog({
             <div className="space-y-1.5">
               <Label>Cotización</Label>
               {previewKindOf(file.name) === "pdf" && (
-                <iframe src={previewUrl} title="Previsualización de la cotización" className="w-full h-72 rounded-md border" />
+                <iframe src={previewUrl} title="Previsualización de la cotización" className="w-full h-[36rem] rounded-md border" />
               )}
               {previewKindOf(file.name) === "image" && (
                 <img
                   src={previewUrl}
                   alt="Previsualización de la cotización"
-                  className="w-full h-72 rounded-md border object-contain bg-muted/30"
+                  className="w-full h-[36rem] rounded-md border object-contain bg-muted/30"
                 />
               )}
               {previewKindOf(file.name) === "none" && (
-                <div className="w-full h-72 rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
+                <div className="w-full h-[36rem] rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
                   <FileText className="h-10 w-10" />
                   <span className="text-xs">Sin previsualización disponible para este tipo de archivo</span>
                 </div>
