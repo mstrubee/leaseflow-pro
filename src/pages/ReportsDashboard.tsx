@@ -122,9 +122,12 @@ const ReportsDashboard = () => {
     false
   );
   
-  // Filter for "Sin Patente" section
+  // Filter for "Sin Patente" section (por prioridad)
   const [sinPatenteStatusFilter, setSinPatenteStatusFilter] = useState<string>("all");
-  
+
+  // Filtro por estado de patente dentro de la sección (todas / sin patente / provisoria)
+  const [sinPatentePatenteStatusFilter, setSinPatentePatenteStatusFilter] = useState<"all" | "sin_patente" | "provisoria">("all");
+
   // Sorting for "Sin Patente" section
   const [sinPatenteSortField, setSinPatenteSortField] = useState<"empresa" | "prioridad" | null>(null);
   const [sinPatenteSortOrder, setSinPatenteSortOrder] = useState<"asc" | "desc">("asc");
@@ -132,7 +135,7 @@ const ReportsDashboard = () => {
   // Column selection for PDF export
   const [showPdfColumnSelector, setShowPdfColumnSelector] = useState(false);
   const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
-    "local", "empresa", "direccion", "prioridad", "comentarios", "proximas_acciones"
+    "local", "empresa", "direccion", "estado_patente", "prioridad", "comentarios", "proximas_acciones"
   ]);
   
   // Row selection for PDF export. null = todos, en el orden de la tabla.
@@ -153,6 +156,7 @@ const ReportsDashboard = () => {
     { key: "local", label: "Local" },
     { key: "empresa", label: "Empresa" },
     { key: "direccion", label: "Dirección" },
+    { key: "estado_patente", label: "Estado Patente" },
     { key: "prioridad", label: "Prioridad" },
     { key: "comentarios", label: "Comentarios" },
     { key: "proximas_acciones", label: "Próximas Acciones" },
@@ -455,12 +459,22 @@ const ReportsDashboard = () => {
     setChartFilter(null);
   };
 
-  // Get "Sin Patente" contracts with optional priority filter and sorting
+  // Get "Sin Patente" y "Provisoria" contracts with optional priority filter and sorting
   const sinPatenteContracts = useMemo(() => {
-    let sinPatente = contracts.filter(c => 
-      !c.patente_status || c.patente_status === "sin_patente"
+    let sinPatente = contracts.filter(c =>
+      !c.patente_status || c.patente_status === "sin_patente" || c.patente_status === "provisoria"
     );
-    
+
+    // Apply patente status filter (sin patente / provisoria)
+    if (sinPatentePatenteStatusFilter !== "all") {
+      sinPatente = sinPatente.filter(c => {
+        if (sinPatentePatenteStatusFilter === "sin_patente") {
+          return !c.patente_status || c.patente_status === "sin_patente";
+        }
+        return c.patente_status === "provisoria";
+      });
+    }
+
     // Apply priority filter
     if (sinPatenteStatusFilter !== "all") {
       sinPatente = sinPatente.filter(c => {
@@ -500,7 +514,7 @@ const ReportsDashboard = () => {
     }
     
     return sinPatente;
-  }, [contracts, sinPatenteStatusFilter, sinPatenteSortField, sinPatenteSortOrder]);
+  }, [contracts, sinPatenteStatusFilter, sinPatentePatenteStatusFilter, sinPatenteSortField, sinPatenteSortOrder]);
 
   // Toggle sort for sin patente table
   const handleSinPatenteSort = (field: "empresa" | "prioridad") => {
@@ -536,16 +550,19 @@ const ReportsDashboard = () => {
     
     // Title
     doc.setFontSize(18);
-    doc.text('Detalle: Locales Sin Patente', 70, 20);
+    doc.text('Detalle: Locales Sin Patente y Provisorias', 70, 20);
     doc.setFontSize(10);
     doc.setTextColor(100);
     
     // Show current filter and sort in PDF - using plain text
     let subtitleParts: string[] = [];
     subtitleParts.push('Generado: ' + today);
+    if (sinPatentePatenteStatusFilter !== "all") {
+      subtitleParts.push('Estado: ' + (sinPatentePatenteStatusFilter === "sin_patente" ? "Sin Patente" : "Provisoria"));
+    }
     if (sinPatenteStatusFilter !== "all") {
-      const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
-        ? "Sin Asignar" 
+      const filterLabel = sinPatenteStatusFilter === "sin_asignar"
+        ? "Sin Asignar"
         : PRIORITY_CONFIG[sinPatenteStatusFilter as PatentPriority]?.label || sinPatenteStatusFilter;
       subtitleParts.push('Filtro: ' + filterLabel);
     }
@@ -560,7 +577,7 @@ const ReportsDashboard = () => {
     if (pdfContracts.length === 0) {
       doc.setFontSize(12);
       doc.setTextColor(0);
-      doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 55);
+      doc.text('No hay locales sin patente o provisoria con los filtros seleccionados.', 14, 55);
     } else {
       // Build headers and data based on selected columns
       const columnMapping: Record<string, { header: string; getValue: (c: ContractPatentData) => string; width: number | 'auto' }> = {
@@ -578,11 +595,16 @@ const ReportsDashboard = () => {
           header: 'Direccion',
           getValue: (c) => {
             const address = c.contract_addresses?.[0];
-            return address 
+            return address
               ? ((address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')).trim()
               : 'Sin direccion';
           },
           width: 40,
+        },
+        estado_patente: {
+          header: 'Estado Patente',
+          getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'),
+          width: 25,
         },
         prioridad: {
           header: 'Prioridad',
@@ -662,6 +684,7 @@ const ReportsDashboard = () => {
       local: { header: 'Local', getValue: (c) => c.name, width: 35 },
       empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 35 },
       direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 40 },
+      estado_patente: { header: 'Estado Patente', getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'), width: 25 },
       prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 25 },
       comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 65 },
       proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 65 },
@@ -785,12 +808,15 @@ const ReportsDashboard = () => {
       }
       
       doc.setFontSize(14);
-      doc.text('Detalle: Locales Sin Patente', 70, 20);
+      doc.text('Detalle: Locales Sin Patente y Provisorias', 70, 20);
       
       doc.setFontSize(10);
       doc.setTextColor(100);
       let detailSubtitleParts: string[] = [];
       detailSubtitleParts.push('Total: ' + sinPatenteContracts.length + ' locales');
+      if (sinPatentePatenteStatusFilter !== "all") {
+        detailSubtitleParts.push('Estado: ' + (sinPatentePatenteStatusFilter === "sin_patente" ? "Sin Patente" : "Provisoria"));
+      }
       if (sinPatenteStatusFilter !== "all") {
         const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
           ? "Sin Asignar" 
@@ -811,18 +837,19 @@ const ReportsDashboard = () => {
         const fullAddress = address 
           ? (address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')
           : 'Sin direccion';
-        const priority = c.contract_patents?.priority 
+        const estadoPatente = getPatenteStatusLabel(c.patente_status || 'sin_patente');
+        const priority = c.contract_patents?.priority
           ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
           : 'Sin Asignar';
         const comments = c.contract_patents?.comments || '-';
         const nextActions = c.contract_patents?.next_actions || '-';
-        
-        return [c.name, companies, fullAddress.trim(), priority, comments, nextActions];
+
+        return [c.name, companies, fullAddress.trim(), estadoPatente, priority, comments, nextActions];
       });
-      
+
       autoTable(doc, {
         startY: 35,
-        head: [['Local', 'Empresa', 'Direccion', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
+        head: [['Local', 'Empresa', 'Direccion', 'Estado Patente', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
         body: sinPatenteData,
         theme: 'grid',
         headStyles: { fillColor: [220, 38, 38] },
@@ -831,9 +858,10 @@ const ReportsDashboard = () => {
           0: { cellWidth: 35 },
           1: { cellWidth: 35 },
           2: { cellWidth: 40 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 65 },
-          5: { cellWidth: 65 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 60 },
+          6: { cellWidth: 60 },
         },
         styles: { 
           fontSize: 6.4,
@@ -1326,7 +1354,7 @@ const ReportsDashboard = () => {
                         >
                           <CardTitle className="text-base flex items-center gap-2 text-red-700 dark:text-red-400">
                             <XCircle className="h-4 w-4" />
-                            Detalle: Locales Sin Patente
+                            Detalle: Locales Sin Patente y Provisorias
                             <span className="text-muted-foreground font-normal text-sm">
                               ({sinPatenteContracts.length} {sinPatenteContracts.length === 1 ? 'local' : 'locales'})
                             </span>
@@ -1418,6 +1446,17 @@ const ReportsDashboard = () => {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
+                          <Select value={sinPatentePatenteStatusFilter} onValueChange={(v) => setSinPatentePatenteStatusFilter(v as typeof sinPatentePatenteStatusFilter)}>
+                            <SelectTrigger className="w-[160px] h-8">
+                              <Filter className="h-3 w-3 mr-2" />
+                              <SelectValue placeholder="Filtrar por estado" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Sin Patente y Provisoria</SelectItem>
+                              <SelectItem value="sin_patente">Solo Sin Patente</SelectItem>
+                              <SelectItem value="provisoria">Solo Provisoria</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <Select value={sinPatenteStatusFilter} onValueChange={setSinPatenteStatusFilter}>
                             <SelectTrigger className="w-[180px] h-8">
                               <Filter className="h-3 w-3 mr-2" />
@@ -1456,7 +1495,7 @@ const ReportsDashboard = () => {
                       <CardContent>
                         {sinPatenteContracts.length === 0 ? (
                           <div className="text-center py-8 text-muted-foreground">
-                            No hay locales sin patente{sinPatenteStatusFilter !== "all" ? " con el filtro seleccionado" : ""}
+                            No hay locales sin patente o provisoria{(sinPatenteStatusFilter !== "all" || sinPatentePatenteStatusFilter !== "all") ? " con el filtro seleccionado" : ""}
                           </div>
                         ) : (
                           <div className="max-h-[500px] overflow-y-auto">
@@ -1476,6 +1515,7 @@ const ReportsDashboard = () => {
                                     </Button>
                                   </TableHead>
                                   <TableHead className="w-[180px]">Dirección</TableHead>
+                                  <TableHead className="text-center w-[110px]">Estado Patente</TableHead>
                                   <TableHead className="text-center w-[100px]">
                                     <Button
                                       variant="ghost"
@@ -1511,6 +1551,15 @@ const ReportsDashboard = () => {
                                       <TableCell className="font-medium">{contract.name}</TableCell>
                                       <TableCell className="text-muted-foreground text-sm">{companyDisplay}</TableCell>
                                       <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
+                                      <TableCell className="text-center">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                          contract.patente_status === "provisoria"
+                                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300"
+                                            : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+                                        }`}>
+                                          {getPatenteStatusLabel(contract.patente_status || "sin_patente")}
+                                        </span>
+                                      </TableCell>
                                       <TableCell className="text-center">
                                         {priority ? (
                                           <PatentPriorityBadge priority={priority} size="sm" />
