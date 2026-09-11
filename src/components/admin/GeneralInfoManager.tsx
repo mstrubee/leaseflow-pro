@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Upload } from "lucide-react";
+import { Loader2, Download, Upload, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { downloadGeneralInfoExcel, uploadGeneralInfoExcel } from "@/lib/generalInfoReport";
+import { GeochileCoordinateSyncDialog } from "./GeochileCoordinateSyncDialog";
 
 /**
  * "Información General Grupo Planet": descarga un Excel con la tipificación
@@ -14,6 +15,7 @@ import { downloadGeneralInfoExcel, uploadGeneralInfoExcel } from "@/lib/generalI
 export function GeneralInfoManager() {
   const [downloading, setDownloading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showCoordinateSync, setShowCoordinateSync] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownload = async () => {
@@ -70,6 +72,10 @@ export function GeneralInfoManager() {
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           Subir Excel actualizado
         </Button>
+        <Button variant="outline" onClick={() => setShowCoordinateSync(true)} className="gap-2">
+          <MapPin className="h-4 w-4" />
+          Sincronizar coordenadas con Geochile Compass
+        </Button>
         <input
           ref={fileInputRef}
           type="file"
@@ -78,6 +84,8 @@ export function GeneralInfoManager() {
           onChange={handleFileSelected}
         />
       </div>
+
+      <GeochileCoordinateSyncDialog open={showCoordinateSync} onOpenChange={setShowCoordinateSync} />
     </div>
   );
 }
