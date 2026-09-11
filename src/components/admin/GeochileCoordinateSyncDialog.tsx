@@ -109,9 +109,10 @@ export function GeochileCoordinateSyncDialog({ open, onOpenChange }: Props) {
             Sincronizar coordenadas con Geochile Compass
           </DialogTitle>
           <DialogDescription>
-            Match por nombre de local contra las isócronas guardadas en Geochile Compass. Las coordenadas que no
-            tenían ninguna cargada se completaron automáticamente; las que ya tenían una distinta, o las que no
-            encontraron un local con el mismo nombre, quedan abajo para resolver a mano.
+            Usa el punto del mapa de rutas de mantención ya asociado al contrato (match exacto), y si no existe,
+            las isócronas guardadas en Geochile Compass (match por nombre). Las coordenadas que no tenían ninguna
+            cargada se completaron automáticamente; las que ya tenían una distinta, o las que no encontraron
+            ningún local relacionado, quedan abajo para resolver a mano.
           </DialogDescription>
         </DialogHeader>
 
@@ -140,7 +141,7 @@ export function GeochileCoordinateSyncDialog({ open, onOpenChange }: Props) {
                     <TableRow>
                       <TableHead>Local</TableHead>
                       <TableHead>Coordenada actual</TableHead>
-                      <TableHead>Coordenada Geochile</TableHead>
+                      <TableHead>Coordenada sugerida</TableHead>
                       <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -154,7 +155,12 @@ export function GeochileCoordinateSyncDialog({ open, onOpenChange }: Props) {
                             {fmtCoord(row.currentLat)}, {fmtCoord(row.currentLng)}
                           </TableCell>
                           <TableCell className="font-mono text-xs">
-                            {fmtCoord(row.geoLat)}, {fmtCoord(row.geoLng)}
+                            <div className="flex items-center gap-1.5">
+                              <span>{fmtCoord(row.geoLat)}, {fmtCoord(row.geoLng)}</span>
+                              <Badge variant="outline" className="text-[10px] font-sans">
+                                {row.geoSource === "mantencion" ? "Mantención" : "Geochile"}
+                              </Badge>
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             {applied ? (
@@ -167,7 +173,7 @@ export function GeochileCoordinateSyncDialog({ open, onOpenChange }: Props) {
                                 onClick={() => handleUseGeochile(row)}
                               >
                                 {applyingId === row.contractId && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                                Usar Geochile
+                                Usar esta coordenada
                               </Button>
                             )}
                           </TableCell>
