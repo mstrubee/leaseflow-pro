@@ -27,6 +27,7 @@ import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateMa
 import { LogoManager } from "@/components/admin/LogoManager";
 import { BusinessCaseAdminConfig } from "@/components/admin/BusinessCaseAdminConfig";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
+import { GeneralInfoManager } from "@/components/admin/GeneralInfoManager";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
 import { GanttOverviewStatusManager } from "@/components/admin/GanttOverviewStatusManager";
@@ -697,6 +698,14 @@ const AdminPanel = () => {
         </div>
 
         {/* ── Roles ── */}
+        <CollapsibleCard
+          title="Información General Grupo Planet"
+          description="Tipificación de todos los locales (empresa, dirección, coordenadas, tenencia, tipología, superficies, etc.)"
+          icon={<Building2 className="h-5 w-5 text-emerald-600" />}
+        >
+          <GeneralInfoManager />
+        </CollapsibleCard>
+
         <CollapsibleCard
           title="Roles"
           description="Define conjuntos de permisos reutilizables para asignar a usuarios"
