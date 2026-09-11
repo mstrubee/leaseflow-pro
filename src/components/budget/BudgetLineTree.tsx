@@ -1264,7 +1264,12 @@ const BudgetLineItemInner = ({
 
             {/* Unit type - editable on double click */}
             {isEditingUnit && !effectiveReadOnly ? (
-              <Select value={editUnit} onValueChange={handleSaveUnit} open={true}>
+              <Select
+                value={editUnit}
+                onValueChange={handleSaveUnit}
+                defaultOpen
+                onOpenChange={(open) => { if (!open) setIsEditingUnit(false); }}
+              >
                 <SelectTrigger className="h-6 w-14 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -1292,7 +1297,12 @@ const BudgetLineItemInner = ({
           <div className="flex items-center gap-1 w-[180px] min-w-[180px] max-w-[180px]">
             {/* Currency - editable on double click */}
             {isEditingCurrency && !effectiveReadOnly ? (
-              <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
+              <Select
+                value={editCurrency}
+                onValueChange={handleSaveCurrency}
+                defaultOpen
+                onOpenChange={(open) => { if (!open) setIsEditingCurrency(false); }}
+              >
                 <SelectTrigger className="h-6 w-16 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -1319,7 +1329,7 @@ const BudgetLineItemInner = ({
                 onChange={e => setEditUnitPrice(e.target.value)} 
                 onBlur={handleSavePrice}
                 onKeyDown={handlePriceKeyDown}
-                className="h-6 w-20 text-xs" 
+                className="h-6 w-28 text-xs"
                 autoFocus
                 min="0"
                 step="0.01"
