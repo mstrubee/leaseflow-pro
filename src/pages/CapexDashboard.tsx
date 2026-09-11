@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -75,6 +75,9 @@ export default function CapexDashboard() {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
+  // aprobándolas de forma más ágil, expandiendo uno a uno.
+  const [onlyUnauthorized, setOnlyUnauthorized] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -217,6 +220,19 @@ export default function CapexDashboard() {
   const listedContracts = React.useMemo(() => {
     return companyGroups.flatMap(({ contracts }) => contracts);
   }, [companyGroups]);
+
+  // Cuando el filtro "No Autorizados" está activo, solo se muestran los
+  // contratos con líneas No Autorizado por un monto mayor a 0 (usa el mismo
+  // desglose que las tarjetas de resumen).
+  const displayedCompanyGroups = React.useMemo(() => {
+    if (!onlyUnauthorized) return companyGroups;
+    return companyGroups
+      .map(({ company, contracts }) => ({
+        company,
+        contracts: contracts.filter(([contractId]) => (authByContract[contractId]?.unauthorized || 0) > 0),
+      }))
+      .filter(({ contracts }) => contracts.length > 0);
+  }, [companyGroups, onlyUnauthorized, authByContract]);
 
 
   // Per-company clasificacion stats
@@ -419,6 +435,16 @@ export default function CapexDashboard() {
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant={onlyUnauthorized ? "default" : "outline"}
+              size="sm"
+              onClick={() => setOnlyUnauthorized(v => !v)}
+              className="gap-2"
+              title="Mostrar solo contratos con líneas No Autorizado por un monto mayor a 0"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Solo No Autorizados
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel} className="gap-2">
               {exportingExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
               Exportar Excel
@@ -562,8 +588,14 @@ export default function CapexDashboard() {
                 No se encontraron presupuestos CAPEX
               </CardContent>
             </Card>
+          ) : displayedCompanyGroups.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                No hay contratos con líneas No Autorizado por un monto mayor a 0
+              </CardContent>
+            </Card>
           ) : (
-            companyGroups.map(({ company, contracts }) => {
+            displayedCompanyGroups.map(({ company, contracts }) => {
               const stats = companyClasificacionStats[company];
               const currentUF = ufValue || 0;
               return (
@@ -640,7 +672,7 @@ export default function CapexDashboard() {
                           <Card>
                             <CollapsibleTrigger asChild>
                               <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                                <div className="grid grid-cols-[24px_auto_200px_140px_1fr_32px] items-center gap-3">
+                                <div className="grid grid-cols-[24px_auto_200px_140px_1fr_64px] items-center gap-3">
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
@@ -680,7 +712,7 @@ export default function CapexDashboard() {
                                       <span className="text-muted-foreground text-sm">$0</span>
                                     )}
                                   </div>
-                                  <div onClick={(e) => e.stopPropagation()}>
+                                  <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -694,6 +726,15 @@ export default function CapexDashboard() {
                                       ) : (
                                         <Download className="h-4 w-4" />
                                       )}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      title="Ir al contrato"
+                                      onClick={() => navigate(`/contracts/${contractId}?section=capex&returnTo=capex`)}
+                                    >
+                                      <ExternalLink className="h-4 w-4" />
                                     </Button>
                                   </div>
                                 </div>
