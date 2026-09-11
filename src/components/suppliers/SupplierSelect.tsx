@@ -9,6 +9,21 @@ import { Plus, ArrowRightLeft, Landmark } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 
+// Entidades públicas comunes en obras/permisos -- atajos para completar
+// (el usuario igual puede escribir cualquier otro nombre libremente).
+const PUBLIC_ENTITY_PRESETS = [
+  "Municipalidad",
+  "Serviu",
+  "MOP",
+  "DOM",
+  "Seremi",
+  "SEC",
+  "SISS",
+  "MINVU",
+  "Bomberos",
+  "Vialidad",
+];
+
 interface SupplierSelectProps {
   value: string | null;
   onChange: (supplierId: string | null, supplierName: string | null) => void;
@@ -98,6 +113,12 @@ export const SupplierSelect = ({
       setShowPublicEntityForm(true);
       return;
     }
+    if (val === "__freetext__") {
+      // Reabre el mismo cuadro para poder corregir el nombre ya ingresado.
+      setPublicEntityName(externalSupplierName || "");
+      setShowPublicEntityForm(true);
+      return;
+    }
 
     const supplier = suppliers.find(s => s.id === val);
     onChange(val, supplier?.name || null);
@@ -116,7 +137,12 @@ export const SupplierSelect = ({
   };
 
   // If we have an external supplier name but no ID, try to find the matching supplier
-  const resolvedValue = value || (externalSupplierName ? suppliers.find(s => s.name === externalSupplierName)?.id : null);
+  const matchedSupplierId = externalSupplierName ? suppliers.find(s => s.name === externalSupplierName)?.id : null;
+  // Nombre libre sin proveedor vinculado (p. ej. "Entidad Pública" o data
+  // histórica sin match) -- no hay id, así que se muestra como opción
+  // sintética para que el trigger no quede en blanco.
+  const isFreeTextName = !value && !!externalSupplierName && !matchedSupplierId;
+  const resolvedValue = value || matchedSupplierId || (isFreeTextName ? "__freetext__" : null);
 
   const renderSupplierLabel = (supplier: SupplierOption) => (
     <span className="flex items-center gap-1">
@@ -133,6 +159,7 @@ export const SupplierSelect = ({
     { value: "none", label: "Sin proveedor" },
     { value: "public_entity", label: "Entidad Pública", icon: <Landmark className="h-3.5 w-3.5" /> },
     { value: "new", label: "Nuevo Proveedor", icon: <Plus className="h-3.5 w-3.5" /> },
+    ...(isFreeTextName ? [{ value: "__freetext__", label: externalSupplierName! }] : []),
     ...suppliers.map((supplier) => ({
       value: supplier.id,
       label: supplier.name,
@@ -164,6 +191,11 @@ export const SupplierSelect = ({
               <Landmark className="h-3 w-3" />
               Entidad Pública
             </span>
+          ) : option.value === "__freetext__" ? (
+            <span className="flex items-center gap-1">
+              <Landmark className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="truncate">{option.label}</span>
+            </span>
           ) : (
             option.icon
           )
@@ -175,16 +207,35 @@ export const SupplierSelect = ({
           <DialogHeader>
             <DialogTitle>Entidad Pública</DialogTitle>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="public-entity-name">Nombre (municipalidad, ministerio, SEC, Seremi, etc.)</Label>
-            <Input
-              id="public-entity-name"
-              value={publicEntityName}
-              onChange={(e) => setPublicEntityName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSavePublicEntity(); }}
-              placeholder="Ej: Municipalidad de Peñalolén"
-              autoFocus
-            />
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="public-entity-name">Nombre (municipalidad, ministerio, SEC, Seremi, etc.)</Label>
+              <Input
+                id="public-entity-name"
+                value={publicEntityName}
+                onChange={(e) => setPublicEntityName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSavePublicEntity(); }}
+                placeholder="Ej: Municipalidad de Peñalolén"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">O elige una y completa el detalle</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {PUBLIC_ENTITY_PRESETS.map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setPublicEntityName(preset)}
+                  >
+                    {preset}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPublicEntityForm(false)}>Cancelar</Button>

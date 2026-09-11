@@ -1304,10 +1304,11 @@ export const OCRequestsList = ({
                   <Label>Proveedor *</Label>
                   <SupplierSelect
                     value={newRequestForm.supplier_id}
-                    onChange={(id, name) => setNewRequestForm(prev => ({ 
-                      ...prev, 
-                      supplier_id: id, 
-                      supplier_name: name 
+                    supplierName={newRequestForm.supplier_name}
+                    onChange={(id, name) => setNewRequestForm(prev => ({
+                      ...prev,
+                      supplier_id: id,
+                      supplier_name: name
                     }))}
                   />
                 </div>

@@ -1329,10 +1329,11 @@ export const CentralizedOrderCreator = ({
                   <Label>Proveedor{(mode === "request" || budgetType === "capex") ? " *" : ""}</Label>
                   <SupplierSelect
                     value={formData.supplier_id}
-                    onChange={(id, name) => setFormData(prev => ({ 
-                      ...prev, 
-                      supplier_id: id, 
-                      supplier_name: name 
+                    supplierName={formData.supplier_name}
+                    onChange={(id, name) => setFormData(prev => ({
+                      ...prev,
+                      supplier_id: id,
+                      supplier_name: name
                     }))}
                   />
                 </div>

@@ -479,6 +479,7 @@ export const OCRequestDialog = ({
               <Label>Proveedor *</Label>
               <SupplierSelect
                 value={form.supplier_id}
+                supplierName={form.supplier_name}
                 onChange={handleSupplierChange}
               />
             </div>
