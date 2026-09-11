@@ -1,12 +1,18 @@
 import { supabase } from "@/integrations/supabase/client";
 import { listSavedIsochrones, normalizeIsochroneName, type SavedIsochroneSummary } from "./client";
 
-// Trae coordenadas (centerLat/centerLng) desde las isócronas guardadas en
-// Geochile Compass y las compara contra contract_addresses.lat/lng de cada
-// contrato Vigente, matcheando por nombre (mismo normalizador que usa
-// AssignIsochroneDialog). No es un match por Id -- por eso las que ya tienen
-// coordenada y difieren de Geochile quedan como "conflict" para que un
-// admin decida caso a caso, en vez de sobrescribirlas solas.
+// Trae coordenadas de dos fuentes y las compara contra
+// contract_addresses.lat/lng de cada contrato Vigente:
+// - maintenance_locations.contract_id -- match EXACTO (el punto del mapa de
+//   rutas de mantención ya viene vinculado a un contrato por Id), se usa con
+//   prioridad cuando existe.
+// - Isócronas guardadas en Geochile Compass -- match por nombre (mismo
+//   normalizador que usa AssignIsochroneDialog), como respaldo cuando el
+//   contrato no tiene un punto de mantención vinculado.
+// Ninguna de las dos es un match por Id 100% infalible (mantención requiere
+// que alguien lo haya asociado antes a mano; Geochile es por nombre) -- por
+// eso las que ya tienen coordenada y difieren quedan como "conflict" para
+// que un admin decida caso a caso, en vez de sobrescribirlas solas.
 
 export interface CoordinateSyncRow {
   contractId: string;
@@ -15,6 +21,7 @@ export interface CoordinateSyncRow {
   currentLng: number | null;
   geoLat: number | null;
   geoLng: number | null;
+  geoSource: "mantencion" | "geochile" | null;
   status: "missing" | "conflict" | "match" | "unmatched";
 }
 
@@ -43,15 +50,33 @@ export async function fetchCoordinateSyncRows(): Promise<CoordinateSyncResult> {
     .eq("status", "firmado");
   if (error) throw error;
 
+  const contractIds = (contracts || []).map((c: any) => c.id);
+  const byContractIdFromMantencion = new Map<string, { lat: number; lng: number }>();
+  if (contractIds.length > 0) {
+    const { data: maintenanceLocations } = await supabase
+      .from("maintenance_locations")
+      .select("contract_id, lat, lng")
+      .in("contract_id", contractIds);
+    (maintenanceLocations || []).forEach((l: any) => {
+      if (l.contract_id && l.lat != null && l.lng != null && !byContractIdFromMantencion.has(l.contract_id)) {
+        byContractIdFromMantencion.set(l.contract_id, { lat: l.lat, lng: l.lng });
+      }
+    });
+  }
+
   const rows: CoordinateSyncRow[] = (contracts || []).map((c: any) => {
-    const geo = byNormName.get(normalizeIsochroneName(c.name));
+    const fromMantencion = byContractIdFromMantencion.get(c.id);
+    const fromGeochile = byNormName.get(normalizeIsochroneName(c.name));
+    // El punto de mantención ya viene vinculado por Id -- tiene prioridad
+    // sobre el match por nombre de Geochile.
+    const geo = fromMantencion || fromGeochile;
+    const geoSource: CoordinateSyncRow["geoSource"] = fromMantencion ? "mantencion" : fromGeochile ? "geochile" : null;
     const addr = c.contract_addresses?.[0];
     const currentLat = addr?.lat ?? null;
     const currentLng = addr?.lng ?? null;
 
-    // Sin match por nombre en Geochile Compass -- no se puede completar sola,
-    // pero antes se descartaba en silencio sin avisar. Ahora queda visible
-    // para asignarla a mano (puede que el nombre de la isócrona sea distinto).
+    // Sin match en ninguna de las dos fuentes -- antes se descartaba en
+    // silencio sin avisar. Ahora queda visible para asignarla a mano.
     if (!geo) {
       return {
         contractId: c.id,
@@ -60,6 +85,7 @@ export async function fetchCoordinateSyncRows(): Promise<CoordinateSyncResult> {
         currentLng,
         geoLat: null,
         geoLng: null,
+        geoSource: null,
         status: "unmatched" as const,
       };
     }
@@ -81,6 +107,7 @@ export async function fetchCoordinateSyncRows(): Promise<CoordinateSyncResult> {
       currentLng,
       geoLat: geo.lat,
       geoLng: geo.lng,
+      geoSource,
       status,
     };
   });
