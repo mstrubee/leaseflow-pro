@@ -13,6 +13,9 @@ interface SupplierSelectProps {
   categoryId?: string | null;
   disabled?: boolean;
   supplierName?: string | null;
+  /** Texto del trigger cuando no hay valor -- por defecto "Proveedor". Para
+   *  líneas madre con hijas de distinto proveedor, pasar "Varios". */
+  placeholder?: string;
   /** When true, internal-transfer suppliers (e.g. Grupo Planet) are hidden.
    *  Use in OC / OC-Request / Invoice flows where transfers don't apply. */
   excludeInternalTransfer?: boolean;
@@ -38,6 +41,7 @@ export const SupplierSelect = ({
   supplierName: externalSupplierName,
   excludeInternalTransfer = false,
   triggerClassName = "h-6 w-36 text-xs",
+  placeholder = "Proveedor",
 }: SupplierSelectProps) => {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,7 +128,7 @@ export const SupplierSelect = ({
         value={resolvedValue || ""}
         onValueChange={handleSupplierChange}
         options={options}
-        placeholder="Proveedor"
+        placeholder={placeholder}
         searchPlaceholder="Buscar proveedor..."
         emptyMessage="No se encontró ningún proveedor."
         disabled={disabled || loading}
