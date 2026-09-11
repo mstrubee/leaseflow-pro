@@ -748,6 +748,27 @@ const BudgetLineItemInner = ({
     };
   }, [isParent, line.children, templatePricesMap, ufValue, internalTransferSupplierIds]);
 
+  // Línea madre: si sus hijas (a cualquier profundidad) tienen más de un
+  // proveedor distinto entre ellas, el badge de proveedor de la madre debe
+  // mostrar "Varios" en vez de un proveedor puntual -- ver también
+  // handleSupplierChange, que sigue permitiendo elegir uno para propagarlo a
+  // todas las hijas.
+  const hasMultipleChildSuppliers = useMemo(() => {
+    if (!isParent) return false;
+    const supplierIds = new Set<string>();
+    const walk = (items: BudgetLine[]) => {
+      items.forEach(item => {
+        if (item.children && item.children.length > 0) {
+          walk(item.children);
+          return;
+        }
+        if (item.supplier_id) supplierIds.add(item.supplier_id);
+      });
+    };
+    walk(line.children || []);
+    return supplierIds.size > 1;
+  }, [isParent, line.children]);
+
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
     if (qty <= 0 || price <= 0) return 0;
@@ -1594,16 +1615,17 @@ const BudgetLineItemInner = ({
           {/* Supplier dropdown - for all lines (parent and leaf) */}
           {!effectiveReadOnly && (
             <SupplierSelect
-              value={line.supplier_id || null}
+              value={hasMultipleChildSuppliers ? null : (line.supplier_id || null)}
               onChange={handleSupplierChange}
               templateLineId={line.template_line_id}
               categoryId={line.category_id || parentCategoryId}
               disabled={effectiveReadOnly}
+              placeholder={hasMultipleChildSuppliers ? "Varios" : "Proveedor"}
             />
           )}
-          {effectiveReadOnly && !compactView && line.supplier_name && (
+          {effectiveReadOnly && !compactView && (hasMultipleChildSuppliers || line.supplier_name) && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
-              {line.supplier_name}
+              {hasMultipleChildSuppliers ? "Varios" : line.supplier_name}
             </span>
           )}
           {isInternalTransfer && (
