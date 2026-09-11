@@ -1039,6 +1039,7 @@ export const OCRequestViewDialog = ({
                     <Label>Proveedor</Label>
                     <SupplierSelect
                       value={supplierId}
+                      supplierName={supplierName}
                       onChange={(id, name) => {
                         setSupplierId(id);
                         setSupplierName(name);

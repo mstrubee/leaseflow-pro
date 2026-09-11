@@ -388,6 +388,7 @@ export function CapexOCRequiredDialog({
                 <Label>Proveedor *</Label>
                 <SupplierSelect
                   value={supplierId}
+                  supplierName={supplierName}
                   onChange={(id, name) => { setSupplierId(id); setSupplierName(name); }}
                   triggerClassName="w-full h-9 text-sm"
                 />

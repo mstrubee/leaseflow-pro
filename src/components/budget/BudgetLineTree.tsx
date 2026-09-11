@@ -1623,6 +1623,7 @@ const BudgetLineItemInner = ({
           {!effectiveReadOnly && (
             <SupplierSelect
               value={hasMultipleChildSuppliers ? null : (commonChildSupplierId ?? line.supplier_id ?? null)}
+              supplierName={hasMultipleChildSuppliers ? null : (commonChildSupplierName ?? line.supplier_name ?? null)}
               onChange={handleSupplierChange}
               templateLineId={line.template_line_id}
               categoryId={line.category_id || parentCategoryId}

@@ -548,6 +548,7 @@ export const ConvertOCRequestDialog = ({
               <Label>Proveedor</Label>
               <SupplierSelect
                 value={supplierId || request.supplier_id}
+                supplierName={supplierName || request.supplier_name}
                 onChange={(id, name) => {
                   setSupplierId(id);
                   setSupplierName(name);

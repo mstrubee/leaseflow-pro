@@ -304,7 +304,7 @@ export const QuotationsManager = ({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Proveedor *</Label>
-              <SupplierSelect value={form.supplier_id} onChange={handleSupplierChange} />
+              <SupplierSelect value={form.supplier_id} supplierName={form.supplier_name} onChange={handleSupplierChange} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
