@@ -338,6 +338,14 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     supplier_name: string | null;
     request_date: string;
   }[]>([]);
+  const [lineDetailsRequirements, setLineDetailsRequirements] = useState<{
+    quotation_number: string;
+    amount_uf: number;
+    amount_clp: number;
+    supplier_name: string | null;
+    quotation_date: string;
+    converted: boolean;
+  }[]>([]);
   const [loadingLineDetails, setLoadingLineDetails] = useState(false);
   
   // Global expand/collapse state
@@ -1783,12 +1791,18 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       // Además del vínculo directo budget_line_id, una OC/solicitud puede estar
       // asignada a esta línea vía las tablas puente (asignación a múltiples
       // líneas) — hay que incluir ambos casos o "Ver OC/Fact." queda incompleto.
+      // El monto de esas filas puente es el que corresponde a ESTA línea (el
+      // total de la OC/solicitud se reparte entre varias) — a diferencia del
+      // monto total en purchase_orders/oc_requests, que es el de todas las
+      // líneas juntas.
       const [{ data: poJunction }, { data: reqJunction }] = await Promise.all([
-        supabase.from("purchase_order_budget_lines").select("purchase_order_id").eq("budget_line_id", budgetLineId),
-        supabase.from("oc_budget_lines").select("oc_request_id").eq("budget_line_id", budgetLineId),
+        supabase.from("purchase_order_budget_lines").select("purchase_order_id, amount_uf").eq("budget_line_id", budgetLineId),
+        supabase.from("oc_budget_lines").select("oc_request_id, amount_uf").eq("budget_line_id", budgetLineId),
       ]);
       const junctionPoIds = Array.from(new Set((poJunction || []).map(r => r.purchase_order_id).filter(Boolean)));
       const junctionReqIds = Array.from(new Set((reqJunction || []).map(r => r.oc_request_id).filter(Boolean)));
+      const lineUfByPoId = new Map((poJunction || []).filter(r => r.purchase_order_id).map(r => [r.purchase_order_id as string, r.amount_uf || 0]));
+      const lineUfByReqId = new Map((reqJunction || []).filter(r => r.oc_request_id).map(r => [r.oc_request_id as string, r.amount_uf || 0]));
 
       // Fetch OCs for this budget line (directo + vía tabla puente)
       const ocsBaseQuery = supabase
@@ -1810,7 +1824,44 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         ? await requestsBaseQuery.or(`budget_line_id.eq.${budgetLineId},id.in.(${junctionReqIds.join(",")})`)
         : await requestsBaseQuery.eq("budget_line_id", budgetLineId);
 
-      setLineDetailsRequests((requests || []) as any);
+      // Si la solicitud está repartida entre varias líneas, el monto a
+      // mostrar acá es el de ESTA línea (tabla puente), no el total de la
+      // solicitud completa.
+      const requestsForLine = (requests || []).map((req: any) => {
+        const lineUf = lineUfByReqId.get(req.id);
+        if (lineUf === undefined) return req;
+        return { ...req, amount_uf: lineUf, amount_clp: null };
+      });
+      setLineDetailsRequests(requestsForLine as any);
+
+      // Requerimientos de OC (oc_quotations) asociados a esta línea -- el
+      // monto no se reparte entre líneas (todo el grupo comparte el mismo
+      // monto por diseño), así que se muestra tal cual.
+      const { data: quotationRows } = await supabase
+        .from("oc_quotations")
+        .select("quotation_number, amount_uf, amount_clp, supplier_name, quotation_date")
+        .eq("budget_line_id", budgetLineId)
+        .order("quotation_date", { ascending: false });
+      if (quotationRows && quotationRows.length > 0) {
+        const quotationNumbers = quotationRows.map((r: any) => r.quotation_number);
+        const { data: convertedReqs } = await (supabase as any)
+          .from("oc_requests")
+          .select("source_quotation_number")
+          .in("source_quotation_number", quotationNumbers);
+        const convertedSet = new Set((convertedReqs || []).map((r: any) => r.source_quotation_number).filter(Boolean));
+        setLineDetailsRequirements(
+          quotationRows.map((r: any) => ({
+            quotation_number: r.quotation_number,
+            amount_uf: r.amount_uf || 0,
+            amount_clp: r.amount_clp || 0,
+            supplier_name: r.supplier_name ?? null,
+            quotation_date: r.quotation_date,
+            converted: convertedSet.has(r.quotation_number),
+          }))
+        );
+      } else {
+        setLineDetailsRequirements([]);
+      }
 
       // For each OC, fetch invoices and credit notes
       const ocsWithDetails = await Promise.all(
@@ -1827,8 +1878,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
             .eq("purchase_order_id", oc.id)
             .order("credit_note_date", { ascending: false });
 
+          // Si la OC está repartida entre varias líneas, el monto a mostrar
+          // acá es el de ESTA línea (tabla puente), no el total de la OC.
+          const lineUf = lineUfByPoId.get(oc.id);
           return {
             ...oc,
+            ...(lineUf !== undefined ? { amount_uf: lineUf, amount_clp: null } : {}),
             invoices: invoices || [],
             credit_notes: creditNotes || [],
           };
@@ -2624,12 +2679,38 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
               <Loader2 className="h-6 w-6 animate-spin" />
               <span className="ml-2">Cargando...</span>
             </div>
-          ) : lineDetailsOCs.length === 0 && lineDetailsRequests.length === 0 ? (
+          ) : lineDetailsOCs.length === 0 && lineDetailsRequests.length === 0 && lineDetailsRequirements.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No hay órdenes de compra ni solicitudes asociadas a esta línea.</p>
             </div>
           ) : (
             <div className="space-y-4">
+              {/* OC Requirements Section (Requerimientos de OC) */}
+              {lineDetailsRequirements.length > 0 && (
+                <div className="border rounded-lg p-4 space-y-2 bg-orange-50/50 dark:bg-orange-950/20">
+                  <h4 className="font-medium text-sm text-orange-700 dark:text-orange-300">
+                    Requerimientos de OC ({lineDetailsRequirements.length})
+                  </h4>
+                  {lineDetailsRequirements.map((req) => (
+                    <div key={req.quotation_number} className="flex items-center justify-between text-sm p-2 bg-background rounded">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs">{req.quotation_number}</span>
+                        <Badge variant={req.converted ? "default" : "secondary"}
+                          className={req.converted ? "bg-green-500" : "bg-yellow-500"}>
+                          {req.converted ? "Convertido" : "Pendiente"}
+                        </Badge>
+                      </div>
+                      <span className="font-mono text-right">
+                        {formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}
+                        <span className="text-muted-foreground font-normal ml-1">
+                          (UF {req.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* OC Requests Section */}
               {lineDetailsRequests.length > 0 && (
                 <div className="border rounded-lg p-4 space-y-2 bg-purple-50/50 dark:bg-purple-950/20">
@@ -2645,12 +2726,17 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                           {req.status === "converted" ? "Convertida" : "Pendiente"}
                         </Badge>
                       </div>
-                      <span className="font-mono">{formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}</span>
+                      <span className="font-mono text-right">
+                        {formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}
+                        <span className="text-muted-foreground font-normal ml-1">
+                          (UF {req.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        </span>
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
-              
+
               {/* OCs Section */}
               {lineDetailsOCs.map((oc) => {
                 const totalInvoicedClp = oc.invoices.reduce((sum, inv) => sum + (inv.amount_clp || Math.round(convertUFToPesos(inv.amount_uf))), 0);
@@ -2667,8 +2753,13 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}</span>
-                        <Badge 
+                        <span className="text-sm font-medium">
+                          {formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}
+                          <span className="text-muted-foreground font-normal ml-1">
+                            (UF {oc.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </span>
+                        </span>
+                        <Badge
                           variant={
                             oc.status === "cerrada" ? "default" : 
                             oc.status === "descuadrada" ? "destructive" : 
