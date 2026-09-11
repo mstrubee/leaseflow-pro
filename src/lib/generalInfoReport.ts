@@ -1,15 +1,16 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { format, addMonths, parseISO } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 
 /**
  * "Información General Grupo Planet" -- reporte descargable/subible desde
- * /admin con la tipificación de todos los locales. Combina datos que ya
- * existen en la plataforma (empresa, dirección, coordenadas, superficies,
- * estados de contrato) con datos que no tenían dónde guardarse -- para esos
- * se usa el mismo mecanismo de "campos personalizados" que ya usa CEBE/
- * Código (contract_custom_fields/contract_custom_field_values), en vez de
- * agregar columnas nuevas a la base de datos.
+ * /admin con la tipificación de todos los locales VIGENTES (status =
+ * 'firmado'). Combina datos que ya existen en la plataforma (empresa,
+ * dirección, coordenadas, superficies, estados de contrato) con datos que
+ * no tenían dónde guardarse -- para esos se usa el mismo mecanismo de
+ * "campos personalizados" que ya usa CEBE/Código
+ * (contract_custom_fields/contract_custom_field_values), en vez de agregar
+ * columnas nuevas a la base de datos.
  *
  * El archivo se puede volver a subir: sobrescribe en la DB los campos que
  * vinieron de custom fields y las coordenadas (lat/lng). Los datos
@@ -83,6 +84,32 @@ async function ensureCustomFieldDefs(): Promise<Record<FieldKey, string>> {
   return idByKey;
 }
 
+// Ofuscación reversible del Id de contrato -- no es un secreto criptográfico
+// real (corre en el navegador), solo evita que alguien lea o edite el UUID a
+// simple vista al abrir el Excel. La columna además queda oculta.
+const ID_OBFUSCATION_KEY = "GPlanet-Locales-2026";
+
+function obfuscateId(id: string): string {
+  let out = "";
+  for (let i = 0; i < id.length; i++) {
+    out += String.fromCharCode(id.charCodeAt(i) ^ ID_OBFUSCATION_KEY.charCodeAt(i % ID_OBFUSCATION_KEY.length));
+  }
+  return btoa(out);
+}
+
+function deobfuscateId(token: string): string | null {
+  try {
+    const raw = atob(token.trim());
+    let out = "";
+    for (let i = 0; i < raw.length; i++) {
+      out += String.fromCharCode(raw.charCodeAt(i) ^ ID_OBFUSCATION_KEY.charCodeAt(i % ID_OBFUSCATION_KEY.length));
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 interface ContractRow {
   id: string;
   name: string;
@@ -124,13 +151,13 @@ function defaultTipologia(name: string): string {
 }
 
 function defaultEstadoRed(contract: ContractRow): string {
-  if (contract.status === "en_negociacion") return "En Proyecto";
   if (contract.obra_status === "construccion") return "En Construcción";
   if (contract.operation_status === "cerrado") return "En Cierre";
   return "Operativo";
 }
 
-export const HEADERS = [
+// Columna A (Id) va oculta y cifrada -- el resto queda visible.
+const HEADERS = [
   "Id",
   "CEBE",
   "Código",
@@ -157,6 +184,52 @@ export const HEADERS = [
   "Horario de Funcionamiento",
 ] as const;
 
+const COL_WIDTHS: Record<number, number> = {
+  2: 12, // CEBE
+  3: 12, // Código
+  4: 22, // Empresa
+  5: 30, // Nombre del punto
+  6: 30, // Dirección
+  7: 16, // Comuna
+  8: 16, // Región
+  9: 13, // Latitud
+  10: 13, // Longitud
+  11: 14, // Tenencia
+  12: 16, // Vencimiento
+  13: 26, // Restricciones de Arriendo
+  14: 16, // Estado Red
+  15: 16, // Tipología
+  16: 18, // Restricción de Uso
+  17: 26, // Detalle Restricción
+  18: 16, // Superficie Edificada
+  19: 16, // Superficie Terreno
+  20: 16, // Terreno Utilizado
+  21: 18, // Terreno Vacante
+  22: 18, // Capacidad Ociosa
+  23: 14, // Atiende Público
+  24: 20, // Horario de Funcionamiento
+};
+
+const COL = {
+  superficieTerreno: "S",
+  terrenoUtilizado: "T",
+  terrenoVacante: "U",
+} as const;
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 export async function downloadGeneralInfoExcel(): Promise<void> {
   const fieldIds = await ensureCustomFieldDefs();
 
@@ -169,6 +242,7 @@ export async function downloadGeneralInfoExcel(): Promise<void> {
        contract_versions(effective_date, duration_months, is_current)`
     )
     .is("deleted_at", null)
+    .eq("status", "firmado") // Solo contratos Vigentes
     .order("name");
   if (error) throw error;
 
@@ -190,53 +264,106 @@ export async function downloadGeneralInfoExcel(): Promise<void> {
     return valueByContractAndField.get(`${contractId}:${fieldId}`) ?? "";
   };
 
-  const rows = (contracts || []).map((c: any) => {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Locales", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  const headerRow = ws.getRow(1);
+  HEADERS.forEach((h, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = h;
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+  });
+  headerRow.height = 32;
+
+  ws.columns = HEADERS.map((_, i) => ({ width: COL_WIDTHS[i + 1] || 16 }));
+  ws.getColumn(1).hidden = true; // Id -- oculta y cifrada
+
+  const dataRows = (contracts || []).map((c: any) => {
     const contract = c as ContractRow;
     const companies = (contract.contract_companies || []).map((cc) => cc.companies?.name).filter(Boolean).join(", ");
     const address = contract.contract_addresses?.[0];
     const endDate = calculateEndDate(contract);
 
-    const terrenoUtilizadoRaw = getValue(contract.id, "terrenoUtilizado");
-    const terrenoUtilizado = parseFloat(terrenoUtilizadoRaw.replace(",", "."));
-    const superficieTerreno = contract.superficie_terreno || 0;
-    const terrenoVacante =
-      !isNaN(terrenoUtilizado) && superficieTerreno > 0 ? Math.max(0, superficieTerreno - terrenoUtilizado) : "";
-
-    return [
-      contract.id,
-      getValue(contract.id, "cebe"),
-      getValue(contract.id, "codigo"),
-      companies,
-      contract.name,
-      address ? `${address.street || ""} ${address.number || ""}`.trim() : "",
-      address?.commune || "",
-      address?.region || "",
-      address?.lat ?? "",
-      address?.lng ?? "",
-      getValue(contract.id, "tenencia") || "Arrendado",
-      endDate ? format(endDate, "dd/MM/yyyy") : "",
-      getValue(contract.id, "restriccionesArriendo"),
-      getValue(contract.id, "estadoRed") || defaultEstadoRed(contract),
-      getValue(contract.id, "tipologia") || defaultTipologia(contract.name),
-      getValue(contract.id, "restriccionUso") || "Sin información",
-      getValue(contract.id, "detalleRestriccion"),
-      contract.superficie_edificada_local || "",
-      contract.superficie_terreno || "",
-      terrenoUtilizadoRaw,
-      terrenoVacante,
-      getValue(contract.id, "capacidadOciosa"),
-      getValue(contract.id, "atiendePublico") || "Sí",
-      getValue(contract.id, "horarioFuncionamiento") || "9:15 a 19:30",
-    ];
+    return {
+      contract,
+      values: [
+        obfuscateId(contract.id),
+        getValue(contract.id, "cebe"),
+        getValue(contract.id, "codigo"),
+        companies,
+        contract.name,
+        address ? `${address.street || ""} ${address.number || ""}`.trim() : "",
+        address?.commune || "",
+        address?.region || "",
+        address?.lat ?? "",
+        address?.lng ?? "",
+        getValue(contract.id, "tenencia") || "Arrendado",
+        endDate ? format(endDate, "dd/MM/yyyy") : "",
+        getValue(contract.id, "restriccionesArriendo"),
+        getValue(contract.id, "estadoRed") || defaultEstadoRed(contract),
+        getValue(contract.id, "tipologia") || defaultTipologia(contract.name),
+        getValue(contract.id, "restriccionUso") || "Sin información",
+        getValue(contract.id, "detalleRestriccion"),
+        contract.superficie_edificada_local || "",
+        contract.superficie_terreno || "",
+        getValue(contract.id, "terrenoUtilizado"),
+        null, // Terreno Vacante -- fórmula, se llena abajo
+        getValue(contract.id, "capacidadOciosa"),
+        getValue(contract.id, "atiendePublico") || "Sí",
+        getValue(contract.id, "horarioFuncionamiento") || "9:15 a 19:30",
+      ],
+    };
   });
 
-  const wsData = [HEADERS as unknown as string[], ...rows];
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws["!cols"] = HEADERS.map((h) => ({ wch: h === "Id" ? 38 : Math.max(14, Math.min(34, h.length + 4)) }));
+  dataRows.forEach(({ values }, idx) => {
+    const rowNumber = idx + 2;
+    const row = ws.getRow(rowNumber);
+    values.forEach((v, colIdx) => {
+      row.getCell(colIdx + 1).value = v as any;
+    });
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Locales");
-  XLSX.writeFile(wb, `informacion_general_locales_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+    // Terreno Vacante = Superficie Terreno - Terreno Utilizado (en blanco si
+    // no hay Terreno Utilizado cargado). Fórmula real: se recalcula sola en
+    // Excel si se edita cualquiera de las dos columnas.
+    const vacanteCell = row.getCell(21);
+    vacanteCell.value = {
+      formula: `IF(${COL.terrenoUtilizado}${rowNumber}="","",MAX(0,${COL.superficieTerreno}${rowNumber}-${COL.terrenoUtilizado}${rowNumber}))`,
+    } as any;
+
+    row.getCell(9).numFmt = "0.0000000";
+    row.getCell(10).numFmt = "0.0000000";
+    row.getCell(18).numFmt = "#,##0";
+    row.getCell(19).numFmt = "#,##0";
+    row.getCell(20).numFmt = "#,##0";
+    row.getCell(21).numFmt = "#,##0";
+
+    if (idx % 2 === 1) {
+      for (let c = 2; c <= HEADERS.length; c++) {
+        row.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+      }
+    }
+  });
+
+  ws.autoFilter = {
+    from: { row: 1, column: 2 },
+    to: { row: 1, column: HEADERS.length },
+  };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  triggerDownload(blob, `informacion_general_locales_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
 }
 
 export interface GeneralInfoUploadResult {
@@ -247,12 +374,16 @@ export interface GeneralInfoUploadResult {
 
 export async function uploadGeneralInfoExcel(file: File): Promise<GeneralInfoUploadResult> {
   const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-  if (rows.length === 0) return { updated: 0, skipped: 0, errors: [] };
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const ws = wb.worksheets[0];
+  if (!ws) return { updated: 0, skipped: 0, errors: [] };
 
-  const header = rows[0].map((h) => String(h).trim());
+  const headerRow = ws.getRow(1);
+  const header: string[] = [];
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    header[colNumber] = String(cell.value ?? "").trim();
+  });
   const colIndex = (label: string) => header.indexOf(label);
   const idxId = colIndex("Id");
   if (idxId === -1) {
@@ -280,28 +411,36 @@ export async function uploadGeneralInfoExcel(file: File): Promise<GeneralInfoUpl
   const result: GeneralInfoUploadResult = { updated: 0, skipped: 0, errors: [] };
   const fieldValueUpserts: { contract_id: string; field_id: string; field_value: string }[] = [];
 
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const contractId = (row[idxId] || "").toString().trim();
+  const cellText = (row: ExcelJS.Row, idx: number): string => {
+    if (idx === -1) return "";
+    const v = row.getCell(idx).value;
+    if (v === null || v === undefined) return "";
+    if (typeof v === "object" && "result" in (v as any)) return String((v as any).result ?? "");
+    return String(v).trim();
+  };
+
+  for (let rowNumber = 2; rowNumber <= ws.rowCount; rowNumber++) {
+    const row = ws.getRow(rowNumber);
+    const idToken = cellText(row, idxId);
+    const contractId = idToken ? deobfuscateId(idToken) : null;
     if (!contractId) {
       result.skipped++;
       continue;
     }
 
-    // Coordenadas -- se actualizan directo en contract_addresses.
     if (idxLat !== -1 && idxLng !== -1) {
-      const latRaw = (row[idxLat] || "").toString().trim();
-      const lngRaw = (row[idxLng] || "").toString().trim();
+      const latRaw = cellText(row, idxLat).replace(",", ".");
+      const lngRaw = cellText(row, idxLng).replace(",", ".");
       if (latRaw && lngRaw) {
-        const lat = parseFloat(latRaw.replace(",", "."));
-        const lng = parseFloat(lngRaw.replace(",", "."));
+        const lat = parseFloat(latRaw);
+        const lng = parseFloat(lngRaw);
         if (!isNaN(lat) && !isNaN(lng)) {
           const { error } = await supabase
             .from("contract_addresses")
             .update({ lat, lng, geocode_source: "manual" })
             .eq("contract_id", contractId);
           if (error) {
-            result.errors.push({ row: i + 1, message: `Coordenadas: ${error.message}` });
+            result.errors.push({ row: rowNumber, message: `Coordenadas: ${error.message}` });
           }
         }
       }
@@ -310,7 +449,7 @@ export async function uploadGeneralInfoExcel(file: File): Promise<GeneralInfoUpl
     for (const { key, label } of colFieldMap) {
       const idx = colIndex(label);
       if (idx === -1) continue;
-      const value = (row[idx] || "").toString();
+      const value = cellText(row, idx);
       const fieldId = fieldIds[key];
       if (!fieldId) continue;
       fieldValueUpserts.push({ contract_id: contractId, field_id: fieldId, field_value: value });
