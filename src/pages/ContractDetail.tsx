@@ -200,10 +200,12 @@ const ContractDetail = () => {
   const isValidBackTo = (v?: string | null) =>
     !!v && v.startsWith("/contracts") && !/^\/contracts\/[^/?#]+/.test(v);
 
-  // Check if coming from purchase-orders dashboard
+  // Check if coming from purchase-orders or capex dashboard
   const resolvedBackTo = returnToParam === "purchase-orders"
     ? "/purchase-orders"
-    : isValidBackTo(backTo)
+    : returnToParam === "capex"
+      ? "/capex"
+      : isValidBackTo(backTo)
       ? backTo
       : isValidBackTo(storedBackTo)
         ? storedBackTo!
