@@ -748,25 +748,29 @@ const BudgetLineItemInner = ({
     };
   }, [isParent, line.children, templatePricesMap, ufValue, internalTransferSupplierIds]);
 
-  // Línea madre: si sus hijas (a cualquier profundidad) tienen más de un
-  // proveedor distinto entre ellas, el badge de proveedor de la madre debe
-  // mostrar "Varios" en vez de un proveedor puntual -- ver también
-  // handleSupplierChange, que sigue permitiendo elegir uno para propagarlo a
-  // todas las hijas.
-  const hasMultipleChildSuppliers = useMemo(() => {
-    if (!isParent) return false;
-    const supplierIds = new Set<string>();
+  // Línea madre: el badge de proveedor responde al de sus hijas (a
+  // cualquier profundidad), no al propio de la madre -- si todas comparten
+  // un mismo proveedor, se muestra ese; si hay más de uno distinto, "Varios".
+  // Ver también handleSupplierChange, que sigue permitiendo elegir uno desde
+  // la madre para propagarlo a todas las hijas.
+  const { hasMultipleChildSuppliers, commonChildSupplierId, commonChildSupplierName } = useMemo(() => {
+    if (!isParent) return { hasMultipleChildSuppliers: false, commonChildSupplierId: null as string | null, commonChildSupplierName: null as string | null };
+    const suppliers = new Map<string, string | null>();
     const walk = (items: BudgetLine[]) => {
       items.forEach(item => {
         if (item.children && item.children.length > 0) {
           walk(item.children);
           return;
         }
-        if (item.supplier_id) supplierIds.add(item.supplier_id);
+        if (item.supplier_id) suppliers.set(item.supplier_id, item.supplier_name ?? null);
       });
     };
     walk(line.children || []);
-    return supplierIds.size > 1;
+    if (suppliers.size === 1) {
+      const [id, name] = [...suppliers.entries()][0];
+      return { hasMultipleChildSuppliers: false, commonChildSupplierId: id, commonChildSupplierName: name };
+    }
+    return { hasMultipleChildSuppliers: suppliers.size > 1, commonChildSupplierId: null, commonChildSupplierName: null };
   }, [isParent, line.children]);
 
   // Calculate amount only if both quantity and price are > 0
@@ -1612,10 +1616,13 @@ const BudgetLineItemInner = ({
             );
           })()}
 
-          {/* Supplier dropdown - for all lines (parent and leaf) */}
+          {/* Supplier dropdown - for all lines (parent and leaf). En líneas
+              madre, el proveedor efectivo lo determinan las hijas: si
+              comparten uno solo, se muestra ese (aunque la madre no tenga
+              uno propio asignado); si hay más de uno, "Varios". */}
           {!effectiveReadOnly && (
             <SupplierSelect
-              value={hasMultipleChildSuppliers ? null : (line.supplier_id || null)}
+              value={hasMultipleChildSuppliers ? null : (commonChildSupplierId ?? line.supplier_id ?? null)}
               onChange={handleSupplierChange}
               templateLineId={line.template_line_id}
               categoryId={line.category_id || parentCategoryId}
@@ -1623,9 +1630,9 @@ const BudgetLineItemInner = ({
               placeholder={hasMultipleChildSuppliers ? "Varios" : "Proveedor"}
             />
           )}
-          {effectiveReadOnly && !compactView && (hasMultipleChildSuppliers || line.supplier_name) && (
+          {effectiveReadOnly && !compactView && (hasMultipleChildSuppliers || commonChildSupplierName || line.supplier_name) && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
-              {hasMultipleChildSuppliers ? "Varios" : line.supplier_name}
+              {hasMultipleChildSuppliers ? "Varios" : (commonChildSupplierName ?? line.supplier_name)}
             </span>
           )}
           {isInternalTransfer && (

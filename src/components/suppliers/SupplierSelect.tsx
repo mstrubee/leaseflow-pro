@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SearchableSelect, SearchableSelectOption } from "@/components/ui/searchable-select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, ArrowRightLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Plus, ArrowRightLeft, Landmark } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 
@@ -46,6 +49,8 @@ export const SupplierSelect = ({
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showPublicEntityForm, setShowPublicEntityForm] = useState(false);
+  const [publicEntityName, setPublicEntityName] = useState("");
 
   useEffect(() => {
     loadSuppliers();
@@ -88,6 +93,11 @@ export const SupplierSelect = ({
       onChange(null, null);
       return;
     }
+    if (val === "public_entity") {
+      setPublicEntityName("");
+      setShowPublicEntityForm(true);
+      return;
+    }
 
     const supplier = suppliers.find(s => s.id === val);
     onChange(val, supplier?.name || null);
@@ -96,6 +106,13 @@ export const SupplierSelect = ({
   const handleNewSupplierSaved = () => {
     setShowForm(false);
     loadSuppliers();
+  };
+
+  const handleSavePublicEntity = () => {
+    const name = publicEntityName.trim();
+    if (!name) return;
+    onChange(null, name);
+    setShowPublicEntityForm(false);
   };
 
   // If we have an external supplier name but no ID, try to find the matching supplier
@@ -114,6 +131,7 @@ export const SupplierSelect = ({
 
   const options: SearchableSelectOption[] = [
     { value: "none", label: "Sin proveedor" },
+    { value: "public_entity", label: "Entidad Pública", icon: <Landmark className="h-3.5 w-3.5" /> },
     { value: "new", label: "Nuevo Proveedor", icon: <Plus className="h-3.5 w-3.5" /> },
     ...suppliers.map((supplier) => ({
       value: supplier.id,
@@ -141,11 +159,39 @@ export const SupplierSelect = ({
             </span>
           ) : option.value === "none" ? (
             <span className="text-muted-foreground">Sin proveedor</span>
+          ) : option.value === "public_entity" ? (
+            <span className="flex items-center gap-1">
+              <Landmark className="h-3 w-3" />
+              Entidad Pública
+            </span>
           ) : (
             option.icon
           )
         }
       />
+
+      <Dialog open={showPublicEntityForm} onOpenChange={setShowPublicEntityForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Entidad Pública</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="public-entity-name">Nombre (municipalidad, ministerio, SEC, Seremi, etc.)</Label>
+            <Input
+              id="public-entity-name"
+              value={publicEntityName}
+              onChange={(e) => setPublicEntityName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSavePublicEntity(); }}
+              placeholder="Ej: Municipalidad de Peñalolén"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPublicEntityForm(false)}>Cancelar</Button>
+            <Button onClick={handleSavePublicEntity} disabled={!publicEntityName.trim()}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
