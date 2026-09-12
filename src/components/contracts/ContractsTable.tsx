@@ -154,6 +154,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [ventaMinValue, setVentaMinValue] = useState<string>("");
   const [ventaMaxValue, setVentaMaxValue] = useState<string>("");
   const [comiteGPStatuses, setComiteGPStatuses] = useState<ComiteGPStatus[]>([]);
+  const [capexClasificacionTypes, setCapexClasificacionTypes] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
@@ -190,6 +191,19 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     };
     loadComiteStatuses();
   }, [comiteGPStatusesProp]);
+
+  // Load "Tipos de CAPEX" (administrables desde Admin > Estados y Categorías)
+  useEffect(() => {
+    const loadCapexTypes = async () => {
+      const { data } = await (supabase as any)
+        .from("capex_clasificacion_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      if (data) setCapexClasificacionTypes(data);
+    };
+    loadCapexTypes();
+  }, []);
 
   // Load CAPEX totals for current year (mirrors BudgetDashboard logic)
   useEffect(() => {
@@ -316,6 +330,21 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
     };
     return colorMap[status?.color || 'gray'] || colorMap.gray;
+  };
+
+  const getCapexClasificacionColor = (name: string | null) => {
+    const colorMap: Record<string, string> = {
+      green: 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
+      red: 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
+      blue: 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200',
+      yellow: 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200',
+      purple: 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200',
+      orange: 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200',
+      gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
+    };
+    if (!name) return colorMap.gray;
+    const type = capexClasificacionTypes.find(t => t.name === name);
+    return colorMap[type?.color || 'gray'] || colorMap.gray;
   };
 
   const isNegociacionView = !isFirmadoView && contracts.some(c => c.status === 'en_negociacion');
@@ -960,30 +989,20 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         value={contract.clasificacion || ''} 
                         onValueChange={(value) => handleClasificacionChange(contract.id, value)}
                       >
-                        <SelectTrigger 
-                          className={`h-7 text-xs w-[100px] font-medium ${
-                            contract.clasificacion === 'nuevo' 
-                              ? 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200' 
-                              : contract.clasificacion === 'reemplazo'
-                                ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                                : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
-                          }`}
+                        <SelectTrigger
+                          className={`h-7 text-xs w-[100px] font-medium ${getCapexClasificacionColor(contract.clasificacion || null)}`}
                         >
                           <SelectValue placeholder="Seleccionar" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="nuevo" className="text-xs">
-                            <span className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                              Nuevo
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="reemplazo" className="text-xs">
-                            <span className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                              Reemplazo
-                            </span>
-                          </SelectItem>
+                          {capexClasificacionTypes.map((t) => (
+                            <SelectItem key={t.id} value={t.name} className="text-xs">
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full bg-${t.color || 'gray'}-500`} />
+                                {t.name}
+                              </span>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </TableCell>
