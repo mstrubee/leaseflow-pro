@@ -97,9 +97,14 @@ export default function CapexDashboard() {
         .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
-        // Se excluyen los contratos marcados como "Rechazada" en Comité GP
-        // (el resto, de cualquier estado y año, se sigue mostrando).
+        // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
+        // estado del contrato.
         .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada", { foreignTable: "contracts" })
+        // Los contratos "En Negociación" además solo se muestran si el
+        // Comité GP los aceptó ("Aceptada") -- otros estados de comité
+        // (Buscar, En Revisión, etc.) quedan afuera. El resto de los estados
+        // de contrato (ej. Firmado) se muestra igual, sin depender de esto.
+        .or("status.neq.en_negociacion,comite_gp_status.eq.Aceptada", { foreignTable: "contracts" })
         .order("year", { ascending: false });
 
       if (error) throw error;
