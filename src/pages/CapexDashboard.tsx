@@ -78,12 +78,27 @@ export default function CapexDashboard() {
   // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
   // aprobándolas de forma más ágil, expandiendo uno a uno.
   const [onlyUnauthorized, setOnlyUnauthorized] = useState(false);
+  // "Tipos de CAPEX" administrables desde Admin > Estados y Categorías --
+  // el "name" de cada uno es el mismo texto que se guarda en
+  // contracts.clasificacion.
+  const [clasificacionTypes, setClasificacionTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
     }
   }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_clasificacion_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      setClasificacionTypes(data || []);
+    })();
+  }, []);
 
   useEffect(() => {
     if (user && ufValue > 0) loadBudgets();
@@ -571,9 +586,14 @@ export default function CapexDashboard() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todas">Clasificación</SelectItem>
-              <SelectItem value="nuevo">Nuevo</SelectItem>
-              <SelectItem value="reemplazo">Reemplazo</SelectItem>
-              <SelectItem value="regularizacion">Regularización</SelectItem>
+              {clasificacionTypes.map((t) => (
+                <SelectItem key={t.id} value={t.name}>
+                  <span className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full bg-${t.color}-500`} />
+                    {t.name}
+                  </span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
@@ -693,9 +713,14 @@ export default function CapexDashboard() {
                                         <SelectValue placeholder="Clasificar..." />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="nuevo">Nuevo</SelectItem>
-                                        <SelectItem value="reemplazo">Reemplazo</SelectItem>
-                                        <SelectItem value="regularizacion">Regularización</SelectItem>
+                                        {clasificacionTypes.map((t) => (
+                                          <SelectItem key={t.id} value={t.name}>
+                                            <span className="flex items-center gap-2">
+                                              <span className={`w-2 h-2 rounded-full bg-${t.color}-500`} />
+                                              {t.name}
+                                            </span>
+                                          </SelectItem>
+                                        ))}
                                       </SelectContent>
                                     </Select>
                                   </div>

@@ -29,6 +29,7 @@ import { BusinessCaseAdminConfig } from "@/components/admin/BusinessCaseAdminCon
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { GeneralInfoManager } from "@/components/admin/GeneralInfoManager";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
+import { CapexClasificacionTypeManager } from "@/components/admin/CapexClasificacionTypeManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
 import { GanttOverviewStatusManager } from "@/components/admin/GanttOverviewStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
@@ -975,6 +976,15 @@ const AdminPanel = () => {
               defaultOpen={false}
             >
               <GanttOverviewStatusManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Tipos de CAPEX"
+              description="Define los tipos para clasificar contratos en CAPEX (Nuevo, Reemplazo, Regularización, etc.) y su color de badge"
+              icon={<Building2 className="h-5 w-5 text-blue-600" />}
+              defaultOpen={false}
+            >
+              <CapexClasificacionTypeManager />
             </CollapsibleCard>
           </div>
         </CollapsibleCard>
