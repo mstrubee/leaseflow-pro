@@ -97,6 +97,9 @@ export default function CapexDashboard() {
         .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
+        // Se excluyen los contratos marcados como "Rechazada" en Comité GP
+        // (el resto, de cualquier estado y año, se sigue mostrando).
+        .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada", { foreignTable: "contracts" })
         .order("year", { ascending: false });
 
       if (error) throw error;
