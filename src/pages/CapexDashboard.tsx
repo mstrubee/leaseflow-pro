@@ -21,6 +21,7 @@ import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
 import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
 import { exportCapexToExcel } from "@/components/budget/CapexExcelExport";
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 
 interface ContractBudget {
   contract_id: string;
@@ -68,8 +69,10 @@ export default function CapexDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
-  const [companyFilter, setCompanyFilter] = useState("todas");
-  const [clasificacionFilter, setClasificacionFilter] = useState("todas");
+  // Filtros multi-selección: array vacío = "todas".
+  const [companyFilter, setCompanyFilter] = useState<string[]>([]);
+  const [clasificacionFilter, setClasificacionFilter] = useState<string[]>([]);
+  const [avanceStatusFilter, setAvanceStatusFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   
@@ -181,14 +184,15 @@ export default function CapexDashboard() {
     return budgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter !== "todas") {
-        const hasCompany = b.company_names.some(n => n.toLowerCase().includes(companyFilter.toLowerCase()));
+      if (companyFilter.length > 0) {
+        const hasCompany = b.company_names.some(n => companyFilter.some(cf => n.toLowerCase().includes(cf.toLowerCase())));
         if (!hasCompany) return false;
       }
-      if (clasificacionFilter !== "todas" && b.clasificacion !== clasificacionFilter) return false;
+      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
     });
-  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter]);
+  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
   // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
   const contractGroups = React.useMemo(() => {
@@ -275,11 +279,12 @@ export default function CapexDashboard() {
   }, [companyGroups, onlyUnauthorized, authByContract]);
 
 
-  // Per-company clasificacion stats
+  // Per-company clasificacion stats -- dinámico según los "Tipos de CAPEX"
+  // administrados en Admin (ya no son 3 fijos).
   const companyClasificacionStats = React.useMemo(() => {
-    const stats: Record<string, { nuevo: number; reemplazo: number; regularizacion: number; cNuevo: number; cReemplazo: number; cRegularizacion: number }> = {};
+    const stats: Record<string, Record<string, { uf: number; count: number }>> = {};
     companyGroups.forEach(({ company, contracts }) => {
-      const s = { nuevo: 0, reemplazo: 0, regularizacion: 0, cNuevo: 0, cReemplazo: 0, cRegularizacion: 0 };
+      const s: Record<string, { uf: number; count: number }> = {};
       const seen = new Set<string>();
       contracts.forEach(([contractId, cBudgets]) => {
         if (seen.has(contractId)) return;
@@ -287,9 +292,10 @@ export default function CapexDashboard() {
         const bd = authByContract[contractId];
         const uf = bd ? bd.authorized + bd.unauthorized : 0;
         const cl = cBudgets[0].clasificacion;
-        if (cl === "nuevo") { s.nuevo += uf; s.cNuevo++; }
-        else if (cl === "reemplazo") { s.reemplazo += uf; s.cReemplazo++; }
-        else if (cl === "regularizacion") { s.regularizacion += uf; s.cRegularizacion++; }
+        if (!cl) return;
+        if (!s[cl]) s[cl] = { uf: 0, count: 0 };
+        s[cl].uf += uf;
+        s[cl].count++;
       });
       stats[company] = s;
     });
@@ -307,26 +313,56 @@ export default function CapexDashboard() {
 
   const contractsWithCapex = listedContracts;
 
-  // Totals by clasificacion (solo locales con CAPEX > 0)
-  const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
-    let nuevo = 0, reemplazo = 0, regularizacion = 0;
-    let cNuevo = 0, cReemplazo = 0, cRegularizacion = 0;
+  // Total CAPEX por empresa (Autoplanet / Agroplanet / Otros) -- respeta los
+  // filtros activos, igual que totalCapexUF.
+  const companyBucketTotals = React.useMemo(() => {
+    const buckets: Record<"Autoplanet" | "Agroplanet" | "Otros", { uf: number; count: number }> = {
+      Autoplanet: { uf: 0, count: 0 },
+      Agroplanet: { uf: 0, count: 0 },
+      Otros: { uf: 0, count: 0 },
+    };
+    companyGroups.forEach(({ company, contracts }) => {
+      const bucket = company === "Autoplanet" ? "Autoplanet" : company === "Agroplanet" ? "Agroplanet" : "Otros";
+      contracts.forEach(([contractId]) => {
+        const bd = authByContract[contractId];
+        if (bd) buckets[bucket].uf += bd.authorized + bd.unauthorized;
+        buckets[bucket].count++;
+      });
+    });
+    return buckets;
+  }, [companyGroups, authByContract]);
+
+  // Totales por "Tipo de CAPEX" -- dinámico según los tipos administrados en
+  // Admin > Estados y Categorías > Tipos de CAPEX (ya no son 3 fijos).
+  const clasificacionTotals = React.useMemo(() => {
+    const result: Record<string, { uf: number; count: number }> = {};
     contractsWithCapex.forEach(([contractId, cBudgets]) => {
       const bd = authByContract[contractId];
       const effectiveUF = bd ? (bd.authorized + bd.unauthorized) : cBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
       const cl = cBudgets[0].clasificacion;
-      if (cl === "nuevo") { nuevo += effectiveUF; cNuevo++; }
-      else if (cl === "reemplazo") { reemplazo += effectiveUF; cReemplazo++; }
-      else if (cl === "regularizacion") { regularizacion += effectiveUF; cRegularizacion++; }
+      if (!cl) return;
+      if (!result[cl]) result[cl] = { uf: 0, count: 0 };
+      result[cl].uf += effectiveUF;
+      result[cl].count++;
     });
-    return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion, countNuevo: cNuevo, countReemplazo: cReemplazo, countRegularizacion: cRegularizacion };
+    return result;
   }, [contractsWithCapex, authByContract]);
 
   const handleExportPPT = async () => {
     try {
       toast.info("Generando presentación...");
+      // El PPT sigue esperando un desglose fijo nuevo/reemplazo/regularización
+      // (estructura de export legada, no dinámica todavía) -- se completa por
+      // nombre desde los totales dinámicos, y si el nombre del tipo cambió o
+      // no existe entre los "Tipos de CAPEX" configurados, queda en 0.
+      const pick = (map: Record<string, { uf: number; count: number }> | undefined, name: string) =>
+        map?.[name] || { uf: 0, count: 0 };
+
       const pptCompanyGroups = companyGroups.map(({ company, contracts }) => {
         const stats = companyClasificacionStats[company];
+        const nuevo = pick(stats, "nuevo");
+        const reemplazo = pick(stats, "reemplazo");
+        const regularizacion = pick(stats, "regularizacion");
         return {
           company,
           contracts: contracts.map(([contractId, cBudgets]) => {
@@ -347,27 +383,31 @@ export default function CapexDashboard() {
             };
           }),
           totals: {
-            nuevo: stats?.nuevo || 0,
-            reemplazo: stats?.reemplazo || 0,
-            regularizacion: stats?.regularizacion || 0,
-            cNuevo: stats?.cNuevo || 0,
-            cReemplazo: stats?.cReemplazo || 0,
-            cRegularizacion: stats?.cRegularizacion || 0,
-            total: (stats?.nuevo || 0) + (stats?.reemplazo || 0) + (stats?.regularizacion || 0),
+            nuevo: nuevo.uf,
+            reemplazo: reemplazo.uf,
+            regularizacion: regularizacion.uf,
+            cNuevo: nuevo.count,
+            cReemplazo: reemplazo.count,
+            cRegularizacion: regularizacion.count,
+            total: nuevo.uf + reemplazo.uf + regularizacion.uf,
           },
         };
       });
+
+      const totalNuevo = pick(clasificacionTotals, "nuevo");
+      const totalReemplazo = pick(clasificacionTotals, "reemplazo");
+      const totalRegularizacion = pick(clasificacionTotals, "regularizacion");
 
       await generateCapexPPT({
         year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
         ufValue: ufValue || 0,
         totalCapexUF,
-        totalNuevoUF,
-        totalReemplazoUF,
-        totalRegularizacionUF,
-        countNuevo,
-        countReemplazo,
-        countRegularizacion,
+        totalNuevoUF: totalNuevo.uf,
+        totalReemplazoUF: totalReemplazo.uf,
+        totalRegularizacionUF: totalRegularizacion.uf,
+        countNuevo: totalNuevo.count,
+        countReemplazo: totalReemplazo.count,
+        countRegularizacion: totalRegularizacion.count,
         totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
       });
@@ -535,70 +575,72 @@ export default function CapexDashboard() {
           </div>
         </div>
 
-        {/* Summary Cards Row 1 */}
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos) */}
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
               <DollarSign className="h-8 w-8 text-primary" />
               <div>
-                <p className="text-xs text-muted-foreground">Total CAPEX (UF)</p>
-                <p className="text-xl font-bold">{fmtUF(totalCapexUF)} UF</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <DollarSign className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">Total CAPEX (CLP)</p>
+                <p className="text-xs text-muted-foreground">Total CAPEX ({contractsWithCapex.length} {contractsWithCapex.length === 1 ? "local" : "locales"})</p>
                 <p className="text-xl font-bold">{formatCLP(totalCapexUF * (ufValue || 0))}</p>
+                <p className="text-xs text-muted-foreground">({fmtUF(totalCapexUF)} UF)</p>
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <DollarSign className="h-8 w-8 text-primary" />
+              <Building2 className="h-8 w-8 text-chart-1" />
               <div>
-                <p className="text-xs text-muted-foreground">Locales con CAPEX</p>
-                <p className="text-xl font-bold">{contractsWithCapex.length}</p>
+                <p className="text-xs text-muted-foreground">CAPEX Autoplanet ({companyBucketTotals.Autoplanet.count})</p>
+                <p className="text-lg font-bold">{formatCLP(companyBucketTotals.Autoplanet.uf * (ufValue || 0))}</p>
+                <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals.Autoplanet.uf)} UF)</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Building2 className="h-8 w-8 text-chart-2" />
+              <div>
+                <p className="text-xs text-muted-foreground">CAPEX Agroplanet ({companyBucketTotals.Agroplanet.count})</p>
+                <p className="text-lg font-bold">{formatCLP(companyBucketTotals.Agroplanet.uf * (ufValue || 0))}</p>
+                <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals.Agroplanet.uf)} UF)</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Building2 className="h-8 w-8 text-chart-3" />
+              <div>
+                <p className="text-xs text-muted-foreground">CAPEX Otros ({companyBucketTotals.Otros.count})</p>
+                <p className="text-lg font-bold">{formatCLP(companyBucketTotals.Otros.uf * (ufValue || 0))}</p>
+                <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals.Otros.uf)} UF)</p>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Summary Cards Row 2: Clasificacion */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Building2 className="h-8 w-8 text-chart-1" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Nuevos ({countNuevo} {countNuevo === 1 ? "local" : "locales"})</p>
-                <p className="text-lg font-bold">{fmtUF(totalNuevoUF)} UF</p>
-                <p className="text-xs text-muted-foreground">{formatCLP(totalNuevoUF * (ufValue || 0))}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <RefreshCw className="h-8 w-8 text-chart-2" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Reemplazo ({countReemplazo} {countReemplazo === 1 ? "local" : "locales"})</p>
-                <p className="text-lg font-bold">{fmtUF(totalReemplazoUF)} UF</p>
-                <p className="text-xs text-muted-foreground">{formatCLP(totalReemplazoUF * (ufValue || 0))}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <FileCheck className="h-8 w-8 text-chart-3" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Regularización ({countRegularizacion} {countRegularizacion === 1 ? "local" : "locales"})</p>
-                <p className="text-lg font-bold">{fmtUF(totalRegularizacionUF)} UF</p>
-                <p className="text-xs text-muted-foreground">{formatCLP(totalRegularizacionUF * (ufValue || 0))}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Summary Cards Row 2: por Tipo de CAPEX -- dinámico según Admin > Tipos de CAPEX */}
+        {Object.keys(clasificacionTotals).length > 0 && (
+          <div className="grid gap-4 md:grid-cols-4">
+            {clasificacionTypes
+              .filter((t) => clasificacionTotals[t.name])
+              .map((t) => {
+                const totals = clasificacionTotals[t.name];
+                return (
+                  <Card key={t.id}>
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground truncate">CAPEX {t.name} ({totals.count} {totals.count === 1 ? "local" : "locales"})</p>
+                        <p className="text-lg font-bold">{fmtUF(totals.uf)} UF</p>
+                        <p className="text-xs text-muted-foreground">{formatCLP(totals.uf * (ufValue || 0))}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
@@ -622,32 +664,38 @@ export default function CapexDashboard() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={companyFilter} onValueChange={setCompanyFilter}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Empresa" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Empresa</SelectItem>
-              <SelectItem value="autoplanet">Autoplanet</SelectItem>
-              <SelectItem value="agroplanet">Agroplanet</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={clasificacionFilter} onValueChange={setClasificacionFilter}>
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="Clasificación" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Clasificación</SelectItem>
-              {clasificacionTypes.map((t) => (
-                <SelectItem key={t.id} value={t.name}>
-                  <span className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full bg-${t.color}-500`} />
-                    {t.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            className="w-[160px]"
+            placeholder="Empresa"
+            value={companyFilter}
+            onChange={setCompanyFilter}
+            options={[
+              { value: "autoplanet", label: "Autoplanet" },
+              { value: "agroplanet", label: "Agroplanet" },
+            ]}
+          />
+          <MultiSelectFilter
+            className="w-[190px]"
+            placeholder="Clasificación"
+            value={clasificacionFilter}
+            onChange={setClasificacionFilter}
+            options={clasificacionTypes.map((t) => ({
+              value: t.name,
+              label: t.name,
+              colorDotClassName: `bg-${t.color}-500`,
+            }))}
+          />
+          <MultiSelectFilter
+            className="w-[190px]"
+            placeholder="Estado Avance"
+            value={avanceStatusFilter}
+            onChange={setAvanceStatusFilter}
+            options={avanceStatusTypes.map((t) => ({
+              value: t.name,
+              label: t.name,
+              colorDotClassName: `bg-${t.color}-500`,
+            }))}
+          />
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Ordenar por" />
@@ -687,44 +735,25 @@ export default function CapexDashboard() {
                     <Badge variant="secondary" className="text-xs">{contracts.length} {contracts.length === 1 ? "local" : "locales"}</Badge>
                   </div>
 
-                  {/* Per-company clasificacion cards */}
+                  {/* Per-company clasificacion cards -- dinámico según Tipos de CAPEX */}
                   <div className="grid gap-3 md:grid-cols-3">
-                    {stats.cNuevo > 0 && (
-                      <Card>
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <Building2 className="h-6 w-6 text-chart-1 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Nuevos ({stats.cNuevo})</p>
-                            <p className="text-sm font-bold">{fmtUF(stats.nuevo)} UF</p>
-                            <p className="text-xs text-muted-foreground">{formatCLP(stats.nuevo * currentUF)}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {stats.cReemplazo > 0 && (
-                      <Card>
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <RefreshCw className="h-6 w-6 text-chart-2 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Reemplazo ({stats.cReemplazo})</p>
-                            <p className="text-sm font-bold">{fmtUF(stats.reemplazo)} UF</p>
-                            <p className="text-xs text-muted-foreground">{formatCLP(stats.reemplazo * currentUF)}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {stats.cRegularizacion > 0 && (
-                      <Card>
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <FileCheck className="h-6 w-6 text-chart-3 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Regularización ({stats.cRegularizacion})</p>
-                            <p className="text-sm font-bold">{fmtUF(stats.regularizacion)} UF</p>
-                            <p className="text-xs text-muted-foreground">{formatCLP(stats.regularizacion * currentUF)}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
+                    {clasificacionTypes
+                      .filter((t) => stats?.[t.name])
+                      .map((t) => {
+                        const s = stats[t.name];
+                        return (
+                          <Card key={t.id}>
+                            <CardContent className="p-3 flex items-center gap-3">
+                              <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
+                              <div className="min-w-0">
+                                <p className="text-xs text-muted-foreground truncate">{t.name} ({s.count})</p>
+                                <p className="text-sm font-bold">{fmtUF(s.uf)} UF</p>
+                                <p className="text-xs text-muted-foreground">{formatCLP(s.uf * currentUF)}</p>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                   </div>
 
                   {/* Contracts list */}
