@@ -26,6 +26,7 @@ interface ContractBudget {
   contract_id: string;
   contract_name: string;
   clasificacion: string | null;
+  capex_avance_status: string | null;
   year: number;
   amount_uf: number;
   budget_id: string;
@@ -82,6 +83,10 @@ export default function CapexDashboard() {
   // el "name" de cada uno es el mismo texto que se guarda en
   // contracts.clasificacion.
   const [clasificacionTypes, setClasificacionTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  // "Estado Avance CAPEX" (En Curso/Terminado/Programado), administrable
+  // desde Admin > Estados y Categorías -- el "name" es el mismo texto que
+  // se guarda en contracts.capex_avance_status.
+  const [avanceStatusTypes, setAvanceStatusTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -101,6 +106,17 @@ export default function CapexDashboard() {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_avance_status_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      setAvanceStatusTypes(data || []);
+    })();
+  }, []);
+
+  useEffect(() => {
     if (user && ufValue > 0) loadBudgets();
   }, [user, ufValue]);
 
@@ -109,7 +125,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
         // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
@@ -129,6 +145,7 @@ export default function CapexDashboard() {
         contract_id: b.contract_id,
         contract_name: b.contracts?.name || "Sin nombre",
         clasificacion: b.contracts?.clasificacion || null,
+        capex_avance_status: b.contracts?.capex_avance_status || null,
         year: b.year,
         amount_uf: b.amount_uf,
         budget_id: b.id,
@@ -432,6 +449,41 @@ export default function CapexDashboard() {
     toast.success("Clasificación actualizada");
   };
 
+  const handleAvanceStatusChange = async (contractId: string, value: string) => {
+    const { error } = await supabase
+      .from("contracts")
+      .update({ capex_avance_status: value } as never)
+      .eq("id", contractId);
+    if (error) {
+      toast.error("Error al actualizar el estado de avance");
+      return;
+    }
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, capex_avance_status: value } : b));
+    toast.success("Estado de avance actualizado");
+  };
+
+  const BADGE_COLOR_MAP: Record<string, string> = {
+    green: 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
+    red: 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
+    blue: 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200',
+    yellow: 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200',
+    purple: 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200',
+    orange: 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200',
+    gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
+  };
+
+  const getClasificacionColor = (name: string | null) => {
+    if (!name) return '';
+    const type = clasificacionTypes.find(t => t.name === name);
+    return BADGE_COLOR_MAP[type?.color || 'gray'] || '';
+  };
+
+  const getAvanceStatusColor = (name: string | null) => {
+    if (!name) return '';
+    const type = avanceStatusTypes.find(t => t.name === name);
+    return BADGE_COLOR_MAP[type?.color || 'gray'] || '';
+  };
+
   if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -681,6 +733,7 @@ export default function CapexDashboard() {
                       const isExpanded = expandedContract === contractId;
                       const contractName = contractBudgets[0].contract_name;
                       const clasificacion = contractBudgets[0].clasificacion;
+                      const avanceStatus = contractBudgets[0].capex_avance_status;
                       const companyNames = contractBudgets[0].company_names;
                       const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
                       const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
@@ -700,7 +753,7 @@ export default function CapexDashboard() {
                           <Card>
                             <CollapsibleTrigger asChild>
                               <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                                <div className="grid grid-cols-[24px_auto_200px_140px_1fr_64px] items-center gap-3">
+                                <div className="grid grid-cols-[24px_auto_200px_190px_190px_1fr_64px] items-center gap-3">
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
@@ -709,14 +762,34 @@ export default function CapexDashboard() {
                                       value={clasificacion || ""}
                                       onValueChange={(val) => handleClasificacionChange(contractId, val)}
                                     >
-                                      <SelectTrigger className="h-7 w-[140px] text-xs">
+                                      <SelectTrigger className={`h-7 w-[180px] text-xs ${getClasificacionColor(clasificacion)}`}>
                                         <SelectValue placeholder="Clasificar..." />
                                       </SelectTrigger>
                                       <SelectContent>
                                         {clasificacionTypes.map((t) => (
                                           <SelectItem key={t.id} value={t.name}>
                                             <span className="flex items-center gap-2">
-                                              <span className={`w-2 h-2 rounded-full bg-${t.color}-500`} />
+                                              <span className={`w-2 h-2 rounded-full bg-${t.color}-500 shrink-0`} />
+                                              {t.name}
+                                            </span>
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
+                                    <Select
+                                      value={avanceStatus || ""}
+                                      onValueChange={(val) => handleAvanceStatusChange(contractId, val)}
+                                    >
+                                      <SelectTrigger className={`h-7 w-[180px] text-xs ${getAvanceStatusColor(avanceStatus)}`}>
+                                        <SelectValue placeholder="Estado avance..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {avanceStatusTypes.map((t) => (
+                                          <SelectItem key={t.id} value={t.name}>
+                                            <span className="flex items-center gap-2">
+                                              <span className={`w-2 h-2 rounded-full bg-${t.color}-500 shrink-0`} />
                                               {t.name}
                                             </span>
                                           </SelectItem>
