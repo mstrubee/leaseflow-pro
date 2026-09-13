@@ -57,6 +57,22 @@ const getEffectiveBudgetTotal = (budget: ContractBudget, breakdown?: AuthBreakdo
   return eff.authorized + eff.unauthorized;
 };
 
+// Mismo agrupamiento "resumido" que usan las cards de empresa (Autoplanet /
+// Agroplanet / Otros -- Grupo Planet y Otra quedan juntos en "Otros"). Se usa
+// tanto para el filtro de Empresa como para las cards, así clickear una card
+// filtra exactamente lo que esa card está mostrando.
+type CompanyBucket = "Autoplanet" | "Agroplanet" | "Otros";
+const getCompanyBucket = (names: string[]): CompanyBucket => {
+  const hasAgroplanet = names.some((n) => n.toLowerCase().includes("agroplanet"));
+  const hasAutoplanet = names.some((n) => n.toLowerCase().includes("autoplanet"));
+  if (hasAutoplanet && !hasAgroplanet) return "Autoplanet";
+  if (hasAgroplanet) return "Agroplanet";
+  return "Otros";
+};
+
+const toggleArrayValue = (arr: string[], value: string): string[] =>
+  arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+
 
 
 export default function CapexDashboard() {
@@ -184,10 +200,7 @@ export default function CapexDashboard() {
     return budgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter.length > 0) {
-        const hasCompany = b.company_names.some(n => companyFilter.some(cf => n.toLowerCase().includes(cf.toLowerCase())));
-        if (!hasCompany) return false;
-      }
+      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
       if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
       if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
@@ -575,9 +588,18 @@ export default function CapexDashboard() {
           </div>
         </div>
 
-        {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos) */}
+        {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos).
+            Todas son clickeables y actúan como filtro acumulativo: clickear una
+            la agrega/quita del filtro correspondiente, sin borrar las demás. */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); } }}
+            title="Ver todo (limpia los filtros de empresa, tipo y estado de avance)"
+            className="cursor-pointer transition-colors hover:bg-muted/50"
+          >
             <CardContent className="p-4 flex items-center gap-3">
               <DollarSign className="h-8 w-8 text-primary" />
               <div>
@@ -587,36 +609,30 @@ export default function CapexDashboard() {
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Building2 className="h-8 w-8 text-chart-1" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Autoplanet ({companyBucketTotals.Autoplanet.count})</p>
-                <p className="text-lg font-bold">{formatCLP(companyBucketTotals.Autoplanet.uf * (ufValue || 0))}</p>
-                <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals.Autoplanet.uf)} UF)</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Building2 className="h-8 w-8 text-chart-2" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Agroplanet ({companyBucketTotals.Agroplanet.count})</p>
-                <p className="text-lg font-bold">{formatCLP(companyBucketTotals.Agroplanet.uf * (ufValue || 0))}</p>
-                <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals.Agroplanet.uf)} UF)</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Building2 className="h-8 w-8 text-chart-3" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Otros ({companyBucketTotals.Otros.count})</p>
-                <p className="text-lg font-bold">{formatCLP(companyBucketTotals.Otros.uf * (ufValue || 0))}</p>
-                <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals.Otros.uf)} UF)</p>
-              </div>
-            </CardContent>
-          </Card>
+          {(["Autoplanet", "Agroplanet", "Otros"] as const).map((bucket, i) => {
+            const active = companyFilter.includes(bucket);
+            const accentClass = i === 0 ? "text-chart-1" : i === 1 ? "text-chart-2" : "text-chart-3";
+            return (
+              <Card
+                key={bucket}
+                role="button"
+                tabIndex={0}
+                onClick={() => setCompanyFilter((prev) => toggleArrayValue(prev, bucket))}
+                onKeyDown={(e) => { if (e.key === "Enter") setCompanyFilter((prev) => toggleArrayValue(prev, bucket)); }}
+                title={`Filtrar por ${bucket}`}
+                className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+              >
+                <CardContent className="p-4 flex items-center gap-3">
+                  <Building2 className={`h-8 w-8 ${accentClass}`} />
+                  <div>
+                    <p className="text-xs text-muted-foreground">CAPEX {bucket} ({companyBucketTotals[bucket].count})</p>
+                    <p className="text-lg font-bold">{formatCLP(companyBucketTotals[bucket].uf * (ufValue || 0))}</p>
+                    <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals[bucket].uf)} UF)</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
         {/* Summary Cards Row 2: por Tipo de CAPEX -- dinámico según Admin > Tipos de CAPEX */}
@@ -626,8 +642,17 @@ export default function CapexDashboard() {
               .filter((t) => clasificacionTotals[t.name])
               .map((t) => {
                 const totals = clasificacionTotals[t.name];
+                const active = clasificacionFilter.includes(t.name);
                 return (
-                  <Card key={t.id}>
+                  <Card
+                    key={t.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
+                    onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                    title={`Filtrar por ${t.name}`}
+                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                  >
                     <CardContent className="p-4 flex items-center gap-3">
                       <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
                       <div className="min-w-0">
@@ -670,8 +695,9 @@ export default function CapexDashboard() {
             value={companyFilter}
             onChange={setCompanyFilter}
             options={[
-              { value: "autoplanet", label: "Autoplanet" },
-              { value: "agroplanet", label: "Agroplanet" },
+              { value: "Autoplanet", label: "Autoplanet" },
+              { value: "Agroplanet", label: "Agroplanet" },
+              { value: "Otros", label: "Otros" },
             ]}
           />
           <MultiSelectFilter
@@ -735,14 +761,24 @@ export default function CapexDashboard() {
                     <Badge variant="secondary" className="text-xs">{contracts.length} {contracts.length === 1 ? "local" : "locales"}</Badge>
                   </div>
 
-                  {/* Per-company clasificacion cards -- dinámico según Tipos de CAPEX */}
+                  {/* Per-company clasificacion cards -- dinámico según Tipos de CAPEX.
+                      Clickeables: mismo filtro de tipo que las cards de arriba (acumulativo). */}
                   <div className="grid gap-3 md:grid-cols-3">
                     {clasificacionTypes
                       .filter((t) => stats?.[t.name])
                       .map((t) => {
                         const s = stats[t.name];
+                        const active = clasificacionFilter.includes(t.name);
                         return (
-                          <Card key={t.id}>
+                          <Card
+                            key={t.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
+                            onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                            title={`Filtrar por ${t.name}`}
+                            className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                          >
                             <CardContent className="p-3 flex items-center gap-3">
                               <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
                               <div className="min-w-0">
