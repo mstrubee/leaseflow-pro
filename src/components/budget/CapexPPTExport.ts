@@ -201,16 +201,20 @@ export async function buildCapexPPTData(year: string, ufValue: number): Promise<
   };
 }
 
-// Colors
-export const PRIMARY = "1E2761";
-export const ACCENT = "DC2626";
+// Mismos colores/tipografía que el Business Case Financiero (ver
+// InformeDirectorioPPT.ts / exportV2.ts) -- para que el PPT de CAPEX,
+// el PPT del Informe Directorio y el PDF del Business Case se vean
+// como un mismo documento.
+export const PRIMARY = "C0003F"; // Maroon
+export const ACCENT = "C21D18"; // Kicker rojo
 export const WHITE = "FFFFFF";
-export const LIGHT_BG = "F8FAFC";
-export const MUTED = "64748B";
-export const DARK = "1E293B";
-const CHART_1 = "2563EB"; // Nuevos
-const CHART_2 = "D97706"; // Reemplazo
-const CHART_3 = "059669"; // Regularización
+export const LIGHT_BG = "FBE4EA"; // Maroon claro
+export const MUTED = "666666";
+export const DARK = "1A1A1A";
+const BORDER = "CCCCCC";
+const CHART_1 = "C0003F"; // Nuevos (maroon)
+const CHART_2 = "C21D18"; // Reemplazo (kicker rojo)
+const CHART_3 = "8C8C8C"; // Regularización (gris)
 
 const fmtUF = (v: number) =>
   v.toLocaleString("es-CL", { maximumFractionDigits: 0 });
@@ -297,7 +301,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     }
 
     const s1 = pres.addSlide();
-    s1.background = { color: PRIMARY };
+    s1.background = { color: ACCENT };
 
     if (logoBase64) {
       s1.addImage({ data: logoBase64, x: 0.5, y: 0.4, w: 2.5, h: 1 });
@@ -309,34 +313,37 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     });
     s1.addText(`Año ${data.year}`, {
       x: 0.5, y: 2.7, w: 9, h: 0.6,
-      fontSize: 24, fontFace: "Arial", color: "CADCFC",
+      fontSize: 24, fontFace: "Arial", color: WHITE,
     });
 
     s1.addShape(SHAPES.LINE, {
       x: 0.5, y: 3.5, w: 3, h: 0,
-      line: { color: ACCENT, width: 3 },
+      line: { color: WHITE, width: 3 },
     });
 
     const today = new Date().toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
     s1.addText(today, {
       x: 0.5, y: 4.0, w: 9, h: 0.4,
-      fontSize: 14, fontFace: "Arial", color: "8899BB",
+      fontSize: 14, fontFace: "Arial", color: "F5C6C4",
     });
   }
 
   // ═══════════ SLIDE 2: Resumen General ═══════════
   let pageNum = 1;
   const s2 = pres.addSlide();
-  s2.background = { color: WHITE };
+  s2.background = { color: "F2F2F2" };
 
-  s2.addText("Resumen General", {
-    x: 0.5, y: 0.3, w: 9, h: 0.6,
-    fontSize: 28, fontFace: "Arial", color: PRIMARY, bold: true, margin: 0,
+  s2.addText("PRESUPUESTO CAPEX", {
+    x: 0.5, y: 0.2, w: 9, h: 0.3,
+    fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
   });
-
+  s2.addText(`Resumen General ${data.year}`, {
+    x: 0.5, y: 0.5, w: 9.2, h: 0.35,
+    fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
+  });
   s2.addShape(SHAPES.LINE, {
-    x: 0.5, y: 0.85, w: 9, h: 0,
-    line: { color: ACCENT, width: 2 },
+    x: 0.5, y: 0.87, w: 9, h: 0,
+    line: { color: BORDER, width: 1 },
   });
 
   // Big total card
@@ -347,7 +354,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
   s2.addText("Inversión Total CAPEX", {
     x: 0.7, y: 1.3, w: 4, h: 0.4,
-    fontSize: 14, fontFace: "Arial", color: "CADCFC",
+    fontSize: 14, fontFace: "Arial", color: "F5C6D0",
   });
 
   s2.addText(`${fmtUF(data.totalCapexUF)} UF`, {
@@ -357,12 +364,12 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
   s2.addText(formatCLP(data.totalCapexUF * data.ufValue), {
     x: 5, y: 1.65, w: 4.3, h: 0.5,
-    fontSize: 22, fontFace: "Arial", color: "CADCFC", align: "right",
+    fontSize: 22, fontFace: "Arial", color: "F5C6D0", align: "right",
   });
 
   s2.addText(`${data.totalLocales} locales`, {
     x: 5, y: 1.3, w: 4.3, h: 0.4,
-    fontSize: 14, fontFace: "Arial", color: "CADCFC", align: "right",
+    fontSize: 14, fontFace: "Arial", color: "F5C6D0", align: "right",
   });
 
   // Classification cards
@@ -430,16 +437,19 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   // ═══════════ SLIDES 3+: Per Company ═══════════
   for (const group of data.companyGroups) {
     const s = pres.addSlide();
-    s.background = { color: WHITE };
+    s.background = { color: "F2F2F2" };
 
-    s.addText(group.company, {
-      x: 0.5, y: 0.3, w: 9, h: 0.6,
-      fontSize: 28, fontFace: "Arial", color: PRIMARY, bold: true, margin: 0,
+    s.addText("PRESUPUESTO CAPEX", {
+      x: 0.5, y: 0.2, w: 9, h: 0.3,
+      fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
     });
-
+    s.addText(group.company, {
+      x: 0.5, y: 0.5, w: 9.2, h: 0.35,
+      fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
+    });
     s.addShape(SHAPES.LINE, {
-      x: 0.5, y: 0.85, w: 9, h: 0,
-      line: { color: ACCENT, width: 2 },
+      x: 0.5, y: 0.87, w: 9, h: 0,
+      line: { color: BORDER, width: 1 },
     });
 
     // Company summary cards
@@ -506,10 +516,14 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     pages.forEach((pageContracts, pageIdx) => {
       const targetSlide = pageIdx === 0 ? s : pres.addSlide();
       if (pageIdx > 0) {
-        targetSlide.background = { color: WHITE };
+        targetSlide.background = { color: "F2F2F2" };
+        targetSlide.addText("PRESUPUESTO CAPEX", {
+          x: 0.5, y: 0.2, w: 9, h: 0.3,
+          fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
+        });
         targetSlide.addText(`${group.company} (cont.)`, {
-          x: 0.5, y: 0.3, w: 9, h: 0.5,
-          fontSize: 22, fontFace: "Arial", color: PRIMARY, bold: true,
+          x: 0.5, y: 0.5, w: 9.2, h: 0.35,
+          fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
         });
       }
 
@@ -538,7 +552,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         const totalCLP = group.contracts.reduce((s, c) => s + c.total_clp, 0);
 
         const totOpts = (align: "left" | "center" | "right" = "right"): PptxGenJS.TextPropsOptions => ({
-          fontSize: 9, fontFace: "Arial", color: WHITE, fill: { color: DARK }, align, bold: true,
+          fontSize: 9, fontFace: "Arial", color: WHITE, fill: { color: PRIMARY }, align, bold: true,
         });
 
         rows.push([
@@ -553,7 +567,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       targetSlide.addTable(rows, {
         x: 0.3, y: tableY, w: 9.4,
         colW: [3.2, 1.5, 1.0, 1.8, 1.9],
-        border: { pt: 0.5, color: "E2E8F0" },
+        border: { pt: 0.5, color: BORDER },
       });
 
       addFooter(targetSlide, pageNum++);
