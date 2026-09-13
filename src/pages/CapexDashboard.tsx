@@ -638,8 +638,8 @@ export default function CapexDashboard() {
                       <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
                       <div className="min-w-0">
                         <p className="text-xs text-muted-foreground truncate">CAPEX {t.name} ({totals.count} {totals.count === 1 ? "local" : "locales"})</p>
-                        <p className="text-lg font-bold">{fmtUF(totals.uf)} UF</p>
-                        <p className="text-xs text-muted-foreground">{formatCLP(totals.uf * (ufValue || 0))}</p>
+                        <p className="text-lg font-bold">{formatCLP(totals.uf * (ufValue || 0))}</p>
+                        <p className="text-xs text-muted-foreground">({fmtUF(totals.uf)} UF)</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -764,8 +764,8 @@ export default function CapexDashboard() {
                               <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
                               <div className="min-w-0">
                                 <p className="text-xs text-muted-foreground truncate">{t.name} ({s.count})</p>
-                                <p className="text-sm font-bold">{fmtUF(s.uf)} UF</p>
-                                <p className="text-xs text-muted-foreground">{formatCLP(s.uf * currentUF)}</p>
+                                <p className="text-sm font-bold">{formatCLP(s.uf * currentUF)}</p>
+                                <p className="text-xs text-muted-foreground">({fmtUF(s.uf)} UF)</p>
                               </div>
                             </CardContent>
                           </Card>
