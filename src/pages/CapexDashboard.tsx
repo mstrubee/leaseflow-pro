@@ -364,18 +364,12 @@ export default function CapexDashboard() {
   const handleExportPPT = async () => {
     try {
       toast.info("Generando presentación...");
-      // El PPT sigue esperando un desglose fijo nuevo/reemplazo/regularización
-      // (estructura de export legada, no dinámica todavía) -- se completa por
-      // nombre desde los totales dinámicos, y si el nombre del tipo cambió o
-      // no existe entre los "Tipos de CAPEX" configurados, queda en 0.
-      const pick = (map: Record<string, { uf: number; count: number }> | undefined, name: string) =>
-        map?.[name] || { uf: 0, count: 0 };
 
       const pptCompanyGroups = companyGroups.map(({ company, contracts }) => {
-        const stats = companyClasificacionStats[company];
-        const nuevo = pick(stats, "nuevo");
-        const reemplazo = pick(stats, "reemplazo");
-        const regularizacion = pick(stats, "regularizacion");
+        const stats = companyClasificacionStats[company] || {};
+        const byType = clasificacionTypes
+          .filter((t) => stats[t.name])
+          .map((t) => ({ name: t.name, color: t.color, uf: stats[t.name].uf, count: stats[t.name].count }));
         return {
           company,
           contracts: contracts.map(([contractId, cBudgets]) => {
@@ -395,32 +389,19 @@ export default function CapexDashboard() {
               uf_m2: superficie > 0 ? totalUf / superficie : 0,
             };
           }),
-          totals: {
-            nuevo: nuevo.uf,
-            reemplazo: reemplazo.uf,
-            regularizacion: regularizacion.uf,
-            cNuevo: nuevo.count,
-            cReemplazo: reemplazo.count,
-            cRegularizacion: regularizacion.count,
-            total: nuevo.uf + reemplazo.uf + regularizacion.uf,
-          },
+          totals: { byType, total: byType.reduce((s, t) => s + t.uf, 0) },
         };
       });
 
-      const totalNuevo = pick(clasificacionTotals, "nuevo");
-      const totalReemplazo = pick(clasificacionTotals, "reemplazo");
-      const totalRegularizacion = pick(clasificacionTotals, "regularizacion");
+      const clasifTotalsArr = clasificacionTypes
+        .filter((t) => clasificacionTotals[t.name])
+        .map((t) => ({ name: t.name, color: t.color, uf: clasificacionTotals[t.name].uf, count: clasificacionTotals[t.name].count }));
 
       await generateCapexPPT({
         year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
         ufValue: ufValue || 0,
         totalCapexUF,
-        totalNuevoUF: totalNuevo.uf,
-        totalReemplazoUF: totalReemplazo.uf,
-        totalRegularizacionUF: totalRegularizacion.uf,
-        countNuevo: totalNuevo.count,
-        countReemplazo: totalReemplazo.count,
-        countRegularizacion: totalRegularizacion.count,
+        clasificacionTotals: clasifTotalsArr,
         totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
       });

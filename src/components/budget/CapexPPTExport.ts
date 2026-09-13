@@ -26,16 +26,21 @@ interface ContractData {
   uf_m2: number;
 }
 
+// Un total por "Tipo de CAPEX" -- dinámico según lo que esté configurado en
+// Admin > Estados y Categorías > Tipos de CAPEX (ya no son 3 fijos
+// "nuevo"/"reemplazo"/"regularizacion").
+export interface ClasificacionTotal {
+  name: string;
+  color: string;
+  uf: number;
+  count: number;
+}
+
 interface CompanyGroup {
   company: string;
   contracts: ContractData[];
   totals: {
-    nuevo: number;
-    reemplazo: number;
-    regularizacion: number;
-    cNuevo: number;
-    cReemplazo: number;
-    cRegularizacion: number;
+    byType: ClasificacionTotal[];
     total: number;
   };
 }
@@ -44,12 +49,7 @@ export interface CapexPPTData {
   year: string;
   ufValue: number;
   totalCapexUF: number;
-  totalNuevoUF: number;
-  totalReemplazoUF: number;
-  totalRegularizacionUF: number;
-  countNuevo: number;
-  countReemplazo: number;
-  countRegularizacion: number;
+  clasificacionTotals: ClasificacionTotal[];
   totalLocales: number;
   companyGroups: CompanyGroup[];
 }
@@ -74,6 +74,13 @@ interface RawBudget {
  * agrupamiento por empresa (Autoplanet/Agroplanet/Grupo Planet/Otra).
  */
 export async function buildCapexPPTData(year: string, ufValue: number): Promise<CapexPPTData> {
+  const { data: typesData } = await (supabase as any)
+    .from("capex_clasificacion_types")
+    .select("id, name, color")
+    .eq("is_active", true)
+    .order("display_order");
+  const clasificacionTypes: Array<{ id: string; name: string; color: string }> = typesData || [];
+
   const { data, error } = await supabase
     .from("contract_budgets")
     .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
@@ -139,12 +146,11 @@ export async function buildCapexPPTData(year: string, ufValue: number): Promise<
     .filter((k) => companyMap.has(k))
     .map((k) => ({ company: k, contracts: companyMap.get(k)! }));
 
-  let totalNuevoUF = 0, totalReemplazoUF = 0, totalRegularizacionUF = 0;
-  let countNuevo = 0, countReemplazo = 0, countRegularizacion = 0;
+  // Totales globales por tipo (para la slide de Resumen General)
+  const globalByType: Record<string, { uf: number; count: number }> = {};
 
   const pptCompanyGroups: CompanyGroup[] = orderedCompanyGroups.map(({ company, contracts }) => {
-    let nuevo = 0, reemplazo = 0, regularizacion = 0;
-    let cNuevo = 0, cReemplazo = 0, cRegularizacion = 0;
+    const companyByType: Record<string, { uf: number; count: number }> = {};
     const seen = new Set<string>();
 
     const contractsData: ContractData[] = contracts.map(([contractId, cBudgets]) => {
@@ -153,9 +159,14 @@ export async function buildCapexPPTData(year: string, ufValue: number): Promise<
       if (!seen.has(contractId)) {
         seen.add(contractId);
         const cl = cBudgets[0].clasificacion;
-        if (cl === "nuevo") { nuevo += totalUf; cNuevo++; }
-        else if (cl === "reemplazo") { reemplazo += totalUf; cReemplazo++; }
-        else if (cl === "regularizacion") { regularizacion += totalUf; cRegularizacion++; }
+        if (cl) {
+          if (!companyByType[cl]) companyByType[cl] = { uf: 0, count: 0 };
+          companyByType[cl].uf += totalUf;
+          companyByType[cl].count++;
+          if (!globalByType[cl]) globalByType[cl] = { uf: 0, count: 0 };
+          globalByType[cl].uf += totalUf;
+          globalByType[cl].count++;
+        }
       }
       return {
         contract_id: contractId,
@@ -171,31 +182,28 @@ export async function buildCapexPPTData(year: string, ufValue: number): Promise<
       };
     });
 
-    totalNuevoUF += nuevo; totalReemplazoUF += reemplazo; totalRegularizacionUF += regularizacion;
-    countNuevo += cNuevo; countReemplazo += cReemplazo; countRegularizacion += cRegularizacion;
+    const byType: ClasificacionTotal[] = clasificacionTypes
+      .filter((t) => companyByType[t.name])
+      .map((t) => ({ name: t.name, color: t.color, uf: companyByType[t.name].uf, count: companyByType[t.name].count }));
 
     return {
       company,
       contracts: contractsData,
-      totals: {
-        nuevo, reemplazo, regularizacion, cNuevo, cReemplazo, cRegularizacion,
-        total: nuevo + reemplazo + regularizacion,
-      },
+      totals: { byType, total: byType.reduce((s, t) => s + t.uf, 0) },
     };
   });
 
   const totalCapexUF = Object.values(authByContract).reduce((s, v) => s + v, 0);
 
+  const clasificacionTotals: ClasificacionTotal[] = clasificacionTypes
+    .filter((t) => globalByType[t.name])
+    .map((t) => ({ name: t.name, color: t.color, uf: globalByType[t.name].uf, count: globalByType[t.name].count }));
+
   return {
     year,
     ufValue,
     totalCapexUF,
-    totalNuevoUF,
-    totalReemplazoUF,
-    totalRegularizacionUF,
-    countNuevo,
-    countReemplazo,
-    countRegularizacion,
+    clasificacionTotals,
     totalLocales: contractGroups.length,
     companyGroups: pptCompanyGroups,
   };
@@ -212,9 +220,20 @@ export const LIGHT_BG = "FBE4EA"; // Maroon claro
 export const MUTED = "666666";
 export const DARK = "1A1A1A";
 const BORDER = "CCCCCC";
-const CHART_1 = "C0003F"; // Nuevos (maroon)
-const CHART_2 = "C21D18"; // Reemplazo (kicker rojo)
-const CHART_3 = "8C8C8C"; // Regularización (gris)
+
+// Mismos 7 colores administrables que usan CapexClasificacionTypeManager /
+// CapexAvanceStatusManager (green/red/blue/yellow/purple/orange/gray), acá
+// en hex para pptxgenjs en vez de clases Tailwind.
+const COLOR_HEX: Record<string, string> = {
+  green: "22C55E",
+  red: "EF4444",
+  blue: "3B82F6",
+  yellow: "EAB308",
+  purple: "A855F7",
+  orange: "F97316",
+  gray: "8C8C8C",
+};
+const colorHex = (c?: string) => COLOR_HEX[c || "gray"] || COLOR_HEX.gray;
 
 const fmtUF = (v: number) =>
   v.toLocaleString("es-CL", { maximumFractionDigits: 0 });
@@ -222,12 +241,10 @@ const fmtUF = (v: number) =>
 const fmtUF2 = (v: number) =>
   v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const clasificacionLabel = (c: string | null) => {
-  if (c === "nuevo") return "Nuevo";
-  if (c === "reemplazo") return "Reemplazo";
-  if (c === "regularizacion") return "Regularización";
-  return "Sin clasificar";
-};
+// El nombre de la clasificación es el mismo texto libre que se guarda en
+// contracts.clasificacion (el "name" de cualquier "Tipo de CAPEX" que exista
+// en Admin en el momento en que se asignó) -- no hay 3 valores fijos.
+const clasificacionLabel = (c: string | null) => c && c.trim() ? c : "Sin clasificar";
 
 export async function loadImageAsBase64(src: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -372,19 +389,18 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     fontSize: 14, fontFace: "Arial", color: "F5C6D0", align: "right",
   });
 
-  // Classification cards
-  const classCards = [
-    { label: "Nuevos", count: data.countNuevo, uf: data.totalNuevoUF, color: CHART_1 },
-    { label: "Reemplazo", count: data.countReemplazo, uf: data.totalReemplazoUF, color: CHART_2 },
-    { label: "Regularización", count: data.countRegularizacion, uf: data.totalRegularizacionUF, color: CHART_3 },
-  ];
+  // Classification cards -- dinámico según los "Tipos de CAPEX" que tengan
+  // algún local asignado (ya no son 3 fijos).
+  const classCards = data.clasificacionTotals.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color) }));
+  const cardGap = 0.15;
+  const cardW = classCards.length > 0 ? (9 - cardGap * (classCards.length - 1)) / classCards.length : 0;
 
   classCards.forEach((card, i) => {
-    const x = 0.5 + i * 3.1;
+    const x = 0.5 + i * (cardW + cardGap);
     const y = 2.7;
 
     s2.addShape(SHAPES.RECTANGLE, {
-      x, y, w: 2.8, h: 1.4,
+      x, y, w: cardW, h: 1.4,
       fill: { color: LIGHT_BG },
     });
 
@@ -395,42 +411,44 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     });
 
     s2.addText(card.label, {
-      x: x + 0.2, y: y + 0.1, w: 2.4, h: 0.3,
+      x: x + 0.2, y: y + 0.1, w: cardW - 0.4, h: 0.3,
       fontSize: 11, fontFace: "Arial", color: MUTED,
     });
 
     s2.addText(`${fmtUF(card.uf)} UF`, {
-      x: x + 0.2, y: y + 0.4, w: 2.4, h: 0.4,
+      x: x + 0.2, y: y + 0.4, w: cardW - 0.4, h: 0.4,
       fontSize: 18, fontFace: "Arial", color: DARK, bold: true,
     });
 
     s2.addText(`${card.count} ${card.count === 1 ? "local" : "locales"}`, {
-      x: x + 0.2, y: y + 0.85, w: 2.4, h: 0.3,
+      x: x + 0.2, y: y + 0.85, w: cardW - 0.4, h: 0.3,
       fontSize: 10, fontFace: "Arial", color: MUTED,
     });
 
     s2.addText(formatCLP(card.uf * data.ufValue), {
-      x: x + 0.2, y: y + 1.05, w: 2.4, h: 0.25,
+      x: x + 0.2, y: y + 1.05, w: cardW - 0.4, h: 0.25,
       fontSize: 9, fontFace: "Arial", color: MUTED,
     });
   });
 
   // Pie chart
-  s2.addChart(CHARTS.PIE, [{
-    name: "Distribución",
-    labels: ["Nuevos", "Reemplazo", "Regularización"],
-    values: [data.totalNuevoUF, data.totalReemplazoUF, data.totalRegularizacionUF],
-  }], {
-    x: 1.5, y: 4.2, w: 3, h: 1.0,
-    showPercent: true,
-    showTitle: false,
-    showLegend: true,
-    legendPos: "r",
-    legendFontSize: 8,
-    chartColors: [CHART_1, CHART_2, CHART_3],
-    dataLabelFontSize: 8,
-    dataLabelColor: DARK,
-  });
+  if (data.clasificacionTotals.length > 0) {
+    s2.addChart(CHARTS.PIE, [{
+      name: "Distribución",
+      labels: data.clasificacionTotals.map((t) => t.name),
+      values: data.clasificacionTotals.map((t) => t.uf),
+    }], {
+      x: 1.5, y: 4.2, w: 3, h: 1.0,
+      showPercent: true,
+      showTitle: false,
+      showLegend: true,
+      legendPos: "r",
+      legendFontSize: 8,
+      chartColors: data.clasificacionTotals.map((t) => colorHex(t.color)),
+      dataLabelFontSize: 8,
+      dataLabelColor: DARK,
+    });
+  }
 
   addFooter(s2, pageNum++);
 
@@ -452,18 +470,16 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       line: { color: BORDER, width: 1 },
     });
 
-    // Company summary cards
-    const companyCards = [
-      { label: "Nuevos", count: group.totals.cNuevo, uf: group.totals.nuevo, color: CHART_1 },
-      { label: "Reemplazo", count: group.totals.cReemplazo, uf: group.totals.reemplazo, color: CHART_2 },
-      { label: "Regularización", count: group.totals.cRegularizacion, uf: group.totals.regularizacion, color: CHART_3 },
-    ];
+    // Company summary cards -- dinámico según los tipos con locales en esta empresa
+    const companyCards = group.totals.byType.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color) }));
+    const companyCardGap = 0.15;
+    const companyCardW = companyCards.length > 0 ? (9 - companyCardGap * (companyCards.length - 1)) / companyCards.length : 0;
 
     companyCards.forEach((card, i) => {
-      const x = 0.5 + i * 3.1;
+      const x = 0.5 + i * (companyCardW + companyCardGap);
 
       s.addShape(SHAPES.RECTANGLE, {
-        x, y: 1.1, w: 2.8, h: 0.9,
+        x, y: 1.1, w: companyCardW, h: 0.9,
         fill: { color: LIGHT_BG },
       });
 
@@ -473,17 +489,17 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       });
 
       s.addText(`${card.label} (${card.count})`, {
-        x: x + 0.15, y: 1.15, w: 2.5, h: 0.25,
+        x: x + 0.15, y: 1.15, w: companyCardW - 0.3, h: 0.25,
         fontSize: 10, fontFace: "Arial", color: MUTED,
       });
 
       s.addText(`${fmtUF(card.uf)} UF`, {
-        x: x + 0.15, y: 1.4, w: 2.5, h: 0.35,
+        x: x + 0.15, y: 1.4, w: companyCardW - 0.3, h: 0.35,
         fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
       });
 
       s.addText(formatCLP(card.uf * data.ufValue), {
-        x: x + 0.15, y: 1.7, w: 2.5, h: 0.2,
+        x: x + 0.15, y: 1.7, w: companyCardW - 0.3, h: 0.2,
         fontSize: 9, fontFace: "Arial", color: MUTED,
       });
     });
@@ -497,12 +513,15 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       { text: "Total CLP", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
     ];
 
-    // Sort contracts: by clasificacion then name
+    // Sort contracts: by clasificacion (mismo orden que las cards / Admin >
+    // Tipos de CAPEX) y después por nombre. Sin clasificar queda al final.
+    const clOrder = data.clasificacionTotals.map((t) => t.name);
     const sorted = [...group.contracts].sort((a, b) => {
-      const clOrder = ["nuevo", "reemplazo", "regularizacion"];
-      const aIdx = clOrder.indexOf(a.clasificacion || "");
-      const bIdx = clOrder.indexOf(b.clasificacion || "");
-      if (aIdx !== bIdx) return aIdx - bIdx;
+      const aIdx = a.clasificacion ? clOrder.indexOf(a.clasificacion) : -1;
+      const bIdx = b.clasificacion ? clOrder.indexOf(b.clasificacion) : -1;
+      const aRank = aIdx === -1 ? clOrder.length : aIdx;
+      const bRank = bIdx === -1 ? clOrder.length : bIdx;
+      if (aRank !== bRank) return aRank - bRank;
       return a.contract_name.localeCompare(b.contract_name);
     });
 
