@@ -30,6 +30,7 @@ import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { GeneralInfoManager } from "@/components/admin/GeneralInfoManager";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { CapexClasificacionTypeManager } from "@/components/admin/CapexClasificacionTypeManager";
+import { CapexAvanceStatusManager } from "@/components/admin/CapexAvanceStatusManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
 import { GanttOverviewStatusManager } from "@/components/admin/GanttOverviewStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
@@ -985,6 +986,15 @@ const AdminPanel = () => {
               defaultOpen={false}
             >
               <CapexClasificacionTypeManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Estado Avance CAPEX"
+              description="Define los estados de avance del CAPEX de cada contrato (En Curso, Terminado, Programado, etc.) y su color de badge"
+              icon={<ListChecks className="h-5 w-5 text-cyan-600" />}
+              defaultOpen={false}
+            >
+              <CapexAvanceStatusManager />
             </CollapsibleCard>
           </div>
         </CollapsibleCard>
