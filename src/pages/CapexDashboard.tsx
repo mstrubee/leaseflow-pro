@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -206,6 +206,50 @@ export default function CapexDashboard() {
       return true;
     });
   }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+
+  // Aplica los mismos filtros que filteredBudgets pero salteando uno de los
+  // filtros -- se usa para calcular qué opciones de CADA dropdown todavía
+  // tienen algún resultado dado el resto de los filtros activos, y esconder
+  // las que quedarían en 0 (evita ofrecer una combinación sin resultados).
+  const filterBudgetsExcept = React.useCallback(
+    (except: "company" | "clasificacion" | "avance") =>
+      budgets.filter((b) => {
+        if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
+        if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+        if (except !== "company" && companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+        if (except !== "clasificacion" && clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+        if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+        return true;
+      }),
+    [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
+  );
+
+  const availableCompanyBuckets = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("company").forEach((b) => set.add(getCompanyBucket(b.company_names)));
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const availableClasificaciones = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("clasificacion").forEach((b) => { if (b.clasificacion) set.add(b.clasificacion); });
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const availableAvanceStatuses = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("avance").forEach((b) => { if (b.capex_avance_status) set.add(b.capex_avance_status); });
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const hasActiveFilters = searchTerm !== "" || companyFilter.length > 0 || clasificacionFilter.length > 0 || avanceStatusFilter.length > 0;
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setCompanyFilter([]);
+    setClasificacionFilter([]);
+    setAvanceStatusFilter([]);
+  };
 
   // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
   const contractGroups = React.useMemo(() => {
@@ -659,60 +703,88 @@ export default function CapexDashboard() {
               className="pl-10"
             />
           </div>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              {availableYears.map(y => (
-                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <MultiSelectFilter
-            className="w-[160px]"
-            placeholder="Empresa"
-            value={companyFilter}
-            onChange={setCompanyFilter}
-            options={[
-              { value: "Autoplanet", label: "Autoplanet" },
-              { value: "Agroplanet", label: "Agroplanet" },
-              { value: "Otros", label: "Otros" },
-            ]}
-          />
-          <MultiSelectFilter
-            className="w-[190px]"
-            placeholder="Clasificación"
-            value={clasificacionFilter}
-            onChange={setClasificacionFilter}
-            options={clasificacionTypes.map((t) => ({
-              value: t.name,
-              label: t.name,
-              colorDotClassName: `bg-${t.color}-500`,
-            }))}
-          />
-          <MultiSelectFilter
-            className="w-[190px]"
-            placeholder="Estado Avance"
-            value={avanceStatusFilter}
-            onChange={setAvanceStatusFilter}
-            options={avanceStatusTypes.map((t) => ({
-              value: t.name,
-              label: t.name,
-              colorDotClassName: `bg-${t.color}-500`,
-            }))}
-          />
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Ordenar por" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="nombre">Ordenar: Nombre</SelectItem>
-              <SelectItem value="empresa">Ordenar: Empresa</SelectItem>
-              <SelectItem value="clasificacion">Ordenar: Clasificación</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Año</label>
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                {availableYears.map(y => (
+                  <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Empresa</label>
+            <MultiSelectFilter
+              className="w-[160px]"
+              placeholder="Todas"
+              value={companyFilter}
+              onChange={setCompanyFilter}
+              options={[
+                { value: "Autoplanet", label: "Autoplanet" },
+                { value: "Agroplanet", label: "Agroplanet" },
+                { value: "Otros", label: "Otros" },
+              ].filter((o) => availableCompanyBuckets.has(o.value) || companyFilter.includes(o.value))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Clasificación</label>
+            <MultiSelectFilter
+              className="w-[190px]"
+              placeholder="Todas"
+              value={clasificacionFilter}
+              onChange={setClasificacionFilter}
+              options={clasificacionTypes
+                .filter((t) => availableClasificaciones.has(t.name) || clasificacionFilter.includes(t.name))
+                .map((t) => ({
+                  value: t.name,
+                  label: t.name,
+                  colorDotClassName: `bg-${t.color}-500`,
+                }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Avance</label>
+            <MultiSelectFilter
+              className="w-[190px]"
+              placeholder="Todos"
+              value={avanceStatusFilter}
+              onChange={setAvanceStatusFilter}
+              options={avanceStatusTypes
+                .filter((t) => availableAvanceStatuses.has(t.name) || avanceStatusFilter.includes(t.name))
+                .map((t) => ({
+                  value: t.name,
+                  label: t.name,
+                  colorDotClassName: `bg-${t.color}-500`,
+                }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Ordenar</label>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nombre">Nombre</SelectItem>
+                <SelectItem value="empresa">Empresa</SelectItem>
+                <SelectItem value="clasificacion">Clasificación</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {hasActiveFilters && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-transparent select-none">Limpiar</label>
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-2">
+                <X className="h-4 w-4" />
+                Limpiar Filtro
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Contract List grouped by company */}
