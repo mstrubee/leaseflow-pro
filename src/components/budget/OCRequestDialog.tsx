@@ -69,7 +69,13 @@ export const OCRequestDialog = ({
   onSuccess
 }: OCRequestDialogProps) => {
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("basic");
+  // Al crear una solicitud DIRECTA (sin venir de un Requerimiento de OC), la
+  // primera interacción es elegir la(s) línea(s) de presupuesto.
+  const [activeTab, setActiveTab] = useState("lines");
+  // Mientras sea true, la Descripción se autocompleta con el nombre de las
+  // líneas seleccionadas -- se apaga apenas el usuario la edita a mano, para
+  // no pisar un texto que ya escribió.
+  const [descriptionIsAuto, setDescriptionIsAuto] = useState(true);
   const [form, setForm] = useState({
     description: "",
     amount: "",
@@ -111,12 +117,25 @@ export const OCRequestDialog = ({
         supplier_id: initialSupplierId,
         supplier_name: initialSupplierName
       });
-      setSelectedLines([{ lineId: budgetLineId, lineName, amount: 0, maxAmount: lineAvailable }]);
+      setSelectedLines([{ lineId: budgetLineId, lineName, amount: lineAvailable, maxAmount: lineAvailable }]);
       setUseMultipleLines(false);
       setPaymentPlan([]);
-      setActiveTab("basic");
+      setActiveTab("lines");
+      setDescriptionIsAuto(true);
     }
   }, [open, lineName, budgetLineId, lineAvailable, initialSupplierId, initialSupplierName]);
+
+  // Autocompleta la Descripción (pestaña "Datos Básicos") con el nombre de
+  // las líneas seleccionadas, unidas por coma -- solo mientras el usuario no
+  // la haya editado a mano. Con una sola línea (modo por defecto), no hace
+  // falta: form.description ya arranca con lineName.
+  useEffect(() => {
+    if (!useMultipleLines || !descriptionIsAuto) return;
+    const joined = selectedLines.map(l => l.lineName).join(", ");
+    setForm(prev => ({ ...prev, description: joined }));
+  }, [selectedLines, useMultipleLines, descriptionIsAuto]);
+
+  const formatCLP = (value: number) => `$${Math.round(value).toLocaleString("es-CL")}`;
 
   const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
     const today = new Date();
@@ -201,6 +220,19 @@ export const OCRequestDialog = ({
         return;
       }
       lineNamesForNumber = validLines.map(l => l.lineName);
+
+      // El monto ingresado en "Datos Básicos" debe caber en la suma de las
+      // líneas elegidas -- comparación en UF de ambos lados para no mezclar
+      // monedas (ver bug: comparar UF contra CLP daba un falso "excede").
+      const sumLinesUf = validLines.reduce((s, l) => s + (l.amount || 0), 0);
+      if (totalAmountUf > sumLinesUf + 0.01) {
+        toast({
+          variant: "destructive",
+          title: "Monto excede la suma de las líneas",
+          description: `El monto ingresado (${formatCLP(totalAmountUf * ufValue)}) supera la suma de las líneas seleccionadas (${formatCLP(sumLinesUf * ufValue)}). Ajusta los montos de las líneas o el monto ingresado.`,
+        });
+        return;
+      }
     } else {
       lineNamesForNumber = [lineName];
       
@@ -397,8 +429,8 @@ export const OCRequestDialog = ({
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="basic">Datos Básicos</TabsTrigger>
             <TabsTrigger value="lines">Líneas de Presupuesto</TabsTrigger>
+            <TabsTrigger value="basic">Datos Básicos</TabsTrigger>
             <TabsTrigger value="payments">Plan de Pagos</TabsTrigger>
           </TabsList>
 
@@ -426,7 +458,10 @@ export const OCRequestDialog = ({
               <Label>Titulo</Label>
               <Textarea
                 value={form.description}
-                onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+                onChange={(e) => {
+                  setDescriptionIsAuto(false);
+                  setForm(prev => ({ ...prev, description: e.target.value }));
+                }}
                 placeholder="Titulo"
                 rows={2}
               />
@@ -507,6 +542,8 @@ export const OCRequestDialog = ({
                 selectedLines={selectedLines}
                 onSelectionChange={setSelectedLines}
                 formatUF={formatUF}
+                formatCLP={formatCLP}
+                ufValue={ufValue}
               />
             ) : (
               <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
