@@ -33,6 +33,8 @@ interface TimelineProject {
   surfaceM2: number;
   address: string | null;
   commune: string | null;
+  /** contracts.clasificacion -- Nuevo/Reemplazo/Regularización/Amplia-Mejora u otro tipo administrado en Admin. */
+  clasificacion: string | null;
   /** Color configurado del estado en Admin (uno de PROGRESS_COLOR_OPTIONS) -- null si no tiene. */
   overviewStatusColor: string | null;
   /** true si el estado del proyecto (en Admin > Estados de Cartas Gantt) es "Terminado" -- se marca en verde con un check, sin importar el color configurado. */
@@ -246,6 +248,7 @@ export function GanttOverviewTimeline({
       date: string;
       isBudgetItem: boolean;
       name: string;
+      clasificacion: string;
       company: string;
       address: string;
       capexUF: number | null;
@@ -258,6 +261,7 @@ export function GanttOverviewTimeline({
         date: p.endDate,
         isBudgetItem: false,
         name: p.contractName,
+        clasificacion: p.clasificacion || "—",
         company: p.companyNames.join(", ") || "—",
         address: [p.address, p.commune].filter(Boolean).join(", ") || "—",
         capexUF: p.capexUF > 0 ? p.capexUF : null,
@@ -268,6 +272,7 @@ export function GanttOverviewTimeline({
         date: it.date,
         isBudgetItem: true,
         name: `${it.name} (Presupuesto)`,
+        clasificacion: "—",
         company: "—",
         address: "—",
         capexUF: null,
@@ -421,10 +426,11 @@ export function GanttOverviewTimeline({
 
     autoTable(doc, {
       startY: tableStartY,
-      head: [["Fecha", "Nombre", "Empresa", "Dirección", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
+      head: [["Fecha", "Nombre", "Clasificación", "Empresa", "Dirección", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
       body: rows.map((r) => [
         format(parseISO(r.date), "dd/MM/yyyy"),
         r.name,
+        r.clasificacion,
         r.company,
         r.address,
         r.capexUF != null ? formatUF(r.capexUF) : "—",
@@ -436,9 +442,9 @@ export function GanttOverviewTimeline({
       alternateRowStyles: { fillColor: PDF_MAROON_LIGHT },
       columnStyles: {
         0: { cellWidth: 25 },
-        4: { halign: "right" },
         5: { halign: "right" },
         6: { halign: "right" },
+        7: { halign: "right" },
       },
       didParseCell: (hookData) => {
         if (hookData.section !== "body") return;
