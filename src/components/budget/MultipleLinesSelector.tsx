@@ -313,11 +313,13 @@ export const MultipleLinesSelector = ({
 
   const handleLineToggle = (line: BudgetLine, checked: boolean) => {
     if (checked) {
-      // Add line for imputation (amount=0 since it's set in the form, maxAmount for reference)
+      // Se precarga con el disponible completo (no 0) -- así la línea queda
+      // usable de inmediato con un monto real; el usuario la reduce si
+      // corresponde. Antes quedaba en 0.00 hasta que alguien la editara a mano.
       const maxAmount = availableAmounts[line.id] || 0;
       onSelectionChange([
         ...selectedLines,
-        { lineId: line.id, lineName: line.name, amount: 0, maxAmount }
+        { lineId: line.id, lineName: line.name, amount: maxAmount, maxAmount }
       ]);
     } else {
       // Remove line
@@ -337,6 +339,24 @@ export const MultipleLinesSelector = ({
       )
     );
   };
+
+  // El monto sigue guardándose en UF internamente (mismo dato que
+  // budget_lines.amount_uf) -- esto solo convierte lo que el usuario TIPEA en
+  // CLP de vuelta a UF antes de guardarlo.
+  const handleAmountChangeClp = (lineId: string, value: string) => {
+    const parsedClp = parseFloat(value) || 0;
+    const parsedUf = ufValue && ufValue > 0 ? parsedClp / ufValue : 0;
+    onSelectionChange(
+      selectedLines.map(sl =>
+        sl.lineId === lineId ? { ...sl, amount: Math.max(0, Math.min(parsedUf, sl.maxAmount)) } : sl
+      )
+    );
+  };
+
+  // CAPEX (no OPEX) con ufValue disponible: el monto se edita en CLP,
+  // mostrando la UF equivalente entre paréntesis -- para OPEX el monto ya es
+  // nativo en CLP, sin equivalencia en UF que mostrar.
+  const showClpAmounts = !isOpexMaster && !!formatCLP && !!ufValue && ufValue > 0;
 
   const renderLine = (line: BudgetLine, level: number = 0): React.ReactNode => {
     // Hide branches that have no authorized leaves (non-authorized leaves + their
@@ -455,18 +475,33 @@ export const MultipleLinesSelector = ({
               <div key={sl.lineId} className="flex items-center gap-2">
                 <span className="text-sm flex-1 truncate">{sl.lineName}</span>
                 <div className="flex flex-col items-end shrink-0">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={sl.maxAmount}
-                    value={sl.amount || ""}
-                    onChange={(e) => handleAmountChange(sl.lineId, e.target.value)}
-                    className={cn("h-7 text-right font-mono w-[110px] text-xs", atMax && "border-amber-400")}
-                    placeholder="0.00"
-                  />
+                  {showClpAmounts ? (
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max={Math.round(sl.maxAmount * (ufValue as number))}
+                      value={sl.amount ? Math.round(sl.amount * (ufValue as number)) : ""}
+                      onChange={(e) => handleAmountChangeClp(sl.lineId, e.target.value)}
+                      className={cn("h-7 text-right font-mono w-[130px] text-xs", atMax && "border-amber-400")}
+                      placeholder="$0"
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={sl.maxAmount}
+                      value={sl.amount || ""}
+                      onChange={(e) => handleAmountChange(sl.lineId, e.target.value)}
+                      className={cn("h-7 text-right font-mono w-[110px] text-xs", atMax && "border-amber-400")}
+                      placeholder="0.00"
+                    />
+                  )}
                   <span className={cn("text-[10px]", atMax ? "text-amber-600" : "text-muted-foreground")}>
-                    Disp: {formatUF(sl.maxAmount)}
+                    {showClpAmounts
+                      ? `(UF ${sl.amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) · Disp: ${formatCLP!(Math.round(sl.maxAmount * (ufValue as number)))}`
+                      : `Disp: ${formatUF(sl.maxAmount)}`}
                   </span>
                 </div>
               </div>
