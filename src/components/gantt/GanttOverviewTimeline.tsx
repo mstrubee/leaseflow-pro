@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   addMonths,
   differenceInCalendarDays,
@@ -31,7 +31,7 @@ interface TimelineProject {
   overviewStatusColor: string | null;
 }
 
-interface BudgetItem {
+export interface GanttOverviewBudgetItem {
   id: string;
   name: string;
   date: string;
@@ -54,61 +54,59 @@ const getLightColorClass = (color: string | null) => LIGHT_COLOR_CLASSES[color ?
 
 const BUDGET_ITEM_CLASS = "bg-red-100 border-red-400 text-red-800 font-medium";
 
-// Ancho fijo por día -- a diferencia de un layout 100% porcentual, esto
-// mantiene el mismo "zoom" visual sin importar cuántos meses haya en el
-// rango, así que extender la línea de tiempo agrega ancho (con scroll
-// horizontal) en vez de apretar los meses ya visibles.
-const PX_PER_DAY = 6;
 const MONTHS_PER_YEAR = 12;
 
 interface GanttOverviewTimelineProps {
   projects: TimelineProject[];
   onSelect: (contractId: string) => void;
+  budgetItems: GanttOverviewBudgetItem[];
+  /** Se llama después de crear/editar/eliminar un ítem para que el padre recargue la lista. */
+  onBudgetItemsChange: () => void;
 }
 
 /**
  * Línea de tiempo horizontal con las fechas de término de cada proyecto con
  * carta Gantt cargada, más ítems de "Presupuesto" agregados a mano (en rojo).
- * Ventana móvil de 12 meses (desde el 1° del mes anterior al actual) que se
- * puede extender de a un año con el botón "Extender".
+ * Ventana de 12 meses SIN scroll (desde el 1° del mes anterior al actual),
+ * que se puede extender de a un año con el botón "Extender" -- a partir de
+ * ahí, y solo ahí, aparece scroll horizontal (cada mes mantiene el mismo
+ * ancho que tenía con la vista base de 12 meses).
  */
-export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimelineProps) {
+export function GanttOverviewTimeline({
+  projects,
+  onSelect,
+  budgetItems,
+  onBudgetItemsChange,
+}: GanttOverviewTimelineProps) {
   const today = startOfDay(new Date());
 
   const [extraYears, setExtraYears] = useState(0);
 
-  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<BudgetItem | null>(null);
+  const [editing, setEditing] = useState<GanttOverviewBudgetItem | null>(null);
   const [formName, setFormName] = useState("");
   const [formDate, setFormDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    loadBudgetItems();
-  }, []);
-
-  const loadBudgetItems = async () => {
-    const { data, error } = await (supabase as any)
-      .from("gantt_overview_budget_items")
-      .select("id, name, date")
-      .order("date");
-    if (!error) setBudgetItems(data || []);
-  };
-
-  const { rangeStart, rangeEnd, months, totalDays, todayLeftPx, totalWidthPx } = useMemo(() => {
+  const { rangeStart, rangeEnd, months, todayPct, innerWidthPct } = useMemo(() => {
     const start = startOfMonth(addMonths(today, -1));
-    const end = endOfMonth(addMonths(start, MONTHS_PER_YEAR - 1 + extraYears * MONTHS_PER_YEAR));
+    const totalMonths = MONTHS_PER_YEAR + extraYears * MONTHS_PER_YEAR;
+    const end = endOfMonth(addMonths(start, totalMonths - 1));
     const totalDays = differenceInCalendarDays(end, start) + 1;
     const months = eachMonthOfInterval({ start, end }).map((m) => {
       const monthStart = m < start ? start : startOfMonth(m);
       const monthEnd = endOfMonth(m) > end ? end : endOfMonth(m);
       const days = differenceInCalendarDays(monthEnd, monthStart) + 1;
-      return { date: m, widthPx: days * PX_PER_DAY };
+      return { date: m, widthPct: (days / totalDays) * 100 };
     });
-    const todayLeftPx = differenceInCalendarDays(today, start) * PX_PER_DAY;
-    return { rangeStart: start, rangeEnd: end, months, totalDays, todayLeftPx, totalWidthPx: totalDays * PX_PER_DAY };
+    const todayPct = (differenceInCalendarDays(today, start) / totalDays) * 100;
+    // El contenedor interno mide (totalMonths/12) * 100% del ancho visible --
+    // con 12 meses (extraYears=0) da exactamente 100% (sin scroll); cada mes
+    // adicional agrega proporcionalmente más ancho al interior, así que el
+    // tamaño de cada mes en pantalla se mantiene constante y aparece scroll.
+    const innerWidthPct = (totalMonths / MONTHS_PER_YEAR) * 100;
+    return { rangeStart: start, rangeEnd: end, months, todayPct, innerWidthPct };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extraYears]);
 
@@ -147,7 +145,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
   }, [inRange]);
 
   const budgetItemsByMonthKey = useMemo(() => {
-    const map = new Map<string, BudgetItem[]>();
+    const map = new Map<string, GanttOverviewBudgetItem[]>();
     for (const it of budgetItemsInRange) {
       const key = format(parseISO(it.date), "yyyy-MM");
       const list = map.get(key) ?? [];
@@ -164,7 +162,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
     setDialogOpen(true);
   };
 
-  const openEdit = (item: BudgetItem) => {
+  const openEdit = (item: GanttOverviewBudgetItem) => {
     setEditing(item);
     setFormName(item.name);
     setFormDate(item.date);
@@ -194,7 +192,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
         toast.success("Ítem creado");
       }
       setDialogOpen(false);
-      loadBudgetItems();
+      onBudgetItemsChange();
     } catch (err: any) {
       toast.error(err.message || "Error al guardar");
     } finally {
@@ -213,7 +211,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
       if (error) throw error;
       toast.success("Ítem eliminado");
       setDialogOpen(false);
-      loadBudgetItems();
+      onBudgetItemsChange();
     } catch (err: any) {
       toast.error(err.message || "Error al eliminar");
     } finally {
@@ -250,15 +248,15 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
         </div>
 
         <div className="relative overflow-x-auto">
-          <div style={{ width: `${totalWidthPx}px`, minWidth: "100%" }}>
+          <div style={{ width: `${innerWidthPct}%`, minWidth: "100%" }}>
             {/* Encabezado de meses */}
             <div className="flex rounded-t-md overflow-hidden border border-b-0">
-              {months.map(({ date, widthPx }) => {
+              {months.map(({ date, widthPct }) => {
                 const isCurrent = isSameMonth(date, today);
                 return (
                   <div
                     key={date.toISOString()}
-                    style={{ width: `${widthPx}px`, flexShrink: 0 }}
+                    style={{ width: `${widthPct}%` }}
                     className={cn(
                       "text-center text-[11px] font-medium py-1.5 border-r last:border-r-0 capitalize truncate px-1",
                       isCurrent ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground"
@@ -273,7 +271,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
 
             {/* Carriles con las fechas de término y los ítems de Presupuesto */}
             <div className="flex border rounded-b-md relative min-h-[104px] bg-background">
-              {months.map(({ date, widthPx }) => {
+              {months.map(({ date, widthPct }) => {
                 const key = format(date, "yyyy-MM");
                 const items = (projectsByMonthKey.get(key) ?? []).slice().sort(
                   (a, b) => a.endDate.localeCompare(b.endDate)
@@ -285,7 +283,7 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
                 return (
                   <div
                     key={key}
-                    style={{ width: `${widthPx}px`, flexShrink: 0 }}
+                    style={{ width: `${widthPct}%` }}
                     className={cn(
                       "border-r last:border-r-0 px-1 py-1.5 flex flex-col gap-1",
                       isCurrent && "bg-primary/[0.03]"
@@ -335,10 +333,10 @@ export function GanttOverviewTimeline({ projects, onSelect }: GanttOverviewTimel
               })}
 
               {/* Línea de hoy */}
-              {todayLeftPx >= 0 && todayLeftPx <= totalWidthPx && (
+              {todayPct >= 0 && todayPct <= 100 && (
                 <div
                   className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
-                  style={{ left: `${todayLeftPx}px` }}
+                  style={{ left: `${todayPct}%` }}
                 >
                   <div className="absolute -top-4 -translate-x-1/2 text-[9px] font-semibold text-red-500 bg-background px-1 rounded whitespace-nowrap">
                     Hoy

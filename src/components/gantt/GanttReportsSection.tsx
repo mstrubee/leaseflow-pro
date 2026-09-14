@@ -37,7 +37,7 @@ import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
-import { GanttOverviewTimeline } from "@/components/gantt/GanttOverviewTimeline";
+import { GanttOverviewTimeline, GanttOverviewBudgetItem } from "@/components/gantt/GanttOverviewTimeline";
 import { useGanttOverviewStatuses } from "@/hooks/useGanttOverviewStatuses";
 import { getProgressColorClass } from "@/hooks/useBudgetProgressStatuses";
 import { cn } from "@/lib/utils";
@@ -438,6 +438,10 @@ export function GanttReportsSection() {
 
   const [data, setData] = useState<GanttContractData[]>([]);
   const [loading, setLoading] = useState(true);
+  // Ítems de "Presupuesto" agregados a mano sobre la línea de tiempo general
+  // -- puramente informativos, NO son contratos: no cuentan para ningún
+  // listado ni filtro de contratos (vigentes/en negociación/rechazados/etc.).
+  const [budgetItems, setBudgetItems] = useState<GanttOverviewBudgetItem[]>([]);
   const [exporting, setExporting] = useState(false);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [selectionModeCards, setSelectionModeCards] = useState<Set<string>>(new Set());
@@ -564,8 +568,17 @@ export function GanttReportsSection() {
 
   useEffect(() => {
     loadData();
+    loadBudgetItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ufValue]);
+
+  const loadBudgetItems = async () => {
+    const { data, error } = await (supabase as any)
+      .from("gantt_overview_budget_items")
+      .select("id, name, date")
+      .order("date");
+    if (!error) setBudgetItems(data || []);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -1251,7 +1264,31 @@ export function GanttReportsSection() {
                 <GanttOverviewTimeline
                   projects={timelineProjects}
                   onSelect={(contractId) => navigateToContractFromReports(contractId, "gantt")}
+                  budgetItems={budgetItems}
+                  onBudgetItemsChange={loadBudgetItems}
                 />
+
+                {/* Ítems de Presupuesto -- informativo, no son contratos: no
+                    afectan ningún listado ni filtro de contratos de acá abajo. */}
+                {budgetItems.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Ítems de Presupuesto (informativo, no son contratos)
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {budgetItems.map((it) => (
+                        <div
+                          key={it.id}
+                          className="text-xs border border-red-200 bg-red-50 text-red-700 rounded px-2 py-1"
+                        >
+                          <span className="font-semibold">{format(parseISO(it.date), "dd/MM/yyyy")}</span>
+                          {" · "}
+                          {it.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* ── Barra de filtro / orden / selección ──────────────────── */}
                 <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
