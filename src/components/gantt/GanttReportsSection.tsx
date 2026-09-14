@@ -1187,6 +1187,10 @@ export function GanttReportsSection() {
           companyNames: d.companyNames,
           endDate: d.endDate as string,
           capexUF: d.capexUF,
+          capexCLP: d.capexCLP,
+          surfaceM2: d.surfaceM2,
+          address: d.address,
+          commune: d.commune,
           overviewStatusColor: resolveOverviewStatus(d.overviewStatusId)?.color ?? null,
         })),
     [data, overviewStatusesById]
