@@ -8,12 +8,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Download, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
+import { Loader2, Download, FileSpreadsheet, Plus, Trash2, FileUp, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { backupOCRequestQuotationToRepository } from "@/lib/repositoryBackup";
+
+// Presupuesto/cotización adjuntado a la Solicitud -- mismas extensiones y
+// mismo criterio de previsualización que usa "Requerimiento de OC"
+// (CapexOCRequiredDialog.tsx), para que la experiencia sea consistente.
+const ACCEPTED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".doc", ".docx"];
+const ACCEPT_ATTR =
+  ".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx," +
+  "application/pdf,image/jpeg,image/png," +
+  "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
+  "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+type PreviewKind = "pdf" | "image" | "none";
+function previewKindOf(fileName: string): PreviewKind {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
+  if (ext === ".pdf") return "pdf";
+  if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image";
+  return "none";
+}
 
 interface SelectedLine {
   lineId: string;
@@ -86,6 +105,11 @@ export const OCRequestDialog = ({
   const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
   const [useMultipleLines, setUseMultipleLines] = useState(false);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  // Presupuesto/cotización adjuntado -- obligatorio para poder crear la
+  // solicitud. Se sube al repositorio del contrato (carpeta "Solicitudes de
+  // OC") recién al crear, no al elegir el archivo.
+  const [quoteFile, setQuoteFile] = useState<File | null>(null);
+  const [quotePreviewUrl, setQuotePreviewUrl] = useState<string | null>(null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [templateFileName, setTemplateName] = useState<string | null>(null);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
@@ -122,8 +146,35 @@ export const OCRequestDialog = ({
       setPaymentPlan([]);
       setActiveTab("lines");
       setDescriptionIsAuto(true);
+      setQuoteFile(null);
+      setQuotePreviewUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
     }
   }, [open, lineName, budgetLineId, lineAvailable, initialSupplierId, initialSupplierName]);
+
+  // Libera el blob URL de previsualización al desmontar el diálogo.
+  useEffect(() => {
+    return () => {
+      if (quotePreviewUrl) URL.revokeObjectURL(quotePreviewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotePreviewUrl]);
+
+  const handleQuoteFileChange = (f: File | null) => {
+    if (!f) return;
+    const ext = f.name.toLowerCase().slice(f.name.lastIndexOf("."));
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+      toast({ variant: "destructive", title: "Archivo no válido", description: "El archivo debe ser PDF, JPEG, PNG, Excel o Word" });
+      return;
+    }
+    setQuotePreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
+    });
+    setQuoteFile(f);
+  };
 
   // Autocompleta la Descripción (pestaña "Datos Básicos") con el nombre de
   // las líneas seleccionadas, unidas por coma -- solo mientras el usuario no
@@ -191,6 +242,12 @@ export const OCRequestDialog = ({
   };
 
   const handleCreate = async () => {
+    if (!quoteFile) {
+      toast({ variant: "destructive", title: "Falta adjuntar presupuesto", description: "Debe adjuntar el presupuesto/cotización antes de crear la solicitud" });
+      setActiveTab("quote");
+      return;
+    }
+
     if (!form.supplier_id) {
       toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
       return;
@@ -262,11 +319,20 @@ export const OCRequestDialog = ({
 
     setLoading(true);
     try {
+      // Sube el presupuesto/cotización a la carpeta "Solicitudes de OC" del
+      // repositorio del contrato ANTES de crear la solicitud -- si falla, no
+      // se crea nada (evita quedar con una solicitud sin respaldo).
+      const upload = await backupOCRequestQuotationToRepository(contractId, quoteFile, quoteFile.name);
+      if (!upload.success || !upload.driveUrl) {
+        toast({ variant: "destructive", title: "Error", description: upload.error || "No se pudo subir el presupuesto adjunto" });
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       const { number, correlative } = await generateRequestNumber(lineNamesForNumber);
-      
+
       // Build line_name for display - include all line names
-      const displayLineName = useMultipleLines 
+      const displayLineName = useMultipleLines
         ? selectedLines.filter(l => l.amount > 0).map(l => l.lineName).join(' + ')
         : lineName;
 
@@ -289,7 +355,9 @@ export const OCRequestDialog = ({
         supplier_name: form.supplier_name,
         year: year,
         status: "pending",
-        created_by: user?.id
+        created_by: user?.id,
+        quotation_url: upload.driveUrl,
+        quotation_file_name: quoteFile.name
       }).select().single();
 
       if (error) throw error;
@@ -428,11 +496,76 @@ export const OCRequestDialog = ({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="lines">Líneas de Presupuesto</TabsTrigger>
-            <TabsTrigger value="basic">Datos Básicos</TabsTrigger>
-            <TabsTrigger value="payments">Plan de Pagos</TabsTrigger>
+            <TabsTrigger value="quote">Adjuntar Presupuesto</TabsTrigger>
+            <TabsTrigger value="basic" disabled={!quoteFile}>Datos Básicos</TabsTrigger>
+            <TabsTrigger value="payments" disabled={!form.supplier_id || !(parseFloat(form.amount) > 0)}>Plan de Pagos</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="quote" className="space-y-4 mt-4">
+            {!quoteFile ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="oc-request-quote-file">Presupuesto / Cotización *</Label>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" asChild className="cursor-pointer">
+                    <label htmlFor="oc-request-quote-file" className="flex items-center gap-1.5">
+                      <FileUp className="h-3.5 w-3.5" />
+                      Elegir archivo
+                    </label>
+                  </Button>
+                  <span className="text-sm text-muted-foreground truncate">Ningún archivo seleccionado</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word. Se guarda en la carpeta "Solicitudes de OC" del repositorio del contrato.</p>
+                <input
+                  id="oc-request-quote-file"
+                  type="file"
+                  accept={ACCEPT_ATTR}
+                  className="hidden"
+                  onChange={(e) => handleQuoteFileChange(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {previewKindOf(quoteFile.name) === "pdf" && quotePreviewUrl && (
+                  <iframe src={quotePreviewUrl} title="Previsualización del presupuesto" className="w-full h-[24rem] rounded-md border" />
+                )}
+                {previewKindOf(quoteFile.name) === "image" && quotePreviewUrl && (
+                  <img
+                    src={quotePreviewUrl}
+                    alt="Previsualización del presupuesto"
+                    className="w-full h-[24rem] rounded-md border object-contain bg-muted/30"
+                  />
+                )}
+                {previewKindOf(quoteFile.name) === "none" && (
+                  <div className="w-full h-[24rem] rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
+                    <FileText className="h-10 w-10" />
+                    <span className="text-xs">Sin previsualización disponible para este tipo de archivo</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground truncate">{quoteFile.name}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setQuoteFile(null);
+                      setQuotePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+                    }}
+                  >
+                    Reemplazar archivo
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setActiveTab("lines")}>Atrás</Button>
+              <Button onClick={() => setActiveTab("basic")} disabled={!quoteFile} className="flex-1">
+                Continuar a Datos Básicos
+              </Button>
+            </div>
+          </TabsContent>
 
           <TabsContent value="basic" className="space-y-4 mt-4">
             {/* Admin template (if configured) */}
@@ -520,6 +653,17 @@ export const OCRequestDialog = ({
                 onChange={handleSupplierChange}
               />
             </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
+              <Button
+                onClick={() => setActiveTab("payments")}
+                disabled={!form.supplier_id || !(parseFloat(form.amount) > 0)}
+                className="flex-1"
+              >
+                Continuar a Plan de Pagos
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="lines" className="space-y-4 mt-4">
@@ -551,6 +695,10 @@ export const OCRequestDialog = ({
                 <p className="text-xs mt-1">Active la opción de múltiples líneas para seleccionar otras.</p>
               </div>
             )}
+
+            <Button onClick={() => setActiveTab("quote")} className="w-full">
+              Continuar a Adjuntar Presupuesto
+            </Button>
           </TabsContent>
 
           <TabsContent value="payments" className="space-y-4 mt-4">
@@ -676,7 +824,11 @@ export const OCRequestDialog = ({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleCreate} disabled={loading || paymentPlan.length === 0} title={paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}>
+          <Button
+            onClick={handleCreate}
+            disabled={loading || paymentPlan.length === 0 || !quoteFile}
+            title={!quoteFile ? "Adjunta el presupuesto antes de crear la solicitud" : paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}
+          >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Crear Solicitud
           </Button>
