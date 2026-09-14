@@ -300,8 +300,104 @@ export function GanttOverviewTimeline({
     doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}`, pageWidth - 10, 14, { align: "right" });
     doc.setTextColor(0);
 
+    // ── Dibujo de la línea de tiempo (años, meses y chips por fecha) ──
+    const chartLeft = 10;
+    const chartTop = 26;
+    const chartWidth = pageWidth - chartLeft * 2;
+    const yearRowH = 6;
+    const monthRowH = 5;
+    const rowH = 3.2;
+    const maxChipRows = 8;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    let x = chartLeft;
+    years.forEach(({ year, widthPct }) => {
+      const w = (widthPct / 100) * chartWidth;
+      doc.setFillColor(226, 232, 240);
+      doc.rect(x, chartTop, w, yearRowH, "F");
+      doc.setDrawColor(180);
+      doc.rect(x, chartTop, w, yearRowH);
+      doc.setTextColor(30);
+      doc.text(String(year), x + w / 2, chartTop + yearRowH - 1.8, { align: "center" });
+      x += w;
+    });
+
+    const monthRowY = chartTop + yearRowH;
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    const lanes: { x: number; w: number; key: string }[] = [];
+    x = chartLeft;
+    months.forEach(({ date, widthPct }) => {
+      const w = (widthPct / 100) * chartWidth;
+      doc.setFillColor(245, 245, 248);
+      doc.rect(x, monthRowY, w, monthRowH, "F");
+      doc.setDrawColor(200);
+      doc.rect(x, monthRowY, w, monthRowH);
+      doc.setTextColor(60);
+      doc.text(format(date, "MMM", { locale: es }), x + w / 2, monthRowY + monthRowH - 1.3, { align: "center" });
+      lanes.push({ x, w, key: format(date, "yyyy-MM") });
+      x += w;
+    });
+
+    const bodyY = monthRowY + monthRowH;
+    const laneItems = lanes.map((lane) => {
+      const budgetHere = (budgetItemsByMonthKey.get(lane.key) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
+      const projectsHere = (projectsByMonthKey.get(lane.key) ?? []).slice().sort((a, b) => a.endDate.localeCompare(b.endDate));
+      const combined = [
+        ...budgetHere.map((it) => ({ isBudgetItem: true, label: `${format(parseISO(it.date), "dd/MM")} ${it.name}` })),
+        ...projectsHere.map((p) => ({ isBudgetItem: false, label: `${format(parseISO(p.endDate), "dd/MM")} ${p.contractName}` })),
+      ];
+      return { ...lane, combined };
+    });
+    const maxRowsUsed = Math.max(1, ...laneItems.map((l) => Math.min(l.combined.length, maxChipRows)));
+    const bodyHeight = maxRowsUsed * rowH + 2;
+
+    doc.setFontSize(5.5);
+    doc.setFont("helvetica", "normal");
+    laneItems.forEach(({ x: laneX, w, combined }) => {
+      doc.setDrawColor(210);
+      doc.rect(laneX, bodyY, w, bodyHeight);
+      const maxChars = Math.max(3, Math.floor(w / 1.05));
+      combined.slice(0, maxChipRows).forEach((item, idx) => {
+        const y = bodyY + 1.6 + idx * rowH;
+        if (item.isBudgetItem) {
+          doc.setFillColor(254, 226, 226);
+          doc.setTextColor(153, 27, 27);
+        } else {
+          doc.setFillColor(219, 234, 254);
+          doc.setTextColor(30, 64, 175);
+        }
+        doc.rect(laneX + 0.3, y - 2.2, w - 0.6, rowH - 0.4, "F");
+        const label = item.label.length > maxChars ? `${item.label.slice(0, maxChars - 1)}…` : item.label;
+        doc.text(label, laneX + 0.6, y - 0.6);
+      });
+      if (combined.length > maxChipRows) {
+        doc.setFontSize(5);
+        doc.setTextColor(90);
+        doc.text(`+${combined.length - maxChipRows}`, laneX + w / 2, bodyY + bodyHeight - 0.5, { align: "center" });
+        doc.setFontSize(5.5);
+      }
+    });
+    doc.setTextColor(0);
+
+    // Línea de hoy
+    if (todayPct >= 0 && todayPct <= 100) {
+      const todayX = chartLeft + (todayPct / 100) * chartWidth;
+      doc.setDrawColor(220, 38, 38);
+      doc.setLineWidth(0.4);
+      doc.line(todayX, chartTop, todayX, bodyY + bodyHeight);
+    }
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0);
+    doc.text("Listado", chartLeft, bodyY + bodyHeight + 6);
+
+    const tableStartY = bodyY + bodyHeight + 9;
+
     autoTable(doc, {
-      startY: 26,
+      startY: tableStartY,
       head: [["Fecha", "Nombre", "Empresa", "Dirección", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
       body: rows.map((r) => [
         format(parseISO(r.date), "dd/MM/yyyy"),
