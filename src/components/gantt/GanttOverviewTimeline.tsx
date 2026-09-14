@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addMonths,
   differenceInCalendarDays,
@@ -83,13 +83,28 @@ export function GanttOverviewTimeline({
   const baseEnd = useMemo(() => endOfMonth(addMonths(baseStart, MONTHS_PER_YEAR - 1)), [baseStart]);
 
   // Fecha hasta la que se extendió el calendario (null = sin extensión
-  // todavía). "compacted" alterna entre mostrar los 12 meses base o el rango
-  // extendido completo, sin perder la extensión ya elegida.
+  // todavía) -- se guarda en gantt_overview_timeline_settings para que la
+  // extensión se recuerde entre sesiones (es compartida, no por usuario,
+  // igual que los ítems de Presupuesto). "compacted" solo alterna la vista
+  // (12 meses vs. rango extendido) y no se persiste: cada sesión arranca
+  // mostrando el rango extendido recordado, sin perder la posibilidad de
+  // compactarlo para esta vista puntual.
   const [extendedUntil, setExtendedUntil] = useState<Date | null>(null);
   const [compacted, setCompacted] = useState(false);
 
   const [extendDialogOpen, setExtendDialogOpen] = useState(false);
   const [extendDate, setExtendDate] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await (supabase as any)
+        .from("gantt_overview_timeline_settings")
+        .select("extended_until")
+        .eq("id", 1)
+        .maybeSingle();
+      if (!error && data?.extended_until) setExtendedUntil(parseISO(data.extended_until));
+    })();
+  }, []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<GanttOverviewBudgetItem | null>(null);
@@ -134,16 +149,28 @@ export function GanttOverviewTimeline({
     setExtendDialogOpen(true);
   };
 
-  const handleExtend = () => {
+  const handleExtend = async () => {
     if (!extendDate) return;
     const target = parseISO(extendDate);
     if (target <= baseEnd) {
       toast.error("La fecha debe ser posterior al rango de 12 meses actual");
       return;
     }
-    setExtendedUntil((prev) => (prev && prev > target ? prev : target));
+    const newExtendedUntil = extendedUntil && extendedUntil > target ? extendedUntil : target;
+    setExtendedUntil(newExtendedUntil);
     setCompacted(false);
     setExtendDialogOpen(false);
+
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await (supabase as any)
+      .from("gantt_overview_timeline_settings")
+      .upsert({
+        id: 1,
+        extended_until: format(newExtendedUntil, "yyyy-MM-dd"),
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id,
+      });
+    if (error) toast.error("No se pudo guardar la extensión para futuras sesiones");
   };
 
   const { inRange, before, after } = useMemo(() => {
