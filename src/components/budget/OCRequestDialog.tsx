@@ -14,7 +14,7 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
-import { backupOCRequestQuotationToRepository } from "@/lib/repositoryBackup";
+import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 
 // Presupuesto/cotización adjuntado a la Solicitud -- mismas extensiones y
 // mismo criterio de previsualización que usa "Requerimiento de OC"
@@ -319,10 +319,11 @@ export const OCRequestDialog = ({
 
     setLoading(true);
     try {
-      // Sube el presupuesto/cotización a la carpeta "Solicitudes de OC" del
-      // repositorio del contrato ANTES de crear la solicitud -- si falla, no
-      // se crea nada (evita quedar con una solicitud sin respaldo).
-      const upload = await backupOCRequestQuotationToRepository(contractId, quoteFile, quoteFile.name);
+      // Sube el presupuesto/cotización a la carpeta "Cotizaciones" del
+      // repositorio del contrato (misma carpeta que usa Requerimiento de OC)
+      // ANTES de crear la solicitud -- si falla, no se crea nada (evita
+      // quedar con una solicitud sin respaldo).
+      const upload = await backupQuotationFileToRepository(contractId, quoteFile, quoteFile.name);
       if (!upload.success || !upload.driveUrl) {
         toast({ variant: "destructive", title: "Error", description: upload.error || "No se pudo subir el presupuesto adjunto" });
         return;
@@ -516,7 +517,7 @@ export const OCRequestDialog = ({
                   </Button>
                   <span className="text-sm text-muted-foreground truncate">Ningún archivo seleccionado</span>
                 </div>
-                <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word. Se guarda en la carpeta "Solicitudes de OC" del repositorio del contrato.</p>
+                <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word. Se guarda en la carpeta "Cotizaciones" del repositorio del contrato.</p>
                 <input
                   id="oc-request-quote-file"
                   type="file"

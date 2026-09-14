@@ -367,65 +367,6 @@ export async function backupQuotationFileToRepository(
 }
 
 /**
- * Get or create the "Solicitudes de OC" folder in a contract's repository --
- * carpeta única (igual patrón que "Cotizaciones"), donde se guarda el
- * presupuesto/cotización adjuntado al crear una Solicitud de OC directa.
- */
-export async function getOrCreateOCRequestQuotesFolder(
-  contractId: string
-): Promise<{ id: string; driveFolderId: string | null } | null> {
-  return getOrCreateRepoFolder(contractId, "Solicitudes de OC", "solicitudes_oc");
-}
-
-/**
- * Backup el presupuesto/cotización adjuntado a una Solicitud de OC (creada
- * directamente, sin pasar por un Requerimiento de OC) a la carpeta
- * "Solicitudes de OC" del contrato. Mismo patrón que
- * backupQuotationFileToRepository, pero con su propia carpeta de destino.
- */
-export async function backupOCRequestQuotationToRepository(
-  contractId: string,
-  file: File,
-  fileName: string
-): Promise<{ success: boolean; fileId?: string; driveUrl?: string; storagePath?: string; error?: string }> {
-  try {
-    const folder = await getOrCreateOCRequestQuotesFolder(contractId);
-    if (!folder) {
-      return { success: false, error: "No se pudo obtener o crear la carpeta 'Solicitudes de OC'" };
-    }
-
-    const fileExt = file.name.split(".").pop() || null;
-    const sanitizedName = sanitizeFileName(fileName);
-    const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
-    const unique = Date.now();
-    const storagePath = `oc-request-files/${datePrefix}/${contractId}/${unique}_${sanitizedName}`;
-
-    const { path: storedUrl, error: uploadError } = await uploadFileToStorage(storagePath, file);
-    if (uploadError) {
-      return { success: false, error: uploadError.message };
-    }
-
-    const record = await insertFileReference(
-      { id: folder.id, source: "repo", name: "Solicitudes de OC", driveFolderId: folder.driveFolderId },
-      fileName,
-      storedUrl,
-      fileExt,
-      file,
-      contractId
-    );
-    if (!record) {
-      return { success: false, error: "No se pudo registrar el archivo en el repositorio" };
-    }
-
-    const { data: fileRecord } = await supabase.from("repository_files").select("url").eq("id", record.id).single();
-    return { success: true, fileId: record.id, driveUrl: fileRecord?.url ?? storedUrl, storagePath: storedUrl };
-  } catch (error: any) {
-    console.error("Error backing up OC request quotation file:", error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
  * Insert a file reference into the correct table based on source type.
  */
 async function insertFileReference(
