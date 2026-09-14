@@ -337,6 +337,8 @@ export const OCRequestDialog = ({
         supplierName: form.supplier_name,
         supplierRut,
         sequenceNumber: requestData?.sequence_number,
+        requestId: requestData?.id,
+        verificationCode: (requestData as any)?.verification_code,
       });
       setShareRequestId(requestData?.id);
     } catch (error: any) {

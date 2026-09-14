@@ -747,6 +747,8 @@ export const OCRequestsList = ({
         })),
         totalAmountClp,
         sequenceNumber: requestData?.sequence_number,
+        requestId: requestData?.id,
+        verificationCode: (requestData as any)?.verification_code,
         payments: paymentPlan
           .filter((p) => parseFloat(p.amount) > 0)
           .map((p) => ({
