@@ -98,7 +98,7 @@ export function GanttOverviewTimeline({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const { rangeStart, rangeEnd, months, todayPct, innerWidthPct } = useMemo(() => {
+  const { rangeStart, rangeEnd, months, years, todayPct, innerWidthPct } = useMemo(() => {
     const start = baseStart;
     const fullEnd = extendedUntil && extendedUntil > baseEnd ? endOfMonth(extendedUntil) : baseEnd;
     const end = compacted ? baseEnd : fullEnd;
@@ -117,7 +117,16 @@ export function GanttOverviewTimeline({
     // ahí aparece scroll.
     const baseDays = differenceInCalendarDays(baseEnd, baseStart) + 1;
     const innerWidthPct = (totalDays / baseDays) * 100;
-    return { rangeStart: start, rangeEnd: end, months, todayPct, innerWidthPct };
+    // Agrupa los meses consecutivos por año calendario, para la barra
+    // superior que muestra claramente en qué año(s) está parado el usuario.
+    const years: { year: number; widthPct: number }[] = [];
+    months.forEach(({ date, widthPct }) => {
+      const year = date.getFullYear();
+      const last = years[years.length - 1];
+      if (last && last.year === year) last.widthPct += widthPct;
+      else years.push({ year, widthPct });
+    });
+    return { rangeStart: start, rangeEnd: end, months, years, todayPct, innerWidthPct };
   }, [baseStart, baseEnd, extendedUntil, compacted, today]);
 
   const openExtendDialog = () => {
@@ -300,8 +309,23 @@ export function GanttOverviewTimeline({
 
         <div className="relative overflow-x-auto">
           <div style={{ width: `${innerWidthPct}%`, minWidth: "100%" }}>
+            {/* Barra superior con el/los año(s) del rango visible */}
+            <div className="flex rounded-t-md overflow-hidden border">
+              {years.map(({ year, widthPct }) => (
+                <div
+                  key={year}
+                  style={{ width: `${widthPct}%` }}
+                  className={cn(
+                    "text-center text-xs font-semibold py-1 border-r last:border-r-0",
+                    today.getFullYear() === year ? "bg-primary/20 text-primary" : "bg-muted/70 text-foreground"
+                  )}
+                >
+                  {year}
+                </div>
+              ))}
+            </div>
             {/* Encabezado de meses */}
-            <div className="flex rounded-t-md overflow-hidden border border-b-0">
+            <div className="flex overflow-hidden border-l border-r">
               {months.map(({ date, widthPct }) => {
                 const isCurrent = isSameMonth(date, today);
                 return (
