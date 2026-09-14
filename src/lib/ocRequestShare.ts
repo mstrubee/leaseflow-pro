@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import QRCode from "qrcode";
 
 // ── Tipos compartidos por los 3 puntos donde se crea una Solicitud de OC
 // (OCRequestDialog, OCRequestsList, CentralizedOrderCreator en modo "request") ──
@@ -39,6 +40,10 @@ export interface OCRequestShareData {
   sequenceNumber?: number | null;
   /** Elegido al compartir la solicitud recién creada. */
   migoChoice?: "con" | "sin" | null;
+  /** id en oc_requests -- junto con verificationCode arma el link/QR de verificación anti-falsificación. */
+  requestId?: string | null;
+  /** oc_requests.verification_code -- código fijado por un trigger de DB al crear la solicitud, inalterable. */
+  verificationCode?: string | null;
 }
 
 function fmtSequenceNumber(n: number | null | undefined): string {
@@ -77,8 +82,12 @@ function fmtDate(iso: string | null): string {
  * - "Detalle de ítems" es una fila por línea con el monto asignado,
  * - se agrega "Plan de Pagos" cuando corresponde, con su total verificado
  *   contra el monto de la solicitud (ver validatePaymentPlanTotal).
+ * - si la solicitud ya tiene código de verificación (requestId +
+ *   verificationCode), se imprime junto con un QR que apunta a la página
+ *   pública de verificación -- así un tercero sin acceso a la plataforma
+ *   (ej. el proveedor) puede confirmar que el documento no fue alterado.
  */
-export function buildOCRequestPdf(data: OCRequestShareData): jsPDF {
+export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF> {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.getWidth();
 
@@ -170,6 +179,36 @@ export function buildOCRequestPdf(data: OCRequestShareData): jsPDF {
     headStyles: { fillColor: [230, 230, 230], textColor: 0 },
     columnStyles: { 2: { halign: "right" } },
   });
+
+  if (data.requestId && data.verificationCode) {
+    const verifyUrl = `${window.location.origin}/verify-oc/${data.requestId}/${data.verificationCode}`;
+    let qrDataUrl: string | null = null;
+    try {
+      qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 0, width: 200 });
+    } catch {
+      // Sin QR si falla -- el código de texto sigue permitiendo verificar a mano.
+    }
+
+    const pageH = doc.internal.pageSize.getHeight();
+    const verifyBoxH = 22;
+    const verifyY = pageH - verifyBoxH - 10;
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.3);
+    doc.line(14, verifyY, pageW - 14, verifyY);
+
+    if (qrDataUrl) {
+      doc.addImage(qrDataUrl, "PNG", 14, verifyY + 3, 16, 16);
+    }
+    const textX = qrDataUrl ? 34 : 14;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(80, 80, 80);
+    doc.text("Verificación de autenticidad", textX, verifyY + 8);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Código: ${data.verificationCode}`, textX, verifyY + 13);
+    doc.text(`Escanea el QR o visita: ${verifyUrl}`, textX, verifyY + 18);
+    doc.setTextColor(0, 0, 0);
+  }
 
   return doc;
 }

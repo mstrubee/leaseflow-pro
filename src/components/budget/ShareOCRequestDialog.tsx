@@ -88,8 +88,8 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
     migoChoice: requireMigoChoice ? migoChoice : data!.migoChoice,
   });
 
-  const buildBlob = (): Blob => {
-    const doc = buildOCRequestPdf(shareData());
+  const buildBlob = async (): Promise<Blob> => {
+    const doc = await buildOCRequestPdf(shareData());
     return doc.output("blob");
   };
 
@@ -97,7 +97,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
     if (!data) return;
     setDownloading(true);
     try {
-      const blob = buildBlob();
+      const blob = await buildBlob();
       const fileName = ocRequestPdfFileName(data);
       const result = await downloadOCRequestPdf(blob, fileName);
       if (result === "cancelled") return;
@@ -121,7 +121,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
 
     setSending(true);
     try {
-      const blob = buildBlob();
+      const blob = await buildBlob();
       const fileName = ocRequestPdfFileName(data);
       const file = new File([blob], fileName, { type: "application/pdf" });
       const pdfBase64 = await fileToBase64(file);
@@ -148,7 +148,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       // en vez de dejar al usuario sin nada.
       toast.error("No se pudo enviar el correo. Se descargará el PDF para enviarlo manualmente.");
       try {
-        const blob = buildBlob();
+        const blob = await buildBlob();
         const fileName = ocRequestPdfFileName(data);
         await downloadOCRequestPdf(blob, fileName);
       } catch (downloadErr) {

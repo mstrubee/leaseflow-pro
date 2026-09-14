@@ -52,6 +52,7 @@ interface OCRequest {
   uf_value_at_entry?: number;
   migo_choice?: "con" | "sin" | null;
   sequence_number?: number | null;
+  verification_code?: string | null;
 }
 
 interface EditableLine {
@@ -695,6 +696,8 @@ export const OCRequestViewDialog = ({
         supplierName,
         sequenceNumber: request.sequence_number,
         migoChoice: request.migo_choice,
+        requestId: request.id,
+        verificationCode: request.verification_code,
       });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });

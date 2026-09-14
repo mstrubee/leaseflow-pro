@@ -43,6 +43,7 @@ const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDas
 const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
 const TeamUsers = lazy(() => import("./pages/TeamUsers"));
 const ActivateAccount = lazy(() => import("./pages/ActivateAccount"));
+const VerifyOCRequest = lazy(() => import("./pages/VerifyOCRequest"));
 const ExpenseReportsDashboard = lazy(() => import("./pages/ExpenseReportsDashboard"));
 const FixedAssetsDashboard = lazy(() => import("./pages/FixedAssetsDashboard"));
 
@@ -86,6 +87,7 @@ const App = () => (
                   {/* Public routes */}
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/activar" element={<ActivateAccount />} />
+                  <Route path="/verify-oc/:id/:code" element={<VerifyOCRequest />} />
 
                   {/* Protected routes - require authentication */}
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
