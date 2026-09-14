@@ -11,7 +11,7 @@ import {
   startOfDay,
 } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarRange, Plus, CalendarPlus, Trash2, Minimize2, Maximize2 } from "lucide-react";
+import { CalendarRange, Plus, CalendarPlus, Trash2, Minimize2, Maximize2, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface TimelineProject {
   contractId: string;
@@ -27,6 +29,10 @@ interface TimelineProject {
   companyNames: string[];
   endDate: string;
   capexUF: number;
+  capexCLP: number;
+  surfaceM2: number;
+  address: string | null;
+  commune: string | null;
   /** Color configurado del estado en Admin (uno de PROGRESS_COLOR_OPTIONS) -- null si no tiene. */
   overviewStatusColor: string | null;
 }
@@ -218,6 +224,117 @@ export function GanttOverviewTimeline({
     return map;
   }, [budgetItemsInRange]);
 
+  const formatUF = (n: number) =>
+    new Intl.NumberFormat("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(n));
+  const formatCLP = (n: number) =>
+    new Intl.NumberFormat("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(n));
+  const formatUFm2 = (n: number) =>
+    new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+  /**
+   * PDF con el listado de la línea de tiempo -- los mismos proyectos e ítems
+   * de Presupuesto que se ven en el rango actual, ordenados por fecha, con
+   * la misma info que muestra el listado de abajo (nombre, dirección,
+   * empresa, CAPEX, UF/m²). A propósito NO dibuja el detalle de cronograma
+   * de cada contrato -- eso ya lo cubre el PDF general de "Cartas Gantt -
+   * Vista General".
+   */
+  const handleExportPDF = () => {
+    type Row = {
+      date: string;
+      isBudgetItem: boolean;
+      name: string;
+      company: string;
+      address: string;
+      capexUF: number | null;
+      capexCLP: number | null;
+      ufM2: number | null;
+    };
+
+    const rows: Row[] = [
+      ...inRange.map((p): Row => ({
+        date: p.endDate,
+        isBudgetItem: false,
+        name: p.contractName,
+        company: p.companyNames.join(", ") || "—",
+        address: [p.address, p.commune].filter(Boolean).join(", ") || "—",
+        capexUF: p.capexUF > 0 ? p.capexUF : null,
+        capexCLP: p.capexCLP > 0 ? p.capexCLP : null,
+        ufM2: p.capexUF > 0 && p.surfaceM2 > 0 ? p.capexUF / p.surfaceM2 : null,
+      })),
+      ...budgetItemsInRange.map((it): Row => ({
+        date: it.date,
+        isBudgetItem: true,
+        name: `${it.name} (Presupuesto)`,
+        company: "—",
+        address: "—",
+        capexUF: null,
+        capexCLP: null,
+        ufM2: null,
+      })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+
+    if (rows.length === 0) {
+      toast.info("No hay nada para exportar en el rango visible");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text("Línea de Tiempo General - Cartas Gantt", pageWidth / 2, 14, { align: "center" });
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(80);
+    doc.text(
+      `${format(rangeStart, "MMM yyyy", { locale: es })} a ${format(rangeEnd, "MMM yyyy", { locale: es })}`,
+      pageWidth / 2,
+      20,
+      { align: "center" }
+    );
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}`, pageWidth - 10, 14, { align: "right" });
+    doc.setTextColor(0);
+
+    autoTable(doc, {
+      startY: 26,
+      head: [["Fecha", "Nombre", "Empresa", "Dirección", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
+      body: rows.map((r) => [
+        format(parseISO(r.date), "dd/MM/yyyy"),
+        r.name,
+        r.company,
+        r.address,
+        r.capexUF != null ? formatUF(r.capexUF) : "—",
+        r.capexCLP != null ? `$${formatCLP(r.capexCLP)}` : "—",
+        r.ufM2 != null ? formatUFm2(r.ufM2) : "—",
+      ]),
+      styles: { fontSize: 8, cellPadding: 1.5 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        4: { halign: "right" },
+        5: { halign: "right" },
+        6: { halign: "right" },
+      },
+      didParseCell: (hookData) => {
+        if (hookData.section !== "body") return;
+        const row = rows[hookData.row.index];
+        if (row?.isBudgetItem) {
+          hookData.cell.styles.textColor = [185, 28, 28];
+          hookData.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+
+    doc.save(`Linea_Tiempo_General_${format(new Date(), "yyyyMMdd_HHmm")}.pdf`);
+    toast.success("PDF generado");
+  };
+
   const openCreate = () => {
     setEditing(null);
     setFormName("");
@@ -297,6 +414,16 @@ export function GanttOverviewTimeline({
           <Button variant="outline" size="sm" className="h-7 px-2 text-xs gap-1" onClick={openCreate}>
             <Plus className="h-3.5 w-3.5" />
             Agregar Ítem
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs gap-1"
+            onClick={handleExportPDF}
+            title="Exportar el listado de la línea de tiempo a PDF"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Exportar PDF
           </Button>
           <Button
             variant="outline"
