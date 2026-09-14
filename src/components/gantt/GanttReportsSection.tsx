@@ -73,6 +73,8 @@ interface GanttContractData {
   address: string | null; // calle + número, de contract_addresses
   commune: string | null;
   cebe: string | null; // custom field "CEBE" / "Código"
+  /** contracts.clasificacion -- mismo campo/tabla que Contratos > En Negociación y /capex (capex_clasificacion_types). */
+  clasificacion: string | null;
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
@@ -438,6 +440,10 @@ export function GanttReportsSection() {
 
   const [data, setData] = useState<GanttContractData[]>([]);
   const [loading, setLoading] = useState(true);
+  // "Tipos de CAPEX" / Clasificación, administrables desde Admin > Estados y
+  // Categorías -- mismo campo (contracts.clasificacion) que edita Contratos >
+  // En Negociación y /capex; lo que se cambia acá se refleja allá y viceversa.
+  const [clasificacionTypes, setClasificacionTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
   // Ítems de "Presupuesto" agregados a mano sobre la línea de tiempo general
   // -- puramente informativos, NO son contratos: no cuentan para ningún
   // listado ni filtro de contratos (vigentes/en negociación/rechazados/etc.).
@@ -572,6 +578,27 @@ export function GanttReportsSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ufValue]);
 
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_clasificacion_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      setClasificacionTypes(data || []);
+    })();
+  }, []);
+
+  const updateClasificacion = async (contractId: string, value: string) => {
+    const prev = data;
+    setData((cur) => cur.map((d) => (d.contractId === contractId ? { ...d, clasificacion: value } : d)));
+    const { error } = await supabase.from("contracts").update({ clasificacion: value }).eq("id", contractId);
+    if (error) {
+      setData(prev);
+      toast.error("No se pudo actualizar la clasificación");
+    }
+  };
+
   const loadBudgetItems = async () => {
     const { data, error } = await (supabase as any)
       .from("gantt_overview_budget_items")
@@ -628,7 +655,7 @@ export function GanttReportsSection() {
       // 2) Datos del contrato (nombre, superficie, verificar no eliminado)
       const { data: contractRows, error: cErr } = await supabase
         .from("contracts")
-        .select("id, name, deleted_at, comite_gp_status, superficie_edificada_local")
+        .select("id, name, deleted_at, comite_gp_status, superficie_edificada_local, clasificacion")
         .in("id", contractIds);
       if (cErr) throw cErr;
 
@@ -827,6 +854,7 @@ export function GanttReportsSection() {
           address: addressByContract.get(contractId)?.address ?? null,
           commune: addressByContract.get(contractId)?.commune ?? null,
           cebe: cebeByContract.get(contractId) ?? null,
+          clasificacion: contract.clasificacion ?? null,
         });
       }
 
@@ -862,6 +890,21 @@ export function GanttReportsSection() {
     );
   const formatUFm2 = (n: number) =>
     new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+  const CLASIFICACION_COLOR_MAP: Record<string, string> = {
+    green: "bg-green-100 text-green-800 border-green-300 hover:bg-green-200",
+    red: "bg-red-100 text-red-800 border-red-300 hover:bg-red-200",
+    blue: "bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200",
+    yellow: "bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200",
+    purple: "bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200",
+    orange: "bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200",
+    gray: "bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200",
+  };
+  const getClasificacionColor = (name: string | null) => {
+    if (!name) return "";
+    const type = clasificacionTypes.find((t) => t.name === name);
+    return CLASIFICACION_COLOR_MAP[type?.color || "gray"] || "";
+  };
 
   const exportPDF = async () => {
     if (exportTarget.length === 0) {
@@ -1191,6 +1234,7 @@ export function GanttReportsSection() {
           surfaceM2: d.surfaceM2,
           address: d.address,
           commune: d.commune,
+          clasificacion: d.clasificacion,
           overviewStatusColor: resolveOverviewStatus(d.overviewStatusId)?.color ?? null,
           isTerminado: resolveOverviewStatus(d.overviewStatusId)?.name === "Terminado",
         })),
@@ -1499,6 +1543,23 @@ export function GanttReportsSection() {
                               </div>
                             )}
                             <div className="flex items-center gap-3">
+                              <Select
+                                value={item.clasificacion || ""}
+                                onValueChange={(v) => updateClasificacion(item.contractId, v)}
+                              >
+                                <SelectTrigger
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={cn("h-7 w-[130px] text-xs gap-1", getClasificacionColor(item.clasificacion))}
+                                  title="Clasificación (mismo campo que Contratos > En Negociación)"
+                                >
+                                  <SelectValue placeholder="Clasificar..." />
+                                </SelectTrigger>
+                                <SelectContent onClick={(e) => e.stopPropagation()}>
+                                  {clasificacionTypes.map((t) => (
+                                    <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                               {item.timelineId && (() => {
                                 const currentStatus = resolveOverviewStatus(item.overviewStatusId);
                                 return (
