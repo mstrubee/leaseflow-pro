@@ -11,7 +11,7 @@ import {
   startOfDay,
 } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarRange, Plus, CalendarPlus, Trash2 } from "lucide-react";
+import { CalendarRange, Plus, CalendarPlus, Trash2, Minimize2, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,8 +79,17 @@ export function GanttOverviewTimeline({
   onBudgetItemsChange,
 }: GanttOverviewTimelineProps) {
   const today = startOfDay(new Date());
+  const baseStart = useMemo(() => startOfMonth(addMonths(today, -1)), [today]);
+  const baseEnd = useMemo(() => endOfMonth(addMonths(baseStart, MONTHS_PER_YEAR - 1)), [baseStart]);
 
-  const [extraYears, setExtraYears] = useState(0);
+  // Fecha hasta la que se extendió el calendario (null = sin extensión
+  // todavía). "compacted" alterna entre mostrar los 12 meses base o el rango
+  // extendido completo, sin perder la extensión ya elegida.
+  const [extendedUntil, setExtendedUntil] = useState<Date | null>(null);
+  const [compacted, setCompacted] = useState(false);
+
+  const [extendDialogOpen, setExtendDialogOpen] = useState(false);
+  const [extendDate, setExtendDate] = useState("");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<GanttOverviewBudgetItem | null>(null);
@@ -90,9 +99,9 @@ export function GanttOverviewTimeline({
   const [deleting, setDeleting] = useState(false);
 
   const { rangeStart, rangeEnd, months, todayPct, innerWidthPct } = useMemo(() => {
-    const start = startOfMonth(addMonths(today, -1));
-    const totalMonths = MONTHS_PER_YEAR + extraYears * MONTHS_PER_YEAR;
-    const end = endOfMonth(addMonths(start, totalMonths - 1));
+    const start = baseStart;
+    const fullEnd = extendedUntil && extendedUntil > baseEnd ? endOfMonth(extendedUntil) : baseEnd;
+    const end = compacted ? baseEnd : fullEnd;
     const totalDays = differenceInCalendarDays(end, start) + 1;
     const months = eachMonthOfInterval({ start, end }).map((m) => {
       const monthStart = m < start ? start : startOfMonth(m);
@@ -101,14 +110,32 @@ export function GanttOverviewTimeline({
       return { date: m, widthPct: (days / totalDays) * 100 };
     });
     const todayPct = (differenceInCalendarDays(today, start) / totalDays) * 100;
-    // El contenedor interno mide (totalMonths/12) * 100% del ancho visible --
-    // con 12 meses (extraYears=0) da exactamente 100% (sin scroll); cada mes
-    // adicional agrega proporcionalmente más ancho al interior, así que el
-    // tamaño de cada mes en pantalla se mantiene constante y aparece scroll.
-    const innerWidthPct = (totalMonths / MONTHS_PER_YEAR) * 100;
+    // El contenedor interno mide (totalDays/díasBase) * 100% del ancho
+    // visible -- con los 12 meses base da exactamente 100% (sin scroll);
+    // cada mes adicional agrega proporcionalmente más ancho al interior, así
+    // que el tamaño de cada mes en pantalla se mantiene constante y recién
+    // ahí aparece scroll.
+    const baseDays = differenceInCalendarDays(baseEnd, baseStart) + 1;
+    const innerWidthPct = (totalDays / baseDays) * 100;
     return { rangeStart: start, rangeEnd: end, months, todayPct, innerWidthPct };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extraYears]);
+  }, [baseStart, baseEnd, extendedUntil, compacted, today]);
+
+  const openExtendDialog = () => {
+    setExtendDate(format(addMonths(extendedUntil ?? baseEnd, 1), "yyyy-MM-dd"));
+    setExtendDialogOpen(true);
+  };
+
+  const handleExtend = () => {
+    if (!extendDate) return;
+    const target = parseISO(extendDate);
+    if (target <= baseEnd) {
+      toast.error("La fecha debe ser posterior al rango de 12 meses actual");
+      return;
+    }
+    setExtendedUntil((prev) => (prev && prev > target ? prev : target));
+    setCompacted(false);
+    setExtendDialogOpen(false);
+  };
 
   const { inRange, before, after } = useMemo(() => {
     const inRange: TimelineProject[] = [];
@@ -239,12 +266,36 @@ export function GanttOverviewTimeline({
             variant="outline"
             size="sm"
             className="h-7 px-2 text-xs gap-1"
-            onClick={() => setExtraYears((y) => y + 1)}
-            title="Extender la línea de tiempo un año más"
+            onClick={openExtendDialog}
+            title="Extender la línea de tiempo hasta una fecha"
           >
             <CalendarPlus className="h-3.5 w-3.5" />
             Extender
           </Button>
+          {extendedUntil && !compacted && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={() => setCompacted(true)}
+              title="Volver a la vista de 12 meses, sin scroll"
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+              Compactar a 12 Meses
+            </Button>
+          )}
+          {extendedUntil && compacted && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={() => setCompacted(false)}
+              title={`Ver el rango extendido hasta ${format(endOfMonth(extendedUntil), "MMM yyyy", { locale: es })}`}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              Ver Extensión
+            </Button>
+          )}
         </div>
 
         <div className="relative overflow-x-auto">
@@ -381,6 +432,27 @@ export function GanttOverviewTimeline({
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
               <Button onClick={handleSave} disabled={saving || deleting}>{saving ? "Guardando..." : "Guardar"}</Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={extendDialogOpen} onOpenChange={setExtendDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Extender línea de tiempo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Extender hasta *</Label>
+              <Input type="date" value={extendDate} onChange={(e) => setExtendDate(e.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                La línea de tiempo mostrará meses hasta la fecha que elijas acá.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtendDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleExtend}>Extender</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
