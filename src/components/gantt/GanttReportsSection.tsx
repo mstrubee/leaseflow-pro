@@ -1192,6 +1192,7 @@ export function GanttReportsSection() {
           address: d.address,
           commune: d.commune,
           overviewStatusColor: resolveOverviewStatus(d.overviewStatusId)?.color ?? null,
+          isTerminado: resolveOverviewStatus(d.overviewStatusId)?.name === "Terminado",
         })),
     [data, overviewStatusesById]
   );

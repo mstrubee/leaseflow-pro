@@ -11,7 +11,7 @@ import {
   startOfDay,
 } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarRange, Plus, CalendarPlus, Trash2, Minimize2, Maximize2, Download } from "lucide-react";
+import { CalendarRange, Plus, CalendarPlus, Trash2, Minimize2, Maximize2, Download, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,8 @@ interface TimelineProject {
   commune: string | null;
   /** Color configurado del estado en Admin (uno de PROGRESS_COLOR_OPTIONS) -- null si no tiene. */
   overviewStatusColor: string | null;
+  /** true si el estado del proyecto (en Admin > Estados de Cartas Gantt) es "Terminado" -- se marca en verde con un check, sin importar el color configurado. */
+  isTerminado: boolean;
 }
 
 export interface GanttOverviewBudgetItem {
@@ -345,8 +347,8 @@ export function GanttOverviewTimeline({
       const budgetHere = (budgetItemsByMonthKey.get(lane.key) ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
       const projectsHere = (projectsByMonthKey.get(lane.key) ?? []).slice().sort((a, b) => a.endDate.localeCompare(b.endDate));
       const combined = [
-        ...budgetHere.map((it) => ({ isBudgetItem: true, label: `${format(parseISO(it.date), "dd/MM")} ${it.name}` })),
-        ...projectsHere.map((p) => ({ isBudgetItem: false, label: `${format(parseISO(p.endDate), "dd/MM")} ${p.contractName}` })),
+        ...budgetHere.map((it) => ({ isBudgetItem: true, isTerminado: false, label: `${format(parseISO(it.date), "dd/MM")} ${it.name}` })),
+        ...projectsHere.map((p) => ({ isBudgetItem: false, isTerminado: p.isTerminado, label: `${format(parseISO(p.endDate), "dd/MM")} ${p.contractName}` })),
       ];
       return { ...lane, combined };
     });
@@ -364,6 +366,9 @@ export function GanttOverviewTimeline({
         if (item.isBudgetItem) {
           doc.setFillColor(254, 226, 226);
           doc.setTextColor(153, 27, 27);
+        } else if (item.isTerminado) {
+          doc.setFillColor(220, 252, 231);
+          doc.setTextColor(21, 128, 61);
         } else {
           doc.setFillColor(219, 234, 254);
           doc.setTextColor(30, 64, 175);
@@ -642,12 +647,21 @@ export function GanttOverviewTimeline({
                           onClick={() => onSelect(p.contractId)}
                           title={`${p.contractName} — término ${format(d, "dd/MM/yyyy")}${
                             p.companyNames.length ? ` · ${p.companyNames.join(", ")}` : ""
-                          }`}
+                          }${p.isTerminado ? " · Terminado" : ""}`}
                           className={cn(
-                            "text-left text-[10px] leading-tight rounded border px-1.5 py-1 truncate transition-shadow hover:shadow-sm hover:border-primary/50",
-                            overdue ? "bg-red-50 border-red-200 text-red-700" : getLightColorClass(p.overviewStatusColor)
+                            "relative text-left text-[10px] leading-tight rounded border px-1.5 py-1 truncate transition-shadow hover:shadow-sm hover:border-primary/50",
+                            p.isTerminado
+                              ? "bg-green-50 border-green-400 text-green-800"
+                              : overdue
+                              ? "bg-red-50 border-red-200 text-red-700"
+                              : getLightColorClass(p.overviewStatusColor)
                           )}
                         >
+                          {p.isTerminado && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-green-500">
+                              <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                            </span>
+                          )}
                           <div className="font-semibold">{format(d, "dd MMM", { locale: es })}</div>
                           <div className="truncate">{p.contractName}</div>
                         </button>
