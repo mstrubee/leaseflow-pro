@@ -331,7 +331,7 @@ export function GanttOverviewTimeline({
     const chartWidth = pageWidth - chartLeft * 2;
     const yearRowH = 6;
     const monthRowH = 5;
-    const rowH = 3.2;
+    const rowH = 3.7;
     const maxChipRows = 8;
 
     doc.setFontSize(9);
@@ -378,33 +378,39 @@ export function GanttOverviewTimeline({
     const maxRowsUsed = Math.max(1, ...laneItems.map((l) => Math.min(l.combined.length, maxChipRows)));
     const bodyHeight = maxRowsUsed * rowH + 2;
 
-    doc.setFontSize(5.5);
+    doc.setFontSize(6.2);
     doc.setFont("helvetica", "normal");
     laneItems.forEach(({ x: laneX, w, combined }) => {
       doc.setDrawColor(...PDF_BORDER);
       doc.rect(laneX, bodyY, w, bodyHeight);
-      const maxChars = Math.max(3, Math.floor(w / 1.05));
+      const maxChars = Math.max(3, Math.floor(w / 1.15));
       combined.slice(0, maxChipRows).forEach((item, idx) => {
-        const y = bodyY + 1.6 + idx * rowH;
+        const y = bodyY + 1.8 + idx * rowH;
+        // Fondo + BORDE del chip (estilo "FD") -- sin borde, un fondo pálido
+        // se pierde contra el fondo gris claro de la página, que era la
+        // causa de que la línea de tiempo se viera "sin colores" en el PDF.
         if (item.isBudgetItem) {
-          doc.setFillColor(254, 226, 226);
+          doc.setFillColor(254, 202, 202);
+          doc.setDrawColor(220, 38, 38);
           doc.setTextColor(153, 27, 27);
         } else if (item.isTerminado) {
-          doc.setFillColor(220, 252, 231);
-          doc.setTextColor(21, 128, 61);
+          doc.setFillColor(187, 247, 208);
+          doc.setDrawColor(21, 128, 61);
+          doc.setTextColor(20, 83, 45);
         } else {
-          doc.setFillColor(229, 231, 235);
-          doc.setTextColor(55, 65, 81);
+          doc.setFillColor(203, 213, 225);
+          doc.setDrawColor(71, 85, 105);
+          doc.setTextColor(15, 23, 42);
         }
-        doc.rect(laneX + 0.3, y - 2.2, w - 0.6, rowH - 0.4, "F");
+        doc.rect(laneX + 0.3, y - 2.5, w - 0.6, rowH - 0.5, "FD");
         const label = item.label.length > maxChars ? `${item.label.slice(0, maxChars - 1)}…` : item.label;
         doc.text(label, laneX + 0.6, y - 0.6);
       });
       if (combined.length > maxChipRows) {
-        doc.setFontSize(5);
+        doc.setFontSize(5.5);
         doc.setTextColor(90);
         doc.text(`+${combined.length - maxChipRows}`, laneX + w / 2, bodyY + bodyHeight - 0.5, { align: "center" });
-        doc.setFontSize(5.5);
+        doc.setFontSize(6.2);
       }
     });
     doc.setTextColor(0);
