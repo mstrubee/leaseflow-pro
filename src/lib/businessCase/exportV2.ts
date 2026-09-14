@@ -7,6 +7,8 @@ import { fmtMM, fmtPct } from "./format";
 import { buildResumenEjecutivoRows, buildPnlRows } from "./reportRows";
 import { addNegocioCompletoSheet } from "./exportFullTermSheet";
 import bcTemplateUrl from "@/assets/bc_template.xlsx?url";
+import { getLogoUrls } from "@/hooks/useAppLogos";
+import { companyKeyFromNames } from "@/lib/companyLogo";
 
 // Mismos colores/layout que la lámina "Detalle Capex Plan Expansión" del
 // Informe Directorio (ver InformeDirectorioPPT.ts) — este PDF reutiliza las
@@ -42,6 +44,37 @@ function buildBulletsForBC(inputs: BCInputs, r: BCResult): string[] {
   return bullets;
 }
 
+interface ImgData {
+  base64: string;
+  w: number;
+  h: number;
+}
+
+function loadImageAsDataURL(src: string): Promise<ImgData> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0);
+      resolve({ base64: canvas.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+/** Calcula el tamaño para que la imagen entre en la caja manteniendo el aspect ratio. */
+function fitContain(imgW: number, imgH: number, boxW: number, boxH: number) {
+  const imgAspect = imgW / imgH;
+  const boxAspect = boxW / boxH;
+  if (imgAspect > boxAspect) return { w: boxW, h: boxW / imgAspect };
+  return { w: boxH * imgAspect, h: boxH };
+}
+
 function buildSubtitleForBC(inputs: BCInputs): string {
   // "-" en vez de "→": la fuente Helvetica base de jsPDF no tiene ese glyph
   // (sale como caracteres basura). El PPT del Informe Directorio sí usa "→"
@@ -51,11 +84,27 @@ function buildSubtitleForBC(inputs: BCInputs): string {
   return `Nuevo Local ${inputs.nombre}${isExpress ? " - Formato Express" : ""}`;
 }
 
-export function exportBusinessCasePDF(inputs: BCInputs, r: BCResult) {
+export async function exportBusinessCasePDF(inputs: BCInputs, r: BCResult) {
   const doc = new jsPDF({ orientation: "landscape", unit: "in", format: [10, 5.625] });
 
   doc.setFillColor(PAGE_BG);
   doc.rect(0, 0, 10, 5.625, "F");
+
+  // Logo de la empresa (Autoplanet/Agroplanet/Grupo Planet) arriba a la
+  // derecha -- mismo formato "estándar de directorio" que usa el PPT del
+  // Informe Directorio y el resto de los export de la app.
+  try {
+    const logos = await getLogoUrls();
+    const companyKey = companyKeyFromNames([inputs.tipo]) ?? "autoplanet";
+    const logoUrl = companyKey === "agroplanet" ? logos.agroplanet
+      : companyKey === "grupo_planet" ? logos.grupoPlanet
+      : logos.autoplanet;
+    const logoImg = await loadImageAsDataURL(logoUrl);
+    const fit = fitContain(logoImg.w, logoImg.h, 1.6, 0.5);
+    doc.addImage(logoImg.base64, "PNG", 9.6 - fit.w, 0.25 + (0.5 - fit.h) / 2, fit.w, fit.h);
+  } catch {
+    // Sin logo si falla la carga -- no bloquea el export.
+  }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
