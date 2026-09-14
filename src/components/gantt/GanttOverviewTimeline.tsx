@@ -281,30 +281,48 @@ export function GanttOverviewTimeline({
       return;
     }
 
+    // Mismo formato estándar de directorio que el resto de los export de la
+    // app (maroon/kicker rojo -- ver CapexPPTExport.ts / exportV2.ts).
+    const PDF_MAROON: [number, number, number] = [192, 0, 63];
+    const PDF_MAROON_LIGHT: [number, number, number] = [251, 228, 234];
+    const PDF_KICKER_RED: [number, number, number] = [194, 29, 24];
+    const PDF_PAGE_BG: [number, number, number] = [242, 242, 242];
+    const PDF_DARK: [number, number, number] = [26, 26, 26];
+    const PDF_MUTED: [number, number, number] = [102, 102, 102];
+    const PDF_BORDER: [number, number, number] = [204, 204, 204];
+
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    doc.setFillColor(...PDF_PAGE_BG);
+    doc.rect(0, 0, pageWidth, pageHeight, "F");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(0);
-    doc.text("Línea de Tiempo General - Cartas Gantt", pageWidth / 2, 14, { align: "center" });
+    doc.setFontSize(11);
+    doc.setTextColor(...PDF_KICKER_RED);
+    doc.text("CARTAS GANTT - VISTA GENERAL", 10, 12);
+    doc.setFontSize(15);
+    doc.setTextColor(...PDF_DARK);
+    doc.text("Línea de Tiempo General", 10, 19);
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(80);
+    doc.setTextColor(...PDF_MUTED);
     doc.text(
       `${format(rangeStart, "MMM yyyy", { locale: es })} a ${format(rangeEnd, "MMM yyyy", { locale: es })}`,
-      pageWidth / 2,
-      20,
-      { align: "center" }
+      10,
+      24.5
     );
     doc.setFontSize(8);
-    doc.setTextColor(120);
-    doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}`, pageWidth - 10, 14, { align: "right" });
-    doc.setTextColor(0);
+    doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}`, pageWidth - 10, 12, { align: "right" });
+    doc.setDrawColor(...PDF_BORDER);
+    doc.setLineWidth(0.2);
+    doc.line(10, 27, pageWidth - 10, 27);
+    doc.setTextColor(...PDF_DARK);
 
     // ── Dibujo de la línea de tiempo (años, meses y chips por fecha) ──
     const chartLeft = 10;
-    const chartTop = 26;
+    const chartTop = 32;
     const chartWidth = pageWidth - chartLeft * 2;
     const yearRowH = 6;
     const monthRowH = 5;
@@ -316,11 +334,11 @@ export function GanttOverviewTimeline({
     let x = chartLeft;
     years.forEach(({ year, widthPct }) => {
       const w = (widthPct / 100) * chartWidth;
-      doc.setFillColor(226, 232, 240);
+      doc.setFillColor(...PDF_MAROON);
       doc.rect(x, chartTop, w, yearRowH, "F");
-      doc.setDrawColor(180);
+      doc.setDrawColor(...PDF_BORDER);
       doc.rect(x, chartTop, w, yearRowH);
-      doc.setTextColor(30);
+      doc.setTextColor(255, 255, 255);
       doc.text(String(year), x + w / 2, chartTop + yearRowH - 1.8, { align: "center" });
       x += w;
     });
@@ -332,11 +350,11 @@ export function GanttOverviewTimeline({
     x = chartLeft;
     months.forEach(({ date, widthPct }) => {
       const w = (widthPct / 100) * chartWidth;
-      doc.setFillColor(245, 245, 248);
+      doc.setFillColor(...PDF_MAROON_LIGHT);
       doc.rect(x, monthRowY, w, monthRowH, "F");
-      doc.setDrawColor(200);
+      doc.setDrawColor(...PDF_BORDER);
       doc.rect(x, monthRowY, w, monthRowH);
-      doc.setTextColor(60);
+      doc.setTextColor(...PDF_DARK);
       doc.text(format(date, "MMM", { locale: es }), x + w / 2, monthRowY + monthRowH - 1.3, { align: "center" });
       lanes.push({ x, w, key: format(date, "yyyy-MM") });
       x += w;
@@ -358,7 +376,7 @@ export function GanttOverviewTimeline({
     doc.setFontSize(5.5);
     doc.setFont("helvetica", "normal");
     laneItems.forEach(({ x: laneX, w, combined }) => {
-      doc.setDrawColor(210);
+      doc.setDrawColor(...PDF_BORDER);
       doc.rect(laneX, bodyY, w, bodyHeight);
       const maxChars = Math.max(3, Math.floor(w / 1.05));
       combined.slice(0, maxChipRows).forEach((item, idx) => {
@@ -370,8 +388,8 @@ export function GanttOverviewTimeline({
           doc.setFillColor(220, 252, 231);
           doc.setTextColor(21, 128, 61);
         } else {
-          doc.setFillColor(219, 234, 254);
-          doc.setTextColor(30, 64, 175);
+          doc.setFillColor(229, 231, 235);
+          doc.setTextColor(55, 65, 81);
         }
         doc.rect(laneX + 0.3, y - 2.2, w - 0.6, rowH - 0.4, "F");
         const label = item.label.length > maxChars ? `${item.label.slice(0, maxChars - 1)}…` : item.label;
@@ -413,9 +431,9 @@ export function GanttOverviewTimeline({
         r.capexCLP != null ? `$${formatCLP(r.capexCLP)}` : "—",
         r.ufM2 != null ? formatUFm2(r.ufM2) : "—",
       ]),
-      styles: { fontSize: 8, cellPadding: 1.5 },
-      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
+      styles: { fontSize: 8, cellPadding: 1.5, lineColor: PDF_BORDER },
+      headStyles: { fillColor: PDF_MAROON, textColor: 255 },
+      alternateRowStyles: { fillColor: PDF_MAROON_LIGHT },
       columnStyles: {
         0: { cellWidth: 25 },
         4: { halign: "right" },
