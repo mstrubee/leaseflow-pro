@@ -1467,8 +1467,8 @@ export function GanttReportsSection() {
                           className="py-3 px-4 cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => toggleCard(item.contractId)}
                         >
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="grid grid-cols-[minmax(0,1fr)_340px_140px_130px_140px_32px_auto] items-center gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
                               {/* Checkbox de selección para PDF */}
                               <div
                                 onClick={(e) => {
@@ -1523,44 +1523,46 @@ export function GanttReportsSection() {
                                 </div>
                               </div>
                             </div>
-                            {item.disbursement && (
-                              <div className="hidden lg:flex items-center gap-4 text-xs border-l pl-4 mr-2">
-                                <div className="text-center">
-                                  <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
-                                  <div className="font-medium">${formatCLP(item.disbursement.anticipo)} + IVA</div>
-                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.startDate), "dd/MM/yyyy")}</div>
-                                </div>
-                                <div className="text-center">
-                                  <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
-                                  <div className="font-medium">${formatCLP(item.disbursement.pago1)}</div>
-                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.midDate), "dd/MM/yyyy")}</div>
-                                </div>
-                                <div className="text-center">
-                                  <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
-                                  <div className="font-medium">${formatCLP(item.disbursement.pago2)} + IVA</div>
-                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.endDate), "dd/MM/yyyy")}</div>
-                                </div>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-3">
-                              <Select
-                                value={item.clasificacion || ""}
-                                onValueChange={(v) => updateClasificacion(item.contractId, v)}
+                            <div className="hidden lg:flex items-center gap-4 text-xs border-l pl-4 min-w-0">
+                              {item.disbursement && (
+                                <>
+                                  <div className="text-center">
+                                    <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
+                                    <div className="font-medium">${formatCLP(item.disbursement.anticipo)} + IVA</div>
+                                    <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.startDate), "dd/MM/yyyy")}</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
+                                    <div className="font-medium">${formatCLP(item.disbursement.pago1)}</div>
+                                    <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.midDate), "dd/MM/yyyy")}</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
+                                    <div className="font-medium">${formatCLP(item.disbursement.pago2)} + IVA</div>
+                                    <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.endDate), "dd/MM/yyyy")}</div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            <Select
+                              value={item.clasificacion || ""}
+                              onValueChange={(v) => updateClasificacion(item.contractId, v)}
+                            >
+                              <SelectTrigger
+                                onClick={(e) => e.stopPropagation()}
+                                className={cn("h-7 w-full text-xs gap-1", getClasificacionColor(item.clasificacion))}
+                                title="Clasificación (mismo campo que Contratos > En Negociación)"
                               >
-                                <SelectTrigger
-                                  onClick={(e) => e.stopPropagation()}
-                                  className={cn("h-7 w-[130px] text-xs gap-1", getClasificacionColor(item.clasificacion))}
-                                  title="Clasificación (mismo campo que Contratos > En Negociación)"
-                                >
-                                  <SelectValue placeholder="Clasificar..." />
-                                </SelectTrigger>
-                                <SelectContent onClick={(e) => e.stopPropagation()}>
-                                  {clasificacionTypes.map((t) => (
-                                    <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              {item.timelineId && (() => {
+                                <SelectValue placeholder="Clasificar..." />
+                              </SelectTrigger>
+                              <SelectContent onClick={(e) => e.stopPropagation()}>
+                                {clasificacionTypes.map((t) => (
+                                  <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <div>
+                              {item.timelineId ? (() => {
                                 const currentStatus = resolveOverviewStatus(item.overviewStatusId);
                                 return (
                                   <Select
@@ -1571,7 +1573,7 @@ export function GanttReportsSection() {
                                   >
                                     <SelectTrigger
                                       onClick={(e) => e.stopPropagation()}
-                                      className={cn("h-7 w-[112px] text-xs gap-1", getProgressColorClass(currentStatus?.color))}
+                                      className={cn("h-7 w-full text-xs gap-1", getProgressColorClass(currentStatus?.color))}
                                       title="Estado del proyecto en esta vista"
                                     >
                                       <SelectValue />
@@ -1583,58 +1585,58 @@ export function GanttReportsSection() {
                                     </SelectContent>
                                   </Select>
                                 );
-                              })()}
-                              <div className="text-right text-xs">
-                                <div className="text-muted-foreground">CAPEX Total</div>
-                                <div className="font-semibold text-sm">
-                                  {item.capexUF > 0 ? (
-                                    <>
-                                      UF {formatUF(item.capexUF)}
-                                      <span className="text-muted-foreground font-normal ml-1">
-                                        / ${formatCLP(item.capexCLP)}
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <span className="text-muted-foreground">Sin CAPEX</span>
-                                  )}
-                                </div>
-                                {item.capexUF > 0 && item.surfaceM2 > 0 && (
-                                  <div className="text-[11px] text-muted-foreground font-normal">
-                                    {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
-                                  </div>
+                              })() : null}
+                            </div>
+                            <div className="text-right text-xs">
+                              <div className="text-muted-foreground">CAPEX Total</div>
+                              <div className="font-semibold text-sm">
+                                {item.capexUF > 0 ? (
+                                  <>
+                                    UF {formatUF(item.capexUF)}
+                                    <span className="text-muted-foreground font-normal ml-1">
+                                      / ${formatCLP(item.capexCLP)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-muted-foreground">Sin CAPEX</span>
                                 )}
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleSelectionMode(item.contractId);
-                                }}
-                                title="Seleccionar líneas a ocultar en la vista"
-                              >
-                                {selectionModeCards.has(item.contractId) ? (
-                                  <EyeOff className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Eye className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                {...prefetchOn("ContractDetail")}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigateToContractFromReports(item.contractId, "gantt");
-                                }}
-                                title="Ir al proyecto"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                Ir al proyecto
-                              </Button>
+                              {item.capexUF > 0 && item.surfaceM2 > 0 && (
+                                <div className="text-[11px] text-muted-foreground font-normal">
+                                  {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
+                                </div>
+                              )}
                             </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelectionMode(item.contractId);
+                              }}
+                              title="Seleccionar líneas a ocultar en la vista"
+                            >
+                              {selectionModeCards.has(item.contractId) ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              {...prefetchOn("ContractDetail")}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToContractFromReports(item.contractId, "gantt");
+                              }}
+                              title="Ir al proyecto"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Ir al proyecto
+                            </Button>
                           </div>
                         </CardHeader>
                         {isOpen && (
