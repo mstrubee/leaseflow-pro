@@ -864,12 +864,14 @@ export function GanttChart({
         const parentPosition = getTaskPosition(parentTask);
         if (!parentPosition.visible) return;
 
-        // Shift the whole arrow to the RIGHT so it starts just to the right of
-        // the parent's vertical edge, and the arrowhead lands ~50% over the
-        // dependent task bar.
-        const fromX = headerOffset + parentPosition.left + parentPosition.width + 8;
+        // Ancla EXACTA en los bordes de las barras -- nunca dentro de ellas.
+        // La flecha sale del borde derecho de la barra origen y llega
+        // apenas al borde izquierdo de la barra destino (nunca superpuesta
+        // sobre su texto/relleno). Los tramos rectos de entrada/salida se
+        // agregan al dibujar el path (ver dependencyArrows.map).
+        const fromX = headerOffset + parentPosition.left + parentPosition.width;
         const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const toX = headerOffset + taskPosition.left + Math.min(Math.max(taskPosition.width / 2, 10), 24);
+        const toX = headerOffset + taskPosition.left;
         const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
 
         arrows.push({
@@ -2282,14 +2284,16 @@ export function GanttChart({
                   // Routing guarantees:
                   //  1) Always exits the parent bar with a horizontal segment to the RIGHT (SOURCE_LEAD).
                   //  2) Always arrives at the arrow tip with a horizontal segment from the LEFT (HORIZ_LEAD).
-                  const SOURCE_LEAD = 24; // forced horizontal exit to the right of parent (50% of previous)
-                  const HORIZ_LEAD = 28;  // forced horizontal lead-in to the arrow tip (50% of previous)
+                  const SOURCE_LEAD = 3; // avanza 2-3px al salir de la barra origen antes de quebrar
+                  const HORIZ_LEAD = 3;  // tramo horizontal de 2-3px justo antes de llegar a la punta
                   const VERT_GAP = ROW_HEIGHT / 2 - 2;
                   // Separa el eje vertical de cada flecha según su "carril"
                   // (arrow.lane, ver dependencyArrows) para que dos
                   // dependencias que cruzan las mismas filas no queden
-                  // dibujadas exactamente encima una de la otra.
-                  const LANE_STEP = 7;
+                  // dibujadas exactamente encima una de la otra. Solo se
+                  // usa cuando hace falta -- la mayoría de las flechas
+                  // (carril 0) mantienen el tramo de salida de 2-3px.
+                  const LANE_STEP = 6;
 
                   const baseExitX = arrow.fromX + SOURCE_LEAD;
                   const approachX = arrow.toX - HORIZ_LEAD;
