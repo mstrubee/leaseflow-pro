@@ -203,6 +203,17 @@ export function filterCapexLines<T extends { id: string; name: string; parent_id
   return lines.filter(l => keep.has(l.id));
 }
 
+// Presupuesto/cotización adjuntado -- mismo criterio de previsualización que
+// usa OCRequestDialog.tsx (CAPEX) para que la experiencia sea consistente
+// entre ambos flujos de creación de Solicitud de OC.
+type QuotePreviewKind = "pdf" | "image" | "none";
+function quotePreviewKindOf(fileName: string): QuotePreviewKind {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
+  if (ext === ".pdf") return "pdf";
+  if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image";
+  return "none";
+}
+
 interface CentralizedOrderCreatorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -223,7 +234,11 @@ export const CentralizedOrderCreator = ({
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [activeTab, setActiveTab] = useState("basic");
+  // Al crear una Solicitud de OC ("request"), el flujo empieza por elegir
+  // contrato/categoría y adjuntar el presupuesto -- igual que el diálogo de
+  // CAPEX (OCRequestDialog.tsx). El modo "order" (Orden de Compra directa)
+  // mantiene su propio orden de siempre (Datos → Contratos → Pagos).
+  const [activeTab, setActiveTab] = useState(mode === "request" ? "contracts" : "basic");
   const [loading, setLoading] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
@@ -257,6 +272,7 @@ export const CentralizedOrderCreator = ({
 
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
+  const [quotationPreviewUrl, setQuotationPreviewUrl] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [duplicateOCWarning, setDuplicateOCWarning] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
@@ -299,6 +315,14 @@ export const CentralizedOrderCreator = ({
       loadInitialData();
     }
   }, [open, year]);
+
+  // Libera el blob URL de previsualización del presupuesto al desmontar.
+  useEffect(() => {
+    return () => {
+      if (quotationPreviewUrl) URL.revokeObjectURL(quotationPreviewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotationPreviewUrl]);
 
   const loadCapexLinesForContract = useCallback(async (contractId: string) => {
     if (!contractId || capexLinesByContract[contractId] !== undefined) return;
@@ -599,11 +623,19 @@ export const CentralizedOrderCreator = ({
     const file = e.target.files?.[0];
     if (file) {
       setQuotationFile(file);
+      setQuotationPreviewUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
     }
   };
-  
+
   const handleRemoveFile = () => {
     setQuotationFile(null);
+    setQuotationPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -682,6 +714,14 @@ export const CentralizedOrderCreator = ({
 
     if (mode === "request" && paymentPlan.length === 0) {
       toast({ title: "Error", description: "Debe agregar al menos un pago al plan de pagos", variant: "destructive" });
+      return;
+    }
+
+    // Igual que en OCRequestDialog.tsx (CAPEX): no se permite crear una
+    // Solicitud de OC sin adjuntar el presupuesto/cotización.
+    if (mode === "request" && !quotationFile) {
+      toast({ title: "Falta adjuntar presupuesto", description: "Debe adjuntar el presupuesto/cotización antes de crear la solicitud", variant: "destructive" });
+      setActiveTab("quote");
       return;
     }
 
@@ -1153,7 +1193,7 @@ export const CentralizedOrderCreator = ({
   
   // Reset and close
   const handleClose = () => {
-    setActiveTab("basic");
+    setActiveTab(mode === "request" ? "contracts" : "basic");
     setBudgetType("opex");
     setSelectedCategoryId("");
     setIsMultiContract(false);
@@ -1164,6 +1204,10 @@ export const CentralizedOrderCreator = ({
     setSingleFormIds([]);
     setContractForms({});
     setQuotationFile(null);
+    setQuotationPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     setDuplicateOCWarning(false);
     setCheckingDuplicate(false);
     setCapexLinesByContract({});
@@ -1206,11 +1250,23 @@ export const CentralizedOrderCreator = ({
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <TabsList className="grid grid-cols-3 shrink-0">
-              <TabsTrigger value="basic">Datos</TabsTrigger>
-              <TabsTrigger value="contracts">Contratos</TabsTrigger>
-              <TabsTrigger value="payments">Pagos</TabsTrigger>
-            </TabsList>
+            {mode === "request" ? (
+              // Mismo orden que OCRequestDialog.tsx (CAPEX): elegir
+              // contrato/categoría primero, adjuntar presupuesto (obligatorio)
+              // segundo, y recién después los datos y el plan de pagos.
+              <TabsList className="grid grid-cols-4 shrink-0">
+                <TabsTrigger value="contracts">{budgetType === "opex" ? "Categoría y Contrato" : "Líneas de Presupuesto"}</TabsTrigger>
+                <TabsTrigger value="quote">Adjuntar Presupuesto</TabsTrigger>
+                <TabsTrigger value="basic" disabled={!quotationFile}>Datos Básicos</TabsTrigger>
+                <TabsTrigger value="payments" disabled={!formData.supplier_id || !(enteredAmount > 0)}>Plan de Pagos</TabsTrigger>
+              </TabsList>
+            ) : (
+              <TabsList className="grid grid-cols-3 shrink-0">
+                <TabsTrigger value="basic">Datos</TabsTrigger>
+                <TabsTrigger value="contracts">Contratos</TabsTrigger>
+                <TabsTrigger value="payments">Pagos</TabsTrigger>
+              </TabsList>
+            )}
             
             <div className="flex-1 min-h-0 overflow-y-auto">
               <TabsContent value="basic" className="mt-4 space-y-4">
@@ -1247,41 +1303,47 @@ export const CentralizedOrderCreator = ({
                   </div>
                 )}
 
-                {/* Budget Type: CAPEX / OPEX */}
-                <div className="space-y-2">
-                  <Label>Tipo de Presupuesto *</Label>
-                  <SearchableSelect
-                    value={budgetType}
-                    onValueChange={(v) => {
-                      setBudgetType(v as "capex" | "opex");
-                      if (v === "capex") setSelectedCategoryId("");
-                    }}
-                    options={[
-                      { value: "capex", label: "CAPEX" },
-                      { value: "opex", label: "OPEX" },
-                    ]}
-                    placeholder="Tipo"
-                  />
-                </div>
+                {/* Budget Type: CAPEX / OPEX -- en modo "request" esto se elige
+                    primero, en la pestaña "Categoría y Contrato" / "Líneas de
+                    Presupuesto" (ver más abajo). */}
+                {mode === "order" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Tipo de Presupuesto *</Label>
+                      <SearchableSelect
+                        value={budgetType}
+                        onValueChange={(v) => {
+                          setBudgetType(v as "capex" | "opex");
+                          if (v === "capex") setSelectedCategoryId("");
+                        }}
+                        options={[
+                          { value: "capex", label: "CAPEX" },
+                          { value: "opex", label: "OPEX" },
+                        ]}
+                        placeholder="Tipo"
+                      />
+                    </div>
 
-                {/* Category Selection (only for OPEX) */}
-                {budgetType === "opex" && (
-                  <div className="space-y-2">
-                    <Label>Categoría OPEX *</Label>
-                    <SearchableSelect
-                      value={selectedCategoryId}
-                      onValueChange={setSelectedCategoryId}
-                      options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
-                      placeholder="Seleccionar categoría"
-                    />
-                    {selectedCategoryId && (
-                      <p className="text-xs text-muted-foreground">
-                        Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
-                      </p>
+                    {/* Category Selection (only for OPEX) */}
+                    {budgetType === "opex" && (
+                      <div className="space-y-2">
+                        <Label>Categoría OPEX *</Label>
+                        <SearchableSelect
+                          value={selectedCategoryId}
+                          onValueChange={setSelectedCategoryId}
+                          options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
+                          placeholder="Seleccionar categoría"
+                        />
+                        {selectedCategoryId && (
+                          <p className="text-xs text-muted-foreground">
+                            Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
-                
+
                 {/* Amount and Currency */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -1351,46 +1413,158 @@ export const CentralizedOrderCreator = ({
                   />
                 </div>
                 
-                {/* Quotation File Upload */}
-                <div className="space-y-2">
-                  <Label>Cotización (archivo)</Label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                  />
-                  {!quotationFile ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingFile}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Subir cotización
-                    </Button>
-                  ) : (
-                    <div className="flex items-center gap-2 p-2 border rounded bg-muted/50">
-                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="text-sm flex-1 truncate">{quotationFile.name}</span>
+                {/* Quotation File Upload -- en modo "request" esto es su propia
+                    pestaña ("Adjuntar Presupuesto"), obligatoria y con
+                    previsualización (ver más abajo). */}
+                {mode === "order" && (
+                  <div className="space-y-2">
+                    <Label>Cotización (archivo)</Label>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    />
+                    {!quotationFile ? (
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={handleRemoveFile}
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingFile}
                       >
-                        <X className="h-4 w-4" />
+                        <Upload className="h-4 w-4 mr-2" />
+                        Subir cotización
                       </Button>
+                    ) : (
+                      <div className="flex items-center gap-2 p-2 border rounded bg-muted/50">
+                        <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="text-sm flex-1 truncate">{quotationFile.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 flex-shrink-0"
+                          onClick={handleRemoveFile}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {mode === "request" && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
+                    <Button
+                      onClick={() => setActiveTab("payments")}
+                      disabled={!formData.supplier_id || !(enteredAmount > 0)}
+                      className="flex-1"
+                    >
+                      Continuar a Plan de Pagos
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              {mode === "request" && (
+                <TabsContent value="quote" className="mt-4 space-y-4">
+                  {!quotationFile ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="centralized-oc-quote-file">Presupuesto / Cotización *</Label>
+                      <input
+                        id="centralized-oc-quote-file"
+                        ref={fileInputRef}
+                        type="file"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Subir presupuesto
+                      </Button>
+                      <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {quotePreviewKindOf(quotationFile.name) === "pdf" && quotationPreviewUrl && (
+                        <iframe src={quotationPreviewUrl} title="Previsualización del presupuesto" className="w-full h-[24rem] rounded-md border" />
+                      )}
+                      {quotePreviewKindOf(quotationFile.name) === "image" && quotationPreviewUrl && (
+                        <img
+                          src={quotationPreviewUrl}
+                          alt="Previsualización del presupuesto"
+                          className="w-full h-[24rem] rounded-md border object-contain bg-muted/30"
+                        />
+                      )}
+                      {quotePreviewKindOf(quotationFile.name) === "none" && (
+                        <div className="w-full h-[24rem] rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
+                          <FileText className="h-10 w-10" />
+                          <span className="text-xs">Sin previsualización disponible para este tipo de archivo</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground truncate">{quotationFile.name}</p>
+                        <Button variant="outline" size="sm" onClick={handleRemoveFile}>
+                          Reemplazar archivo
+                        </Button>
+                      </div>
                     </div>
                   )}
-                </div>
-              </TabsContent>
-              
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setActiveTab("contracts")}>Atrás</Button>
+                    <Button onClick={() => setActiveTab("basic")} disabled={!quotationFile} className="flex-1">
+                      Continuar a Datos Básicos
+                    </Button>
+                  </div>
+                </TabsContent>
+              )}
+
               <TabsContent value="contracts" className="mt-4 space-y-4">
+                {mode === "request" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Tipo de Presupuesto *</Label>
+                      <SearchableSelect
+                        value={budgetType}
+                        onValueChange={(v) => {
+                          setBudgetType(v as "capex" | "opex");
+                          if (v === "capex") setSelectedCategoryId("");
+                        }}
+                        options={[
+                          { value: "capex", label: "CAPEX" },
+                          { value: "opex", label: "OPEX" },
+                        ]}
+                        placeholder="Tipo"
+                      />
+                    </div>
+                    {budgetType === "opex" && (
+                      <div className="space-y-2">
+                        <Label>Categoría OPEX *</Label>
+                        <SearchableSelect
+                          value={selectedCategoryId}
+                          onValueChange={setSelectedCategoryId}
+                          options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
+                          placeholder="Seleccionar categoría"
+                        />
+                        {selectedCategoryId && (
+                          <p className="text-xs text-muted-foreground">
+                            Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
                 {/* Multi-contract toggle */}
                 <div className="flex items-center space-x-2">
                   <Checkbox
@@ -1654,8 +1828,14 @@ export const CentralizedOrderCreator = ({
                     )}
                   </div>
                 )}
+
+                {mode === "request" && (
+                  <Button onClick={() => setActiveTab("quote")} className="w-full">
+                    Continuar a Adjuntar Presupuesto
+                  </Button>
+                )}
               </TabsContent>
-              
+
               <TabsContent value="payments" className="mt-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <Label>Plan de Pagos{mode === "request" ? " *" : " (opcional)"}</Label>
@@ -1733,8 +1913,14 @@ export const CentralizedOrderCreator = ({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={loading || loadingData || (mode === "request" && paymentPlan.length === 0)}
-            title={mode === "request" && paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}
+            disabled={loading || loadingData || (mode === "request" && (paymentPlan.length === 0 || !quotationFile))}
+            title={
+              mode === "request" && !quotationFile
+                ? "Adjunta el presupuesto antes de crear la solicitud"
+                : mode === "request" && paymentPlan.length === 0
+                ? "Agrega al menos un pago al plan de pagos"
+                : undefined
+            }
           >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {mode === "request" ? "Crear Solicitud" : "Crear OC"}
