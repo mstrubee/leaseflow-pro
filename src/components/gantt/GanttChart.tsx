@@ -387,20 +387,63 @@ export function GanttChart({
   // Tracks tasks whose start date was shifted by the non-working-day warning button.
   // Map: taskId → { from: originalDate, to: shiftedDate }. Persisted in localStorage by ganttId.
   const [shiftedByWarning, setShiftedByWarning] = useState<Map<string, { from: string; to: string }>>(new Map());
+  const shiftedByWarningRef = useRef(shiftedByWarning);
+  shiftedByWarningRef.current = shiftedByWarning;
   const warningLoadedRef = useRef(false);
+
+  // Load from localStorage once when ganttId and tasks are both ready; validate against DB dates.
   useEffect(() => {
-    if (!ganttId || warningLoadedRef.current) return;
+    if (!ganttId || tasks.length === 0 || warningLoadedRef.current) return;
     warningLoadedRef.current = true;
     try {
       const stored = localStorage.getItem(`gantt-warn-shifts-${ganttId}`);
       if (stored) {
         const parsed = JSON.parse(stored) as Record<string, { from: string; to: string }>;
-        setShiftedByWarning(new Map(Object.entries(parsed)));
+        const taskById = new Map(tasks.map((t) => [t.id, t]));
+        // Only restore entries where the task still has the shifted date in DB
+        const valid = new Map(
+          Object.entries(parsed).filter(([taskId, shifted]) => {
+            const t = taskById.get(taskId);
+            return t && t.start_date === shifted.to;
+          })
+        );
+        if (valid.size > 0) setShiftedByWarning(valid);
+        // Prune stale entries from storage (e.g., Ctrl+Z happened in a previous session)
+        if (valid.size !== Object.keys(parsed).length) {
+          try {
+            if (valid.size === 0) localStorage.removeItem(`gantt-warn-shifts-${ganttId}`);
+            else localStorage.setItem(`gantt-warn-shifts-${ganttId}`, JSON.stringify(Object.fromEntries(valid)));
+          } catch { /* ignore */ }
+        }
       }
     } catch {
       // ignore
     }
-  }, [ganttId]);
+  }, [ganttId, tasks]);
+
+  // When tasks change (e.g., Ctrl+Z reverts a shifted date), remove stale entries and persist.
+  useEffect(() => {
+    if (!warningLoadedRef.current || !ganttId) return;
+    const current = shiftedByWarningRef.current;
+    if (current.size === 0) return;
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    let changed = false;
+    const newMap = new Map(current);
+    for (const [taskId, shifted] of newMap) {
+      const t = taskById.get(taskId);
+      if (!t || t.start_date !== shifted.to) {
+        newMap.delete(taskId);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setShiftedByWarning(newMap);
+      try {
+        if (newMap.size === 0) localStorage.removeItem(`gantt-warn-shifts-${ganttId}`);
+        else localStorage.setItem(`gantt-warn-shifts-${ganttId}`, JSON.stringify(Object.fromEntries(newMap)));
+      } catch { /* ignore */ }
+    }
+  }, [tasks, ganttId]);
   const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [colSelectMode, setColSelectMode] = useState(false);
