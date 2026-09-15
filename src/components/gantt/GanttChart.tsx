@@ -833,20 +833,37 @@ export function GanttChart({
       get("progressReal", PROGRESS_REAL_COL_WIDTH);
   }, [hiddenCols, taskNameColWidth, endColWidth, startColWidth]);
 
-  // Calculate dependency arrows data
+  // Calculate dependency arrows data.
+  //
+  // Router ortogonal CON OBSTÁCULOS: cada barra visible del Gantt (no solo la
+  // barra origen/destino de la dependencia en cuestión) se trata como un
+  // rectángulo que la línea de conexión no puede atravesar. El árbol de
+  // dependencias/posiciones de las barras no cambia acá -- esto solo calcula
+  // el `pathD` (SVG) de cada flecha.
   const dependencyArrows = useMemo(() => {
-    const arrows: Array<{
+    // Un solo bar por fila (cada fila del Gantt es una tarea): mapa
+    // rowIdx -> [left, right] en el mismo espacio de coordenadas que
+    // fromX/toX (incluye headerOffset). Es la lista de "obstáculos".
+    const rowBars = new Map<number, { left: number; right: number }>();
+    visibleTasks.forEach(({ task: rowTask }, rowIdx) => {
+      if (!rowTask) return;
+      const pos = getTaskPosition(rowTask);
+      if (!pos.visible) return;
+      rowBars.set(rowIdx, { left: headerOffset + pos.left, right: headerOffset + pos.left + pos.width });
+    });
+
+    type RawArrow = {
       id: string;
       fromX: number;
       fromY: number;
       toX: number;
       toY: number;
+      fromRow: number;
+      toRow: number;
       parentTaskId: string;
       childTaskId: string;
-      rowMin: number;
-      rowMax: number;
-      lane: number;
-    }> = [];
+    };
+    const rawArrows: RawArrow[] = [];
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task || !task.dependencies || task.dependencies.length === 0) return;
@@ -865,26 +882,16 @@ export function GanttChart({
         if (!parentPosition.visible) return;
 
         // Ancla EXACTA en los bordes de las barras -- nunca dentro de ellas.
-        // La flecha sale del borde derecho de la barra origen y llega
-        // apenas al borde izquierdo de la barra destino (nunca superpuesta
-        // sobre su texto/relleno). Los tramos rectos de entrada/salida se
-        // agregan al dibujar el path (ver dependencyArrows.map).
-        const fromX = headerOffset + parentPosition.left + parentPosition.width;
-        const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const toX = headerOffset + taskPosition.left;
-        const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-
-        arrows.push({
+        rawArrows.push({
           id: dep.id,
-          fromX,
-          fromY,
-          toX,
-          toY,
+          fromX: headerOffset + parentPosition.left + parentPosition.width,
+          fromY: parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2,
+          toX: headerOffset + taskPosition.left,
+          toY: rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2,
+          fromRow: parentRowIdx,
+          toRow: rowIdx,
           parentTaskId: dep.depends_on_task_id,
           childTaskId: task.id,
-          rowMin: Math.min(parentRowIdx, rowIdx),
-          rowMax: Math.max(parentRowIdx, rowIdx),
-          lane: 0,
         });
       });
     });
@@ -892,56 +899,121 @@ export function GanttChart({
     // Cuando varias dependencias salen de la misma barra origen, o llegan a
     // la misma barra destino, anclarlas todas al mismo punto (centro exacto
     // de la fila) las hace indistinguibles y genera cruces innecesarios
-    // (casos F/G). Se reparte un pequeño offset vertical entre ellas, dentro
-    // del alto de la fila, según cuántas comparten ese origen/destino -- sin
-    // depender de IDs puntuales, solo de cuántas flechas comparten el punto.
+    // (varias flechas entrando/saliendo del mismo lugar). Se reparte un
+    // pequeño offset vertical entre ellas, dentro del alto de la fila, según
+    // cuántas comparten ese origen/destino -- sin depender de IDs puntuales,
+    // solo de cuántas flechas comparten el punto.
     const STAGGER_STEP = 4;
     const MAX_STAGGER = ROW_HEIGHT / 2 - 6;
     const outgoingTotal = new Map<string, number>();
     const incomingTotal = new Map<string, number>();
-    arrows.forEach((a) => {
+    rawArrows.forEach((a) => {
       outgoingTotal.set(a.parentTaskId, (outgoingTotal.get(a.parentTaskId) ?? 0) + 1);
       incomingTotal.set(a.childTaskId, (incomingTotal.get(a.childTaskId) ?? 0) + 1);
     });
     const outgoingSeen = new Map<string, number>();
     const incomingSeen = new Map<string, number>();
-    arrows.forEach((a) => {
+    rawArrows.forEach((a) => {
       const outTotal = outgoingTotal.get(a.parentTaskId) ?? 1;
       if (outTotal > 1) {
         const idx = outgoingSeen.get(a.parentTaskId) ?? 0;
         outgoingSeen.set(a.parentTaskId, idx + 1);
-        const offset = Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (outTotal - 1) / 2) * STAGGER_STEP));
-        a.fromY += offset;
+        a.fromY += Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (outTotal - 1) / 2) * STAGGER_STEP));
       }
       const inTotal = incomingTotal.get(a.childTaskId) ?? 1;
       if (inTotal > 1) {
         const idx = incomingSeen.get(a.childTaskId) ?? 0;
         incomingSeen.set(a.childTaskId, idx + 1);
-        const offset = Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (inTotal - 1) / 2) * STAGGER_STEP));
-        a.toY += offset;
+        a.toY += Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (inTotal - 1) / 2) * STAGGER_STEP));
       }
     });
 
-    // Cuando dos flechas atraviesan un tramo de filas en común (ej. varias
-    // dependencias "hacia atrás" que se cruzan por la misma zona), dibujarlas
-    // sobre exactamente el mismo eje vertical las hace indistinguibles. Se les
-    // asigna un "carril" (lane) distinto vía coloreo de intervalos: mientras
-    // el rango de filas se solape con el de un carril ya usado, se prueba el
-    // siguiente. Flechas que no se solapan en absoluto pueden compartir carril.
-    const laneEnds: number[] = [];
-    arrows
-      .slice()
-      .sort((a, b) => a.rowMin - b.rowMin || a.rowMax - b.rowMax)
-      .forEach((arrow) => {
-        let lane = laneEnds.findIndex((end) => end < arrow.rowMin);
-        if (lane === -1) {
-          lane = laneEnds.length;
-          laneEnds.push(arrow.rowMax);
-        } else {
-          laneEnds[lane] = arrow.rowMax;
+    // Margen de seguridad alrededor de cada barra -- una columna "libre" debe
+    // quedar al menos MARGIN px afuera del rectángulo de cualquier barra.
+    const MARGIN = 3;
+    const LEAD = 3; // tramo horizontal de salida/llegada (2-3px, regla del spec)
+
+    // ¿La columna x está libre de obstáculos (con margen) en TODAS las filas
+    // del rango [rowFrom, rowMax]? -- es decir, ¿un segmento VERTICAL en x
+    // que atraviese esas filas cruzaría alguna barra?
+    const isColumnFree = (x: number, rowFrom: number, rowTo: number) => {
+      const lo = Math.min(rowFrom, rowTo);
+      const hi = Math.max(rowFrom, rowTo);
+      for (let r = lo; r <= hi; r++) {
+        const bar = rowBars.get(r);
+        if (bar && x > bar.left - MARGIN && x < bar.right + MARGIN) return false;
+      }
+      return true;
+    };
+
+    // Busca la primera columna libre a partir de `start`, "saltando" por
+    // encima de cada barra que bloquea (su borde derecho + margen), sin
+    // pasar de `limit`. Es un barrido genérico -- no hay coordenadas ni IDs
+    // hardcodeados, solo geometría real de las barras visibles.
+    const findFreeColumnRightward = (start: number, limit: number, rowFrom: number, rowTo: number) => {
+      let x = start;
+      for (let i = 0; i < 64; i++) {
+        const lo = Math.min(rowFrom, rowTo);
+        const hi = Math.max(rowFrom, rowTo);
+        let blocker: { left: number; right: number } | null = null;
+        for (let r = lo; r <= hi; r++) {
+          const bar = rowBars.get(r);
+          if (bar && x > bar.left - MARGIN && x < bar.right + MARGIN) {
+            if (!blocker || bar.right > blocker.right) blocker = bar;
+          }
         }
-        arrow.lane = lane;
-      });
+        if (!blocker) return x <= limit ? x : null;
+        x = blocker.right + MARGIN;
+        if (x > limit) return null;
+      }
+      return null;
+    };
+
+    const arrows = rawArrows.map((a, idx) => {
+      const exitX = a.fromX + LEAD;
+      const overshoot = 2; // el mayor overshoot posible del marker-end (ver render), para dejar la punta siempre libre
+      const tipX = a.toX - overshoot;
+      const approachX = tipX - LEAD;
+
+      let pathD: string;
+
+      if (exitX <= approachX && isColumnFree(exitX, a.fromRow, a.toRow)) {
+        // Caso simple: hay espacio entre la salida del origen y la
+        // aproximación al destino, Y la columna de salida no atraviesa
+        // ninguna barra intermedia -- un solo quiebre vertical alcanza.
+        pathD = `M ${a.fromX} ${a.fromY} L ${exitX} ${a.fromY} L ${exitX} ${a.toY} L ${approachX} ${a.toY} L ${tipX} ${a.toY}`;
+      } else {
+        // Hay que rodear: buscamos una columna "trunk" libre entre la salida
+        // del origen y la aproximación al destino, saltando cualquier barra
+        // (origen, destino, o intermedias) que la bloquee. Si no existe
+        // ninguna columna libre en ese rango (áreas muy densas), como último
+        // recurso se sale del área de barras por un carril vertical propio
+        // (offset por `idx`, sin depender de IDs de tareas) antes de bajar.
+        const trunkX = findFreeColumnRightward(exitX, approachX, a.fromRow, a.toRow);
+
+        if (trunkX !== null) {
+          pathD = `M ${a.fromX} ${a.fromY} L ${trunkX} ${a.fromY} L ${trunkX} ${a.toY} L ${approachX} ${a.toY} L ${tipX} ${a.toY}`;
+        } else {
+          const goingDown = a.toY >= a.fromY;
+          const laneOffset = (idx % 6) * 6;
+          const detourY = goingDown
+            ? a.fromY + ROW_HEIGHT / 2 + laneOffset
+            : a.fromY - ROW_HEIGHT / 2 - laneOffset;
+          pathD = `M ${a.fromX} ${a.fromY} L ${exitX} ${a.fromY} L ${exitX} ${detourY} L ${approachX} ${detourY} L ${approachX} ${a.toY} L ${tipX} ${a.toY}`;
+        }
+      }
+
+      return {
+        id: a.id,
+        fromX: a.fromX,
+        fromY: a.fromY,
+        toX: a.toX,
+        toY: a.toY,
+        parentTaskId: a.parentTaskId,
+        childTaskId: a.childTaskId,
+        pathD,
+      };
+    });
 
     return arrows;
   }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
@@ -2312,61 +2384,11 @@ export function GanttChart({
                 </defs>
                 {dependencyArrows.map((arrow) => {
                   const isSelected = selectedDependencyId === arrow.id;
-
-                  // Ruteo ortogonal general (sin coordenadas ni IDs hardcodeados):
-                  //  1) Sale del borde derecho de la barra origen (arrow.fromX) y
-                  //     avanza LEAD px horizontales antes de quebrar (nunca quiebra
-                  //     justo al salir).
-                  //  2) Llega al borde izquierdo de la barra destino (arrow.toX) con
-                  //     LEAD px horizontales justo antes de la punta, restando además
-                  //     el overshoot real del marker-end (la punta dibujada sobresale
-                  //     unos px más allá del punto final del path) para que la flecha
-                  //     -- geometría visible, no solo el punto matemático -- jamás
-                  //     quede superpuesta a la barra destino.
-                  //  3) El destino no siempre está a la derecha del origen: si el
-                  //     punto de salida cae en o después del punto de aproximación al
-                  //     destino (rangos horizontales solapados, o destino a la
-                  //     izquierda), se sale igual por la derecha del origen y se
-                  //     rodea por un tramo intermedio fuera de las filas de
-                  //     origen/destino antes de aproximar al destino por su
-                  //     izquierda -- así la línea nunca cruza ninguna de las dos
-                  //     barras.
-                  const LEAD = 3;
-                  const MARKER_OVERSHOOT = isSelected ? 2 : 1;
-                  const exitX = arrow.fromX + LEAD;
-                  const tipX = arrow.toX - MARKER_OVERSHOOT;
-                  const approachX = tipX - LEAD;
-
-                  let pathD: string;
-                  if (exitX <= approachX) {
-                    // Caso directo: hay espacio de sobra entre la salida del origen
-                    // y la aproximación al destino -- un solo quiebre vertical no
-                    // cruza ninguna de las dos barras.
-                    pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${exitX} ${arrow.fromY}
-                             L ${exitX} ${arrow.toY}
-                             L ${approachX} ${arrow.toY}
-                             L ${tipX} ${arrow.toY}`;
-                  } else {
-                    // Caso "hacia atrás"/solapado (destination.startX < source.endX
-                    // o destino a la izquierda del origen): un tramo horizontal
-                    // directo cruzaría la barra destino. Se sale por la derecha del
-                    // origen, se rodea verticalmente por una zona intermedia (fuera
-                    // de las filas de origen y destino) y recién ahí se aproxima al
-                    // destino por su izquierda. El "carril" (arrow.lane) separa el
-                    // tramo intermedio de dependencias que comparten el mismo rango
-                    // de filas, para que no queden dibujadas una sobre otra.
-                    const goingDown = arrow.toY >= arrow.fromY;
-                    const detourY = goingDown
-                      ? arrow.fromY + ROW_HEIGHT / 2 + arrow.lane * 6
-                      : arrow.fromY - ROW_HEIGHT / 2 - arrow.lane * 6;
-                    pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${exitX} ${arrow.fromY}
-                             L ${exitX} ${detourY}
-                             L ${approachX} ${detourY}
-                             L ${approachX} ${arrow.toY}
-                             L ${tipX} ${arrow.toY}`;
-                  }
+                  // El trazado (pathD) ya viene calculado en dependencyArrows,
+                  // considerando TODAS las barras visibles como obstáculos
+                  // (ver el useMemo de dependencyArrows para el detalle del
+                  // ruteo). Acá solo se define el estilo/interacción.
+                  const pathD = arrow.pathD;
 
                   const midX = (arrow.fromX + arrow.toX) / 2;
                   const midY = (arrow.fromY + arrow.toY) / 2;

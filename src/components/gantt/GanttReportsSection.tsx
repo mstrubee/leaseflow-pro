@@ -1380,10 +1380,6 @@ export function GanttReportsSection() {
     }
   };
 
-  // ── Derived counts para badges ─────────────────────────────────────────────
-  const countCon = allData.filter((d) => d.tasks.length > 0).length;
-  const countSin = allData.filter((d) => d.tasks.length === 0).length;
-
   /**
    * Proyectos con Gantt y fecha de término, para la línea de tiempo general.
    * Los estados marcados "Excluir de la línea de tiempo" (configurable en
