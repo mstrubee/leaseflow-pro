@@ -319,6 +319,8 @@ interface GanttChartProps {
    *  inicio/término de todo el cronograma — solo para cronogramas "general"
    *  (no se pasa en "Cronogramas de Mantenciones"). */
   showSummaryRow?: boolean;
+  /** ID del timeline activo — usado para persistir ajustes de advertencia en localStorage. */
+  ganttId?: string | null;
 }
 
 const BASE_DAY_WIDTH = 30;
@@ -375,6 +377,7 @@ export function GanttChart({
   onExportPDF,
   rentStartDate,
   showSummaryRow = false,
+  ganttId,
 }: GanttChartProps) {
   const { toast } = useToast();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
@@ -382,8 +385,22 @@ export function GanttChart({
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>(100);
   // Tracks tasks whose start date was shifted by the non-working-day warning button.
-  // Map: taskId → { from: originalDate, to: shiftedDate }
+  // Map: taskId → { from: originalDate, to: shiftedDate }. Persisted in localStorage by ganttId.
   const [shiftedByWarning, setShiftedByWarning] = useState<Map<string, { from: string; to: string }>>(new Map());
+  const warningLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!ganttId || warningLoadedRef.current) return;
+    warningLoadedRef.current = true;
+    try {
+      const stored = localStorage.getItem(`gantt-warn-shifts-${ganttId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, { from: string; to: string }>;
+        setShiftedByWarning(new Map(Object.entries(parsed)));
+      }
+    } catch {
+      // ignore
+    }
+  }, [ganttId]);
   const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [colSelectMode, setColSelectMode] = useState(false);
@@ -1052,6 +1069,19 @@ export function GanttChart({
     return format(d, "yyyy-MM-dd");
   };
 
+  const persistWarnings = (map: Map<string, { from: string; to: string }>) => {
+    if (!ganttId) return;
+    try {
+      if (map.size === 0) {
+        localStorage.removeItem(`gantt-warn-shifts-${ganttId}`);
+      } else {
+        localStorage.setItem(`gantt-warn-shifts-${ganttId}`, JSON.stringify(Object.fromEntries(map)));
+      }
+    } catch {
+      // ignore (private mode, storage full, etc.)
+    }
+  };
+
   const handleWarningShift = async (task: GanttTask) => {
     if (!task.start_date) return;
     const shifted = shiftedByWarning.get(task.id);
@@ -1061,6 +1091,7 @@ export function GanttChart({
       const newMap = new Map(shiftedByWarning);
       newMap.delete(task.id);
       setShiftedByWarning(newMap);
+      persistWarnings(newMap);
       beginUndoGroup("Revertir traslado de inicio");
       const endDate = calculateEndDate(shifted.from, task.duration_days ?? 1, task.duration_type as "calendar" | "business", holidays);
       await onUpdateTask(task.id, { start_date: shifted.from, end_date: format(endDate, "yyyy-MM-dd") });
@@ -1073,6 +1104,7 @@ export function GanttChart({
       const newMap = new Map(shiftedByWarning);
       newMap.set(task.id, { from, to });
       setShiftedByWarning(newMap);
+      persistWarnings(newMap);
       beginUndoGroup("Trasladar inicio a día hábil");
       await onUpdateTask(task.id, { start_date: to, end_date: format(endDate, "yyyy-MM-dd") });
       endUndoGroup();

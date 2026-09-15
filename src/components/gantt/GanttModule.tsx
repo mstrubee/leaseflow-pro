@@ -865,6 +865,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               canComplete={canInteract}
               rentStartDate={rentStartDate}
               showSummaryRow={!isMaintenance}
+              ganttId={timeline?.id}
               onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
                 let contractName = "Contrato";
                 try {
