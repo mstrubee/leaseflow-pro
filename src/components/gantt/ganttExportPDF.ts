@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend } from "date-fns";
+import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday, OrgMember } from "@/hooks/useGantt";
 import { getGanttDateRange } from "@/lib/ganttDateUtils";
@@ -66,6 +66,20 @@ const drawLogo = (
   }
 };
 
+const isNonWorkingDayDate = (dateStr: string, holidays: Holiday[]): boolean => {
+  const d = parseISO(dateStr);
+  if (isWeekend(d)) return true;
+  return holidays.some((h) => h.date === dateStr);
+};
+
+const getNextWorkingDayStr = (dateStr: string, holidays: Holiday[]): string => {
+  let d = addDays(parseISO(dateStr), 1);
+  while (isWeekend(d) || holidays.some((h) => h.date === format(d, "yyyy-MM-dd"))) {
+    d = addDays(d, 1);
+  }
+  return format(d, "yyyy-MM-dd");
+};
+
 export async function exportGanttToPDF(
   taskTree: GanttTask[],
   allTasks: GanttTask[],
@@ -107,6 +121,14 @@ export async function exportGanttToPDF(
   const filteredTree = filterTree(taskTree);
   const flat = flattenTree(filteredTree);
   const filteredFlat = flat.map((f) => f.task);
+
+  // Build map of tasks whose start_date falls on a non-working day → shifted to next working day
+  const effectiveDateMap = new Map<string, string>();
+  filteredFlat.forEach((task) => {
+    if (task.start_date && isNonWorkingDayDate(task.start_date, holidays)) {
+      effectiveDateMap.set(task.id, getNextWorkingDayStr(task.start_date, holidays));
+    }
+  });
 
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -241,6 +263,17 @@ export async function exportGanttToPDF(
   };
 
   flat.forEach(({ task, level }) => {
+    const effStart = effectiveDateMap.get(task.id) ?? task.start_date;
+    const startAdjusted = effectiveDateMap.has(task.id);
+    const shiftDays =
+      startAdjusted && task.start_date && effStart
+        ? differenceInDays(parseISO(effStart), parseISO(task.start_date))
+        : 0;
+    const effEnd =
+      task.end_date && shiftDays > 0
+        ? format(addDays(parseISO(task.end_date), shiftDays), "yyyy-MM-dd")
+        : task.end_date;
+
     if (rowsOnPage >= maxRowsPerPage) {
       doc.addPage();
       y = 12;
@@ -302,12 +335,14 @@ export async function exportGanttToPDF(
 
     // Start
     let dx = chartLeft + COL.name + COL.responsible;
+    if (startAdjusted) doc.setTextColor(180, 90, 0);
     doc.text(
-      task.start_date ? format(parseISO(task.start_date), "dd/MM/yy") : "—",
+      effStart ? format(parseISO(effStart), "dd/MM/yy") : "—",
       dx + COL.start / 2,
       y + rowHeight - 2,
       { align: "center" }
     );
+    if (startAdjusted) doc.setTextColor(20);
     dx += COL.start;
 
     // Duration
@@ -321,16 +356,16 @@ export async function exportGanttToPDF(
 
     // End
     doc.text(
-      task.end_date ? format(parseISO(task.end_date), "dd/MM/yy") : "—",
+      effEnd ? format(parseISO(effEnd), "dd/MM/yy") : "—",
       dx + COL.end / 2,
       y + rowHeight - 2,
       { align: "center" }
     );
 
     // Bar
-    if (hasDates && task.start_date && task.end_date) {
-      const startOffset = differenceInDays(parseISO(task.start_date), minDate);
-      const dur = differenceInDays(parseISO(task.end_date), parseISO(task.start_date)) + 1;
+    if (hasDates && effStart && effEnd) {
+      const startOffset = differenceInDays(parseISO(effStart), minDate);
+      const dur = differenceInDays(parseISO(effEnd), parseISO(effStart)) + 1;
       const x = ganttLeft + startOffset * dayWidth;
       const w = Math.max(0.5, dur * dayWidth);
 
@@ -381,18 +416,34 @@ export async function exportGanttToPDF(
     delayed: "Atrasada",
   };
 
-  const tableRows = flat.map(({ task, level }, idx) => [
-    String(idx + 1),
-    "  ".repeat(level) + task.name,
-    task.responsible_member_id
-      ? memberById.get(task.responsible_member_id)?.name ?? "—"
-      : "—",
-    task.start_date ? format(parseISO(task.start_date), "dd/MM/yyyy") : "—",
-    `${task.duration_days} ${task.duration_type === "business" ? "háb." : "días"}`,
-    task.end_date ? format(parseISO(task.end_date), "dd/MM/yyyy") : "—",
-    statusLabel[task.status] || task.status,
-    `${task.progress || 0}%`,
-  ]);
+  const tableRows = flat.map(({ task, level }, idx) => {
+    const effStartT = effectiveDateMap.get(task.id) ?? task.start_date;
+    const adjustedT = effectiveDateMap.has(task.id);
+    const shiftDaysT =
+      adjustedT && task.start_date && effStartT
+        ? differenceInDays(parseISO(effStartT), parseISO(task.start_date))
+        : 0;
+    const effEndT =
+      task.end_date && shiftDaysT > 0
+        ? format(addDays(parseISO(task.end_date), shiftDaysT), "dd/MM/yyyy")
+        : task.end_date
+        ? format(parseISO(task.end_date), "dd/MM/yyyy")
+        : "—";
+    return [
+      String(idx + 1),
+      "  ".repeat(level) + task.name,
+      task.responsible_member_id
+        ? memberById.get(task.responsible_member_id)?.name ?? "—"
+        : "—",
+      effStartT
+        ? format(parseISO(effStartT), "dd/MM/yyyy") + (adjustedT ? " (*)" : "")
+        : "—",
+      `${task.duration_days} ${task.duration_type === "business" ? "háb." : "días"}`,
+      effEndT,
+      statusLabel[task.status] || task.status,
+      `${task.progress || 0}%`,
+    ];
+  });
 
   autoTable(doc, {
     startY: 26,
@@ -412,7 +463,27 @@ export async function exportGanttToPDF(
       7: { cellWidth: 20, halign: "center" },
     },
     margin: { left: 10, right: 10 },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 3) {
+        const cellText = String(data.cell.raw ?? "");
+        if (cellText.endsWith(" (*)")) {
+          data.cell.styles.textColor = [180, 90, 0];
+        }
+      }
+    },
   });
+
+  if (effectiveDateMap.size > 0) {
+    const autoTableFinalY: number = (doc as any).lastAutoTable?.finalY ?? 200;
+    doc.setFontSize(7);
+    doc.setTextColor(180, 90, 0);
+    doc.text(
+      "(*) Inicio ajustado al siguiente dia habil (la fecha original caia en fin de semana o feriado)",
+      10,
+      Math.min(autoTableFinalY + 5, pageHeight - 12)
+    );
+    doc.setTextColor(0);
+  }
 
   // Footer page numbers
   const pageCount = doc.getNumberOfPages();
