@@ -424,10 +424,10 @@ function MiniGantt({
                     }}
                   />
                 )}
-                {/* Bar */}
+                {/* Bar – contains logo thumbnail so it stays inside the bar */}
                 {hasDates && (
                   <div
-                    className="absolute rounded-sm"
+                    className="absolute rounded-sm overflow-hidden"
                     style={{
                       left: barLeft,
                       width: barWidth,
@@ -439,25 +439,25 @@ function MiniGantt({
                       parseISO(startStr!),
                       "dd/MM/yyyy"
                     )} - ${format(parseISO(endStr!), "dd/MM/yyyy")}`}
-                  />
-                )}
-                {/* Company logo thumbnail – bottom-right of the bar area */}
-                {companyLogoSrc && (
-                  <img
-                    src={companyLogoSrc}
-                    alt="empresa"
-                    style={{
-                      position: "absolute",
-                      bottom: 1,
-                      right: 2,
-                      width: 14,
-                      height: 14,
-                      objectFit: "contain",
-                      opacity: 0.55,
-                      borderRadius: 2,
-                      pointerEvents: "none",
-                    }}
-                  />
+                  >
+                    {companyLogoSrc && (
+                      <img
+                        src={companyLogoSrc}
+                        alt="empresa"
+                        style={{
+                          position: "absolute",
+                          bottom: 1,
+                          right: 2,
+                          width: 14,
+                          height: 14,
+                          objectFit: "contain",
+                          opacity: 0.65,
+                          borderRadius: 2,
+                          pointerEvents: "none",
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -507,7 +507,7 @@ export function GanttReportsSection() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
 
   // Contratos No Firmados (en_negociacion)
-  const [negotiationContracts, setNegotiationContracts] = useState<{ id: string; name: string }[]>([]);
+  const [negotiationContracts, setNegotiationContracts] = useState<{ id: string; name: string; companyNames: string[] }[]>([]);
   const [loadingNegotiation, setLoadingNegotiation] = useState(false);
   const [negotiationSearchOpen, setNegotiationSearchOpen] = useState(false);
   const [extraData, setExtraData] = useState<GanttContractData[]>([]);
@@ -952,11 +952,19 @@ export function GanttReportsSection() {
     try {
       const { data: contracts } = await supabase
         .from("contracts")
-        .select("id, name")
+        .select("id, name, contract_companies(companies(name))")
         .eq("status", "en_negociacion")
         .is("deleted_at", null)
         .order("name");
-      setNegotiationContracts(contracts || []);
+      setNegotiationContracts(
+        (contracts || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          companyNames: (c.contract_companies || [])
+            .map((cc: any) => cc.companies?.name)
+            .filter(Boolean) as string[],
+        }))
+      );
     } finally {
       setLoadingNegotiation(false);
     }
@@ -1650,6 +1658,13 @@ export function GanttReportsSection() {
                                             : "opacity-0"
                                         }`}
                                       />
+                                      {c.companyNames.length > 0 && (
+                                        <CompanyLogo
+                                          companyNames={c.companyNames}
+                                          size="sm"
+                                          className="flex-shrink-0"
+                                        />
+                                      )}
                                       <span className="truncate text-xs">{c.name}</span>
                                       {alreadyInData && (
                                         <span className="ml-auto text-[10px] text-muted-foreground">
