@@ -907,9 +907,21 @@ export function GanttChart({
     // Un solo bar por fila (cada fila del Gantt es una tarea): mapa
     // rowIdx -> [left, right] en el mismo espacio de coordenadas que
     // fromX/toX (incluye headerOffset). Es la lista de "obstáculos".
+    //
+    // Las filas de tareas PADRE/resumen (con hijas) quedan afuera de la
+    // lista de obstáculos: su barra es un rollup visual de sus hijas y
+    // nunca es origen ni destino de una dependencia (las dependencias solo
+    // se muestran/crean entre tareas hoja). Suelen abarcar casi todo el
+    // ancho del cronograma, así que tratarlas como obstáculo bloqueaba
+    // CUALQUIER columna vertical para dependencias cuyo rango de filas las
+    // incluyera -- forzando siempre el fallback sin evitar obstáculos. Es
+    // una distinción estructural (tiene hijas o no), no un caso especial
+    // por ID/nombre de tarea.
     const rowBars = new Map<number, { left: number; right: number }>();
     visibleTasks.forEach(({ task: rowTask }, rowIdx) => {
       if (!rowTask) return;
+      const isGroupRow = parentTaskIds.has(rowTask.id) || !!(rowTask.children && rowTask.children.length > 0);
+      if (isGroupRow) return;
       const pos = getTaskPosition(rowTask);
       if (!pos.visible) return;
       rowBars.set(rowIdx, { left: headerOffset + pos.left, right: headerOffset + pos.left + pos.width });
@@ -1079,7 +1091,7 @@ export function GanttChart({
     });
 
     return arrows;
-  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
+  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset, parentTaskIds]);
 
   // Resolve the currently selected dependency line into its predecessor/dependent.
   const selectedDependency = useMemo(() => {
