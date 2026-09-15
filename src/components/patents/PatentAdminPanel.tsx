@@ -646,7 +646,7 @@ export function PatentAdminPanel({
       .from("patent_emitters")
       .insert({ 
         name: newEmitterName.trim(),
-        section_id: newEmitterSection || null,
+        section_id: (newEmitterSection && newEmitterSection !== "global") ? newEmitterSection : null,
         display_order: maxOrder + 1
       })
       .select()
