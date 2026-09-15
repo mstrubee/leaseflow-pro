@@ -468,6 +468,18 @@ export const MultipleLinesSelector = ({
 
       {selectedLines.length > 0 && (
         <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+          {formatCLP && (
+            <div className="flex items-center justify-between pb-2 border-b">
+              <span className="text-xs font-medium text-muted-foreground">Total líneas seleccionadas</span>
+              <span className="text-sm font-semibold">
+                {formatCLP(
+                  showClpAmounts
+                    ? selectedLines.reduce((s, l) => s + l.amount, 0) * (ufValue as number)
+                    : selectedLines.reduce((s, l) => s + l.amount, 0)
+                )}
+              </span>
+            </div>
+          )}
           <p className="text-xs font-medium text-muted-foreground">Líneas seleccionadas ({selectedLines.length}):</p>
           {selectedLines.map(sl => {
             const atMax = sl.maxAmount > 0 && sl.amount >= sl.maxAmount;
@@ -477,12 +489,10 @@ export const MultipleLinesSelector = ({
                 <div className="flex flex-col items-end shrink-0">
                   {showClpAmounts ? (
                     <Input
-                      type="number"
-                      step="1"
-                      min="0"
-                      max={Math.round(sl.maxAmount * (ufValue as number))}
-                      value={sl.amount ? Math.round(sl.amount * (ufValue as number)) : ""}
-                      onChange={(e) => handleAmountChangeClp(sl.lineId, e.target.value)}
+                      type="text"
+                      inputMode="numeric"
+                      value={sl.amount ? Math.round(sl.amount * (ufValue as number)).toLocaleString("es-CL") : ""}
+                      onChange={(e) => handleAmountChangeClp(sl.lineId, e.target.value.replace(/\D/g, ""))}
                       className={cn("h-7 text-right font-mono w-[130px] text-xs", atMax && "border-amber-400")}
                       placeholder="$0"
                     />
