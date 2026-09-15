@@ -843,6 +843,9 @@ export function GanttChart({
       toY: number;
       parentTaskId: string;
       childTaskId: string;
+      rowMin: number;
+      rowMax: number;
+      lane: number;
     }> = [];
 
     visibleTasks.forEach(({ task }, rowIdx) => {
@@ -877,9 +880,33 @@ export function GanttChart({
           toY,
           parentTaskId: dep.depends_on_task_id,
           childTaskId: task.id,
+          rowMin: Math.min(parentRowIdx, rowIdx),
+          rowMax: Math.max(parentRowIdx, rowIdx),
+          lane: 0,
         });
       });
     });
+
+    // Cuando dos flechas atraviesan un tramo de filas en común (ej. varias
+    // dependencias "hacia atrás" que se cruzan por la misma zona), dibujarlas
+    // sobre exactamente el mismo eje vertical las hace indistinguibles. Se les
+    // asigna un "carril" (lane) distinto vía coloreo de intervalos: mientras
+    // el rango de filas se solape con el de un carril ya usado, se prueba el
+    // siguiente. Flechas que no se solapan en absoluto pueden compartir carril.
+    const laneEnds: number[] = [];
+    arrows
+      .slice()
+      .sort((a, b) => a.rowMin - b.rowMin || a.rowMax - b.rowMax)
+      .forEach((arrow) => {
+        let lane = laneEnds.findIndex((end) => end < arrow.rowMin);
+        if (lane === -1) {
+          lane = laneEnds.length;
+          laneEnds.push(arrow.rowMax);
+        } else {
+          laneEnds[lane] = arrow.rowMax;
+        }
+        arrow.lane = lane;
+      });
 
     return arrows;
   }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
@@ -2258,9 +2285,19 @@ export function GanttChart({
                   const SOURCE_LEAD = 24; // forced horizontal exit to the right of parent (50% of previous)
                   const HORIZ_LEAD = 28;  // forced horizontal lead-in to the arrow tip (50% of previous)
                   const VERT_GAP = ROW_HEIGHT / 2 - 2;
+                  // Separa el eje vertical de cada flecha según su "carril"
+                  // (arrow.lane, ver dependencyArrows) para que dos
+                  // dependencias que cruzan las mismas filas no queden
+                  // dibujadas exactamente encima una de la otra.
+                  const LANE_STEP = 7;
 
-                  const exitX = arrow.fromX + SOURCE_LEAD;
+                  const baseExitX = arrow.fromX + SOURCE_LEAD;
                   const approachX = arrow.toX - HORIZ_LEAD;
+                  // Nunca deja que el desplazamiento por carril empuje el eje
+                  // más allá del punto de llegada (rompería el caso "normal").
+                  const exitX = approachX >= baseExitX
+                    ? Math.min(baseExitX + arrow.lane * LANE_STEP, approachX - 2)
+                    : baseExitX;
 
                   let pathD: string;
                   if (approachX >= exitX) {
@@ -2272,7 +2309,9 @@ export function GanttChart({
                   } else {
                     // Tight/backward case: exit right, detour vertically, come back left to approachX, then approach → tip
                     const goingDown = arrow.toY >= arrow.fromY;
-                    const detourY = goingDown ? arrow.fromY + VERT_GAP : arrow.fromY - VERT_GAP;
+                    const detourY = goingDown
+                      ? arrow.fromY + VERT_GAP + arrow.lane * LANE_STEP
+                      : arrow.fromY - VERT_GAP - arrow.lane * LANE_STEP;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
                              L ${exitX} ${detourY}
