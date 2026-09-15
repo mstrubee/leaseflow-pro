@@ -889,6 +889,39 @@ export function GanttChart({
       });
     });
 
+    // Cuando varias dependencias salen de la misma barra origen, o llegan a
+    // la misma barra destino, anclarlas todas al mismo punto (centro exacto
+    // de la fila) las hace indistinguibles y genera cruces innecesarios
+    // (casos F/G). Se reparte un pequeño offset vertical entre ellas, dentro
+    // del alto de la fila, según cuántas comparten ese origen/destino -- sin
+    // depender de IDs puntuales, solo de cuántas flechas comparten el punto.
+    const STAGGER_STEP = 4;
+    const MAX_STAGGER = ROW_HEIGHT / 2 - 6;
+    const outgoingTotal = new Map<string, number>();
+    const incomingTotal = new Map<string, number>();
+    arrows.forEach((a) => {
+      outgoingTotal.set(a.parentTaskId, (outgoingTotal.get(a.parentTaskId) ?? 0) + 1);
+      incomingTotal.set(a.childTaskId, (incomingTotal.get(a.childTaskId) ?? 0) + 1);
+    });
+    const outgoingSeen = new Map<string, number>();
+    const incomingSeen = new Map<string, number>();
+    arrows.forEach((a) => {
+      const outTotal = outgoingTotal.get(a.parentTaskId) ?? 1;
+      if (outTotal > 1) {
+        const idx = outgoingSeen.get(a.parentTaskId) ?? 0;
+        outgoingSeen.set(a.parentTaskId, idx + 1);
+        const offset = Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (outTotal - 1) / 2) * STAGGER_STEP));
+        a.fromY += offset;
+      }
+      const inTotal = incomingTotal.get(a.childTaskId) ?? 1;
+      if (inTotal > 1) {
+        const idx = incomingSeen.get(a.childTaskId) ?? 0;
+        incomingSeen.set(a.childTaskId, idx + 1);
+        const offset = Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (inTotal - 1) / 2) * STAGGER_STEP));
+        a.toY += offset;
+      }
+    });
+
     // Cuando dos flechas atraviesan un tramo de filas en común (ej. varias
     // dependencias "hacia atrás" que se cruzan por la misma zona), dibujarlas
     // sobre exactamente el mismo eje vertical las hace indistinguibles. Se les
@@ -2278,53 +2311,63 @@ export function GanttChart({
                   </marker>
                 </defs>
                 {dependencyArrows.map((arrow) => {
-                  // The arrow must ALWAYS arrive at the left edge of the dependent task
-                  // pointing forward (→). If the child starts before the parent ends,
-                  // the path loops vertically and around so the arrow still enters from the left.
-                  // Routing guarantees:
-                  //  1) Always exits the parent bar with a horizontal segment to the RIGHT (SOURCE_LEAD).
-                  //  2) Always arrives at the arrow tip with a horizontal segment from the LEFT (HORIZ_LEAD).
-                  const SOURCE_LEAD = 3; // avanza 2-3px al salir de la barra origen antes de quebrar
-                  const HORIZ_LEAD = 3;  // tramo horizontal de 2-3px justo antes de llegar a la punta
-                  const VERT_GAP = ROW_HEIGHT / 2 - 2;
-                  // Separa el eje vertical de cada flecha según su "carril"
-                  // (arrow.lane, ver dependencyArrows) para que dos
-                  // dependencias que cruzan las mismas filas no queden
-                  // dibujadas exactamente encima una de la otra. Solo se
-                  // usa cuando hace falta -- la mayoría de las flechas
-                  // (carril 0) mantienen el tramo de salida de 2-3px.
-                  const LANE_STEP = 6;
+                  const isSelected = selectedDependencyId === arrow.id;
 
-                  const baseExitX = arrow.fromX + SOURCE_LEAD;
-                  const approachX = arrow.toX - HORIZ_LEAD;
-                  // Nunca deja que el desplazamiento por carril empuje el eje
-                  // más allá del punto de llegada (rompería el caso "normal").
-                  const exitX = approachX >= baseExitX
-                    ? Math.min(baseExitX + arrow.lane * LANE_STEP, approachX - 2)
-                    : baseExitX;
+                  // Ruteo ortogonal general (sin coordenadas ni IDs hardcodeados):
+                  //  1) Sale del borde derecho de la barra origen (arrow.fromX) y
+                  //     avanza LEAD px horizontales antes de quebrar (nunca quiebra
+                  //     justo al salir).
+                  //  2) Llega al borde izquierdo de la barra destino (arrow.toX) con
+                  //     LEAD px horizontales justo antes de la punta, restando además
+                  //     el overshoot real del marker-end (la punta dibujada sobresale
+                  //     unos px más allá del punto final del path) para que la flecha
+                  //     -- geometría visible, no solo el punto matemático -- jamás
+                  //     quede superpuesta a la barra destino.
+                  //  3) El destino no siempre está a la derecha del origen: si el
+                  //     punto de salida cae en o después del punto de aproximación al
+                  //     destino (rangos horizontales solapados, o destino a la
+                  //     izquierda), se sale igual por la derecha del origen y se
+                  //     rodea por un tramo intermedio fuera de las filas de
+                  //     origen/destino antes de aproximar al destino por su
+                  //     izquierda -- así la línea nunca cruza ninguna de las dos
+                  //     barras.
+                  const LEAD = 3;
+                  const MARKER_OVERSHOOT = isSelected ? 2 : 1;
+                  const exitX = arrow.fromX + LEAD;
+                  const tipX = arrow.toX - MARKER_OVERSHOOT;
+                  const approachX = tipX - LEAD;
 
                   let pathD: string;
-                  if (approachX >= exitX) {
-                    // Normal forward case: exit right, drop, then approach left → tip
+                  if (exitX <= approachX) {
+                    // Caso directo: hay espacio de sobra entre la salida del origen
+                    // y la aproximación al destino -- un solo quiebre vertical no
+                    // cruza ninguna de las dos barras.
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
                              L ${exitX} ${arrow.toY}
-                             L ${arrow.toX} ${arrow.toY}`;
+                             L ${approachX} ${arrow.toY}
+                             L ${tipX} ${arrow.toY}`;
                   } else {
-                    // Tight/backward case: exit right, detour vertically, come back left to approachX, then approach → tip
+                    // Caso "hacia atrás"/solapado (destination.startX < source.endX
+                    // o destino a la izquierda del origen): un tramo horizontal
+                    // directo cruzaría la barra destino. Se sale por la derecha del
+                    // origen, se rodea verticalmente por una zona intermedia (fuera
+                    // de las filas de origen y destino) y recién ahí se aproxima al
+                    // destino por su izquierda. El "carril" (arrow.lane) separa el
+                    // tramo intermedio de dependencias que comparten el mismo rango
+                    // de filas, para que no queden dibujadas una sobre otra.
                     const goingDown = arrow.toY >= arrow.fromY;
                     const detourY = goingDown
-                      ? arrow.fromY + VERT_GAP + arrow.lane * LANE_STEP
-                      : arrow.fromY - VERT_GAP - arrow.lane * LANE_STEP;
+                      ? arrow.fromY + ROW_HEIGHT / 2 + arrow.lane * 6
+                      : arrow.fromY - ROW_HEIGHT / 2 - arrow.lane * 6;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
                              L ${exitX} ${detourY}
                              L ${approachX} ${detourY}
                              L ${approachX} ${arrow.toY}
-                             L ${arrow.toX} ${arrow.toY}`;
+                             L ${tipX} ${arrow.toY}`;
                   }
-                  
-                  const isSelected = selectedDependencyId === arrow.id;
+
                   const midX = (arrow.fromX + arrow.toX) / 2;
                   const midY = (arrow.fromY + arrow.toY) / 2;
                   return (
