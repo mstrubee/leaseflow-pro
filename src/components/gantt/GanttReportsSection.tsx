@@ -5,6 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   ChevronDown,
   ChevronRight,
@@ -21,9 +30,14 @@ import {
   ArrowUpDown,
   CheckSquare,
   Square,
+  Building2,
+  Plus,
+  Check,
+  X,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
+import { useAppLogos } from "@/hooks/useAppLogos";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday } from "@/hooks/useGantt";
@@ -60,6 +74,7 @@ interface GanttContractData {
   capexCLP: number;
   surfaceM2: number; // superficie_edificada_local for UF/m² metric
   disbursement: Disbursement | null;
+  companyNames: string[];
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
@@ -157,13 +172,16 @@ function MiniGantt({
   selectionMode = false,
   hiddenIds,
   onToggleHidden,
+  companyNames,
 }: {
   taskTree: GanttTask[];
   holidays: Holiday[];
   selectionMode?: boolean;
   hiddenIds?: Set<string>;
   onToggleHidden?: (id: string) => void;
+  companyNames?: string[];
 }) {
+  const { logos } = useAppLogos();
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
   // Fechas efectivas (madres reflejan a sus hijas), consistentes con el Gantt editable.
   const effDates = useMemo(
@@ -172,6 +190,15 @@ function MiniGantt({
   );
   const datesOf = (t: GanttTask) =>
     effDates.get(t.id) ?? { start: t.start_date, end: t.end_date };
+
+  const companyLogoSrc = useMemo(() => {
+    if (!companyNames || companyNames.length === 0) return null;
+    const lower = companyNames.map((n) => n.toLowerCase());
+    if (lower.some((n) => /grupo\s*planet/.test(n))) return logos.grupoPlanet;
+    if (lower.some((n) => n.includes("autoplanet"))) return logos.autoplanet;
+    if (lower.some((n) => n.includes("agroplanet"))) return logos.agroplanet;
+    return null;
+  }, [companyNames, logos]);
   const tasksWithDates = flat.filter((f) => {
     const d = datesOf(f.task);
     return d.start && d.end;
@@ -400,6 +427,24 @@ function MiniGantt({
                     )} - ${format(parseISO(endStr!), "dd/MM/yyyy")}`}
                   />
                 )}
+                {/* Company logo thumbnail – bottom-right of the bar area */}
+                {companyLogoSrc && (
+                  <img
+                    src={companyLogoSrc}
+                    alt="empresa"
+                    style={{
+                      position: "absolute",
+                      bottom: 1,
+                      right: 2,
+                      width: 14,
+                      height: 14,
+                      objectFit: "contain",
+                      opacity: 0.55,
+                      borderRadius: 2,
+                      pointerEvents: "none",
+                    }}
+                  />
+                )}
               </div>
             </div>
           );
@@ -424,11 +469,38 @@ export function GanttReportsSection() {
   const [sortBy, setSortBy] = useState<SortBy>("name");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Filtro por empresa
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+
+  // Contratos No Firmados (en_negociacion)
+  const [negotiationContracts, setNegotiationContracts] = useState<{ id: string; name: string }[]>([]);
+  const [loadingNegotiation, setLoadingNegotiation] = useState(false);
+  const [negotiationSearchOpen, setNegotiationSearchOpen] = useState(false);
+  const [extraData, setExtraData] = useState<GanttContractData[]>([]);
+  const [addedNegotiationIds, setAddedNegotiationIds] = useState<Set<string>>(new Set());
+
+  // All data combined (regular + added negotiation contracts)
+  const allData = useMemo(() => {
+    const regularIds = new Set(data.map((d) => d.contractId));
+    const extras = extraData.filter((e) => !regularIds.has(e.contractId));
+    return [...data, ...extras];
+  }, [data, extraData]);
+
+  // Unique company names for filter dropdown
+  const allCompanies = useMemo(() => {
+    const names = new Set<string>();
+    allData.forEach((d) => d.companyNames.forEach((n) => names.add(n)));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [allData]);
+
   /** Datos visibles tras aplicar filtro y orden */
   const displayData = useMemo(() => {
-    let filtered = data;
-    if (filterGantt === "con") filtered = data.filter((d) => d.tasks.length > 0);
-    if (filterGantt === "sin") filtered = data.filter((d) => d.tasks.length === 0);
+    let filtered = allData;
+    if (filterGantt === "con") filtered = allData.filter((d) => d.tasks.length > 0);
+    if (filterGantt === "sin") filtered = allData.filter((d) => d.tasks.length === 0);
+    if (companyFilter !== "all") {
+      filtered = filtered.filter((d) => d.companyNames.includes(companyFilter));
+    }
     return [...filtered].sort((a, b) => {
       if (sortBy === "capex_desc") return b.capexUF - a.capexUF;
       if (sortBy === "gantt_first") {
@@ -445,7 +517,7 @@ export function GanttReportsSection() {
       }
       return a.contractName.localeCompare(b.contractName);
     });
-  }, [data, filterGantt, sortBy]);
+  }, [allData, filterGantt, sortBy, companyFilter]);
 
   // Helpers de selección para exportar
   const toggleSelected = (id: string) =>
@@ -457,9 +529,12 @@ export function GanttReportsSection() {
     });
 
   const selectGroup = (group: FilterGantt) => {
-    const pool = group === "all" ? displayData : group === "con"
-      ? displayData.filter((d) => d.tasks.length > 0)
-      : displayData.filter((d) => d.tasks.length === 0);
+    const pool =
+      group === "all"
+        ? displayData
+        : group === "con"
+        ? displayData.filter((d) => d.tasks.length > 0)
+        : displayData.filter((d) => d.tasks.length === 0);
     setSelectedIds(new Set(pool.map((d) => d.contractId)));
   };
 
@@ -473,6 +548,10 @@ export function GanttReportsSection() {
         : displayData,
     [displayData, selectedIds]
   );
+
+  /** Counts for filter badges */
+  const countCon = allData.filter((d) => d.tasks.length > 0).length;
+  const countSin = allData.filter((d) => d.tasks.length === 0).length;
 
   const toggleSelectionMode = (id: string) => {
     setSelectionModeCards((prev) => {
@@ -540,6 +619,20 @@ export function GanttReportsSection() {
       (contractRows || [])
         .filter((c: any) => !c.deleted_at)
         .forEach((c: any) => contractMap.set(c.id, c));
+
+      // 2b) Empresas asociadas a cada contrato
+      const { data: ccRows } = await supabase
+        .from("contract_companies")
+        .select("contract_id, companies(name)")
+        .in("contract_id", contractIds);
+      const companiesByContract = new Map<string, string[]>();
+      (ccRows || []).forEach((row: any) => {
+        const name = row.companies?.name;
+        if (!name) return;
+        const arr = companiesByContract.get(row.contract_id) || [];
+        arr.push(name);
+        companiesByContract.set(row.contract_id, arr);
+      });
 
       // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
       const { data: timelines, error: tlErr } = await supabase
@@ -655,6 +748,7 @@ export function GanttReportsSection() {
           capexCLP,
           surfaceM2: Number(contract.superficie_edificada_local) || 0,
           disbursement,
+          companyNames: companiesByContract.get(contractId) || [],
         });
       }
 
@@ -666,6 +760,90 @@ export function GanttReportsSection() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadNegotiationContracts = async () => {
+    if (negotiationContracts.length > 0 || loadingNegotiation) return;
+    setLoadingNegotiation(true);
+    try {
+      const { data: contracts } = await supabase
+        .from("contracts")
+        .select("id, name")
+        .eq("status", "en_negociacion")
+        .is("deleted_at", null)
+        .order("name");
+      setNegotiationContracts(contracts || []);
+    } finally {
+      setLoadingNegotiation(false);
+    }
+  };
+
+  const addNegotiationContract = async (contractId: string, contractName: string) => {
+    if (extraData.some((e) => e.contractId === contractId)) {
+      // Remove it
+      setExtraData((prev) => prev.filter((e) => e.contractId !== contractId));
+      setAddedNegotiationIds((prev) => {
+        const next = new Set(prev);
+        next.delete(contractId);
+        return next;
+      });
+      return;
+    }
+
+    // Fetch timeline and tasks
+    const { data: timelines } = await supabase
+      .from("gantt_timelines")
+      .select("id, name, contract_id")
+      .eq("contract_id", contractId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const timeline = timelines?.[0] ?? null;
+    let tasks: GanttTask[] = [];
+    if (timeline) {
+      const { data: taskRows } = await supabase
+        .from("gantt_tasks")
+        .select("*")
+        .eq("timeline_id", timeline.id)
+        .order("display_order");
+      tasks = (taskRows as GanttTask[]) || [];
+    }
+
+    const taskTree = tasks.length > 0 ? buildTree(tasks) : [];
+    const effMap = computeEffectiveDatesMap(tasks);
+    const effOf = (t: GanttTask) =>
+      effMap.get(t.id) ?? { start: t.start_date, end: t.end_date };
+    const endDates = tasks.map((t) => effOf(t).end).filter(Boolean) as string[];
+    const endDate =
+      endDates.length > 0
+        ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
+        : null;
+
+    // Fetch companies
+    const { data: ccRows } = await supabase
+      .from("contract_companies")
+      .select("contract_id, companies(name)")
+      .eq("contract_id", contractId);
+    const companyNames = (ccRows || [])
+      .map((r: any) => r.companies?.name)
+      .filter(Boolean) as string[];
+
+    const newItem: GanttContractData = {
+      contractId,
+      contractName,
+      timelineName: timeline?.name ?? "",
+      tasks,
+      taskTree,
+      endDate,
+      capexUF: 0,
+      capexCLP: 0,
+      surfaceM2: 0,
+      disbursement: null,
+      companyNames,
+    };
+
+    setExtraData((prev) => [...prev, newItem]);
+    setAddedNegotiationIds((prev) => new Set([...prev, contractId]));
   };
 
   const toggleCard = (id: string) => {
@@ -996,8 +1174,6 @@ export function GanttReportsSection() {
   };
 
   // ── Derived counts para badges ─────────────────────────────────────────────
-  const countCon = data.filter((d) => d.tasks.length > 0).length;
-  const countSin = data.filter((d) => d.tasks.length === 0).length;
   const allVisibleOpen =
     displayData.length > 0 && displayData.every((d) => openCards.has(d.contractId));
 
@@ -1017,7 +1193,7 @@ export function GanttReportsSection() {
                 <CardTitle>Cartas Gantt - Vista General</CardTitle>
                 {!loading && (
                   <span className="text-sm text-muted-foreground ml-2">
-                    ({data.length} contrato{data.length !== 1 ? "s" : ""})
+                    ({allData.length} contrato{allData.length !== 1 ? "s" : ""})
                   </span>
                 )}
               </div>
@@ -1071,13 +1247,13 @@ export function GanttReportsSection() {
                 {/* ── Barra de filtro / orden / selección ──────────────────── */}
                 <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
 
-                  {/* Filtro */}
+                  {/* Filtro Gantt */}
                   <div className="flex items-center gap-1.5">
                     <ListFilter className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground font-medium">Filtrar:</span>
                     {(
                       [
-                        { key: "all", label: `Todos (${data.length})` },
+                        { key: "all", label: `Todos (${allData.length})` },
                         { key: "con", label: `Con Gantt (${countCon})` },
                         { key: "sin", label: `Sin Gantt (${countSin})` },
                       ] as { key: FilterGantt; label: string }[]
@@ -1092,6 +1268,38 @@ export function GanttReportsSection() {
                         {label}
                       </Button>
                     ))}
+                  </div>
+
+                  <div className="w-px h-5 bg-border mx-1" />
+
+                  {/* Filtro por Empresa */}
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground font-medium">Empresa:</span>
+                    <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                      <SelectTrigger className="h-7 w-44 text-xs">
+                        <SelectValue placeholder="Todas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas ({allData.length})</SelectItem>
+                        {allCompanies.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name} ({allData.filter((d) => d.companyNames.includes(name)).length})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {companyFilter !== "all" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => setCompanyFilter("all")}
+                        title="Limpiar filtro de empresa"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
 
                   <div className="w-px h-5 bg-border mx-1" />
@@ -1112,6 +1320,86 @@ export function GanttReportsSection() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  <div className="w-px h-5 bg-border mx-1" />
+
+                  {/* Contratos No Firmados */}
+                  <Popover
+                    open={negotiationSearchOpen}
+                    onOpenChange={(open) => {
+                      setNegotiationSearchOpen(open);
+                      if (open) loadNegotiationContracts();
+                    }}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs gap-1">
+                        <Plus className="h-3 w-3" />
+                        Contratos No Firmados
+                        {addedNegotiationIds.size > 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="ml-1 px-1.5 py-0 text-[10px] h-4"
+                          >
+                            {addedNegotiationIds.size}
+                          </Badge>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar contrato en negociación..." />
+                        <CommandList>
+                          {loadingNegotiation ? (
+                            <div className="flex items-center justify-center py-6">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            <>
+                              <CommandEmpty>No se encontraron contratos</CommandEmpty>
+                              <CommandGroup heading="En negociación">
+                                {negotiationContracts.map((c) => {
+                                  const alreadyInData = data.some((d) => d.contractId === c.id);
+                                  const isAdded = addedNegotiationIds.has(c.id);
+                                  return (
+                                    <CommandItem
+                                      key={c.id}
+                                      value={c.name}
+                                      disabled={alreadyInData}
+                                      onSelect={() => {
+                                        if (!alreadyInData) addNegotiationContract(c.id, c.name);
+                                      }}
+                                      className="flex items-center gap-2"
+                                    >
+                                      <Check
+                                        className={`h-3.5 w-3.5 flex-shrink-0 ${
+                                          isAdded || alreadyInData
+                                            ? "opacity-100 text-primary"
+                                            : "opacity-0"
+                                        }`}
+                                      />
+                                      <span className="truncate text-xs">{c.name}</span>
+                                      {alreadyInData && (
+                                        <span className="ml-auto text-[10px] text-muted-foreground">
+                                          ya incluido
+                                        </span>
+                                      )}
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                              {addedNegotiationIds.size > 0 && (
+                                <div className="p-2 border-t">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    {addedNegotiationIds.size} contrato{addedNegotiationIds.size !== 1 ? "s" : ""} añadido{addedNegotiationIds.size !== 1 ? "s" : ""} al listado. Haz clic para quitar.
+                                  </p>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
 
                   <div className="w-px h-5 bg-border mx-1" />
 
@@ -1310,6 +1598,7 @@ export function GanttReportsSection() {
                                 selectionMode={selectionModeCards.has(item.contractId)}
                                 hiddenIds={hiddenByCard[item.contractId]}
                                 onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
+                                companyNames={item.companyNames}
                               />
                             )}
                           </CardContent>
