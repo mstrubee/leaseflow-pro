@@ -6,7 +6,7 @@ import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ga
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronsDownUp, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronsDownUp, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight, TriangleAlert } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -381,6 +381,9 @@ export function GanttChart({
   const didInitExpandRef = useRef(false);
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>(100);
+  // Tracks tasks whose start date was shifted by the non-working-day warning button.
+  // Map: taskId → { from: originalDate, to: shiftedDate }
+  const [shiftedByWarning, setShiftedByWarning] = useState<Map<string, { from: string; to: string }>>(new Map());
   const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [colSelectMode, setColSelectMode] = useState(false);
@@ -1032,6 +1035,48 @@ export function GanttChart({
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
     return holidays.some((h) => h.date === dateStr);
+  };
+
+  const isNonWorkingDay = (dateStr: string | null): boolean => {
+    if (!dateStr) return false;
+    const d = parseISO(dateStr);
+    if (isWeekend(d)) return true;
+    return holidays.some((h) => h.date === dateStr);
+  };
+
+  const getNextWorkingDay = (dateStr: string): string => {
+    let d = addDays(parseISO(dateStr), 1);
+    while (isWeekend(d) || holidays.some((h) => h.date === format(d, "yyyy-MM-dd"))) {
+      d = addDays(d, 1);
+    }
+    return format(d, "yyyy-MM-dd");
+  };
+
+  const handleWarningShift = async (task: GanttTask) => {
+    if (!task.start_date) return;
+    const shifted = shiftedByWarning.get(task.id);
+
+    if (shifted && task.start_date === shifted.to) {
+      // Revert to original non-working date
+      const newMap = new Map(shiftedByWarning);
+      newMap.delete(task.id);
+      setShiftedByWarning(newMap);
+      beginUndoGroup("Revertir traslado de inicio");
+      const endDate = calculateEndDate(shifted.from, task.duration_days ?? 1, task.duration_type as "calendar" | "business", holidays);
+      await onUpdateTask(task.id, { start_date: shifted.from, end_date: format(endDate, "yyyy-MM-dd") });
+      endUndoGroup();
+    } else if (isNonWorkingDay(task.start_date)) {
+      // Shift to next working day
+      const from = task.start_date;
+      const to = getNextWorkingDay(from);
+      const endDate = calculateEndDate(to, task.duration_days ?? 1, task.duration_type as "calendar" | "business", holidays);
+      const newMap = new Map(shiftedByWarning);
+      newMap.set(task.id, { from, to });
+      setShiftedByWarning(newMap);
+      beginUndoGroup("Trasladar inicio a día hábil");
+      await onUpdateTask(task.id, { start_date: to, end_date: format(endDate, "yyyy-MM-dd") });
+      endUndoGroup();
+    }
   };
 
   const handleAddNewRow = (parentId: string | null = null) => {
@@ -2839,7 +2884,7 @@ export function GanttChart({
                     )}
                   </div>
 
-                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", startColWidth) }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center relative" style={{ width: cw("start", startColWidth) }}>
                     {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).start : task.start_date}
@@ -2863,6 +2908,50 @@ export function GanttChart({
                         );
                       })()}
                     />
+                    {/* Non-working day warning: only for leaf tasks with a start date on weekend/holiday */}
+                    {!hasChildren && (() => {
+                      const startStr = task.start_date;
+                      if (!startStr) return null;
+                      const shifted = shiftedByWarning.get(task.id);
+                      const isDimmed = !!(shifted && startStr === shifted.to);
+                      const isWarning = !isDimmed && isNonWorkingDay(startStr);
+                      if (!isWarning && !isDimmed) return null;
+                      const dayLabel = isWarning
+                        ? (isWeekend(parseISO(startStr)) ? "fin de semana" : "feriado")
+                        : "fin de semana o feriado";
+                      const tooltip = isWarning
+                        ? `El inicio cae en ${dayLabel}. Haz clic para mover al día hábil siguiente.`
+                        : `Inicio trasladado desde ${dayLabel}. Haz clic para revertir (o usa Ctrl+Z).`;
+                      return (
+                        <TooltipProvider delayDuration={300}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleWarningShift(task); }}
+                                className={cn(
+                                  "absolute right-1 top-1/2 -translate-y-1/2 z-10 rounded p-0.5 transition-opacity",
+                                  isDimmed
+                                    ? "opacity-30 hover:opacity-60"
+                                    : "opacity-100 hover:opacity-80"
+                                )}
+                                title={tooltip}
+                              >
+                                <TriangleAlert
+                                  className={cn(
+                                    "h-3.5 w-3.5",
+                                    isDimmed ? "text-amber-400" : "text-amber-500"
+                                  )}
+                                />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-48 text-xs">
+                              {tooltip}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })()}
                   </div>
 
                   {/* Duration */}
