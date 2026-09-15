@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -21,11 +21,13 @@ import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
 import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
 import { exportCapexToExcel } from "@/components/budget/CapexExcelExport";
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 
 interface ContractBudget {
   contract_id: string;
   contract_name: string;
   clasificacion: string | null;
+  capex_avance_status: string | null;
   year: number;
   amount_uf: number;
   budget_id: string;
@@ -55,6 +57,22 @@ const getEffectiveBudgetTotal = (budget: ContractBudget, breakdown?: AuthBreakdo
   return eff.authorized + eff.unauthorized;
 };
 
+// Mismo agrupamiento "resumido" que usan las cards de empresa (Autoplanet /
+// Agroplanet / Otros -- Grupo Planet y Otra quedan juntos en "Otros"). Se usa
+// tanto para el filtro de Empresa como para las cards, así clickear una card
+// filtra exactamente lo que esa card está mostrando.
+type CompanyBucket = "Autoplanet" | "Agroplanet" | "Otros";
+const getCompanyBucket = (names: string[]): CompanyBucket => {
+  const hasAgroplanet = names.some((n) => n.toLowerCase().includes("agroplanet"));
+  const hasAutoplanet = names.some((n) => n.toLowerCase().includes("autoplanet"));
+  if (hasAutoplanet && !hasAgroplanet) return "Autoplanet";
+  if (hasAgroplanet) return "Agroplanet";
+  return "Otros";
+};
+
+const toggleArrayValue = (arr: string[], value: string): string[] =>
+  arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+
 
 
 export default function CapexDashboard() {
@@ -67,20 +85,55 @@ export default function CapexDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
-  const [companyFilter, setCompanyFilter] = useState("todas");
-  const [clasificacionFilter, setClasificacionFilter] = useState("todas");
+  // Filtros multi-selección: array vacío = "todas".
+  const [companyFilter, setCompanyFilter] = useState<string[]>([]);
+  const [clasificacionFilter, setClasificacionFilter] = useState<string[]>([]);
+  const [avanceStatusFilter, setAvanceStatusFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   
   const [templateOpen, setTemplateOpen] = useState(false);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
+  // aprobándolas de forma más ágil, expandiendo uno a uno.
+  const [onlyUnauthorized, setOnlyUnauthorized] = useState(false);
+  // "Tipos de CAPEX" administrables desde Admin > Estados y Categorías --
+  // el "name" de cada uno es el mismo texto que se guarda en
+  // contracts.clasificacion.
+  const [clasificacionTypes, setClasificacionTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  // "Estado Avance CAPEX" (En Curso/Terminado/Programado), administrable
+  // desde Admin > Estados y Categorías -- el "name" es el mismo texto que
+  // se guarda en contracts.capex_avance_status.
+  const [avanceStatusTypes, setAvanceStatusTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
     }
   }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_clasificacion_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      setClasificacionTypes(data || []);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_avance_status_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      setAvanceStatusTypes(data || []);
+    })();
+  }, []);
 
   useEffect(() => {
     if (user && ufValue > 0) loadBudgets();
@@ -91,9 +144,17 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
+        // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
+        // estado del contrato.
+        .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada", { foreignTable: "contracts" })
+        // Los contratos "En Negociación" además solo se muestran si el
+        // Comité GP los aceptó ("Aceptada") -- otros estados de comité
+        // (Buscar, En Revisión, etc.) quedan afuera. El resto de los estados
+        // de contrato (ej. Firmado) se muestra igual, sin depender de esto.
+        .or("status.neq.en_negociacion,comite_gp_status.eq.Aceptada", { foreignTable: "contracts" })
         .order("year", { ascending: false });
 
       if (error) throw error;
@@ -103,6 +164,7 @@ export default function CapexDashboard() {
         contract_id: b.contract_id,
         contract_name: b.contracts?.name || "Sin nombre",
         clasificacion: b.contracts?.clasificacion || null,
+        capex_avance_status: b.contracts?.capex_avance_status || null,
         year: b.year,
         amount_uf: b.amount_uf,
         budget_id: b.id,
@@ -138,14 +200,56 @@ export default function CapexDashboard() {
     return budgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter !== "todas") {
-        const hasCompany = b.company_names.some(n => n.toLowerCase().includes(companyFilter.toLowerCase()));
-        if (!hasCompany) return false;
-      }
-      if (clasificacionFilter !== "todas" && b.clasificacion !== clasificacionFilter) return false;
+      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
     });
-  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter]);
+  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+
+  // Aplica los mismos filtros que filteredBudgets pero salteando uno de los
+  // filtros -- se usa para calcular qué opciones de CADA dropdown todavía
+  // tienen algún resultado dado el resto de los filtros activos, y esconder
+  // las que quedarían en 0 (evita ofrecer una combinación sin resultados).
+  const filterBudgetsExcept = React.useCallback(
+    (except: "company" | "clasificacion" | "avance") =>
+      budgets.filter((b) => {
+        if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
+        if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+        if (except !== "company" && companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+        if (except !== "clasificacion" && clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+        if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+        return true;
+      }),
+    [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
+  );
+
+  const availableCompanyBuckets = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("company").forEach((b) => set.add(getCompanyBucket(b.company_names)));
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const availableClasificaciones = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("clasificacion").forEach((b) => { if (b.clasificacion) set.add(b.clasificacion); });
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const availableAvanceStatuses = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("avance").forEach((b) => { if (b.capex_avance_status) set.add(b.capex_avance_status); });
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const hasActiveFilters = searchTerm !== "" || companyFilter.length > 0 || clasificacionFilter.length > 0 || avanceStatusFilter.length > 0;
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setCompanyFilter([]);
+    setClasificacionFilter([]);
+    setAvanceStatusFilter([]);
+  };
 
   // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
   const contractGroups = React.useMemo(() => {
@@ -218,12 +322,26 @@ export default function CapexDashboard() {
     return companyGroups.flatMap(({ contracts }) => contracts);
   }, [companyGroups]);
 
+  // Cuando el filtro "No Autorizados" está activo, solo se muestran los
+  // contratos con líneas No Autorizado por un monto mayor a 0 (usa el mismo
+  // desglose que las tarjetas de resumen).
+  const displayedCompanyGroups = React.useMemo(() => {
+    if (!onlyUnauthorized) return companyGroups;
+    return companyGroups
+      .map(({ company, contracts }) => ({
+        company,
+        contracts: contracts.filter(([contractId]) => (authByContract[contractId]?.unauthorized || 0) > 0),
+      }))
+      .filter(({ contracts }) => contracts.length > 0);
+  }, [companyGroups, onlyUnauthorized, authByContract]);
 
-  // Per-company clasificacion stats
+
+  // Per-company clasificacion stats -- dinámico según los "Tipos de CAPEX"
+  // administrados en Admin (ya no son 3 fijos).
   const companyClasificacionStats = React.useMemo(() => {
-    const stats: Record<string, { nuevo: number; reemplazo: number; regularizacion: number; cNuevo: number; cReemplazo: number; cRegularizacion: number }> = {};
+    const stats: Record<string, Record<string, { uf: number; count: number }>> = {};
     companyGroups.forEach(({ company, contracts }) => {
-      const s = { nuevo: 0, reemplazo: 0, regularizacion: 0, cNuevo: 0, cReemplazo: 0, cRegularizacion: 0 };
+      const s: Record<string, { uf: number; count: number }> = {};
       const seen = new Set<string>();
       contracts.forEach(([contractId, cBudgets]) => {
         if (seen.has(contractId)) return;
@@ -231,9 +349,10 @@ export default function CapexDashboard() {
         const bd = authByContract[contractId];
         const uf = bd ? bd.authorized + bd.unauthorized : 0;
         const cl = cBudgets[0].clasificacion;
-        if (cl === "nuevo") { s.nuevo += uf; s.cNuevo++; }
-        else if (cl === "reemplazo") { s.reemplazo += uf; s.cReemplazo++; }
-        else if (cl === "regularizacion") { s.regularizacion += uf; s.cRegularizacion++; }
+        if (!cl) return;
+        if (!s[cl]) s[cl] = { uf: 0, count: 0 };
+        s[cl].uf += uf;
+        s[cl].count++;
       });
       stats[company] = s;
     });
@@ -251,26 +370,50 @@ export default function CapexDashboard() {
 
   const contractsWithCapex = listedContracts;
 
-  // Totals by clasificacion (solo locales con CAPEX > 0)
-  const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
-    let nuevo = 0, reemplazo = 0, regularizacion = 0;
-    let cNuevo = 0, cReemplazo = 0, cRegularizacion = 0;
+  // Total CAPEX por empresa (Autoplanet / Agroplanet / Otros) -- respeta los
+  // filtros activos, igual que totalCapexUF.
+  const companyBucketTotals = React.useMemo(() => {
+    const buckets: Record<"Autoplanet" | "Agroplanet" | "Otros", { uf: number; count: number }> = {
+      Autoplanet: { uf: 0, count: 0 },
+      Agroplanet: { uf: 0, count: 0 },
+      Otros: { uf: 0, count: 0 },
+    };
+    companyGroups.forEach(({ company, contracts }) => {
+      const bucket = company === "Autoplanet" ? "Autoplanet" : company === "Agroplanet" ? "Agroplanet" : "Otros";
+      contracts.forEach(([contractId]) => {
+        const bd = authByContract[contractId];
+        if (bd) buckets[bucket].uf += bd.authorized + bd.unauthorized;
+        buckets[bucket].count++;
+      });
+    });
+    return buckets;
+  }, [companyGroups, authByContract]);
+
+  // Totales por "Tipo de CAPEX" -- dinámico según los tipos administrados en
+  // Admin > Estados y Categorías > Tipos de CAPEX (ya no son 3 fijos).
+  const clasificacionTotals = React.useMemo(() => {
+    const result: Record<string, { uf: number; count: number }> = {};
     contractsWithCapex.forEach(([contractId, cBudgets]) => {
       const bd = authByContract[contractId];
       const effectiveUF = bd ? (bd.authorized + bd.unauthorized) : cBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
       const cl = cBudgets[0].clasificacion;
-      if (cl === "nuevo") { nuevo += effectiveUF; cNuevo++; }
-      else if (cl === "reemplazo") { reemplazo += effectiveUF; cReemplazo++; }
-      else if (cl === "regularizacion") { regularizacion += effectiveUF; cRegularizacion++; }
+      if (!cl) return;
+      if (!result[cl]) result[cl] = { uf: 0, count: 0 };
+      result[cl].uf += effectiveUF;
+      result[cl].count++;
     });
-    return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion, countNuevo: cNuevo, countReemplazo: cReemplazo, countRegularizacion: cRegularizacion };
+    return result;
   }, [contractsWithCapex, authByContract]);
 
   const handleExportPPT = async () => {
     try {
       toast.info("Generando presentación...");
+
       const pptCompanyGroups = companyGroups.map(({ company, contracts }) => {
-        const stats = companyClasificacionStats[company];
+        const stats = companyClasificacionStats[company] || {};
+        const byType = clasificacionTypes
+          .filter((t) => stats[t.name])
+          .map((t) => ({ name: t.name, color: t.color, uf: stats[t.name].uf, count: stats[t.name].count }));
         return {
           company,
           contracts: contracts.map(([contractId, cBudgets]) => {
@@ -290,28 +433,19 @@ export default function CapexDashboard() {
               uf_m2: superficie > 0 ? totalUf / superficie : 0,
             };
           }),
-          totals: {
-            nuevo: stats?.nuevo || 0,
-            reemplazo: stats?.reemplazo || 0,
-            regularizacion: stats?.regularizacion || 0,
-            cNuevo: stats?.cNuevo || 0,
-            cReemplazo: stats?.cReemplazo || 0,
-            cRegularizacion: stats?.cRegularizacion || 0,
-            total: (stats?.nuevo || 0) + (stats?.reemplazo || 0) + (stats?.regularizacion || 0),
-          },
+          totals: { byType, total: byType.reduce((s, t) => s + t.uf, 0) },
         };
       });
+
+      const clasifTotalsArr = clasificacionTypes
+        .filter((t) => clasificacionTotals[t.name])
+        .map((t) => ({ name: t.name, color: t.color, uf: clasificacionTotals[t.name].uf, count: clasificacionTotals[t.name].count }));
 
       await generateCapexPPT({
         year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
         ufValue: ufValue || 0,
         totalCapexUF,
-        totalNuevoUF,
-        totalReemplazoUF,
-        totalRegularizacionUF,
-        countNuevo,
-        countReemplazo,
-        countRegularizacion,
+        clasificacionTotals: clasifTotalsArr,
         totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
       });
@@ -393,6 +527,41 @@ export default function CapexDashboard() {
     toast.success("Clasificación actualizada");
   };
 
+  const handleAvanceStatusChange = async (contractId: string, value: string) => {
+    const { error } = await supabase
+      .from("contracts")
+      .update({ capex_avance_status: value } as never)
+      .eq("id", contractId);
+    if (error) {
+      toast.error("Error al actualizar el estado de avance");
+      return;
+    }
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, capex_avance_status: value } : b));
+    toast.success("Estado de avance actualizado");
+  };
+
+  const BADGE_COLOR_MAP: Record<string, string> = {
+    green: 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
+    red: 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
+    blue: 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200',
+    yellow: 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200',
+    purple: 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200',
+    orange: 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200',
+    gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
+  };
+
+  const getClasificacionColor = (name: string | null) => {
+    if (!name) return '';
+    const type = clasificacionTypes.find(t => t.name === name);
+    return BADGE_COLOR_MAP[type?.color || 'gray'] || '';
+  };
+
+  const getAvanceStatusColor = (name: string | null) => {
+    if (!name) return '';
+    const type = avanceStatusTypes.find(t => t.name === name);
+    return BADGE_COLOR_MAP[type?.color || 'gray'] || '';
+  };
+
   if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -419,6 +588,16 @@ export default function CapexDashboard() {
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant={onlyUnauthorized ? "default" : "outline"}
+              size="sm"
+              onClick={() => setOnlyUnauthorized(v => !v)}
+              className="gap-2"
+              title="Mostrar solo contratos con líneas No Autorizado por un monto mayor a 0"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Solo No Autorizados
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel} className="gap-2">
               {exportingExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
               Exportar Excel
@@ -434,124 +613,181 @@ export default function CapexDashboard() {
           </div>
         </div>
 
-        {/* Summary Cards Row 1 */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+        {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos).
+            Todas son clickeables y actúan como filtro acumulativo: clickear una
+            la agrega/quita del filtro correspondiente, sin borrar las demás. */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); } }}
+            title="Ver todo (limpia los filtros de empresa, tipo y estado de avance)"
+            className="cursor-pointer transition-colors hover:bg-muted/50"
+          >
             <CardContent className="p-4 flex items-center gap-3">
               <DollarSign className="h-8 w-8 text-primary" />
               <div>
-                <p className="text-xs text-muted-foreground">Total CAPEX (UF)</p>
-                <p className="text-xl font-bold">{fmtUF(totalCapexUF)} UF</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <DollarSign className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">Total CAPEX (CLP)</p>
+                <p className="text-xs text-muted-foreground">Total CAPEX ({contractsWithCapex.length} {contractsWithCapex.length === 1 ? "local" : "locales"})</p>
                 <p className="text-xl font-bold">{formatCLP(totalCapexUF * (ufValue || 0))}</p>
+                <p className="text-xs text-muted-foreground">({fmtUF(totalCapexUF)} UF)</p>
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <DollarSign className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">Locales con CAPEX</p>
-                <p className="text-xl font-bold">{contractsWithCapex.length}</p>
-              </div>
-            </CardContent>
-          </Card>
+          {(["Autoplanet", "Agroplanet", "Otros"] as const).map((bucket, i) => {
+            const active = companyFilter.includes(bucket);
+            const accentClass = i === 0 ? "text-chart-1" : i === 1 ? "text-chart-2" : "text-chart-3";
+            return (
+              <Card
+                key={bucket}
+                role="button"
+                tabIndex={0}
+                onClick={() => setCompanyFilter((prev) => toggleArrayValue(prev, bucket))}
+                onKeyDown={(e) => { if (e.key === "Enter") setCompanyFilter((prev) => toggleArrayValue(prev, bucket)); }}
+                title={`Filtrar por ${bucket}`}
+                className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+              >
+                <CardContent className="p-4 flex items-center gap-3">
+                  <Building2 className={`h-8 w-8 ${accentClass}`} />
+                  <div>
+                    <p className="text-xs text-muted-foreground">CAPEX {bucket} ({companyBucketTotals[bucket].count})</p>
+                    <p className="text-lg font-bold">{formatCLP(companyBucketTotals[bucket].uf * (ufValue || 0))}</p>
+                    <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals[bucket].uf)} UF)</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
-        {/* Summary Cards Row 2: Clasificacion */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Building2 className="h-8 w-8 text-chart-1" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Nuevos ({countNuevo} {countNuevo === 1 ? "local" : "locales"})</p>
-                <p className="text-lg font-bold">{fmtUF(totalNuevoUF)} UF</p>
-                <p className="text-xs text-muted-foreground">{formatCLP(totalNuevoUF * (ufValue || 0))}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <RefreshCw className="h-8 w-8 text-chart-2" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Reemplazo ({countReemplazo} {countReemplazo === 1 ? "local" : "locales"})</p>
-                <p className="text-lg font-bold">{fmtUF(totalReemplazoUF)} UF</p>
-                <p className="text-xs text-muted-foreground">{formatCLP(totalReemplazoUF * (ufValue || 0))}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <FileCheck className="h-8 w-8 text-chart-3" />
-              <div>
-                <p className="text-xs text-muted-foreground">CAPEX Regularización ({countRegularizacion} {countRegularizacion === 1 ? "local" : "locales"})</p>
-                <p className="text-lg font-bold">{fmtUF(totalRegularizacionUF)} UF</p>
-                <p className="text-xs text-muted-foreground">{formatCLP(totalRegularizacionUF * (ufValue || 0))}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Summary Cards Row 2: por Tipo de CAPEX -- dinámico según Admin > Tipos de CAPEX */}
+        {Object.keys(clasificacionTotals).length > 0 && (
+          <div className="grid gap-4 md:grid-cols-4">
+            {clasificacionTypes
+              .filter((t) => clasificacionTotals[t.name])
+              .map((t) => {
+                const totals = clasificacionTotals[t.name];
+                const active = clasificacionFilter.includes(t.name);
+                return (
+                  <Card
+                    key={t.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
+                    onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                    title={`Filtrar por ${t.name}`}
+                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                  >
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground truncate">CAPEX {t.name} ({totals.count} {totals.count === 1 ? "local" : "locales"})</p>
+                        <p className="text-lg font-bold">{formatCLP(totals.uf * (ufValue || 0))}</p>
+                        <p className="text-xs text-muted-foreground">({fmtUF(totals.uf)} UF)</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar local..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+          <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+            <label className="text-xs font-medium text-muted-foreground">Buscar</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar local..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Año</label>
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                {availableYears.map(y => (
+                  <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Empresa</label>
+            <MultiSelectFilter
+              className="w-[160px]"
+              placeholder="Todas"
+              value={companyFilter}
+              onChange={setCompanyFilter}
+              options={[
+                { value: "Autoplanet", label: "Autoplanet" },
+                { value: "Agroplanet", label: "Agroplanet" },
+                { value: "Otros", label: "Otros" },
+              ].filter((o) => availableCompanyBuckets.has(o.value) || companyFilter.includes(o.value))}
             />
           </div>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              {availableYears.map(y => (
-                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={companyFilter} onValueChange={setCompanyFilter}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Empresa" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Empresa</SelectItem>
-              <SelectItem value="autoplanet">Autoplanet</SelectItem>
-              <SelectItem value="agroplanet">Agroplanet</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={clasificacionFilter} onValueChange={setClasificacionFilter}>
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="Clasificación" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Clasificación</SelectItem>
-              <SelectItem value="nuevo">Nuevo</SelectItem>
-              <SelectItem value="reemplazo">Reemplazo</SelectItem>
-              <SelectItem value="regularizacion">Regularización</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Ordenar por" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="nombre">Ordenar: Nombre</SelectItem>
-              <SelectItem value="empresa">Ordenar: Empresa</SelectItem>
-              <SelectItem value="clasificacion">Ordenar: Clasificación</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Clasificación</label>
+            <MultiSelectFilter
+              className="w-[190px]"
+              placeholder="Todas"
+              value={clasificacionFilter}
+              onChange={setClasificacionFilter}
+              options={clasificacionTypes
+                .filter((t) => availableClasificaciones.has(t.name) || clasificacionFilter.includes(t.name))
+                .map((t) => ({
+                  value: t.name,
+                  label: t.name,
+                  colorDotClassName: `bg-${t.color}-500`,
+                }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Avance</label>
+            <MultiSelectFilter
+              className="w-[190px]"
+              placeholder="Todos"
+              value={avanceStatusFilter}
+              onChange={setAvanceStatusFilter}
+              options={avanceStatusTypes
+                .filter((t) => availableAvanceStatuses.has(t.name) || avanceStatusFilter.includes(t.name))
+                .map((t) => ({
+                  value: t.name,
+                  label: t.name,
+                  colorDotClassName: `bg-${t.color}-500`,
+                }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Ordenar</label>
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nombre">Nombre</SelectItem>
+                <SelectItem value="empresa">Empresa</SelectItem>
+                <SelectItem value="clasificacion">Clasificación</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {hasActiveFilters && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-transparent select-none">Limpiar</label>
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-2">
+                <X className="h-4 w-4" />
+                Limpiar Filtro
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Contract List grouped by company */}
@@ -562,8 +798,14 @@ export default function CapexDashboard() {
                 No se encontraron presupuestos CAPEX
               </CardContent>
             </Card>
+          ) : displayedCompanyGroups.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                No hay contratos con líneas No Autorizado por un monto mayor a 0
+              </CardContent>
+            </Card>
           ) : (
-            companyGroups.map(({ company, contracts }) => {
+            displayedCompanyGroups.map(({ company, contracts }) => {
               const stats = companyClasificacionStats[company];
               const currentUF = ufValue || 0;
               return (
@@ -575,44 +817,35 @@ export default function CapexDashboard() {
                     <Badge variant="secondary" className="text-xs">{contracts.length} {contracts.length === 1 ? "local" : "locales"}</Badge>
                   </div>
 
-                  {/* Per-company clasificacion cards */}
+                  {/* Per-company clasificacion cards -- dinámico según Tipos de CAPEX.
+                      Clickeables: mismo filtro de tipo que las cards de arriba (acumulativo). */}
                   <div className="grid gap-3 md:grid-cols-3">
-                    {stats.cNuevo > 0 && (
-                      <Card>
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <Building2 className="h-6 w-6 text-chart-1 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Nuevos ({stats.cNuevo})</p>
-                            <p className="text-sm font-bold">{fmtUF(stats.nuevo)} UF</p>
-                            <p className="text-xs text-muted-foreground">{formatCLP(stats.nuevo * currentUF)}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {stats.cReemplazo > 0 && (
-                      <Card>
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <RefreshCw className="h-6 w-6 text-chart-2 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Reemplazo ({stats.cReemplazo})</p>
-                            <p className="text-sm font-bold">{fmtUF(stats.reemplazo)} UF</p>
-                            <p className="text-xs text-muted-foreground">{formatCLP(stats.reemplazo * currentUF)}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {stats.cRegularizacion > 0 && (
-                      <Card>
-                        <CardContent className="p-3 flex items-center gap-3">
-                          <FileCheck className="h-6 w-6 text-chart-3 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Regularización ({stats.cRegularizacion})</p>
-                            <p className="text-sm font-bold">{fmtUF(stats.regularizacion)} UF</p>
-                            <p className="text-xs text-muted-foreground">{formatCLP(stats.regularizacion * currentUF)}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
+                    {clasificacionTypes
+                      .filter((t) => stats?.[t.name])
+                      .map((t) => {
+                        const s = stats[t.name];
+                        const active = clasificacionFilter.includes(t.name);
+                        return (
+                          <Card
+                            key={t.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
+                            onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                            title={`Filtrar por ${t.name}`}
+                            className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                          >
+                            <CardContent className="p-3 flex items-center gap-3">
+                              <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
+                              <div className="min-w-0">
+                                <p className="text-xs text-muted-foreground truncate">{t.name} ({s.count})</p>
+                                <p className="text-sm font-bold">{formatCLP(s.uf * currentUF)}</p>
+                                <p className="text-xs text-muted-foreground">({fmtUF(s.uf)} UF)</p>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                   </div>
 
                   {/* Contracts list */}
@@ -621,6 +854,7 @@ export default function CapexDashboard() {
                       const isExpanded = expandedContract === contractId;
                       const contractName = contractBudgets[0].contract_name;
                       const clasificacion = contractBudgets[0].clasificacion;
+                      const avanceStatus = contractBudgets[0].capex_avance_status;
                       const companyNames = contractBudgets[0].company_names;
                       const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
                       const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
@@ -640,7 +874,7 @@ export default function CapexDashboard() {
                           <Card>
                             <CollapsibleTrigger asChild>
                               <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                                <div className="grid grid-cols-[24px_auto_200px_140px_1fr_32px] items-center gap-3">
+                                <div className="grid grid-cols-[24px_auto_200px_190px_190px_1fr_64px] items-center gap-3">
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
@@ -649,13 +883,38 @@ export default function CapexDashboard() {
                                       value={clasificacion || ""}
                                       onValueChange={(val) => handleClasificacionChange(contractId, val)}
                                     >
-                                      <SelectTrigger className="h-7 w-[140px] text-xs">
+                                      <SelectTrigger className={`h-7 w-[180px] text-xs ${getClasificacionColor(clasificacion)}`}>
                                         <SelectValue placeholder="Clasificar..." />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="nuevo">Nuevo</SelectItem>
-                                        <SelectItem value="reemplazo">Reemplazo</SelectItem>
-                                        <SelectItem value="regularizacion">Regularización</SelectItem>
+                                        {clasificacionTypes.map((t) => (
+                                          <SelectItem key={t.id} value={t.name}>
+                                            <span className="flex items-center gap-2">
+                                              <span className={`w-2 h-2 rounded-full bg-${t.color}-500 shrink-0`} />
+                                              {t.name}
+                                            </span>
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
+                                    <Select
+                                      value={avanceStatus || ""}
+                                      onValueChange={(val) => handleAvanceStatusChange(contractId, val)}
+                                    >
+                                      <SelectTrigger className={`h-7 w-[180px] text-xs ${getAvanceStatusColor(avanceStatus)}`}>
+                                        <SelectValue placeholder="Estado avance..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {avanceStatusTypes.map((t) => (
+                                          <SelectItem key={t.id} value={t.name}>
+                                            <span className="flex items-center gap-2">
+                                              <span className={`w-2 h-2 rounded-full bg-${t.color}-500 shrink-0`} />
+                                              {t.name}
+                                            </span>
+                                          </SelectItem>
+                                        ))}
                                       </SelectContent>
                                     </Select>
                                   </div>
@@ -680,7 +939,7 @@ export default function CapexDashboard() {
                                       <span className="text-muted-foreground text-sm">$0</span>
                                     )}
                                   </div>
-                                  <div onClick={(e) => e.stopPropagation()}>
+                                  <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -694,6 +953,15 @@ export default function CapexDashboard() {
                                       ) : (
                                         <Download className="h-4 w-4" />
                                       )}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      title="Ir al contrato"
+                                      onClick={() => navigate(`/contracts/${contractId}?section=capex&returnTo=capex`)}
+                                    >
+                                      <ExternalLink className="h-4 w-4" />
                                     </Button>
                                   </div>
                                 </div>

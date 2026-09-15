@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, memo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -35,7 +35,9 @@ import { ContractStatsCards } from "@/components/contracts/ContractStatsCards";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths, DEFAULT_COLUMN_WIDTHS } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { toast } from "sonner";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -212,12 +214,59 @@ const calcCostoArriendoUF = (contract: Contract): number => {
   return currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
 };
 
+// Aislado en su propio componente memoizado para que escribir en el buscador
+// NO dispare un re-render de todo Contracts (y su tabla de ~100+ filas) en
+// cada tecla — eso era lo que causaba la escritura errática/trabada. Solo
+// este input pequeño se re-renderiza mientras se tipea; el filtro real (vía
+// URL) se actualiza recién 300ms después de dejar de escribir, igual que antes.
+const ContractsSearchInput = memo(function ContractsSearchInput({
+  urlValue,
+  onDebouncedChange,
+}: {
+  urlValue: string;
+  onDebouncedChange: (value: string) => void;
+}) {
+  const [value, setValue] = useState(urlValue);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sincronizar desde la URL cuando cambia externamente (ej. "Limpiar filtros")
+  useEffect(() => {
+    setValue((prev) => (prev !== urlValue ? urlValue : prev));
+  }, [urlValue]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.value;
+    setValue(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => onDebouncedChange(next), 300);
+  };
+
+  return (
+    <div className="relative flex-1 min-w-[200px]">
+      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Input
+        placeholder="Buscar por nombre, CEBE, código, dirección o comuna..."
+        value={value}
+        onChange={handleChange}
+        className="pl-10"
+      />
+    </div>
+  );
+});
+
 const Contracts = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "firmado";
-  const { user, loading: authLoading, roleLoaded, isAdmin } = useAuth();
+  const { user, loading: authLoading, roleLoaded, isAdmin, hasPermission } = useAuth();
+  const canEditContracts = isAdmin || hasPermission("contracts", "edit");
   const { ufValue } = useEconomicIndicators();
   const { columnWidths, normalizedWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
 
@@ -234,7 +283,11 @@ const Contracts = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [comiteGPStatuses, setComiteGPStatuses] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [customFieldsByContract, setCustomFieldsByContract] = useState<Record<string, { cebe?: string; codigo?: string }>>({});
-  const [localSearchTerm, setLocalSearchTerm] = useState(searchParams.get("search") || "");
+  // Totales de CAPEX que ContractsTable ya calcula para sus propias columnas
+  // — se reciben acá (en vez de recalcularlos) para poder ofrecer "Capex" y
+  // "Capex Est." en "Columnas PDF" y usarlos en la exportación.
+  const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
+  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, { capexEstMM: number; capitalTrabajoMM: number }>>({});
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";
@@ -258,6 +311,7 @@ const Contracts = () => {
 
   // Helper to update a single filter in URL
   const updateFilter = (key: string, value: string) => {
+    if (window.location.pathname !== "/contracts") return;
     const newParams = getFreshParams();
     if (value === "todos" || value === "" || (value as any) === null) {
       newParams.delete(key);
@@ -269,22 +323,6 @@ const Contracts = () => {
 
   const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
   const setComiteGPFilter = (value: string) => updateFilter("comite_gp", value);
-
-  // Debounce: sync local search to URL after 300ms of inactivity
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      updateFilter("search", localSearchTerm);
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [localSearchTerm]);
-
-  // Sync URL -> local when search param changes externally (e.g. clear filters)
-  useEffect(() => {
-    const urlSearch = searchParams.get("search") || "";
-    if (urlSearch !== localSearchTerm) {
-      setLocalSearchTerm(urlSearch);
-    }
-  }, [searchParams.get("search")]);
   const setOperationFilter = (value: string) => updateFilter("operation", value);
   const setObraFilter = (value: string) => updateFilter("obra", value);
   const setPatenteFilter = (value: string) => updateFilter("patente", value);
@@ -745,38 +783,55 @@ const Contracts = () => {
     return getAvailableColumns(isFirmado, isNego);
   }, [statusFilter]);
   
-  const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
-    "contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"
-  ]);
+  // Recuerda la última selección de columnas del PDF por usuario (igual
+  // criterio que useContractColumnWidths) — así "Columnas PDF" abre la
+  // próxima vez con lo que se haya dejado seleccionado, no siempre el
+  // default de fábrica.
+  const { value: selectedPdfColumns, setValue: setSelectedPdfColumns } = useUserPreferences<string[]>({
+    preferenceKey: "contracts_pdf_columns",
+    defaultValue: ["contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"],
+    localStorageKey: "contracts_pdf_columns",
+  });
   
-  // PDF row exclusion state
-  const [excludedPdfContractIds, setExcludedPdfContractIds] = useState<string[]>([]);
+  // Selección de filas a exportar (PDF/Excel). null = todas, en el orden de
+  // la tabla. Array = ids en el orden en que se fueron marcando — ese orden
+  // es el que se usa para exportar.
+  const [selectedPdfContractIds, setSelectedPdfContractIds] = useState<string[] | null>(null);
+
+  // Aplica la selección/orden elegido en ContractRowSelector sobre la lista
+  // filtrada actual. Ids que ya no están en filteredContracts (p.ej. cambió
+  // el filtro de status) se ignoran en vez de romper el export.
+  const orderContractsForExport = <T extends { id: string }>(list: T[]): T[] => {
+    if (selectedPdfContractIds === null) return list;
+    const byId = new Map(list.map((c) => [c.id, c]));
+    return selectedPdfContractIds
+      .map((id) => byId.get(id))
+      .filter((c): c is T => !!c);
+  };
 
   const handleDownloadReport = async () => {
     const isFirmado = statusFilter === "firmado";
     const isNego = statusFilter === "en_negociacion";
-    const title = isNego 
-      ? "Contratos en Negociación" 
-      : isFirmado 
-        ? "Contratos Vigentes" 
+    const title = isNego
+      ? "Contratos en Negociación"
+      : isFirmado
+        ? "Contratos Vigentes"
         : "Lista de Contratos";
-    
-    // Filter out excluded contracts
-    const contractsForPdf = filteredContracts.filter(
-      c => !excludedPdfContractIds.includes(c.id)
-    );
-    
-    console.log(`[PDF Export] Generando PDF con ${contractsForPdf.length} de ${filteredContracts.length} contratos (${excludedPdfContractIds.length} excluidos)`);
-    
+
+    const contractsForPdf = orderContractsForExport(filteredContracts);
+
+    console.log(`[PDF Export] Generando PDF con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
+
     await generateContractsListPDF(
-      contractsForPdf as any, 
-      selectedPdfColumns, 
-      title, 
-      isFirmado, 
+      contractsForPdf as any,
+      selectedPdfColumns,
+      title,
+      isFirmado,
       isNego,
-      ufValue
+      ufValue,
+      { capexByContract, capexEstByContract }
     );
-    
+
     toast.success(`PDF generado con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
   };
 
@@ -789,9 +844,7 @@ const Contracts = () => {
         ? "Contratos Vigentes"
         : "Lista de Contratos";
 
-    const contractsForExcel = filteredContracts.filter(
-      (c) => !excludedPdfContractIds.includes(c.id)
-    );
+    const contractsForExcel = orderContractsForExport(filteredContracts);
 
     generateContractsListExcel(
       contractsForExcel as any,
@@ -799,7 +852,8 @@ const Contracts = () => {
       title,
       isFirmado,
       isNego,
-      ufValue
+      ufValue,
+      { capexByContract, capexEstByContract }
     );
 
     toast.success(`Excel generado con ${contractsForExcel.length} de ${filteredContracts.length} contratos`);
@@ -877,8 +931,9 @@ const Contracts = () => {
       }
     } catch (error: any) {
       console.error('Error syncing to Drive:', error);
+      const message = await getFunctionErrorMessage(error, 'Verifica la configuración de la cuenta de servicio');
       toast.error('Error al sincronizar con Google Drive', {
-        description: error.message || 'Verifica la configuración de la cuenta de servicio'
+        description: message
       });
     } finally {
       setIsSyncing(false);
@@ -977,8 +1032,8 @@ const Contracts = () => {
                 />
                 <ContractRowSelector
                   contracts={filteredContracts.map(c => ({ id: c.id, name: c.name }))}
-                  excludedContractIds={excludedPdfContractIds}
-                  onExclusionChange={setExcludedPdfContractIds}
+                  selectedContractIds={selectedPdfContractIds}
+                  onSelectionChange={setSelectedPdfContractIds}
                 />
                 <Button
                   variant="outline"
@@ -1014,33 +1069,37 @@ const Contracts = () => {
                   }
                 />
               )}
-              <Button
-                variant="outline"
-                onClick={handleSyncAllToDrive}
-                disabled={isSyncing}
-                className="gap-2"
-              >
-                {isSyncing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sincronizando...
-                  </>
-                ) : (
-                  <>
-                    <Cloud className="h-4 w-4" />
-                    Sincronizar con Drive
-                  </>
-                )}
-              </Button>
+              {canEditContracts && (
+                <Button
+                  variant="outline"
+                  onClick={handleSyncAllToDrive}
+                  disabled={isSyncing}
+                  className="gap-2"
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="h-4 w-4" />
+                      Sincronizar con Drive
+                    </>
+                  )}
+                </Button>
+              )}
               {isNegociacionView && !rechazadosFilter && (
                 <div className="flex flex-col gap-1">
-                  <Button
-                    onClick={() => navigate("/contracts/new")}
-                    className="gap-2"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Nuevo Contrato
-                  </Button>
+                  {canEditContracts && (
+                    <Button
+                      onClick={() => navigate("/contracts/new")}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nuevo Contrato
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1067,7 +1126,7 @@ const Contracts = () => {
         </div>
       </header>
 
-      <main className="max-w-[1728px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col h-[calc(100vh-80px)]">
+      <main className="max-w-[2376px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col h-[calc(100vh-80px)]">
         {/* Fixed top section */}
         <div className="flex-shrink-0 space-y-4">
           {/* Contract Stats Cards - centered */}
@@ -1078,15 +1137,10 @@ const Contracts = () => {
           {/* Search and Filters */}
           <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nombre, CEBE, código, dirección o comuna..."
-                value={localSearchTerm}
-                onChange={(e) => setLocalSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+            <ContractsSearchInput
+              urlValue={searchTerm}
+              onDebouncedChange={(value) => updateFilter("search", value)}
+            />
 
             {/* Negotiation Subcategory Filter - Only for en_negociacion */}
             {isNegociacionView && (
@@ -1264,25 +1318,27 @@ const Contracts = () => {
                   </Select>
                 </div>
 
-                {/* Atención Especial Filter */}
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-medium text-muted-foreground">Atención Especial</span>
-                  <Select value={atencionEspecialFilter} onValueChange={setAtencionEspecialFilter}>
-                    <SelectTrigger className="h-8 text-xs w-[130px]">
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                      <SelectItem value="si" className="text-xs">
-                        <div className="flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-orange-500" />
-                          Sí
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="no" className="text-xs">No</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Atención Especial Filter — oculto para perfiles sin permiso (ej. PMO) */}
+                {(isAdmin || hasPermission("special_attention", "view")) && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-medium text-muted-foreground">Atención Especial</span>
+                    <Select value={atencionEspecialFilter} onValueChange={setAtencionEspecialFilter}>
+                      <SelectTrigger className="h-8 text-xs w-[130px]">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                        <SelectItem value="si" className="text-xs">
+                          <div className="flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3 text-orange-500" />
+                            Sí
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="no" className="text-xs">No</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* Sort by End Date */}
                 <div className="flex flex-col gap-1">
@@ -1346,6 +1402,10 @@ const Contracts = () => {
               columnWidths={columnWidths}
               customFieldsByContract={customFieldsByContract}
               comiteGPStatuses={comiteGPStatuses}
+              onCapexDataChange={({ capexByContract, capexEstByContract }) => {
+                setCapexByContract(capexByContract);
+                setCapexEstByContract(capexEstByContract);
+              }}
             />
           ) : (
             <Card className="p-12">

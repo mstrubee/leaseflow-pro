@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -12,99 +11,44 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, ChevronDown, ChevronRight, Trash2, Edit, Link, Unlink,
-  Calendar, FileText, Loader2, ShoppingCart, CheckCircle2, Eye, EyeOff, FileDown,
+  Calendar, FileText, Loader2, ShoppingCart, Eye, EyeOff, FileDown,
   ChevronsDownUp, ChevronsUpDown
 } from "lucide-react";
 import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
-
-function AddDependencyForm({
-  selectedTask,
-  allTasks,
-  onAdd,
-}: {
-  selectedTask: GanttTask | null;
-  allTasks: GanttTask[];
-  onAdd: (taskId: string, dep_type: "start" | "end", lag_days: number) => void;
-}) {
-  const [taskId, setTaskId] = useState("");
-  const [depType, setDepType] = useState<"start" | "end">("end");
-  const [lag, setLag] = useState(0);
-
-  const options = allTasks
-    .filter(
-      (t) =>
-        t.id !== selectedTask?.id &&
-        !selectedTask?.dependencies?.some((d) => d.depends_on_task_id === t.id)
-    )
-    .map((t) => ({ value: t.id, label: t.name }));
-
-  return (
-    <div className="space-y-2">
-      <Label>Agregar dependencia</Label>
-      <SearchableSelect
-        value={taskId}
-        onValueChange={setTaskId}
-        placeholder="Seleccionar tarea..."
-        searchPlaceholder="Buscar tarea..."
-        emptyMessage="Sin tareas disponibles."
-        options={options}
-      />
-      <div className="flex items-center gap-2">
-        <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
-          <SelectTrigger className="h-9 w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="end">al término</SelectItem>
-            <SelectItem value="start">al inicio</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          type="number"
-          className="h-9 w-24"
-          value={lag}
-          onChange={(e) => setLag(parseInt(e.target.value) || 0)}
-          title="Días de desfase (+ retrasa, − adelanta)"
-        />
-        <span className="text-xs text-muted-foreground">días</span>
-        <Button
-          size="sm"
-          disabled={!taskId}
-          onClick={() => {
-            if (!taskId) return;
-            onAdd(taskId, depType, lag);
-            setTaskId("");
-            setLag(0);
-            setDepType("end");
-          }}
-        >
-          Agregar
-        </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Desfase positivo retrasa, negativo adelanta el inicio.
-      </p>
-    </div>
-  );
-}
+import { useAuth } from "@/hooks/useAuth";
+import { DependencyDialog } from "./DependencyDialog";
+import { TaskStatusActions, StatusDot } from "./TaskStatusActions";
 
 interface GanttTaskTreeProps {
   tasks: GanttTask[];
   allTasks: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
-  contractId: string;
+  contractId?: string | null;
   onAddTask: (name: string, parentId: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
+  onDiscardTask?: (taskId: string) => Promise<void>;
+  onRestoreTask?: (taskId: string) => Promise<void>;
+  getDescendantCount?: (taskId: string) => number;
+  beginUndoGroup?: (label: string) => void;
+  endUndoGroup?: () => void;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
+  canAdd?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canManageDeps?: boolean;
+  canComplete?: boolean;
+  /** Fila-resumen no editable arriba de todas las tareas, con la fecha de
+   *  inicio/término de todo el cronograma — solo cronogramas "general". */
+  showSummaryRow?: boolean;
 }
 
 export function GanttTaskTree({
@@ -118,10 +62,22 @@ export function GanttTaskTree({
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
+  onDiscardTask,
+  onRestoreTask,
+  getDescendantCount,
+  beginUndoGroup,
+  endUndoGroup,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
   onExportPDF,
+  canAdd = true,
+  canEdit = true,
+  canDelete = true,
+  canManageDeps = true,
+  canComplete = true,
+  showSummaryRow = false,
 }: GanttTaskTreeProps) {
+  const { isAdmin } = useAuth();
   const [hideCompleted, setHideCompleted] = useState(false);
 
   const allParentTaskIds = useMemo(() => {
@@ -136,6 +92,18 @@ export function GanttTaskTree({
     };
     collect(tasks);
     return ids;
+  }, [tasks]);
+
+  // Fecha de inicio/término de TODO el cronograma (rollup de las raíces) para
+  // la fila-resumen no editable de arriba (showSummaryRow).
+  const { overallStart, overallEnd } = useMemo(() => {
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const t of tasks) {
+      if (t.start_date && (!minStart || t.start_date < minStart)) minStart = t.start_date;
+      if (t.end_date && (!maxEnd || t.end_date > maxEnd)) maxEnd = t.end_date;
+    }
+    return { overallStart: minStart, overallEnd: maxEnd };
   }, [tasks]);
 
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set());
@@ -239,6 +207,13 @@ export function GanttTaskTree({
       notes: editForm.notes || null,
     };
 
+    // El plazo cambió respecto a la tarea original: el término debe recalcularse
+    // desde el inicio + nuevo plazo (así un plazo 0 deja término = inicio), en vez
+    // de conservar la fecha de término que quedó cargada del valor anterior.
+    const durationChanged =
+      editForm.duration_days !== selectedTask.duration_days ||
+      editForm.duration_type !== selectedTask.duration_type;
+
     // Calculate dates
     if (editForm.start_date && !editForm.end_date) {
       const endDate = calculateEndDate(
@@ -258,6 +233,15 @@ export function GanttTaskTree({
       );
       updates.start_date = format(startDate, "yyyy-MM-dd");
       updates.end_date = editForm.end_date;
+    } else if (editForm.start_date && editForm.end_date && durationChanged) {
+      const endDate = calculateEndDate(
+        editForm.start_date,
+        editForm.duration_days,
+        editForm.duration_type,
+        holidays
+      );
+      updates.start_date = editForm.start_date;
+      updates.end_date = format(endDate, "yyyy-MM-dd");
     } else if (editForm.start_date && editForm.end_date) {
       updates.start_date = editForm.start_date;
       updates.end_date = editForm.end_date;
@@ -275,13 +259,16 @@ export function GanttTaskTree({
 
   const handlePOClick = async (task: GanttTask) => {
     setSelectedTask(task);
-    // Load available purchase orders for this contract
-    const { data } = await supabase
-      .from("purchase_orders")
-      .select("id, order_number, amount_uf, supplier_name")
-      .eq("contract_id", contractId)
-      .order("order_date", { ascending: false });
-    setPurchaseOrders(data || []);
+    if (contractId) {
+      const { data } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, amount_uf, supplier_name")
+        .eq("contract_id", contractId)
+        .order("order_date", { ascending: false });
+      setPurchaseOrders(data || []);
+    } else {
+      setPurchaseOrders([]);
+    }
     setPODialogOpen(true);
   };
 
@@ -291,6 +278,7 @@ export function GanttTaskTree({
       in_progress: { label: "En Progreso", variant: "default" },
       completed: { label: "Completada", variant: "outline" },
       delayed: { label: "Retrasada", variant: "destructive" },
+      discarded: { label: "Descartada", variant: "secondary" },
     };
     const info = statusMap[status] || { label: status, variant: "secondary" as const };
     return <Badge variant={info.variant}>{info.label}</Badge>;
@@ -300,6 +288,7 @@ export function GanttTaskTree({
     if (hideCompleted && task.status === "completed") return null;
     const hasChildren = task.children && task.children.length > 0;
     const isCompleted = task.status === "completed";
+    const isDiscarded = task.status === "discarded";
 
     const isExpanded = expandedTasks.has(task.id);
     return (
@@ -309,7 +298,8 @@ export function GanttTaskTree({
             className={cn(
               "flex items-center gap-2 py-2 px-2 hover:bg-muted/50 rounded transition-colors border-b",
               level > 0 && "ml-4",
-              isCompleted && "bg-muted/30"
+              isCompleted && "bg-muted/30",
+              isDiscarded && "bg-muted/20 opacity-60"
             )}
             style={{ marginLeft: level * 16 }}
           >
@@ -327,7 +317,8 @@ export function GanttTaskTree({
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className={cn("font-medium truncate", isCompleted && "line-through text-muted-foreground")}>{task.name}</span>
+                <StatusDot status={task.status} />
+                <span className={cn("font-medium truncate", (isCompleted || isDiscarded) && "line-through text-muted-foreground")}>{task.name}</span>
                 {getStatusBadge(task.status)}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
@@ -335,8 +326,10 @@ export function GanttTaskTree({
                   <Calendar className="h-3 w-3" />
                   {formatGanttDate(task.start_date)} - {formatGanttDate(task.end_date)}
                 </span>
-                <span>
-                  {task.duration_days} días {task.duration_type === "business" ? "háb." : "corr."}
+                <span className={task.duration_days === 0 ? "text-amber-600 font-medium" : undefined}>
+                  {task.duration_days === 0
+                    ? "Sin plazo (no consume tiempo)"
+                    : `${task.duration_days} días ${task.duration_type === "business" ? "háb." : "corr."}`}
                 </span>
                 <span>{task.progress}%</span>
                 {task.dependencies && task.dependencies.length > 0 && (
@@ -355,42 +348,50 @@ export function GanttTaskTree({
             </div>
 
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => toggleCompleted(task)}
-                title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
-              >
-                <CheckCircle2 className={cn("h-4 w-4", isCompleted ? "text-primary" : "text-muted-foreground")} />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleAddTaskClick(task.id)}
-                title="Agregar subtarea"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleEditClick(task)}
-                title="Editar"
-              >
-                <Edit className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => handleDependencyClick(task)}
-                title="Dependencias"
-              >
-                <Link className="h-4 w-4" />
-              </Button>
+              {canComplete && (
+                <TaskStatusActions
+                  task={task}
+                  canComplete={canComplete}
+                  canDiscard={isAdmin && !!onDiscardTask && !!onRestoreTask}
+                  onToggleComplete={toggleCompleted}
+                  onDiscard={(id) => onDiscardTask!(id)}
+                  onRestore={(id) => onRestoreTask!(id)}
+                  descendantCount={getDescendantCount?.(task.id) ?? 0}
+                />
+              )}
+              {canAdd && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleAddTaskClick(task.id)}
+                  title="Agregar subtarea"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleEditClick(task)}
+                  title="Editar"
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+              )}
+              {canManageDeps && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleDependencyClick(task)}
+                  title="Dependencias"
+                >
+                  <Link className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -400,15 +401,17 @@ export function GanttTaskTree({
               >
                 <ShoppingCart className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => onDeleteTask(task.id)}
-                title="Eliminar"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {canDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive hover:text-destructive"
+                  onClick={() => onDeleteTask(task.id)}
+                  title="Eliminar"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -464,12 +467,25 @@ export function GanttTaskTree({
               Exportar PDF
             </Button>
           )}
-          <Button onClick={() => handleAddTaskClick(null)} size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar Tarea Madre
-          </Button>
+          {canAdd && (
+            <Button onClick={() => handleAddTaskClick(null)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar Tarea Madre
+            </Button>
+          )}
         </div>
       </div>
+
+      {showSummaryRow && (overallStart || overallEnd) && (
+        <div className="flex items-center gap-2 py-2 px-3 mb-2 rounded-lg border-2 bg-muted/40 font-semibold text-sm">
+          <span className="flex-1">Cronograma completo</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {overallStart ? format(new Date(overallStart + "T00:00:00"), "dd/MM/yyyy") : "—"}
+            {" → "}
+            {overallEnd ? format(new Date(overallEnd + "T00:00:00"), "dd/MM/yyyy") : "—"}
+          </span>
+        </div>
+      )}
 
       <div className="border rounded-lg">
         {tasks.length === 0 ? (
@@ -552,9 +568,9 @@ export function GanttTaskTree({
                 <Label>Plazo (días)</Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={0}
                   value={editForm.duration_days}
-                  onChange={(e) => setEditForm({ ...editForm, duration_days: parseInt(e.target.value) || 1 })}
+                  onChange={(e) => setEditForm({ ...editForm, duration_days: parseInt(e.target.value) || 0 })}
                 />
               </div>
               <div className="space-y-2">
@@ -663,84 +679,19 @@ export function GanttTaskTree({
         </DialogContent>
       </Dialog>
 
-      {/* Dependency Dialog */}
-      <Dialog open={dependencyDialogOpen} onOpenChange={setDependencyDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Dependencias de: {selectedTask?.name}</DialogTitle>
-            <DialogDescription>
-              Define qué tareas deben completarse (o iniciarse) antes de esta, con desfase opcional en días.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Current dependencies */}
-            {selectedTask?.dependencies && selectedTask.dependencies.length > 0 && (
-              <div className="space-y-2">
-                <Label>Dependencias actuales</Label>
-                <div className="space-y-2">
-                  {selectedTask.dependencies.map((dep) => {
-                    const depTask = allTasks.find((t) => t.id === dep.depends_on_task_id);
-                    return (
-                      <div
-                        key={dep.id}
-                        className="flex items-center gap-2 p-2 bg-muted rounded"
-                      >
-                        <span className="flex-1 truncate text-sm">{depTask?.name || "Tarea no encontrada"}</span>
-                        <Select
-                          value={dep.dep_type ?? "end"}
-                          onValueChange={(v) => onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })}
-                        >
-                          <SelectTrigger className="h-8 w-32 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="end">al término</SelectItem>
-                            <SelectItem value="start">al inicio</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          type="number"
-                          className="h-8 w-20 text-xs"
-                          defaultValue={dep.lag_days ?? 0}
-                          onBlur={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            if (val !== (dep.lag_days ?? 0)) onUpdateDependency?.(dep.id, { lag_days: val });
-                          }}
-                          title="Días de desfase (+ retrasa, − adelanta)"
-                        />
-                        <span className="text-xs text-muted-foreground">días</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => onRemoveDependency(dep.id)}
-                        >
-                          <Unlink className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Desfase: positivo retrasa, negativo adelanta. "Al término" empieza después de que termine la otra; "al inicio" se ancla al inicio de la otra.
-                </p>
-              </div>
-            )}
-
-            {/* Add new dependency */}
-            <AddDependencyForm
-              selectedTask={selectedTask}
-              allTasks={allTasks}
-              onAdd={(taskId, dep_type, lag_days) =>
-                onAddDependency(selectedTask!.id, taskId, { dep_type, lag_days })
-              }
-            />
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setDependencyDialogOpen(false)}>Cerrar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dependency Dialog (modal XL con explorador jerárquico) */}
+      <DependencyDialog
+        open={dependencyDialogOpen}
+        onOpenChange={setDependencyDialogOpen}
+        selectedTask={selectedTask}
+        allTasks={allTasks}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+        onUpdateDependency={onUpdateDependency}
+        onUpdateTask={onUpdateTask}
+        beginUndoGroup={beginUndoGroup}
+        endUndoGroup={endUndoGroup}
+      />
 
       {/* Purchase Orders Dialog */}
       <Dialog open={poDialogOpen} onOpenChange={setPODialogOpen}>

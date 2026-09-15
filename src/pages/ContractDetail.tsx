@@ -4,13 +4,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, BarChart3 } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, BarChart3, Archive } from "lucide-react";
 import { BusinessCaseDialog } from "@/components/contracts/BusinessCaseDialog";
 import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
 import { generateOfferLetter } from "@/lib/generateOfferLetter";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
@@ -22,9 +23,12 @@ import { NegotiationNotesCard } from "@/components/contracts/NegotiationNotesCar
 import { EntryExpensesSection } from "@/components/contracts/EntryExpensesSection";
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
+import { ContractFixedAssetsSection } from "@/components/contracts/ContractFixedAssetsSection";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
+import { CapexLineSelectionProvider, useCapexLineSelection } from "@/contexts/CapexLineSelectionContext";
+import { cn } from "@/lib/utils";
 
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
@@ -35,11 +39,11 @@ import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
 import { DashboardRegionReturnButton } from "@/components/dashboard/DashboardRegionReturnButton";
 import { SpecialAttentionReturnButton } from "@/components/special-attention/SpecialAttentionReturnButton";
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { buildBCSeed } from "@/lib/businessCase/buildSeed";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
-import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
 import {
   DndContext,
@@ -175,6 +179,7 @@ interface CustomField {
 }
 
 const ContractDetail = () => {
+  const { active: capexLineSelectionActive } = useCapexLineSelection();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -182,6 +187,10 @@ const ContractDetail = () => {
   const sectionParam = searchParams.get("section");
   const returnToParam = searchParams.get("returnTo");
   const backTo = (location.state as any)?.backTo as string | undefined;
+  // Llegó desde el listado de /maintenance (botón "Ver en el cronograma" de un
+  // form ya programado) — se muestra un botón flotante para volver ahí, sin
+  // tocar el botón "Volver" genérico de arriba (que sigue yendo a /contracts).
+  const fromMaintenance = (location.state as any)?.fromMaintenance as boolean | undefined;
 
   const storedBackTo =
     typeof window !== "undefined"
@@ -191,18 +200,22 @@ const ContractDetail = () => {
   const isValidBackTo = (v?: string | null) =>
     !!v && v.startsWith("/contracts") && !/^\/contracts\/[^/?#]+/.test(v);
 
-  // Check if coming from purchase-orders dashboard
+  // Check if coming from purchase-orders or capex dashboard
   const resolvedBackTo = returnToParam === "purchase-orders"
     ? "/purchase-orders"
-    : isValidBackTo(backTo)
+    : returnToParam === "capex"
+      ? "/capex"
+      : isValidBackTo(backTo)
       ? backTo
       : isValidBackTo(storedBackTo)
         ? storedBackTo!
         : "/contracts";
 
   const { toast } = useToast();
-  const { isAdmin, roleLoaded } = useAuth();
-  const { isHidden, loading: permissionsLoading } = useUserPermissions();
+  const { ufValue } = useEconomicIndicators();
+  const { isAdmin, isEquipoGerencia, roleLoaded, hasPermission, isHidden } = useAuth();
+  const permissionsLoading = !roleLoaded;
+  const canEditSection = (resource: string) => hasPermission(resource, "edit");
   const {
     sections,
     reorderSections,
@@ -227,6 +240,7 @@ const ContractDetail = () => {
     budget: "contract_budget",
     gantt: "contract_gantt",
     alerts: "contract_alerts",
+    fixedAssets: "contract_fixed_assets",
   };
   
   const [contract, setContract] = useState<Contract | null>(null);
@@ -470,7 +484,8 @@ const ContractDetail = () => {
         description: `El contrato ha sido enviado a ${email}`
       });
     } catch (error: any) {
-      throw error;
+      const message = await getFunctionErrorMessage(error, error.message || "No se pudo enviar el email.");
+      throw new Error(message);
     }
   };
   const handleMarkAsSigned = async (docId: string) => {
@@ -796,11 +811,28 @@ const ContractDetail = () => {
 
   // Version to display in commercial conditions: last signed version if there's active renegotiation
   const lastSignedVersion = allVersions.find(v => !v.is_renegotiation);
-  const displayVersion = hasActiveRenegotiation ? lastSignedVersion : currentVersion;
+  // Fallback robusto: si ninguna versión quedó marcada como is_current (p. ej.
+  // contratos cargados masivamente o con el flag sin setear), mostrar la última
+  // versión no-renegociación o, en su defecto, la de mayor version_number, para
+  // NO ocultar las condiciones comerciales. No altera el caso normal (is_current).
+  const fallbackVersion = lastSignedVersion || allVersions[0];
+  const displayVersion = hasActiveRenegotiation
+    ? (lastSignedVersion || fallbackVersion)
+    : (currentVersion || fallbackVersion);
 
   // Filter documents: show signed docs always, drafts for renegotiation, and regular drafts for signed contracts
   const documents = isSigned ? allDocuments.filter(d => d.document_type === "firmado" || d.document_type === "firmado_r" || d.document_type === "borrador" || d.document_type === "borrador_final" || hasActiveRenegotiation && (d.document_type === "borrador_r" || d.document_type === "borrador_final_r")) : allDocuments;
-  return <div className="min-h-screen bg-background">
+  return <div className={cn("min-h-screen bg-background", capexLineSelectionActive && "pointer-events-none")}>
+      {fromMaintenance && (
+        <Button
+          onClick={() => navigate("/maintenance")}
+          className="fixed bottom-6 right-6 z-50 gap-2 shadow-lg"
+          title="Volver al listado de Forms de Mantención"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Volver a Mantenciones
+        </Button>
+      )}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Button variant="ghost" onClick={() => navigate(resolvedBackTo)} className="gap-2 mb-2">
@@ -817,7 +849,7 @@ const ContractDetail = () => {
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>
-              {(companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
+              {!isEquipoGerencia && (companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
                 <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
                   {companyNames.length > 0 && (
                     <span>
@@ -836,6 +868,10 @@ const ContractDetail = () => {
                 </div>
               )}
             </div>
+            {/* Acciones del header: ninguna es de solo-lectura (generan documentos,
+                muestran datos financieros/comerciales, o navegan a otros módulos) --
+                equipo_gerencia solo debe ver el Cronograma, nada del header. */}
+            {!isEquipoGerencia && (
             <div className="flex items-center gap-2">
               {contract.status === "en_negociacion" && (
                 <Button
@@ -909,25 +945,9 @@ const ContractDetail = () => {
                 open={businessCaseFinOpen}
                 onOpenChange={setBusinessCaseFinOpen}
                 contractId={contract.id}
+                contractName={contract.name}
                 canEdit={isAdmin}
-                seed={(() => {
-                  const empresa = contract.contract_companies?.[0]?.companies?.name ?? "";
-                  const tipo = /agro/i.test(empresa) ? "Agroplanet" : /auto/i.test(empresa) ? "Autoplanet" : undefined;
-                  const superficie = contract.superficie_edificada_local ?? null;
-                  const canonUf = displayVersion?.initial_rent || displayVersion?.regime_rent || null;
-                  const ufM2 = superficie && canonUf ? +(canonUf / superficie).toFixed(4) : null;
-                  return {
-                    nombre: contract.name,
-                    direccion: address ? `${address.street} ${address.number}`.trim() : "",
-                    comuna: address?.commune ?? "",
-                    tipo,
-                    superficie,
-                    ufM2,
-                    gastoComunUf: displayVersion?.gastos_comunes_fixed_admin_uf ?? null,
-                    durContratoAnios: displayVersion?.duration_months ? Math.round(displayVersion.duration_months / 12) : null,
-                    inicio: displayVersion?.effective_date ?? null,
-                  };
-                })()}
+                seed={buildBCSeed({ contract, version: displayVersion as any, address, ufValue })}
               />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               <Button
@@ -945,13 +965,15 @@ const ContractDetail = () => {
                 </Button>
               )}
             </div>
+            )}
           </div>
         </div>
       </header>
 
       <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Special Attention Section */}
-        {contract.requires_special_attention && (
+        {/* Special Attention Section — oculto para perfiles sin permiso sobre
+            "special_attention" (ej. PMO no debe ver atenciones especiales) */}
+        {contract.requires_special_attention && (isAdmin || hasPermission("special_attention", "view")) && (
           <Card className="border-2 border-destructive/50 bg-destructive/5">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold flex items-center gap-2 text-destructive">
@@ -966,7 +988,7 @@ const ContractDetail = () => {
         )}
 
         {/* Closing Process Banner - for contracts with termination notices */}
-        {(contract.termination_notices?.length || 0) > 0 && (
+        {!isEquipoGerencia && (contract.termination_notices?.length || 0) > 0 && (
           <ClosingProcessBanner
             contractId={contract.id}
             contractName={contract.name}
@@ -976,7 +998,7 @@ const ContractDetail = () => {
         )}
 
         {/* Negotiation Notes Banner - only for contracts in negotiation */}
-        {contract.status === "en_negociacion" && (
+        {!isEquipoGerencia && contract.status === "en_negociacion" && (
           <NegotiationNotesCard
             contractId={contract.id}
             notes={contract.negotiation_notes || null}
@@ -1042,34 +1064,29 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Dirección"
+                      id={sectionKey}
+                      title="Dirección"
+                      icon={<MapPin className="h-5 w-5 text-red-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Dirección"
-                        icon={<MapPin className="h-5 w-5 text-red-500" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                      >
-                        {address ? (
-                          <div className="space-y-1">
-                            <p className="text-lg font-medium">
-                              {address.street} {address.number}
-                            </p>
-                            <p className="text-muted-foreground">
-                              {address.commune}, {address.region}
-                            </p>
-                            <p className="text-muted-foreground">{address.country}</p>
-                          </div>
-                        ) : (
-                          <p className="text-muted-foreground">No hay dirección registrada</p>
-                        )}
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      {address ? (
+                        <div className="space-y-1">
+                          <p className="text-lg font-medium">
+                            {address.street} {address.number}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {address.commune}, {address.region}
+                          </p>
+                          <p className="text-muted-foreground">{address.country}</p>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground">No hay dirección registrada</p>
+                      )}
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1077,19 +1094,15 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Contacto"
+                      id={sectionKey}
+                      title="Contacto"
+                      icon={<User className="h-5 w-5 text-blue-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Contacto"
-                        icon={<User className="h-5 w-5 text-blue-500" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                      >
                         {contact && (contact.company || contact.name || contact.phone || contact.email || contact.domicilio_comercial) ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {contact.company && (
@@ -1130,8 +1143,7 @@ const ContractDetail = () => {
                             No hay contacto registrado. Use el botón Editar de la parte superior para agregar.
                           </p>
                         )}
-                      </CollapsibleSection>
-                    </SelectableElement>
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1140,20 +1152,16 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Condiciones Comerciales"
+                      id={sectionKey}
+                      title="Condiciones Comerciales"
+                      icon={<DollarSign className="h-5 w-5 text-emerald-600" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Condiciones Comerciales"
-                        icon={<DollarSign className="h-5 w-5 text-emerald-600" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
                         <CommercialConditionsSummary
                           version={{
                             id: displayVersion.id,
@@ -1233,7 +1241,7 @@ const ContractDetail = () => {
                         )}
                         
                         {/* Renegotiation sub-section within Commercial Conditions */}
-                        {isSigned && currentVersion && (
+                        {isSigned && currentVersion && !isHidden("contract_renegotiation") && (
                           <div className="mt-6 border-t pt-6">
                             <div className="flex items-center gap-2 mb-4">
                               <RefreshCw className="h-4 w-4 text-muted-foreground" />
@@ -1280,8 +1288,7 @@ const ContractDetail = () => {
                             />
                           </div>
                         )}
-                      </CollapsibleSection>
-                    </SelectableElement>
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1289,26 +1296,22 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Superficies y Datos"
+                      id={sectionKey}
+                      title="Superficies y Datos"
+                      icon={<LayoutGrid className="h-5 w-5 text-violet-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Superficies y Datos"
-                        icon={<LayoutGrid className="h-5 w-5 text-violet-500" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
-                        <ContractSurfacesSection
-                          contractId={contract.id}
-                          onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
-                        />
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      <ContractSurfacesSection
+                        contractId={contract.id}
+                        readOnly={!isAdmin && !canEditSection("contract_surfaces")}
+                        onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
+                      />
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1316,20 +1319,16 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Contrato de Arriendo"
+                      id={sectionKey}
+                      title="Contrato de Arriendo"
+                      icon={<FileText className="h-5 w-5 text-amber-600" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Contrato de Arriendo"
-                        icon={<FileText className="h-5 w-5 text-amber-600" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
                         {hasActiveRenegotiation && (
                           <Card className="p-4 border-amber-500/30 bg-amber-500/5 mb-6">
                             <p className="text-sm text-amber-700 dark:text-amber-400">
@@ -1421,8 +1420,7 @@ const ContractDetail = () => {
                             />
                           </div>
                         )}
-                      </CollapsibleSection>
-                    </SelectableElement>
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1431,27 +1429,22 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Repositorio de Documentos"
+                      id={sectionKey}
+                      title="Repositorio de Documentos"
+                      icon={<FolderOpen className="h-5 w-5 text-yellow-600" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Repositorio de Documentos"
-                        icon={<FolderOpen className="h-5 w-5 text-yellow-600" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
-                        <RepositorySection
-                          contractId={contract.id}
-                          contractName={contract.name}
-                          contractStatus={contract.status}
-                        />
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      <RepositorySection
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        contractStatus={contract.status}
+                      />
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1460,23 +1453,18 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Control Presupuestario"
+                      id={sectionKey}
+                      title="Control Presupuestario"
+                      icon={<DollarSign className="h-5 w-5 text-emerald-600" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Control Presupuestario"
-                        icon={<DollarSign className="h-5 w-5 text-emerald-600" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
-                        <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} initialTab={sectionParam === "ordenes-compra" ? "purchase-orders" : undefined} />
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} initialTab={sectionParam === "ordenes-compra" ? "purchase-orders" : undefined} />
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1484,23 +1472,18 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Línea de Tiempo / Gantt"
+                      id={sectionKey}
+                      title="Línea de Tiempo / Gantt"
+                      icon={<Calendar className="h-5 w-5 text-purple-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Línea de Tiempo / Gantt"
-                        icon={<Calendar className="h-5 w-5 text-purple-500" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
-                        <GanttModule contractId={contract.id} />
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      <GanttModule contractId={contract.id} />
+                    </CollapsibleSection>
                   );
                 }
 
@@ -1508,37 +1491,50 @@ const ContractDetail = () => {
                   const permId = sectionPermissionMap[sectionKey];
                   if (isHidden(permId)) return null;
                   return (
-                    <SelectableElement
+                    <CollapsibleSection
                       key={sectionKey}
-                      elementId={permId}
-                      label="Alertas y Recordatorios"
+                      id={sectionKey}
+                      title="Alertas y Recordatorios"
+                      icon={<Bell className="h-5 w-5 text-orange-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
                     >
-                      <CollapsibleSection
-                        id={sectionKey}
-                        title="Alertas y Recordatorios"
-                        icon={<Bell className="h-5 w-5 text-orange-500" />}
-                        isCollapsed={isCollapsed(sectionKey)}
-                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                        isDraggable={canReorder}
-                        wrapperOnly
-                      >
-                        <ContractAlerts
-                          contractId={contract.id}
-                          contractName={contract.name}
-                          expirationDate={
-                            currentVersion?.effective_date
-                              ? new Date(
-                                  new Date(currentVersion.effective_date).getTime() +
-                                    currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000
-                                )
-                              : undefined
-                          }
-                        />
-                      </CollapsibleSection>
-                    </SelectableElement>
+                      <ContractAlerts
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        expirationDate={
+                          currentVersion?.effective_date
+                            ? new Date(
+                                new Date(currentVersion.effective_date).getTime() +
+                                  currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000
+                              )
+                            : undefined
+                        }
+                      />
+                    </CollapsibleSection>
                   );
                 }
 
+                case "fixedAssets": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Activos Fijos Asignados"
+                      icon={<Archive className="h-5 w-5 text-slate-500" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
+                      <ContractFixedAssetsSection contractId={contract.id} />
+                    </CollapsibleSection>
+                  );
+                }
 
                 default:
                   return null;
@@ -1564,4 +1560,11 @@ const ContractDetail = () => {
       <SpecialAttentionReturnButton />
     </div>;
 };
-export default ContractDetail;
+
+export default function ContractDetailPage() {
+  return (
+    <CapexLineSelectionProvider>
+      <ContractDetail />
+    </CapexLineSelectionProvider>
+  );
+}

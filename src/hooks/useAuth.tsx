@@ -13,9 +13,12 @@ interface AuthContextValue {
   loading: boolean;
   isAdmin: boolean;
   isOperador: boolean;
+  isGerente: boolean;
+  isEquipoGerencia: boolean;
   roleLoaded: boolean;
   permissions: UserPermission[];
   hasPermission: (resource: string, requiredPermission: "view" | "edit" | "all") => boolean;
+  isHidden: (elementId: string) => boolean;
   signOut: () => Promise<void>;
 }
 
@@ -27,6 +30,8 @@ function useProvideAuth(): AuthContextValue {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isOperador, setIsOperador] = useState(false);
+  const [isGerente, setIsGerente] = useState(false);
+  const [isEquipoGerencia, setIsEquipoGerencia] = useState(false);
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [roleLoaded, setRoleLoaded] = useState(false);
   const loadingUserDataRef = useRef(false);
@@ -53,6 +58,8 @@ function useProvideAuth(): AuthContextValue {
 
       setIsAdmin(roleRes.data?.role === "admin");
       setIsOperador(roleRes.data?.role === "operador_terreno");
+      setIsGerente(roleRes.data?.role === "gerente");
+      setIsEquipoGerencia(roleRes.data?.role === "equipo_gerencia");
       setPermissions(permRes.data || []);
     } catch (error) {
       console.error("Error loading user data:", error);
@@ -61,6 +68,18 @@ function useProvideAuth(): AuthContextValue {
       setRoleLoaded(true);
       setLoading(false);
     }
+  }, []);
+
+  // Lightweight refresh: only re-fetches user_permissions without touching
+  // role or loading state. Called by the realtime subscription when an admin
+  // propagates a role change so logged-in users pick up new permissions
+  // immediately without having to log out and back in.
+  const refreshPermissions = useCallback(async (userId: string) => {
+    const { data } = await supabase
+      .from("user_permissions")
+      .select("resource, permission")
+      .eq("user_id", userId);
+    setPermissions(data || []);
   }, []);
 
   useEffect(() => {
@@ -90,11 +109,24 @@ function useProvideAuth(): AuthContextValue {
           if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
             maybeFetch(session.user.id);
           }
+          // Registro para el historial de "Uso" (equipo_gerencia). Solo en
+          // SIGNED_IN real -- INITIAL_SESSION dispara en cada carga de página
+          // con una sesión ya existente, no es un inicio de sesión nuevo.
+          if (event === 'SIGNED_IN') {
+            supabase.from('login_events').insert({
+              user_id: session.user.id,
+              user_agent: navigator.userAgent,
+            }).then(({ error }) => {
+              if (error) console.error('Error registrando login_event:', error.message);
+            });
+          }
         } else {
           // User signed out — clear derived state
           loadedForUserId.current = null;
           setIsAdmin(false);
           setIsOperador(false);
+          setIsGerente(false);
+          setIsEquipoGerencia(false);
           setPermissions([]);
           setRoleLoaded(true);
           setLoading(false);
@@ -122,6 +154,24 @@ function useProvideAuth(): AuthContextValue {
     };
   }, [applySession, loadUserData]);
 
+  // Realtime subscription: picks up permission changes pushed by an admin
+  // (e.g. role propagation) so the current session reflects them immediately.
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
+
+    const channel = supabase
+      .channel(`user_permissions_${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_permissions", filter: `user_id=eq.${userId}` },
+        () => { refreshPermissions(userId); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, refreshPermissions]);
+
   const hasPermission = (resource: string, requiredPermission: "view" | "edit" | "all"): boolean => {
     if (isAdmin) return true;
     
@@ -143,6 +193,37 @@ function useProvideAuth(): AuthContextValue {
     return false;
   };
 
+  // Secciones que solo se ocultan (en vez de mostrarse deshabilitadas) cuando
+  // el usuario tiene un perfil de permisos "curado" — si nunca se le asignó
+  // ningún permiso dentro del grupo, se asume acceso total por defecto (perfil
+  // legacy sin restricciones); apenas tiene UNO dentro del grupo, pasa a modo
+  // allowlist y el resto de ese mismo grupo se oculta.
+  const CONTRACT_SECTION_IDS = [
+    "contract_address", "contract_contact", "contract_commercial",
+    "contract_renegotiation", "contract_surfaces", "contract_documents",
+    "contract_repository", "contract_gantt", "contract_budget",
+    "contract_alerts", "contract_patents",
+  ];
+  const DASHBOARD_SECTION_IDS = [
+    "dashboard_stats", "dashboard_map", "dashboard_economic", "dashboard_patents",
+  ];
+
+  const isHidden = (elementId: string): boolean => {
+    if (isAdmin) return false;
+    if (permissions.length === 0) return false;
+
+    const hasContractPermissions = permissions.some((p) => CONTRACT_SECTION_IDS.includes(p.resource));
+    const hasDashboardPermissions = permissions.some((p) => DASHBOARD_SECTION_IDS.includes(p.resource));
+
+    if (hasContractPermissions && CONTRACT_SECTION_IDS.includes(elementId)) {
+      return !permissions.some((p) => p.resource === elementId);
+    }
+    if (hasDashboardPermissions && DASHBOARD_SECTION_IDS.includes(elementId)) {
+      return !permissions.some((p) => p.resource === elementId);
+    }
+    return false;
+  };
+
   const signOut = async () => {
     // Global scope invalidates the session on every device for this user
     await supabase.auth.signOut({ scope: "global" });
@@ -154,11 +235,14 @@ function useProvideAuth(): AuthContextValue {
     loading,
     isAdmin,
     isOperador,
+    isGerente,
+    isEquipoGerencia,
     roleLoaded,
     permissions,
     hasPermission,
+    isHidden,
     signOut,
-  }), [user, session, loading, isAdmin, isOperador, roleLoaded, permissions]);
+  }), [user, session, loading, isAdmin, isOperador, isGerente, isEquipoGerencia, roleLoaded, permissions]);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

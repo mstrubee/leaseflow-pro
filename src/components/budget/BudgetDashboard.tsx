@@ -12,7 +12,8 @@ import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
 import { DeletedOrdersModule } from "./DeletedOrdersModule";
-import { OCRequestsList } from "./OCRequestsList";
+import { OCRequestsList, OCRequestPrefillDraft } from "./OCRequestsList";
+import { OCRequiredList } from "./OCRequiredList";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -21,6 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
 import { CapexCloseYearDialog } from "./CapexCloseYearDialog";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+import { useAuth } from "@/hooks/useAuth";
 
 interface BudgetSummary {
   budget: number;
@@ -57,12 +59,14 @@ interface YearBudgetInfo {
 const STORAGE_KEY_PREFIX = "budget_selected_year_";
 
 const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps) => {
+  const { isAdmin, hasPermission } = useAuth();
   const [loading, setLoading] = useState(true);
   const [contractName, setContractName] = useState("");
   const [contractCebe, setContractCebe] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${contractId}`);
-    return saved ? parseInt(saved) : new Date().getFullYear();
+    const parsed = saved ? parseInt(saved) : NaN;
+    return Number.isFinite(parsed) ? parsed : new Date().getFullYear();
   });
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
@@ -104,6 +108,9 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   // Refresh key to force BudgetModule to reload
   const [refreshKey, setRefreshKey] = useState(0);
   const [superficieEdificada, setSuperficieEdificada] = useState(0);
+  // Draft para "Convertir a Solicitud" desde OCRequiredList -- se lo pasa a
+  // OCRequestsList, que abre su propio diálogo de "Nueva Solicitud" prellenado.
+  const [ocRequiredConvertDraft, setOcRequiredConvertDraft] = useState<OCRequestPrefillDraft | null>(null);
 
   useEffect(() => {
     loadAvailableYears();
@@ -157,13 +164,14 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // CRITICAL: Only calculate summaries when ufValue is loaded.
     // Without ufValue, CLP budget lines would be treated as UF values,
     // producing astronomically wrong numbers (e.g. $9M CLP shown as 9M UF).
-    if (ufValue > 0) {
+    if (ufValue > 0 && Number.isFinite(selectedYear)) {
       refreshData();
     }
   }, [contractId, selectedYear, refreshKey, ufValue]);
 
   // Save selected year to localStorage when it changes
   const handleYearChange = (year: number) => {
+    if (!Number.isFinite(year)) return;
     setSelectedYear(year);
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${contractId}`, year.toString());
   };
@@ -458,8 +466,12 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
 
   // Check previous year pending OCs when opening new year dialog
   const checkPreviousYearPendingOCs = async (targetYear: number) => {
+    if (!Number.isFinite(targetYear)) {
+      setPreviousYearPendingOCs({ count: 0, totalPending: 0 });
+      return;
+    }
     const previousYear = targetYear - 1;
-    
+
     // Get all budgets from previous year
     const { data: prevBudgets } = await supabase
       .from("contract_budgets")
@@ -962,6 +974,28 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4 space-y-6">
+          {/* OC Requeridas Section -- primer eslabón: Requerimiento de OC → Solicitud de OC → OC */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-indigo-500" />
+                OC Requeridas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OCRequiredList
+                key={`oc-req-${refreshKey}`}
+                contractId={contractId}
+                contractName={contractName}
+                ufValue={ufValue}
+                formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
+                onConvert={(draft) => setOcRequiredConvertDraft(draft)}
+                refreshKey={refreshKey}
+                onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+              />
+            </CardContent>
+          </Card>
+
           {/* OC Requests Section */}
           <Card>
             <CardHeader className="pb-2">
@@ -974,13 +1008,16 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               <OCRequestsList
                 contractId={contractId}
                 contractName={contractName}
+                contractCebe={contractCebe}
                 year={selectedYear}
                 ufValue={ufValue}
                 formatUF={formatUF}
                 formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
                 onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
-                isAdmin={true}
-                allowCreate={true}
+                isAdmin={isAdmin}
+                allowCreate={isAdmin || hasPermission("budget_ordenes_compra", "edit")}
+                prefillDraft={ocRequiredConvertDraft}
+                onPrefillConsumed={() => setOcRequiredConvertDraft(null)}
               />
             </CardContent>
           </Card>
@@ -1016,11 +1053,15 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               <Label>Año</Label>
               <Input
                 type="number"
-                value={newYear}
+                value={Number.isFinite(newYear) ? newYear : ""}
                 onChange={(e) => {
                   const year = parseInt(e.target.value);
                   setNewYear(year);
-                  checkPreviousYearPendingOCs(year);
+                  if (Number.isFinite(year)) {
+                    checkPreviousYearPendingOCs(year);
+                  } else {
+                    setPreviousYearPendingOCs({ count: 0, totalPending: 0 });
+                  }
                 }}
               />
             </div>
@@ -1084,9 +1125,9 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             <Button variant="outline" onClick={() => setShowNewYearDialog(false)}>
               Cancelar
             </Button>
-            <Button 
-              onClick={handleCreateNewYear} 
-              disabled={creatingYear}
+            <Button
+              onClick={handleCreateNewYear}
+              disabled={creatingYear || !Number.isFinite(newYear)}
             >
               {creatingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear CAPEX
