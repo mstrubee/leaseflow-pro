@@ -342,6 +342,9 @@ export async function exportCapexToExcel(
     });
     Object.keys(yearBreakdown)
       .map(Number)
+      // Mismo criterio que los chips en /capex: un año en $0 no es CAPEX
+      // real de ese año, no corresponde incluirlo en el desglose.
+      .filter((y) => yearBreakdown[y] > 0)
       .sort((a, b) => a - b)
       .forEach((y) => {
         const clp = yearBreakdown[y];
