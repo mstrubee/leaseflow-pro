@@ -494,76 +494,91 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   // año) + uno extra con la distribución del CAPEX total entre los años.
   // Una sola leyenda para todos (clasificación), en vez de repetirla en
   // cada torta -- el gráfico "Por año" no la necesita porque sus propias
-  // porciones ya muestran el año como etiqueta.
-  const piesY = classCardsY + classCardH + 0.25;
+  // porciones ya muestran el año como etiqueta. La leyenda ocupa la misma
+  // "columna" que ocuparía una torta más, apilada verticalmente, en vez de
+  // ir en una fila propia arriba -- así se ahorra una fila entera de alto.
+  //
+  // Un año cuyo aporte al total es marginal (ej. 2 UF de miles de UF) no
+  // aporta nada útil como torta propia -- se le da su propia torta solo si
+  // su participación supera este umbral; igual sigue apareciendo como
+  // porción (chica) en la torta "Por año", que sí debe reflejar el 100%.
+  const MIN_YEAR_SHARE_FOR_OWN_PIE = 0.01; // 1% del total
+  const totalCapexCLP = totalYears.reduce((s, y) => s + (data.totalYearBreakdown?.[y] || 0), 0);
+  const yearsForOwnPie = totalCapexCLP > 0
+    ? totalYears.filter((y) => (data.totalYearBreakdown![y] / totalCapexCLP) >= MIN_YEAR_SHARE_FOR_OWN_PIE)
+    : totalYears;
+
+  const pieBlocks = yearsForOwnPie.map((year) => ({
+    title: String(year),
+    labels: classCards.map((c) => c.label),
+    values: classCards.map((c) => data.clasificacionTotals.find((t) => t.name === c.label)?.yearBreakdown?.[year] || 0),
+    colors: classCards.map((c) => c.color),
+    showLabel: false,
+  })).filter((block) => block.values.some((v) => v > 0));
+
+  const distributionBlock = totalYears.length > 0 && totalCapexCLP > 0 ? {
+    title: "Por año",
+    labels: totalYears.map((y) => String(y)),
+    values: totalYears.map((y) => data.totalYearBreakdown?.[y] || 0),
+    colors: totalYears.map((_, i) => YEAR_PIE_COLORS[i % YEAR_PIE_COLORS.length]),
+    showLabel: true,
+  } : null;
+
+  // Slots de igual ancho en la misma fila: 1 para la leyenda + 1 por cada
+  // torta (años + "Por año"). Mismo layout que si todas fueran tortas, para
+  // que la leyenda quede alineada con ellas.
+  const slotCount = 1 + pieBlocks.length + (distributionBlock ? 1 : 0);
+  const pieGap = 0.15;
+  const slotW = (9 - pieGap * (slotCount - 1)) / slotCount;
+  const pieH = Math.min(1.5, slotW);
+  const pieTitleY = classCardsY + classCardH + 0.16;
+  const pieChartY = pieTitleY + 0.2;
+
   if (classCards.length > 0) {
-    const legendY = piesY;
+    const legendX = 0.5;
+    const legendStep = 0.22;
     classCards.forEach((card, i) => {
-      const x = 0.5 + i * 2.3;
+      const y = pieChartY + 0.17 + i * legendStep;
       s2.addShape(SHAPES.RECTANGLE, {
-        x, y: legendY + 0.02, w: 0.12, h: 0.12,
+        x: legendX + 0.1, y: y + 0.02, w: 0.12, h: 0.12,
         fill: { color: card.color },
       });
       s2.addText(card.label, {
-        x: x + 0.18, y: legendY, w: 2.1, h: 0.18,
+        x: legendX + 0.28, y, w: 2.1, h: 0.18,
         fontSize: 8, fontFace: "Arial", color: MUTED,
       });
     });
   }
 
-  const pieChartsY = piesY + 0.3;
-  const pieYears = totalYears; // años con CAPEX real, mismo orden que los chips
-  const pieBlocks = [
-    ...pieYears.map((year) => ({
-      title: String(year),
-      labels: classCards.map((c) => c.label),
-      values: classCards.map((c) => data.clasificacionTotals.find((t) => t.name === c.label)?.yearBreakdown?.[year] || 0),
-      colors: classCards.map((c) => c.color),
-      showLabel: false,
-    })),
-    {
-      title: "Por año",
-      labels: pieYears.map((y) => String(y)),
-      values: pieYears.map((y) => data.totalYearBreakdown?.[y] || 0),
-      colors: pieYears.map((_, i) => YEAR_PIE_COLORS[i % YEAR_PIE_COLORS.length]),
-      showLabel: true,
-    },
-  ].filter((block) => block.values.some((v) => v > 0));
+  [...pieBlocks, ...(distributionBlock ? [distributionBlock] : [])].forEach((block, i) => {
+    // Cada torta filtra sus propios ceros -- una clasificación sin monto
+    // ese año no debe aparecer como porción vacía.
+    const nonZero = block.labels
+      .map((label, idx) => ({ label, value: block.values[idx], color: block.colors[idx] }))
+      .filter((d) => d.value > 0);
+    if (nonZero.length === 0) return;
 
-  if (pieBlocks.length > 0) {
-    const pieGap = 0.15;
-    const pieW = (9 - pieGap * (pieBlocks.length - 1)) / pieBlocks.length;
-    const pieH = Math.min(1.5, pieW);
-
-    pieBlocks.forEach((block, i) => {
-      // Cada torta filtra sus propios ceros -- una clasificación sin monto
-      // ese año no debe aparecer como porción vacía.
-      const nonZero = block.labels
-        .map((label, idx) => ({ label, value: block.values[idx], color: block.colors[idx] }))
-        .filter((d) => d.value > 0);
-      if (nonZero.length === 0) return;
-
-      const x = 0.5 + i * (pieW + pieGap);
-      s2.addText(block.title, {
-        x, y: pieChartsY, w: pieW, h: 0.2,
-        fontSize: 9, fontFace: "Arial", color: MUTED, align: "center", bold: true,
-      });
-      s2.addChart(CHARTS.PIE, [{
-        name: block.title,
-        labels: nonZero.map((d) => d.label),
-        values: nonZero.map((d) => d.value),
-      }], {
-        x, y: pieChartsY + 0.2, w: pieW, h: pieH,
-        showPercent: true,
-        showLabel: block.showLabel,
-        showTitle: false,
-        showLegend: false,
-        chartColors: nonZero.map((d) => d.color),
-        dataLabelFontSize: 7,
-        dataLabelColor: DARK,
-      });
+    // Slot 0 es la leyenda -- las tortas ocupan del slot 1 en adelante.
+    const x = 0.5 + (i + 1) * (slotW + pieGap);
+    s2.addText(block.title, {
+      x, y: pieTitleY, w: slotW, h: 0.2,
+      fontSize: 9, fontFace: "Arial", color: MUTED, align: "center", bold: true,
     });
-  }
+    s2.addChart(CHARTS.PIE, [{
+      name: block.title,
+      labels: nonZero.map((d) => d.label),
+      values: nonZero.map((d) => d.value),
+    }], {
+      x, y: pieChartY, w: slotW, h: pieH,
+      showPercent: true,
+      showLabel: block.showLabel,
+      showTitle: false,
+      showLegend: false,
+      chartColors: nonZero.map((d) => d.color),
+      dataLabelFontSize: 7,
+      dataLabelColor: DARK,
+    });
+  });
 
   addFooter(s2, pageNum++);
 
