@@ -75,6 +75,18 @@ const getCompanyBucket = (names: string[]): CompanyBucket => {
   return "Otros";
 };
 
+// Compara nombres de tarea del Gantt ignorando mayúsculas/acentos/espacios
+// extra -- los cronogramas reales usan variantes ("Obras Civiles y
+// Especialidades", "Habilitación (Post Tareas Gcia. Operaciones)") en vez del
+// nombre exacto "Obras Civiles"/"Habilitación", así que una igualdad estricta
+// deja contratos sin desglose de pagos. Se prueba primero el nombre exacto
+// (más específico) y, si no hay, el primero que lo contenga como substring.
+const normalizeTaskName = (name: string) =>
+  name.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const findGanttTaskByNameHint = <T extends { name: string }>(tasks: T[], hint: string): T | undefined =>
+  tasks.find((t) => normalizeTaskName(t.name) === hint) ??
+  tasks.find((t) => normalizeTaskName(t.name).includes(hint));
+
 const toggleArrayValue = (arr: string[], value: string): string[] =>
   arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 
@@ -312,6 +324,20 @@ export default function CapexDashboard() {
   // aparte en la sección "Contratos excluidos" al final de la página.
   const activeBudgets = React.useMemo(() => budgets.filter((b) => !b.excluded), [budgets]);
 
+  // Igual que `filteredBudgets` pero sin el filtro de año -- se usa para todo
+  // lo que debe considerar el CAPEX de un contrato en TODOS sus años (el
+  // desglose por año de las cards, y el total que alimenta el 30/50/20 del
+  // disbursement), no solo el año seleccionado en el dropdown.
+  const budgetsAllYears = React.useMemo(() => {
+    return activeBudgets.filter((b) => {
+      if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+      return true;
+    });
+  }, [activeBudgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+
   const availableYears = React.useMemo(() => {
     const years = new Set<number>();
     activeBudgets.forEach(b => years.add(b.year));
@@ -474,27 +500,79 @@ export default function CapexDashboard() {
     } | null;
   }
   const [contractInvestmentInfo, setContractInvestmentInfo] = useState<Record<string, ContractInvestmentInfo>>({});
-  const listedContractIdsKey = React.useMemo(
-    () => Array.from(new Set(listedContracts.map(([id]) => id))).sort().join(","),
-    [listedContracts]
+  // Filas de presupuesto agrupadas por contrato, en TODOS los años (no solo
+  // el año del filtro) -- base tanto del CAPEX total por contrato (para el
+  // 30/50/20 del disbursement) como del desglose por año derivado de fechas
+  // reales (ver contractYearAmounts más abajo).
+  const budgetRowsByContractAllYears = React.useMemo(() => {
+    const m = new Map<string, ContractBudget[]>();
+    budgetsAllYears.forEach((b) => {
+      const arr = m.get(b.contract_id) || [];
+      arr.push(b);
+      m.set(b.contract_id, arr);
+    });
+    return m;
+  }, [budgetsAllYears]);
+  // Contratos a considerar para traer su cronograma Gantt (fechas de
+  // inversión / disbursement): TODOS los que tengan CAPEX en cualquier año,
+  // no solo los visibles bajo el filtro de año -- el desglose por año de las
+  // cards necesita las fechas reales de todos ellos para poder ubicar cada
+  // tramo en su año correcto, sin importar qué año esté seleccionado arriba.
+  const contractIdsForInvestmentInfoKey = React.useMemo(
+    () => Array.from(budgetRowsByContractAllYears.keys()).sort().join(","),
+    [budgetRowsByContractAllYears]
   );
-  // CAPEX en CLP por contrato -- mismo cálculo (getEffectiveBudgetTotal * UF)
-  // que el resto del dashboard, necesario para el desglose 30/50/20 del
-  // disbursement (espejo de GanttReportsSection).
+
+  // CAPEX en CLP por contrato, sumando TODOS sus años -- necesario para el
+  // desglose 30/50/20 del disbursement represente la inversión completa del
+  // contrato y no solo la del año seleccionado en el filtro.
   const capexCLPByContract = React.useMemo(() => {
     const m = new Map<string, number>();
-    listedContracts.forEach(([contractId, cBudgets]) => {
-      const clp = cBudgets.reduce(
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const clp = rows.reduce(
         (sum, b) => sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0),
         0
       );
       m.set(contractId, clp);
     });
     return m;
-  }, [listedContracts, authByBudget, ufValue]);
+  }, [budgetRowsByContractAllYears, authByBudget, ufValue]);
+
+  // Año de cada tramo de CAPEX, derivado de las fechas reales que ya se
+  // muestran por línea de contrato (Anticipo/Pago 1/Pago 2 -- ver
+  // contractInvestmentInfo) en vez del campo "Año" cargado a mano en
+  // Control Presupuestario. Así, si se reprograma la carta Gantt (y con
+  // ella las fechas de Obras Civiles/Habilitación), el CAPEX pasa solo de
+  // año en los cards sin tener que ir a corregir ese campo a mano. Para
+  // contratos sin esas fechas (sin disbursement calculable) se mantiene el
+  // campo "Año" como respaldo, único dato disponible en ese caso.
+  const contractYearAmounts = React.useMemo(() => {
+    const m = new Map<string, Record<number, number>>();
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const totalCLP = capexCLPByContract.get(contractId) || 0;
+      const disbursement = contractInvestmentInfo[contractId]?.disbursement;
+      const yearMap: Record<number, number> = {};
+      if (disbursement && totalCLP > 0) {
+        const addToYear = (dateStr: string, amount: number) => {
+          const year = parseISO(dateStr).getFullYear();
+          yearMap[year] = (yearMap[year] || 0) + amount;
+        };
+        addToYear(disbursement.startDate, disbursement.anticipo);
+        addToYear(disbursement.midDate, disbursement.pago1);
+        addToYear(disbursement.endDate, disbursement.pago2);
+      } else {
+        rows.forEach((b) => {
+          const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
+          yearMap[b.year] = (yearMap[b.year] || 0) + clp;
+        });
+      }
+      m.set(contractId, yearMap);
+    });
+    return m;
+  }, [budgetRowsByContractAllYears, capexCLPByContract, contractInvestmentInfo, authByBudget, ufValue]);
 
   useEffect(() => {
-    const contractIds = listedContractIdsKey ? listedContractIdsKey.split(",") : [];
+    const contractIds = contractIdsForInvestmentInfoKey ? contractIdsForInvestmentInfoKey.split(",") : [];
     if (contractIds.length === 0) {
       setContractInvestmentInfo({});
       return;
@@ -556,9 +634,12 @@ export default function CapexDashboard() {
 
         // Disbursement: mismo criterio que GanttReportsSection -- "Obras
         // Civiles" (inicio) y "Habilitación" (término), 30/50/20 del CAPEX CLP.
+        // Se usa coincidencia flexible (findGanttTaskByNameHint) porque varios
+        // cronogramas nombran estas tareas con variantes ("Obras Civiles y
+        // Especialidades", "Habilitación (Post Tareas Gcia. Operaciones)").
         let disbursement: ContractInvestmentInfo["disbursement"] = null;
-        const obrasCiviles = tasks.find((t: any) => t.name.trim().toLowerCase() === "obras civiles");
-        const habilitacion = tasks.find((t: any) => t.name.trim().toLowerCase() === "habilitación");
+        const obrasCiviles = findGanttTaskByNameHint(tasks, "obras civiles");
+        const habilitacion = findGanttTaskByNameHint(tasks, "habilitacion");
         const obrasStart = obrasCiviles ? effOf(obrasCiviles).start : null;
         const habilEnd = habilitacion ? effOf(habilitacion).end : null;
         const capexCLP = capexCLPByContract.get(contractId) || 0;
@@ -583,7 +664,7 @@ export default function CapexDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [listedContractIdsKey, capexCLPByContract]);
+  }, [contractIdsForInvestmentInfoKey, capexCLPByContract]);
 
   // Cuando el filtro "No Autorizados" está activo, solo se muestran los
   // contratos con líneas No Autorizado por un monto mayor a 0 (usa el mismo
@@ -639,69 +720,57 @@ export default function CapexDashboard() {
     return stats;
   }, [companyGroups, authByContract]);
 
-  // Desglose por año (CLP) para cada agrupamiento de cards -- usa el campo
-  // contract_budgets.year, que ya viene en cada línea de ContractBudget
-  // (ver interface arriba). Como company_names/clasificacion son atributos
-  // del CONTRATO (iguales en todas sus filas de budget), sumar por fila acá
-  // da el mismo total que los memos por-contrato de más abajo, solo que
-  // desglosado por año.
-  //
-  // A diferencia de `filteredBudgets`, ACÁ no se aplica el filtro de año: el
-  // desglose debe mostrar un chip por cada año que tenga CAPEX (con o sin
-  // "yearFilter" puesto en un año puntual), igual que ya se hace en
-  // `filterBudgetsExcept` para los otros dropdowns.
-  const budgetsAllYears = React.useMemo(() => {
-    return activeBudgets.filter((b) => {
-      if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
-      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
-      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
-      return true;
-    });
-  }, [activeBudgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
-
   const yearBreakdownTotal = React.useMemo(() => {
     const m: Record<number, number> = {};
-    budgetsAllYears.forEach((b) => {
-      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
-      m[b.year] = (m[b.year] || 0) + clp;
+    contractYearAmounts.forEach((yearMap) => {
+      Object.entries(yearMap).forEach(([year, clp]) => {
+        m[Number(year)] = (m[Number(year)] || 0) + clp;
+      });
     });
     return m;
-  }, [budgetsAllYears, authByBudget, ufValue]);
+  }, [contractYearAmounts]);
 
   const yearBreakdownByCompanyBucket = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = { Autoplanet: {}, Agroplanet: {}, Otros: {} };
-    budgetsAllYears.forEach((b) => {
-      const bucket = getCompanyBucket(b.company_names);
-      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
-      m[bucket][b.year] = (m[bucket][b.year] || 0) + clp;
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const bucket = getCompanyBucket(rows[0].company_names);
+      const yearMap = contractYearAmounts.get(contractId) || {};
+      Object.entries(yearMap).forEach(([year, clp]) => {
+        m[bucket][Number(year)] = (m[bucket][Number(year)] || 0) + clp;
+      });
     });
     return m;
-  }, [budgetsAllYears, authByBudget, ufValue]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts]);
 
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
-    budgetsAllYears.forEach((b) => {
-      if (!b.clasificacion) return;
-      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
-      if (!m[b.clasificacion]) m[b.clasificacion] = {};
-      m[b.clasificacion][b.year] = (m[b.clasificacion][b.year] || 0) + clp;
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const clasificacion = rows[0].clasificacion;
+      if (!clasificacion) return;
+      const yearMap = contractYearAmounts.get(contractId) || {};
+      if (!m[clasificacion]) m[clasificacion] = {};
+      Object.entries(yearMap).forEach(([year, clp]) => {
+        m[clasificacion][Number(year)] = (m[clasificacion][Number(year)] || 0) + clp;
+      });
     });
     return m;
-  }, [budgetsAllYears, authByBudget, ufValue]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts]);
 
   const yearBreakdownByCompanyAndClasificacion = React.useMemo(() => {
     const m: Record<string, Record<string, Record<number, number>>> = {};
-    budgetsAllYears.forEach((b) => {
-      if (!b.clasificacion) return;
-      const companyKey = getCompanyGroupKey(b.company_names);
-      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const clasificacion = rows[0].clasificacion;
+      if (!clasificacion) return;
+      const companyKey = getCompanyGroupKey(rows[0].company_names);
+      const yearMap = contractYearAmounts.get(contractId) || {};
       if (!m[companyKey]) m[companyKey] = {};
-      if (!m[companyKey][b.clasificacion]) m[companyKey][b.clasificacion] = {};
-      m[companyKey][b.clasificacion][b.year] = (m[companyKey][b.clasificacion][b.year] || 0) + clp;
+      if (!m[companyKey][clasificacion]) m[companyKey][clasificacion] = {};
+      Object.entries(yearMap).forEach(([year, clp]) => {
+        m[companyKey][clasificacion][Number(year)] = (m[companyKey][clasificacion][Number(year)] || 0) + clp;
+      });
     });
     return m;
-  }, [filteredBudgets, authByBudget, ufValue]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts]);
 
   const totalCapexUF = React.useMemo(() => {
     let total = 0;
@@ -1282,17 +1351,17 @@ export default function CapexDashboard() {
                                         <>
                                           <div className="text-center">
                                             <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
-                                            <div className="font-medium">${formatCLP(d.anticipo)} + IVA</div>
+                                            <div className="font-medium">{formatCLP(d.anticipo)}</div>
                                             <div className="text-[10px] text-muted-foreground">{format(parseISO(d.startDate), "dd/MM/yyyy")}</div>
                                           </div>
                                           <div className="text-center">
                                             <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
-                                            <div className="font-medium">${formatCLP(d.pago1)}</div>
+                                            <div className="font-medium">{formatCLP(d.pago1)}</div>
                                             <div className="text-[10px] text-muted-foreground">{format(parseISO(d.midDate), "dd/MM/yyyy")}</div>
                                           </div>
                                           <div className="text-center">
                                             <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
-                                            <div className="font-medium">${formatCLP(d.pago2)} + IVA</div>
+                                            <div className="font-medium">{formatCLP(d.pago2)}</div>
                                             <div className="text-[10px] text-muted-foreground">{format(parseISO(d.endDate), "dd/MM/yyyy")}</div>
                                           </div>
                                         </>
