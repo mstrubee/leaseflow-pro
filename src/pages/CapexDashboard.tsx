@@ -247,22 +247,45 @@ export default function CapexDashboard() {
 
       const existingContractIds = new Set(processed.map((b) => b.contract_id));
       const currentYear = new Date().getFullYear();
-      const negotiationOnly: ContractBudget[] = (acceptedNegotiationContracts || [])
-        .filter((c: any) => !existingContractIds.has(c.id))
-        .map((c: any) => ({
-          contract_id: c.id,
-          contract_name: c.name || "Sin nombre",
-          clasificacion: c.clasificacion || null,
-          capex_avance_status: c.capex_avance_status || null,
-          year: currentYear,
-          amount_uf: 0,
-          // Id sintético (no hay fila real en contract_budgets todavía) --
-          // único por contrato, no colisiona con ids reales (uuid).
-          budget_id: `negotiation-${c.id}`,
-          superficie: c.superficie_edificada_local || 0,
-          company_names: (c.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
-          excluded: !!c.excluded_from_capex_dashboard,
-        }));
+      const negotiationOnlyContracts = (acceptedNegotiationContracts || []).filter(
+        (c: any) => !existingContractIds.has(c.id)
+      );
+
+      // Estos contratos todavía no tienen presupuesto CAPEX real cargado
+      // (contract_budgets) -- en vez de mostrarlos en $0, se usa el "Capex
+      // Estimado" del Business Case Financiero (mismo cálculo que la columna
+      // "Capex Est." de /contracts?status=en_negociacion: total de inversión
+      // sin el inventario/capital de trabajo). Viene en MM CLP -> se pasa a
+      // UF con el mismo criterio que esa columna.
+      let capexEstUFByContract: Record<string, number> = {};
+      if (negotiationOnlyContracts.length > 0) {
+        const { data: businessCases } = await supabase
+          .from("contract_business_cases")
+          .select("contract_id, computed")
+          .in("contract_id", negotiationOnlyContracts.map((c: any) => c.id));
+        (businessCases || []).forEach((row: any) => {
+          const computed = row.computed as { inv?: { total?: number; rows?: { id: string; monto: number }[] } } | null;
+          const total = computed?.inv?.total || 0;
+          const inventario = computed?.inv?.rows?.find((r) => r.id === "inv")?.monto || 0;
+          const capexEstMM = total - inventario;
+          capexEstUFByContract[row.contract_id] = ufValue > 0 ? (capexEstMM * 1_000_000) / ufValue : 0;
+        });
+      }
+
+      const negotiationOnly: ContractBudget[] = negotiationOnlyContracts.map((c: any) => ({
+        contract_id: c.id,
+        contract_name: c.name || "Sin nombre",
+        clasificacion: c.clasificacion || null,
+        capex_avance_status: c.capex_avance_status || null,
+        year: currentYear,
+        amount_uf: capexEstUFByContract[c.id] || 0,
+        // Id sintético (no hay fila real en contract_budgets todavía) --
+        // único por contrato, no colisiona con ids reales (uuid).
+        budget_id: `negotiation-${c.id}`,
+        superficie: c.superficie_edificada_local || 0,
+        company_names: (c.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
+        excluded: !!c.excluded_from_capex_dashboard,
+      }));
 
       const allProcessed = [...processed, ...negotiationOnly];
       setBudgets(allProcessed);
@@ -1218,6 +1241,10 @@ export default function CapexDashboard() {
                       const unauthCLP = breakdown.unauthorized * currentUF;
                       const totalUFVal = breakdown.authorized + breakdown.unauthorized;
                       const ufM2 = superficie > 0 ? totalUFVal / superficie : 0;
+                      // Contrato "autorizado en negociación" sin presupuesto CAPEX
+                      // real todavía -- el monto mostrado es el Capex Estimado del
+                      // Business Case Financiero, no un presupuesto ya cargado.
+                      const isEstimatedFromBusinessCase = contractBudgets.every((b) => b.budget_id.startsWith("negotiation-"));
 
                       return (
                         <Collapsible
@@ -1323,7 +1350,11 @@ export default function CapexDashboard() {
                                             ({fmtUF(totalUFVal)} UF)
                                           </span>
                                         </div>
-                                        {superficie > 0 && (
+                                        {isEstimatedFromBusinessCase ? (
+                                          <div className="text-xs text-muted-foreground italic" title="Todavía no tiene presupuesto CAPEX cargado -- este es el Capex Estimado del Business Case Financiero">
+                                            Est. Business Case
+                                          </div>
+                                        ) : superficie > 0 && (
                                           <div className="text-xs text-muted-foreground">
                                             UF {fmtUF(ufM2)}/m²
                                           </div>
