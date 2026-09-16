@@ -239,6 +239,11 @@ const COLOR_HEX: Record<string, string> = {
   orange: "F97316",
   gray: "8C8C8C",
 };
+
+// Colores para la torta "Por año" (distribución del CAPEX total entre años)
+// -- deliberadamente distintos de los de clasificación (COLOR_HEX) para no
+// confundirse con la leyenda de Nuevo/Reemplazo/etc.
+const YEAR_PIE_COLORS = ["C0003F", "8C8C8C", "3B82F6", "F97316", "22C55E"];
 const colorHex = (c?: string) => COLOR_HEX[c || "gray"] || COLOR_HEX.gray;
 
 const fmtUF = (v: number) =>
@@ -251,13 +256,19 @@ const fmtUF2 = (v: number) =>
 const fmtYearChip = (clp: number, year: number) =>
   `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${year}`;
 
+// Años con CAPEX real (> 0) -- mismo criterio que los chips en /capex
+// (YearBreakdownChips): un año en $0 no corresponde mostrarlo.
+const yearsWithCapex = (breakdown: Record<number, number> | undefined): number[] =>
+  breakdown
+    ? Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0).sort((a, b) => a - b)
+    : [];
+
+// Un chip por línea (uno sobre otro), igual que en /capex -- no en una sola
+// línea separados por "·".
 const yearBreakdownLine = (breakdown: Record<number, number> | undefined): string => {
-  if (!breakdown) return "";
-  // Mismo criterio que los chips en /capex (YearBreakdownChips): un año en
-  // $0 no es CAPEX real de ese año, no corresponde mostrarlo.
-  const years = Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0).sort((a, b) => a - b);
+  const years = yearsWithCapex(breakdown);
   if (years.length === 0) return "";
-  return years.map((y) => fmtYearChip(breakdown[y], y)).join("  ·  ");
+  return years.map((y) => fmtYearChip(breakdown![y], y)).join("\n");
 };
 
 // El nombre de la clasificación es el mismo texto libre que se guarda en
@@ -382,9 +393,17 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     line: { color: BORDER, width: 1 },
   });
 
+  // Alto de los chips de año (uno por línea, ver yearBreakdownLine) -- crece
+  // según cuántos años tenga cada bloque, para no solaparse con lo de abajo.
+  const CHIP_LINE_H_LG = 0.16; // fontSize 9 (card grande "Inversión Total")
+  const CHIP_LINE_H_SM = 0.12; // fontSize 6.5 (cards de clasificación)
+
+  const totalYears = yearsWithCapex(data.totalYearBreakdown);
+  const totalCardH = 1.2 + Math.max(0, totalYears.length - 1) * CHIP_LINE_H_LG;
+
   // Big total card
   s2.addShape(SHAPES.RECTANGLE, {
-    x: 0.5, y: 1.2, w: 9, h: 1.2,
+    x: 0.5, y: 1.2, w: 9, h: totalCardH,
     fill: { color: PRIMARY },
   });
 
@@ -411,21 +430,26 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   const totalYearLine = yearBreakdownLine(data.totalYearBreakdown);
   if (totalYearLine) {
     s2.addText(totalYearLine, {
-      x: 5, y: 2.05, w: 4.3, h: 0.3,
+      x: 5, y: 2.05, w: 4.3, h: totalYears.length * CHIP_LINE_H_LG,
       fontSize: 9, fontFace: "Arial", color: "F5C6D0", align: "right",
     });
   }
 
   // Classification cards -- dinámico según los "Tipos de CAPEX" que tengan
   // algún local asignado (ya no son 3 fijos).
-  const classCards = data.clasificacionTotals.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color), yearLine: yearBreakdownLine(t.yearBreakdown) }));
+  const classCards = data.clasificacionTotals.map((t) => ({
+    label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color),
+    years: yearsWithCapex(t.yearBreakdown), yearLine: yearBreakdownLine(t.yearBreakdown),
+  }));
   const cardGap = 0.15;
   const cardW = classCards.length > 0 ? (9 - cardGap * (classCards.length - 1)) / classCards.length : 0;
-  const classCardH = 1.55;
+  const maxClassYears = classCards.reduce((max, c) => Math.max(max, c.years.length), 0);
+  const classCardH = 1.55 + Math.max(0, maxClassYears - 1) * CHIP_LINE_H_SM;
+  const classCardsY = 1.2 + totalCardH + 0.3;
 
   classCards.forEach((card, i) => {
     const x = 0.5 + i * (cardW + cardGap);
-    const y = 2.7;
+    const y = classCardsY;
 
     s2.addShape(SHAPES.RECTANGLE, {
       x, y, w: cardW, h: classCardH,
@@ -460,28 +484,84 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
     if (card.yearLine) {
       s2.addText(card.yearLine, {
-        x: x + 0.2, y: y + 1.28, w: cardW - 0.4, h: 0.24,
+        x: x + 0.2, y: y + 1.28, w: cardW - 0.4, h: card.years.length * CHIP_LINE_H_SM,
         fontSize: 6.5, fontFace: "Arial", color: MUTED,
       });
     }
   });
 
-  // Pie chart
-  if (data.clasificacionTotals.length > 0) {
-    s2.addChart(CHARTS.PIE, [{
-      name: "Distribución",
-      labels: data.clasificacionTotals.map((t) => t.name),
-      values: data.clasificacionTotals.map((t) => t.uf),
-    }], {
-      x: 1.5, y: 4.35, w: 3, h: 1.0,
-      showPercent: true,
-      showTitle: false,
-      showLegend: true,
-      legendPos: "r",
-      legendFontSize: 8,
-      chartColors: data.clasificacionTotals.map((t) => colorHex(t.color)),
-      dataLabelFontSize: 8,
-      dataLabelColor: DARK,
+  // Gráficos de torta: uno por año (distribución por clasificación en ESE
+  // año) + uno extra con la distribución del CAPEX total entre los años.
+  // Una sola leyenda para todos (clasificación), en vez de repetirla en
+  // cada torta -- el gráfico "Por año" no la necesita porque sus propias
+  // porciones ya muestran el año como etiqueta.
+  const piesY = classCardsY + classCardH + 0.25;
+  if (classCards.length > 0) {
+    const legendY = piesY;
+    classCards.forEach((card, i) => {
+      const x = 0.5 + i * 2.3;
+      s2.addShape(SHAPES.RECTANGLE, {
+        x, y: legendY + 0.02, w: 0.12, h: 0.12,
+        fill: { color: card.color },
+      });
+      s2.addText(card.label, {
+        x: x + 0.18, y: legendY, w: 2.1, h: 0.18,
+        fontSize: 8, fontFace: "Arial", color: MUTED,
+      });
+    });
+  }
+
+  const pieChartsY = piesY + 0.3;
+  const pieYears = totalYears; // años con CAPEX real, mismo orden que los chips
+  const pieBlocks = [
+    ...pieYears.map((year) => ({
+      title: String(year),
+      labels: classCards.map((c) => c.label),
+      values: classCards.map((c) => data.clasificacionTotals.find((t) => t.name === c.label)?.yearBreakdown?.[year] || 0),
+      colors: classCards.map((c) => c.color),
+      showLabel: false,
+    })),
+    {
+      title: "Por año",
+      labels: pieYears.map((y) => String(y)),
+      values: pieYears.map((y) => data.totalYearBreakdown?.[y] || 0),
+      colors: pieYears.map((_, i) => YEAR_PIE_COLORS[i % YEAR_PIE_COLORS.length]),
+      showLabel: true,
+    },
+  ].filter((block) => block.values.some((v) => v > 0));
+
+  if (pieBlocks.length > 0) {
+    const pieGap = 0.15;
+    const pieW = (9 - pieGap * (pieBlocks.length - 1)) / pieBlocks.length;
+    const pieH = Math.min(1.5, pieW);
+
+    pieBlocks.forEach((block, i) => {
+      // Cada torta filtra sus propios ceros -- una clasificación sin monto
+      // ese año no debe aparecer como porción vacía.
+      const nonZero = block.labels
+        .map((label, idx) => ({ label, value: block.values[idx], color: block.colors[idx] }))
+        .filter((d) => d.value > 0);
+      if (nonZero.length === 0) return;
+
+      const x = 0.5 + i * (pieW + pieGap);
+      s2.addText(block.title, {
+        x, y: pieChartsY, w: pieW, h: 0.2,
+        fontSize: 9, fontFace: "Arial", color: MUTED, align: "center", bold: true,
+      });
+      s2.addChart(CHARTS.PIE, [{
+        name: block.title,
+        labels: nonZero.map((d) => d.label),
+        values: nonZero.map((d) => d.value),
+      }], {
+        x, y: pieChartsY + 0.2, w: pieW, h: pieH,
+        showPercent: true,
+        showLabel: block.showLabel,
+        showTitle: false,
+        showLegend: false,
+        chartColors: nonZero.map((d) => d.color),
+        dataLabelFontSize: 7,
+        dataLabelColor: DARK,
+      });
     });
   }
 
@@ -506,10 +586,14 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     });
 
     // Company summary cards -- dinámico según los tipos con locales en esta empresa
-    const companyCards = group.totals.byType.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color), yearLine: yearBreakdownLine(t.yearBreakdown) }));
+    const companyCards = group.totals.byType.map((t) => ({
+      label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color),
+      years: yearsWithCapex(t.yearBreakdown), yearLine: yearBreakdownLine(t.yearBreakdown),
+    }));
     const companyCardGap = 0.15;
     const companyCardW = companyCards.length > 0 ? (9 - companyCardGap * (companyCards.length - 1)) / companyCards.length : 0;
-    const companyCardH = 1.05;
+    const maxCompanyYears = companyCards.reduce((max, c) => Math.max(max, c.years.length), 0);
+    const companyCardH = 1.05 + Math.max(0, maxCompanyYears - 1) * CHIP_LINE_H_SM;
 
     companyCards.forEach((card, i) => {
       const x = 0.5 + i * (companyCardW + companyCardGap);
@@ -541,7 +625,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
       if (card.yearLine) {
         s.addText(card.yearLine, {
-          x: x + 0.15, y: 1.9, w: companyCardW - 0.3, h: 0.2,
+          x: x + 0.15, y: 1.9, w: companyCardW - 0.3, h: card.years.length * CHIP_LINE_H_SM,
           fontSize: 6.5, fontFace: "Arial", color: MUTED,
         });
       }
@@ -589,7 +673,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         });
       }
 
-      const tableY = pageIdx === 0 ? 2.35 : 0.9;
+      const tableY = pageIdx === 0 ? 1.1 + companyCardH + 0.2 : 0.9;
 
       const rows: PptxGenJS.TableRow[] = [tableHeader];
 
