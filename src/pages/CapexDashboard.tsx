@@ -42,6 +42,37 @@ interface ContractBudget {
   // cuando el contrato no tiene fechas de inversión de las que derivarlo
   // (ver contractYearAmounts).
   comite_gp_status: string | null;
+  // Identidad de display cuando este contrato está "duplicado" entre
+  // empresas (capex_company_splits): igual a contract_id para un contrato
+  // sin splits, o `${contract_id}::split::${splitId}` para cada copia --
+  // ver getCopiesForContract. Se agrega recién al armar contractGroups
+  // (las filas "crudas" de loadBudgets no lo tienen).
+  groupKey?: string;
+  // Id de la fila en capex_company_splits que generó esta copia (undefined
+  // si la fila no es una copia con split).
+  splitId?: string;
+  // % de CAPEX asignado a esta copia (undefined si no es una copia con split).
+  splitPercentage?: number;
+}
+
+// Una fila de capex_company_splits: contrato duplicado con % de CAPEX propio
+// y su propio flag de exclusión (independiente del de otras copias del mismo
+// contrato y del de contracts.excluded_from_capex_dashboard).
+interface CapexCompanySplit {
+  id: string;
+  company_name: string;
+  percentage: number;
+  excluded_from_capex_dashboard: boolean;
+}
+
+// Una "copia" a mostrar de un contrato: sin splits, una sola copia (percentage
+// 100, sin companyName propio -- usa contract_companies como siempre). Con
+// splits activos (no excluidos), una copia por fila.
+interface ContractCopy {
+  groupKey: string;
+  percentage: number;
+  splitId?: string;
+  companyName?: string;
 }
 
 interface AuthBreakdown {
@@ -189,6 +220,9 @@ export default function CapexDashboard() {
   // desde Admin > Estados y Categorías -- el "name" es el mismo texto que
   // se guarda en contracts.capex_avance_status.
   const [avanceStatusTypes, setAvanceStatusTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  // Splits de empresa (capex_company_splits) por contrato -- contratos
+  // "duplicados" entre empresas con % de CAPEX propio. Ver getCopiesForContract.
+  const [splitsByContract, setSplitsByContract] = useState<Map<string, CapexCompanySplit[]>>(new Map());
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -219,8 +253,48 @@ export default function CapexDashboard() {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_company_splits")
+        .select("id, contract_id, company_name, percentage, excluded_from_capex_dashboard")
+        .order("display_order");
+      const m = new Map<string, CapexCompanySplit[]>();
+      (data || []).forEach((s: any) => {
+        const arr = m.get(s.contract_id) || [];
+        arr.push({
+          id: s.id,
+          company_name: s.company_name,
+          percentage: s.percentage,
+          excluded_from_capex_dashboard: !!s.excluded_from_capex_dashboard,
+        });
+        m.set(s.contract_id, arr);
+      });
+      setSplitsByContract(m);
+    })();
+  }, []);
+
+  useEffect(() => {
     if (user && ufValue > 0) loadBudgets();
   }, [user, ufValue]);
+
+  // Copias a mostrar de un contrato real: sin splits (o con todos sus splits
+  // excluidos), una sola copia igual a hoy; con uno o más splits activos, una
+  // copia por fila de capex_company_splits (excluidas individualmente
+  // filtradas acá -- no generan copia en el dashboard, pero siguen existiendo
+  // para la sección "Contratos excluidos").
+  const getCopiesForContract = React.useCallback(
+    (contractId: string): ContractCopy[] => {
+      const splits = (splitsByContract.get(contractId) || []).filter((s) => !s.excluded_from_capex_dashboard);
+      if (splits.length === 0) return [{ groupKey: contractId, percentage: 100 }];
+      return splits.map((s) => ({
+        groupKey: `${contractId}::split::${s.id}`,
+        percentage: s.percentage,
+        splitId: s.id,
+        companyName: s.company_name,
+      }));
+    },
+    [splitsByContract]
+  );
 
   const loadBudgets = async () => {
     setLoading(true);
@@ -343,6 +417,21 @@ export default function CapexDashboard() {
   // aparte en la sección "Contratos excluidos" al final de la página.
   const activeBudgets = React.useMemo(() => budgets.filter((b) => !b.excluded), [budgets]);
 
+  // Un contrato pasa el filtro de Empresa si ALGUNA de sus copias visibles
+  // (ver getCopiesForContract) cae en una de las empresas seleccionadas --
+  // así, filtrar por "Autoplanet" muestra un contrato con split 80%
+  // Autoplanet / 20% Agroplanet aunque su `contract_companies` completo lo
+  // ubicara hoy en el bucket "Agroplanet" (>1 empresa).
+  const contractMatchesCompanyFilter = React.useCallback(
+    (b: ContractBudget, filter: string[]): boolean => {
+      if (filter.length === 0) return true;
+      return getCopiesForContract(b.contract_id).some((copy) =>
+        filter.includes(getCompanyBucket(copy.companyName ? [copy.companyName] : b.company_names))
+      );
+    },
+    [getCopiesForContract]
+  );
+
   // Igual que `filteredBudgets` pero sin el filtro de año -- se usa para todo
   // lo que debe considerar el CAPEX de un contrato en TODOS sus años (el
   // desglose por año de las cards, y el total que alimenta el 30/50/20 del
@@ -350,12 +439,12 @@ export default function CapexDashboard() {
   const budgetsAllYears = React.useMemo(() => {
     return activeBudgets.filter((b) => {
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+      if (!contractMatchesCompanyFilter(b, companyFilter)) return false;
       if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
       if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
     });
-  }, [activeBudgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+  }, [activeBudgets, searchTerm, contractMatchesCompanyFilter, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
   // Rango de fecha de inversión por contrato (inicio - término), calculado
   // con la MISMA lógica que "Cartas Gantt - Vista General" en /reports
@@ -431,36 +520,43 @@ export default function CapexDashboard() {
   // año en los cards sin tener que ir a corregir ese campo a mano. Para
   // contratos sin esas fechas (sin disbursement calculable) se mantiene el
   // campo "Año" como respaldo, único dato disponible en ese caso.
+  // Desglose por año, por COPIA (groupKey) -- el disbursement real (100% del
+  // contrato, ver contractInvestmentInfo/capexCLPByContract más arriba, NUNCA
+  // recalculado por copia) se escala por el % de cada copia. Ej: Anticipo
+  // real $100 en 2026 -> copia 80% aporta $80 a 2026, copia 20% aporta $20.
   const contractYearAmounts = React.useMemo(() => {
     const m = new Map<string, Record<number, number>>();
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
       const totalCLP = capexCLPByContract.get(contractId) || 0;
       const disbursement = contractInvestmentInfo[contractId]?.disbursement;
-      const yearMap: Record<number, number> = {};
-      if (disbursement && totalCLP > 0) {
-        const addToYear = (dateStr: string, amount: number) => {
-          const year = parseISO(dateStr).getFullYear();
-          yearMap[year] = (yearMap[year] || 0) + amount;
-        };
-        addToYear(disbursement.startDate, disbursement.anticipo);
-        addToYear(disbursement.midDate, disbursement.pago1);
-        addToYear(disbursement.endDate, disbursement.pago2);
-      } else {
-        // Sin fechas de inversión de las que derivar un año: se usa el año
-        // del badge de Comité GP (ej. "Aceptada 2027") si lo trae -- es
-        // solo un año, sin más detalle, así que todo el monto del contrato
-        // va ahí. Como último recurso (ni fechas ni año en el badge) se cae
-        // al campo "Año" manual de la fila.
-        rows.forEach((b) => {
-          const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
-          const year = extractYearFromComiteGP(b.comite_gp_status) ?? b.year;
-          yearMap[year] = (yearMap[year] || 0) + clp;
-        });
-      }
-      m.set(contractId, yearMap);
+      getCopiesForContract(contractId).forEach(({ groupKey, percentage }) => {
+        const factor = percentage / 100;
+        const yearMap: Record<number, number> = {};
+        if (disbursement && totalCLP > 0) {
+          const addToYear = (dateStr: string, amount: number) => {
+            const year = parseISO(dateStr).getFullYear();
+            yearMap[year] = (yearMap[year] || 0) + amount * factor;
+          };
+          addToYear(disbursement.startDate, disbursement.anticipo);
+          addToYear(disbursement.midDate, disbursement.pago1);
+          addToYear(disbursement.endDate, disbursement.pago2);
+        } else {
+          // Sin fechas de inversión de las que derivar un año: se usa el año
+          // del badge de Comité GP (ej. "Aceptada 2027") si lo trae -- es
+          // solo un año, sin más detalle, así que todo el monto del contrato
+          // va ahí. Como último recurso (ni fechas ni año en el badge) se cae
+          // al campo "Año" manual de la fila.
+          rows.forEach((b) => {
+            const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0) * factor;
+            const year = extractYearFromComiteGP(b.comite_gp_status) ?? b.year;
+            yearMap[year] = (yearMap[year] || 0) + clp;
+          });
+        }
+        m.set(groupKey, yearMap);
+      });
     });
     return m;
-  }, [budgetRowsByContractAllYears, capexCLPByContract, contractInvestmentInfo, authByBudget, ufValue]);
+  }, [budgetRowsByContractAllYears, capexCLPByContract, contractInvestmentInfo, authByBudget, ufValue, getCopiesForContract]);
 
   // Años disponibles para el dropdown "Año" -- unión del campo "Año" cargado
   // a mano (contract_budgets.year) con los años que arrojan las fechas
@@ -583,20 +679,21 @@ export default function CapexDashboard() {
   // ahí. `contractYearAmounts` ya cae de vuelta al campo manual cuando el
   // contrato no tiene fechas de las que derivar un año.
   const contractHasYear = React.useCallback(
-    (contractId: string, year: number) => !!contractYearAmounts.get(contractId)?.[year],
-    [contractYearAmounts],
+    (contractId: string, year: number) =>
+      getCopiesForContract(contractId).some((copy) => !!contractYearAmounts.get(copy.groupKey)?.[year]),
+    [contractYearAmounts, getCopiesForContract],
   );
 
   const filteredBudgets = React.useMemo(() => {
     return activeBudgets.filter(b => {
       if (yearFilter !== "todos" && !contractHasYear(b.contract_id, parseInt(yearFilter))) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+      if (!contractMatchesCompanyFilter(b, companyFilter)) return false;
       if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
       if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
     });
-  }, [activeBudgets, yearFilter, contractHasYear, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+  }, [activeBudgets, yearFilter, contractHasYear, searchTerm, contractMatchesCompanyFilter, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
   // Aplica los mismos filtros que filteredBudgets pero salteando uno de los
   // filtros -- se usa para calcular qué opciones de CADA dropdown todavía
@@ -607,19 +704,23 @@ export default function CapexDashboard() {
       activeBudgets.filter((b) => {
         if (yearFilter !== "todos" && !contractHasYear(b.contract_id, parseInt(yearFilter))) return false;
         if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-        if (except !== "company" && companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+        if (except !== "company" && !contractMatchesCompanyFilter(b, companyFilter)) return false;
         if (except !== "clasificacion" && clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
         if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
         return true;
       }),
-    [activeBudgets, yearFilter, contractHasYear, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
+    [activeBudgets, yearFilter, contractHasYear, searchTerm, contractMatchesCompanyFilter, companyFilter, clasificacionFilter, avanceStatusFilter],
   );
 
   const availableCompanyBuckets = React.useMemo(() => {
     const set = new Set<string>();
-    filterBudgetsExcept("company").forEach((b) => set.add(getCompanyBucket(b.company_names)));
+    filterBudgetsExcept("company").forEach((b) => {
+      getCopiesForContract(b.contract_id).forEach((copy) =>
+        set.add(getCompanyBucket(copy.companyName ? [copy.companyName] : b.company_names))
+      );
+    });
     return set;
-  }, [filterBudgetsExcept]);
+  }, [filterBudgetsExcept, getCopiesForContract]);
 
   const availableClasificaciones = React.useMemo(() => {
     const set = new Set<string>();
@@ -642,13 +743,36 @@ export default function CapexDashboard() {
     setAvanceStatusFilter([]);
   };
 
-  // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
+  // Group by contract, then EXPANDE cada contrato en sus copias (ver
+  // getCopiesForContract) -- sin splits activos, una sola copia (groupKey =
+  // contract_id, idéntica a hoy); con splits, una copia por fila, cada una
+  // con su propio company_names (solo el de esa copia, no toda la lista de
+  // contract_companies) y su monto (amount_uf) escalado por el %. El
+  // contract_id REAL de cada fila se mantiene sin tocar (para "Ir al
+  // contrato", BudgetModule, y para buscar contractInvestmentInfo por el
+  // contrato real). A CAPEX budget must be visible even when it has no detail
+  // lines yet.
   const contractGroups = React.useMemo(() => {
-    const map = new Map<string, ContractBudget[]>();
+    const byContract = new Map<string, ContractBudget[]>();
     filteredBudgets.forEach(b => {
-      const existing = map.get(b.contract_id) || [];
+      const existing = byContract.get(b.contract_id) || [];
       existing.push(b);
-      map.set(b.contract_id, existing);
+      byContract.set(b.contract_id, existing);
+    });
+    const map = new Map<string, ContractBudget[]>();
+    byContract.forEach((rows, contractId) => {
+      getCopiesForContract(contractId).forEach(({ groupKey, percentage, splitId, companyName }) => {
+        const factor = percentage / 100;
+        const scaledRows: ContractBudget[] = rows.map((r) => ({
+          ...r,
+          amount_uf: r.amount_uf * factor,
+          company_names: companyName ? [companyName] : r.company_names,
+          groupKey,
+          splitId,
+          splitPercentage: companyName ? percentage : undefined,
+        }));
+        map.set(groupKey, scaledRows);
+      });
     });
     return Array.from(map.entries())
       .sort((a, b) => {
@@ -665,20 +789,23 @@ export default function CapexDashboard() {
         }
         return aB.contract_name.localeCompare(bB.contract_name);
       });
-  }, [filteredBudgets, sortBy]);
+  }, [filteredBudgets, sortBy, getCopiesForContract]);
 
-  // Total CAPEX por contrato, usando el breakdown efectivo (card amount o líneas)
+  // Total CAPEX por COPIA (groupKey), usando el breakdown efectivo (card
+  // amount o líneas) -- amount_uf ya viene escalado por % en contractGroups.
   const authByContract = React.useMemo(() => {
     const result: Record<string, AuthBreakdown> = {};
-    filteredBudgets.forEach(b => {
-      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0, grand: 0 };
-      const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
-      result[b.contract_id].authorized += eff.authorized;
-      result[b.contract_id].unauthorized += eff.unauthorized;
-      result[b.contract_id].grand += eff.grand;
+    contractGroups.forEach(([groupKey, rows]) => {
+      if (!result[groupKey]) result[groupKey] = { authorized: 0, unauthorized: 0, grand: 0 };
+      rows.forEach((b) => {
+        const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
+        result[groupKey].authorized += eff.authorized;
+        result[groupKey].unauthorized += eff.unauthorized;
+        result[groupKey].grand += eff.grand;
+      });
     });
     return result;
-  }, [filteredBudgets, authByBudget]);
+  }, [contractGroups, authByBudget]);
 
   // Group contractGroups by company
   const companyGroups = React.useMemo(() => {
@@ -732,7 +859,23 @@ export default function CapexDashboard() {
   // ningún card/PPT/Excel (esos solo usan activeBudgets/companyGroups, que ya
   // filtran los excluidos). No se les aplican los filtros de arriba: es un
   // listado simple, agrupado por contrato.
-  const excludedContracts = React.useMemo(() => {
+  // Entrada de la sección "Contratos excluidos": un contrato entero excluido
+  // (contracts.excluded_from_capex_dashboard) o una copia individual excluida
+  // (capex_company_splits.excluded_from_capex_dashboard) -- cada una con su
+  // propio botón "Incluir" (ver handleToggleExcluded).
+  interface ExcludedEntry {
+    key: string;
+    contractId: string;
+    splitId?: string;
+    contractName: string;
+    clasificacion: string | null;
+    companyNames: string[];
+    amountUf: number;
+    // Etiqueta de la copia, ej. "Autoplanet -- 80%" -- undefined si es el
+    // contrato entero (sin split).
+    splitLabel?: string;
+  }
+  const excludedContracts = React.useMemo<ExcludedEntry[]>(() => {
     const map = new Map<string, ContractBudget[]>();
     budgets.forEach((b) => {
       if (!b.excluded) return;
@@ -740,10 +883,42 @@ export default function CapexDashboard() {
       existing.push(b);
       map.set(b.contract_id, existing);
     });
-    return Array.from(map.entries()).sort((a, b) =>
-      a[1][0].contract_name.localeCompare(b[1][0].contract_name)
-    );
-  }, [budgets]);
+    const wholeContractExcludedIds = new Set(map.keys());
+    const entries: ExcludedEntry[] = Array.from(map.entries()).map(([contractId, rows]) => ({
+      key: contractId,
+      contractId,
+      contractName: rows[0].contract_name,
+      clasificacion: rows[0].clasificacion,
+      companyNames: rows[0].company_names,
+      amountUf: rows.reduce((s, b) => s + (b.amount_uf || 0), 0),
+    }));
+
+    // Copias excluidas individualmente (split.excluded_from_capex_dashboard),
+    // solo para contratos que NO están excluidos por completo (ese caso ya
+    // los cubre arriba y aplica a todas sus copias).
+    splitsByContract.forEach((splits, contractId) => {
+      if (wholeContractExcludedIds.has(contractId)) return;
+      const contractRows = budgets.filter((b) => b.contract_id === contractId);
+      if (contractRows.length === 0) return;
+      const totalUf = contractRows.reduce((s, b) => s + (b.amount_uf || 0), 0);
+      splits
+        .filter((s) => s.excluded_from_capex_dashboard)
+        .forEach((s) => {
+          entries.push({
+            key: `split-${s.id}`,
+            contractId,
+            splitId: s.id,
+            contractName: contractRows[0].contract_name,
+            clasificacion: contractRows[0].clasificacion,
+            companyNames: [s.company_name],
+            amountUf: totalUf * (s.percentage / 100),
+            splitLabel: `${s.company_name} -- ${s.percentage}%`,
+          });
+        });
+    });
+
+    return entries.sort((a, b) => a.contractName.localeCompare(b.contractName) || (a.splitLabel || "").localeCompare(b.splitLabel || ""));
+  }, [budgets, splitsByContract]);
 
   // Per-company clasificacion stats -- dinámico según los "Tipos de CAPEX"
   // administrados en Admin (ya no son 3 fijos).
@@ -778,47 +953,58 @@ export default function CapexDashboard() {
     return m;
   }, [contractYearAmounts]);
 
+  // Los tres desgloses siguientes iteran por COPIA (getCopiesForContract),
+  // usando el company_names propio de cada copia (el de su split, si tiene)
+  // para el bucket/companyKey, y el contractYearAmounts de esa copia
+  // (groupKey) para los montos -- así una copia 80% Autoplanet aporta solo su
+  // 80% al bucket Autoplanet, y la copia 20% Agroplanet solo su 20% a Agroplanet.
   const yearBreakdownByCompanyBucket = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = { Autoplanet: {}, Agroplanet: {}, Otros: {} };
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
-      const bucket = getCompanyBucket(rows[0].company_names);
-      const yearMap = contractYearAmounts.get(contractId) || {};
-      Object.entries(yearMap).forEach(([year, clp]) => {
-        m[bucket][Number(year)] = (m[bucket][Number(year)] || 0) + clp;
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
+        const bucket = getCompanyBucket(companyName ? [companyName] : rows[0].company_names);
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        Object.entries(yearMap).forEach(([year, clp]) => {
+          m[bucket][Number(year)] = (m[bucket][Number(year)] || 0) + clp;
+        });
       });
     });
     return m;
-  }, [budgetRowsByContractAllYears, contractYearAmounts]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
 
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
       const clasificacion = rows[0].clasificacion;
       if (!clasificacion) return;
-      const yearMap = contractYearAmounts.get(contractId) || {};
-      if (!m[clasificacion]) m[clasificacion] = {};
-      Object.entries(yearMap).forEach(([year, clp]) => {
-        m[clasificacion][Number(year)] = (m[clasificacion][Number(year)] || 0) + clp;
+      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        if (!m[clasificacion]) m[clasificacion] = {};
+        Object.entries(yearMap).forEach(([year, clp]) => {
+          m[clasificacion][Number(year)] = (m[clasificacion][Number(year)] || 0) + clp;
+        });
       });
     });
     return m;
-  }, [budgetRowsByContractAllYears, contractYearAmounts]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
 
   const yearBreakdownByCompanyAndClasificacion = React.useMemo(() => {
     const m: Record<string, Record<string, Record<number, number>>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
       const clasificacion = rows[0].clasificacion;
       if (!clasificacion) return;
-      const companyKey = getCompanyGroupKey(rows[0].company_names);
-      const yearMap = contractYearAmounts.get(contractId) || {};
-      if (!m[companyKey]) m[companyKey] = {};
-      if (!m[companyKey][clasificacion]) m[companyKey][clasificacion] = {};
-      Object.entries(yearMap).forEach(([year, clp]) => {
-        m[companyKey][clasificacion][Number(year)] = (m[companyKey][clasificacion][Number(year)] || 0) + clp;
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
+        const companyKey = getCompanyGroupKey(companyName ? [companyName] : rows[0].company_names);
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        if (!m[companyKey]) m[companyKey] = {};
+        if (!m[companyKey][clasificacion]) m[companyKey][clasificacion] = {};
+        Object.entries(yearMap).forEach(([year, clp]) => {
+          m[companyKey][clasificacion][Number(year)] = (m[companyKey][clasificacion][Number(year)] || 0) + clp;
+        });
       });
     });
     return m;
-  }, [budgetRowsByContractAllYears, contractYearAmounts]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
 
   const totalCapexUF = React.useMemo(() => {
     let total = 0;
@@ -1017,16 +1203,42 @@ export default function CapexDashboard() {
     toast.success("Estado de avance actualizado");
   };
 
-  const handleToggleExcluded = async (contractId: string, excluded: boolean) => {
+  // Cuando `splitId` viene definido, la exclusión actúa sobre esa copia
+  // (capex_company_splits) en vez del contrato completo -- excluir la copia
+  // de Autoplanet no afecta la copia de Agroplanet del mismo contrato.
+  const handleToggleExcluded = async (target: { contractId: string; splitId?: string }, excluded: boolean) => {
+    if (target.splitId) {
+      const { error } = await (supabase as any)
+        .from("capex_company_splits")
+        .update({ excluded_from_capex_dashboard: excluded })
+        .eq("id", target.splitId);
+      if (error) {
+        toast.error(excluded ? "Error al excluir la copia" : "Error al incluir la copia");
+        return;
+      }
+      setSplitsByContract((prev) => {
+        const next = new Map(prev);
+        const splits = next.get(target.contractId);
+        if (splits) {
+          next.set(
+            target.contractId,
+            splits.map((s) => (s.id === target.splitId ? { ...s, excluded_from_capex_dashboard: excluded } : s))
+          );
+        }
+        return next;
+      });
+      toast.success(excluded ? "Copia excluida del dashboard" : "Copia incluida nuevamente");
+      return;
+    }
     const { error } = await supabase
       .from("contracts")
       .update({ excluded_from_capex_dashboard: excluded } as never)
-      .eq("id", contractId);
+      .eq("id", target.contractId);
     if (error) {
       toast.error(excluded ? "Error al excluir el contrato" : "Error al incluir el contrato");
       return;
     }
-    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, excluded } : b));
+    setBudgets(prev => prev.map(b => b.contract_id === target.contractId ? { ...b, excluded } : b));
     toast.success(excluded ? "Contrato excluido del dashboard" : "Contrato incluido nuevamente");
   };
 
@@ -1344,14 +1556,20 @@ export default function CapexDashboard() {
 
                   {/* Contracts list */}
                   <div className="space-y-2">
-                    {contracts.map(([contractId, contractBudgets]) => {
-                      const isExpanded = expandedContract === contractId;
+                    {contracts.map(([groupKey, contractBudgets]) => {
+                      // Contrato real (para navegación/acciones que operan sobre
+                      // `contracts`/BudgetModule) -- distinto de `groupKey` cuando
+                      // esta fila es una copia con split (ver contractGroups).
+                      const contractId = contractBudgets[0].contract_id;
+                      const splitId = contractBudgets[0].splitId;
+                      const splitPercentage = contractBudgets[0].splitPercentage;
+                      const isExpanded = expandedContract === groupKey;
                       const contractName = contractBudgets[0].contract_name;
                       const clasificacion = contractBudgets[0].clasificacion;
                       const avanceStatus = contractBudgets[0].capex_avance_status;
                       const companyNames = contractBudgets[0].company_names;
                       const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
-                      const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
+                      const breakdown = authByContract[groupKey] || { authorized: 0, unauthorized: 0 };
                       const superficie = contractBudgets[0].superficie || 0;
 
                       const authCLP = breakdown.authorized * currentUF;
@@ -1365,9 +1583,9 @@ export default function CapexDashboard() {
 
                       return (
                         <Collapsible
-                          key={contractId}
+                          key={groupKey}
                           open={isExpanded}
-                          onOpenChange={(open) => setExpandedContract(open ? contractId : null)}
+                          onOpenChange={(open) => setExpandedContract(open ? groupKey : null)}
                         >
                           <Card>
                             <CollapsibleTrigger asChild>
@@ -1376,7 +1594,14 @@ export default function CapexDashboard() {
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <div className="min-w-0">
-                                    <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
+                                    <CardTitle className="text-base whitespace-nowrap">
+                                      {contractName}
+                                      {splitId && (
+                                        <Badge variant="outline" className="ml-2 text-[10px] align-middle">
+                                          {companyNames[0]} · {splitPercentage}%
+                                        </Badge>
+                                      )}
+                                    </CardTitle>
                                     {contractInvestmentInfo[contractId] && (
                                       // Espejo de "Cartas Gantt - Vista General" (/reports): mismo
                                       // texto "N tareas · Fecha término" por línea de contrato.
@@ -1510,7 +1735,7 @@ export default function CapexDashboard() {
                                       size="icon"
                                       className="h-7 w-7"
                                       title="Excluir del dashboard de CAPEX"
-                                      onClick={() => handleToggleExcluded(contractId, true)}
+                                      onClick={() => handleToggleExcluded({ contractId, splitId }, true)}
                                     >
                                       <EyeOff className="h-4 w-4" />
                                     </Button>
@@ -1564,43 +1789,42 @@ export default function CapexDashboard() {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-2">
-                  {excludedContracts.map(([contractId, contractBudgets]) => {
-                    const contractName = contractBudgets[0].contract_name;
-                    const clasificacion = contractBudgets[0].clasificacion;
-                    const companyNames = contractBudgets[0].company_names;
-                    const amountUf = contractBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
-                    return (
-                      <div
-                        key={contractId}
-                        className="flex items-center justify-between gap-3 rounded-md border p-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <CompanyLogo companyNames={companyNames} size="sm" />
-                          <span className="text-sm font-medium truncate">{contractName}</span>
-                          {clasificacion && (
-                            <Badge variant="outline" className={`text-xs shrink-0 ${getClasificacionColor(clasificacion)}`}>
-                              {clasificacion}
-                            </Badge>
+                  {excludedContracts.map((entry) => (
+                    <div
+                      key={entry.key}
+                      className="flex items-center justify-between gap-3 rounded-md border p-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CompanyLogo companyNames={entry.companyNames} size="sm" />
+                        <span className="text-sm font-medium truncate">
+                          {entry.contractName}
+                          {entry.splitLabel && (
+                            <span className="text-muted-foreground font-normal"> ({entry.splitLabel})</span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-xs text-muted-foreground">
-                            {amountUf > 0 ? `${fmtUF(amountUf)} UF` : "Sin CAPEX"}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 gap-1"
-                            title="Incluir nuevamente en el dashboard de CAPEX"
-                            onClick={() => handleToggleExcluded(contractId, false)}
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            Incluir
-                          </Button>
-                        </div>
+                        </span>
+                        {entry.clasificacion && (
+                          <Badge variant="outline" className={`text-xs shrink-0 ${getClasificacionColor(entry.clasificacion)}`}>
+                            {entry.clasificacion}
+                          </Badge>
+                        )}
                       </div>
-                    );
-                  })}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs text-muted-foreground">
+                          {entry.amountUf > 0 ? `${fmtUF(entry.amountUf)} UF` : "Sin CAPEX"}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1"
+                          title="Incluir nuevamente en el dashboard de CAPEX"
+                          onClick={() => handleToggleExcluded({ contractId: entry.contractId, splitId: entry.splitId }, false)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Incluir
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </CardContent>
               </CollapsibleContent>
             </Card>
