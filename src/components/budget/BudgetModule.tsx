@@ -79,6 +79,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const [showFreezeDialog, setShowFreezeDialog] = useState(false);
   const [freezeValue, setFreezeValue] = useState("");
   const [freezing, setFreezing] = useState(false);
+  const [bcCapexUf, setBcCapexUf] = useState<number | null>(null);
 
   const handleToggleSelectLine = useCallback((id: string) => {
     setSelectedLineIds((prev) => {
@@ -937,9 +938,31 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   // ---- Congelar monto (aprobado por directorio) ----
-  const handleOpenFreeze = () => {
+  const handleOpenFreeze = async () => {
     const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
-    setFreezeValue(grandTotalUf.toFixed(2));
+    let defaultValue = grandTotalUf;
+    let bcUf: number | null = null;
+
+    if (budgetType === "capex" && ufValue > 0) {
+      try {
+        const { data } = await supabase
+          .from("contract_business_cases")
+          .select("computed")
+          .eq("contract_id", contractId)
+          .maybeSingle();
+        const computed = data?.computed as any;
+        const fisicaMmClp: number | undefined = computed?.inv?.fisica;
+        if (typeof fisicaMmClp === "number" && fisicaMmClp > 0) {
+          bcUf = Math.round((fisicaMmClp * 1_000_000 / ufValue) * 100) / 100;
+          defaultValue = bcUf;
+        }
+      } catch {
+        // fallback al total actual
+      }
+    }
+
+    setBcCapexUf(bcUf);
+    setFreezeValue(defaultValue.toFixed(2));
     setShowFreezeDialog(true);
   };
 
@@ -1874,8 +1897,11 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3 py-2">
-                  <div className="text-sm text-muted-foreground">
-                    Total calculado actual: <strong>UF {formatUF(grandTotalUf)}</strong> · {formatCLP(convertUFToPesos(grandTotalUf))}
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <div>Total calculado actual: <strong>UF {formatUF(grandTotalUf)}</strong> · {formatCLP(convertUFToPesos(grandTotalUf))}</div>
+                    {bcCapexUf !== null && (
+                      <div>Capex BC Financiero (sin inventario): <strong>UF {formatUF(bcCapexUf)}</strong> · {formatCLP(convertUFToPesos(bcCapexUf))}</div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="freeze-amount">Monto aprobado (UF)</Label>
@@ -1888,7 +1914,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                       onChange={(e) => setFreezeValue(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Precargado con el total actual; puedes ajustarlo al monto exacto que aprobó directorio.
+                      {bcCapexUf !== null
+                        ? "Precargado con el Capex del Business Case Financiero (sin inventario); puedes ajustarlo."
+                        : "Precargado con el total actual; puedes ajustarlo al monto exacto que aprobó directorio."}
                     </p>
                   </div>
                 </div>
