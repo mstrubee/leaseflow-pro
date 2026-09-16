@@ -104,10 +104,15 @@ const fmtYearChip = (clp: number, year: number) =>
 /** Chip/badge con el desglose por año de una card CAPEX -- esquina superior
  * derecha, sin romper el layout existente (la card sigue con fondo blanco). */
 function YearBreakdownChips({ breakdown }: { breakdown: Record<number, number> | undefined }) {
-  const years = breakdown ? Object.keys(breakdown).map(Number).sort((a, b) => a - b) : [];
+  // Solo años con CAPEX real (> 0) -- una fila de presupuesto en $0 no debe
+  // aparecer como si existiera CAPEX en ese año. Más antiguo arriba, más
+  // reciente abajo (uno sobre otro, no en fila).
+  const years = breakdown
+    ? Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0).sort((a, b) => a - b)
+    : [];
   if (years.length === 0) return null;
   return (
-    <div className="absolute top-1.5 right-1.5 flex flex-wrap gap-1 justify-end max-w-[62%] z-10">
+    <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-0.5 max-w-[62%] z-10">
       {years.map((y) => (
         <span
           key={y}
@@ -1142,43 +1147,46 @@ export default function CapexDashboard() {
                           <Card>
                             <CollapsibleTrigger asChild>
                               <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                                <div className="grid grid-cols-[24px_auto_200px_190px_190px_1fr_64px] items-center gap-3">
+                                <div className="grid grid-cols-[24px_auto_200px_340px_190px_190px_1fr_64px] items-center gap-3">
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <div className="min-w-0">
                                     <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
-                                    {contractInvestmentInfo[contractId] && (() => {
-                                      const info = contractInvestmentInfo[contractId];
+                                    {contractInvestmentInfo[contractId] && (
+                                      // Espejo de "Cartas Gantt - Vista General" (/reports): mismo
+                                      // texto "N tareas · Fecha término" por línea de contrato.
+                                      <p className="text-xs text-muted-foreground whitespace-nowrap">
+                                        {contractInvestmentInfo[contractId].timelineName && <>{contractInvestmentInfo[contractId].timelineName} · </>}
+                                        {contractInvestmentInfo[contractId].taskCount} tarea{contractInvestmentInfo[contractId].taskCount !== 1 ? "s" : ""} · Fecha término:{" "}
+                                        <span className="font-medium text-foreground">
+                                          {format(parseISO(contractInvestmentInfo[contractId].end), "dd/MM/yyyy")}
+                                        </span>
+                                      </p>
+                                    )}
+                                  </div>
+                                  {/* Espejo del desglose de pagos (Anticipo/Pago 1/Pago 2) de
+                                      "Cartas Gantt - Vista General" en /reports -- misma columna
+                                      dedicada, no apilado bajo el nombre del contrato. */}
+                                  <div className="flex items-center gap-4 text-xs border-l pl-4 min-w-0">
+                                    {contractInvestmentInfo[contractId]?.disbursement && (() => {
+                                      const d = contractInvestmentInfo[contractId].disbursement!;
                                       return (
                                         <>
-                                          {/* Espejo de "Cartas Gantt - Vista General" (/reports): mismo
-                                              texto "N tareas · Fecha término" por línea de contrato. */}
-                                          <p className="text-xs text-muted-foreground whitespace-nowrap">
-                                            {info.timelineName && <>{info.timelineName} · </>}
-                                            {info.taskCount} tarea{info.taskCount !== 1 ? "s" : ""} · Fecha término:{" "}
-                                            <span className="font-medium text-foreground">
-                                              {format(parseISO(info.end), "dd/MM/yyyy")}
-                                            </span>
-                                          </p>
-                                          {/* Espejo del desglose de pagos (Anticipo/Pago 1/Pago 2) que
-                                              también muestra esa misma vista, cuando el contrato tiene
-                                              las tareas "Obras Civiles" y "Habilitación". */}
-                                          {info.disbursement && (
-                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-                                              <span>
-                                                Anticipo (30%): <span className="font-medium text-foreground">${formatCLP(info.disbursement.anticipo)}</span>
-                                                {" "}({format(parseISO(info.disbursement.startDate), "dd/MM/yy")})
-                                              </span>
-                                              <span>
-                                                Pago 1 (50%): <span className="font-medium text-foreground">${formatCLP(info.disbursement.pago1)}</span>
-                                                {" "}({format(parseISO(info.disbursement.midDate), "dd/MM/yy")})
-                                              </span>
-                                              <span>
-                                                Pago 2 (20%): <span className="font-medium text-foreground">${formatCLP(info.disbursement.pago2)}</span>
-                                                {" "}({format(parseISO(info.disbursement.endDate), "dd/MM/yy")})
-                                              </span>
-                                            </div>
-                                          )}
+                                          <div className="text-center">
+                                            <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
+                                            <div className="font-medium">${formatCLP(d.anticipo)} + IVA</div>
+                                            <div className="text-[10px] text-muted-foreground">{format(parseISO(d.startDate), "dd/MM/yyyy")}</div>
+                                          </div>
+                                          <div className="text-center">
+                                            <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
+                                            <div className="font-medium">${formatCLP(d.pago1)}</div>
+                                            <div className="text-[10px] text-muted-foreground">{format(parseISO(d.midDate), "dd/MM/yyyy")}</div>
+                                          </div>
+                                          <div className="text-center">
+                                            <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
+                                            <div className="font-medium">${formatCLP(d.pago2)} + IVA</div>
+                                            <div className="text-[10px] text-muted-foreground">{format(parseISO(d.endDate), "dd/MM/yyyy")}</div>
+                                          </div>
                                         </>
                                       );
                                     })()}
