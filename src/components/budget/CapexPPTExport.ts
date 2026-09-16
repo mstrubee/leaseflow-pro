@@ -253,7 +253,9 @@ const fmtYearChip = (clp: number, year: number) =>
 
 const yearBreakdownLine = (breakdown: Record<number, number> | undefined): string => {
   if (!breakdown) return "";
-  const years = Object.keys(breakdown).map(Number).sort((a, b) => a - b);
+  // Mismo criterio que los chips en /capex (YearBreakdownChips): un año en
+  // $0 no es CAPEX real de ese año, no corresponde mostrarlo.
+  const years = Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0).sort((a, b) => a - b);
   if (years.length === 0) return "";
   return years.map((y) => fmtYearChip(breakdown[y], y)).join("  ·  ");
 };
