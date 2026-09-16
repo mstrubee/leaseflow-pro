@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -35,6 +35,9 @@ interface ContractBudget {
   budget_id: string;
   superficie: number;
   company_names: string[];
+  // Preferencia persistida por contrato (contracts.excluded_from_capex_dashboard)
+  // -- true = no cuenta en cards/PPT/Excel y va a la sección "Contratos excluidos".
+  excluded: boolean;
 }
 
 interface AuthBreakdown {
@@ -148,6 +151,10 @@ export default function CapexDashboard() {
   // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
   // aprobándolas de forma más ágil, expandiendo uno a uno.
   const [onlyUnauthorized, setOnlyUnauthorized] = useState(false);
+  // Colapsable de la sección "Contratos excluidos" al final de la página --
+  // arranca cerrada para no llamar la atención sobre algo que, por
+  // definición, no debería mirarse a diario.
+  const [excludedSectionOpen, setExcludedSectionOpen] = useState(false);
   // "Tipos de CAPEX" administrables desde Admin > Estados y Categorías --
   // el "name" de cada uno es el mismo texto que se guarda en
   // contracts.clasificacion.
@@ -194,7 +201,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
         // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
@@ -209,7 +216,7 @@ export default function CapexDashboard() {
 
       if (error) throw error;
 
-      const processed = (data || [])
+      const processed: ContractBudget[] = (data || [])
         .map((b: any) => ({
         contract_id: b.contract_id,
         contract_name: b.contracts?.name || "Sin nombre",
@@ -220,10 +227,49 @@ export default function CapexDashboard() {
         budget_id: b.id,
         superficie: b.contracts?.superficie_edificada_local || 0,
         company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
+        excluded: !!b.contracts?.excluded_from_capex_dashboard,
       }));
-      setBudgets(processed);
+
+      // Contratos "autorizados" en negociación (status = en_negociacion,
+      // no eliminados, comite_gp_status contiene "acepta" -- Aceptada,
+      // Aceptado, Aceptada 2027, etc., excluyendo Rechazada). Misma lógica
+      // que negotiationAcceptedIds en GanttReportsSection.tsx (líneas
+      // ~670-684), reutilizada acá: deben listarse en /capex aunque todavía
+      // no tengan ninguna fila en contract_budgets (con $0 / "Sin CAPEX").
+      const { data: acceptedNegotiationContracts, error: negErr } = await supabase
+        .from("contracts")
+        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, contract_companies(companies(name))")
+        .eq("status", "en_negociacion")
+        .is("deleted_at", null)
+        .ilike("comite_gp_status", "%acepta%")
+        .neq("comite_gp_status", "Rechazada");
+      if (negErr) throw negErr;
+
+      const existingContractIds = new Set(processed.map((b) => b.contract_id));
+      const currentYear = new Date().getFullYear();
+      const negotiationOnly: ContractBudget[] = (acceptedNegotiationContracts || [])
+        .filter((c: any) => !existingContractIds.has(c.id))
+        .map((c: any) => ({
+          contract_id: c.id,
+          contract_name: c.name || "Sin nombre",
+          clasificacion: c.clasificacion || null,
+          capex_avance_status: c.capex_avance_status || null,
+          year: currentYear,
+          amount_uf: 0,
+          // Id sintético (no hay fila real en contract_budgets todavía) --
+          // único por contrato, no colisiona con ids reales (uuid).
+          budget_id: `negotiation-${c.id}`,
+          superficie: c.superficie_edificada_local || 0,
+          company_names: (c.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
+          excluded: !!c.excluded_from_capex_dashboard,
+        }));
+
+      const allProcessed = [...processed, ...negotiationOnly];
+      setBudgets(allProcessed);
 
       // Load per-budget breakdown (authorized / unauthorized / grand) from detail lines
+      // (los sintéticos "negotiation-*" no tienen líneas y quedan sin breakdown,
+      // getEffectiveBudgetBreakdown ya maneja ese caso usando amount_uf = 0).
       const budgetIds = processed.map((b) => b.budget_id);
       const totals = await loadBudgetTotals(budgetIds, ufValue);
       const breakdown: AuthByBudget = {};
@@ -238,16 +284,21 @@ export default function CapexDashboard() {
     }
   };
 
+  // Contratos marcados como excluidos (contracts.excluded_from_capex_dashboard)
+  // -- no participan de ningún card/memo/export de más abajo, se muestran
+  // aparte en la sección "Contratos excluidos" al final de la página.
+  const activeBudgets = React.useMemo(() => budgets.filter((b) => !b.excluded), [budgets]);
+
   const availableYears = React.useMemo(() => {
     const years = new Set<number>();
-    budgets.forEach(b => years.add(b.year));
+    activeBudgets.forEach(b => years.add(b.year));
     const currentYear = new Date().getFullYear();
     years.add(currentYear);
     return Array.from(years).sort((a, b) => b - a);
-  }, [budgets]);
+  }, [activeBudgets]);
 
   const filteredBudgets = React.useMemo(() => {
-    return budgets.filter(b => {
+    return activeBudgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
@@ -255,7 +306,7 @@ export default function CapexDashboard() {
       if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
     });
-  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+  }, [activeBudgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
   // Aplica los mismos filtros que filteredBudgets pero salteando uno de los
   // filtros -- se usa para calcular qué opciones de CADA dropdown todavía
@@ -263,7 +314,7 @@ export default function CapexDashboard() {
   // las que quedarían en 0 (evita ofrecer una combinación sin resultados).
   const filterBudgetsExcept = React.useCallback(
     (except: "company" | "clasificacion" | "avance") =>
-      budgets.filter((b) => {
+      activeBudgets.filter((b) => {
         if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
         if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
         if (except !== "company" && companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
@@ -271,7 +322,7 @@ export default function CapexDashboard() {
         if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
         return true;
       }),
-    [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
+    [activeBudgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
   );
 
   const availableCompanyBuckets = React.useMemo(() => {
@@ -524,6 +575,23 @@ export default function CapexDashboard() {
       .filter(({ contracts }) => contracts.length > 0);
   }, [companyGroups, onlyUnauthorized, authByContract]);
 
+  // Contratos excluidos del dashboard (contracts.excluded_from_capex_dashboard
+  // = true) -- se listan aparte, al final de la página, y no participan de
+  // ningún card/PPT/Excel (esos solo usan activeBudgets/companyGroups, que ya
+  // filtran los excluidos). No se les aplican los filtros de arriba: es un
+  // listado simple, agrupado por contrato.
+  const excludedContracts = React.useMemo(() => {
+    const map = new Map<string, ContractBudget[]>();
+    budgets.forEach((b) => {
+      if (!b.excluded) return;
+      const existing = map.get(b.contract_id) || [];
+      existing.push(b);
+      map.set(b.contract_id, existing);
+    });
+    return Array.from(map.entries()).sort((a, b) =>
+      a[1][0].contract_name.localeCompare(b[1][0].contract_name)
+    );
+  }, [budgets]);
 
   // Per-company clasificacion stats -- dinámico según los "Tipos de CAPEX"
   // administrados en Admin (ya no son 3 fijos).
@@ -560,14 +628,14 @@ export default function CapexDashboard() {
   // "yearFilter" puesto en un año puntual), igual que ya se hace en
   // `filterBudgetsExcept` para los otros dropdowns.
   const budgetsAllYears = React.useMemo(() => {
-    return budgets.filter((b) => {
+    return activeBudgets.filter((b) => {
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
       if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
       if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
       return true;
     });
-  }, [budgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+  }, [activeBudgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
   const yearBreakdownTotal = React.useMemo(() => {
     const m: Record<number, number> = {};
@@ -807,6 +875,19 @@ export default function CapexDashboard() {
     }
     setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, capex_avance_status: value } : b));
     toast.success("Estado de avance actualizado");
+  };
+
+  const handleToggleExcluded = async (contractId: string, excluded: boolean) => {
+    const { error } = await supabase
+      .from("contracts")
+      .update({ excluded_from_capex_dashboard: excluded } as never)
+      .eq("id", contractId);
+    if (error) {
+      toast.error(excluded ? "Error al excluir el contrato" : "Error al incluir el contrato");
+      return;
+    }
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, excluded } : b));
+    toast.success(excluded ? "Contrato excluido del dashboard" : "Contrato incluido nuevamente");
   };
 
   const BADGE_COLOR_MAP: Record<string, string> = {
@@ -1276,6 +1357,15 @@ export default function CapexDashboard() {
                                     >
                                       <ExternalLink className="h-4 w-4" />
                                     </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      title="Excluir del dashboard de CAPEX"
+                                      onClick={() => handleToggleExcluded(contractId, true)}
+                                    >
+                                      <EyeOff className="h-4 w-4" />
+                                    </Button>
                                   </div>
                                 </div>
                               </CardHeader>
@@ -1306,6 +1396,68 @@ export default function CapexDashboard() {
             })
           )}
         </div>
+
+        {/* Contratos excluidos -- no cuentan en cards/PPT/Excel de arriba.
+            Sección aparte al final, colapsable, con acción para reincluir. */}
+        {excludedContracts.length > 0 && (
+          <Collapsible open={excludedSectionOpen} onOpenChange={setExcludedSectionOpen}>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                  <div className="flex items-center gap-2">
+                    <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${excludedSectionOpen ? '' : '-rotate-90'}`} />
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-base">Contratos excluidos</CardTitle>
+                    <Badge variant="secondary" className="text-xs">
+                      {excludedContracts.length} {excludedContracts.length === 1 ? "contrato" : "contratos"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="pt-0 space-y-2">
+                  {excludedContracts.map(([contractId, contractBudgets]) => {
+                    const contractName = contractBudgets[0].contract_name;
+                    const clasificacion = contractBudgets[0].clasificacion;
+                    const companyNames = contractBudgets[0].company_names;
+                    const amountUf = contractBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
+                    return (
+                      <div
+                        key={contractId}
+                        className="flex items-center justify-between gap-3 rounded-md border p-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CompanyLogo companyNames={companyNames} size="sm" />
+                          <span className="text-sm font-medium truncate">{contractName}</span>
+                          {clasificacion && (
+                            <Badge variant="outline" className={`text-xs shrink-0 ${getClasificacionColor(clasificacion)}`}>
+                              {clasificacion}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-xs text-muted-foreground">
+                            {amountUf > 0 ? `${fmtUF(amountUf)} UF` : "Sin CAPEX"}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1"
+                            title="Incluir nuevamente en el dashboard de CAPEX"
+                            onClick={() => handleToggleExcluded(contractId, false)}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Incluir
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
       </div>
       <CapexTemplateManager open={templateOpen} onOpenChange={setTemplateOpen} />
     </div>
