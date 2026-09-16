@@ -197,7 +197,7 @@ export default function CapexDashboard() {
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+  const [yearFilter, setYearFilter] = useState("todos");
   // Filtros multi-selección: array vacío = "todas".
   const [companyFilter, setCompanyFilter] = useState<string[]>([]);
   const [clasificacionFilter, setClasificacionFilter] = useState<string[]>([]);
