@@ -338,14 +338,6 @@ export default function CapexDashboard() {
     });
   }, [activeBudgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
-  const availableYears = React.useMemo(() => {
-    const years = new Set<number>();
-    activeBudgets.forEach(b => years.add(b.year));
-    const currentYear = new Date().getFullYear();
-    years.add(currentYear);
-    return Array.from(years).sort((a, b) => b - a);
-  }, [activeBudgets]);
-
   const filteredBudgets = React.useMemo(() => {
     return activeBudgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
@@ -570,6 +562,23 @@ export default function CapexDashboard() {
     });
     return m;
   }, [budgetRowsByContractAllYears, capexCLPByContract, contractInvestmentInfo, authByBudget, ufValue]);
+
+  // Años disponibles para el dropdown "Año" -- unión del campo "Año" cargado
+  // a mano (contract_budgets.year) con los años que arrojan las fechas
+  // reales de pago (contractYearAmounts). Sin esto último, un contrato cuyo
+  // CAPEX cae en un año distinto al del campo manual (ej. reprogramado a
+  // 2027) no dejaba elegir ese año en el filtro, aunque las cards ya lo
+  // mostraran ahí.
+  const availableYears = React.useMemo(() => {
+    const years = new Set<number>();
+    activeBudgets.forEach(b => years.add(b.year));
+    contractYearAmounts.forEach((yearMap) => {
+      Object.keys(yearMap).forEach((y) => years.add(Number(y)));
+    });
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    return Array.from(years).sort((a, b) => b - a);
+  }, [activeBudgets, contractYearAmounts]);
 
   useEffect(() => {
     const contractIds = contractIdsForInvestmentInfoKey ? contractIdsForInvestmentInfoKey.split(",") : [];
