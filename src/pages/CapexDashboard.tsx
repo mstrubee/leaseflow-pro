@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays, differenceInDays } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
@@ -377,16 +377,47 @@ export default function CapexDashboard() {
   // inicio es el mínimo inicio efectivo entre todas las tareas del
   // cronograma -- análogo a "overallStart" en GanttChart.tsx. Contratos sin
   // Gantt/tareas/fechas simplemente no entran en el mapa (sin placeholder).
-  const [contractDateRanges, setContractDateRanges] = useState<Record<string, { start: string; end: string }>>({});
+  interface ContractInvestmentInfo {
+    start: string;
+    end: string;
+    taskCount: number;
+    timelineName: string;
+    // Espejo de GanttReportsSection: 30% Anticipo (inicio "Obras Civiles") /
+    // 50% Estado Pago 1 (punto medio) / 20% Estado Pago 2 (término
+    // "Habilitación"). null si el contrato no tiene esas dos tareas.
+    disbursement: {
+      startDate: string;
+      midDate: string;
+      endDate: string;
+      anticipo: number;
+      pago1: number;
+      pago2: number;
+    } | null;
+  }
+  const [contractInvestmentInfo, setContractInvestmentInfo] = useState<Record<string, ContractInvestmentInfo>>({});
   const listedContractIdsKey = React.useMemo(
     () => Array.from(new Set(listedContracts.map(([id]) => id))).sort().join(","),
     [listedContracts]
   );
+  // CAPEX en CLP por contrato -- mismo cálculo (getEffectiveBudgetTotal * UF)
+  // que el resto del dashboard, necesario para el desglose 30/50/20 del
+  // disbursement (espejo de GanttReportsSection).
+  const capexCLPByContract = React.useMemo(() => {
+    const m = new Map<string, number>();
+    listedContracts.forEach(([contractId, cBudgets]) => {
+      const clp = cBudgets.reduce(
+        (sum, b) => sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0),
+        0
+      );
+      m.set(contractId, clp);
+    });
+    return m;
+  }, [listedContracts, authByBudget, ufValue]);
 
   useEffect(() => {
     const contractIds = listedContractIdsKey ? listedContractIdsKey.split(",") : [];
     if (contractIds.length === 0) {
-      setContractDateRanges({});
+      setContractInvestmentInfo({});
       return;
     }
     let cancelled = false;
@@ -396,19 +427,19 @@ export default function CapexDashboard() {
       // corresponde acá.
       const { data: timelines } = await supabase
         .from("gantt_timelines")
-        .select("id, contract_id")
+        .select("id, contract_id, name")
         .in("contract_id", contractIds)
         .eq("category", "general")
         .order("is_priority", { ascending: false })
         .order("created_at", { ascending: false });
 
-      const timelineByContract = new Map<string, string>();
+      const timelineByContract = new Map<string, { id: string; name: string }>();
       (timelines || []).forEach((t: any) => {
-        if (!timelineByContract.has(t.contract_id)) timelineByContract.set(t.contract_id, t.id);
+        if (!timelineByContract.has(t.contract_id)) timelineByContract.set(t.contract_id, { id: t.id, name: t.name });
       });
-      const timelineIds = Array.from(timelineByContract.values());
+      const timelineIds = Array.from(timelineByContract.values()).map((t) => t.id);
       if (timelineIds.length === 0) {
-        if (!cancelled) setContractDateRanges({});
+        if (!cancelled) setContractInvestmentInfo({});
         return;
       }
 
@@ -428,8 +459,8 @@ export default function CapexDashboard() {
         from += PAGE;
       }
 
-      const ranges: Record<string, { start: string; end: string }> = {};
-      timelineByContract.forEach((timelineId, contractId) => {
+      const info: Record<string, ContractInvestmentInfo> = {};
+      timelineByContract.forEach(({ id: timelineId, name: timelineName }, contractId) => {
         const tasks = allTasks.filter((t) => t.timeline_id === timelineId);
         if (tasks.length === 0) return;
         const effMap = computeEffectiveDatesMap(tasks);
@@ -442,15 +473,38 @@ export default function CapexDashboard() {
         const maxEndDate = endDates.length > 0 ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0]) : null;
         const aperturaTask = tasks.find((t: any) => t.name.trim().toLowerCase() === "apertura");
         const endDate = aperturaTask ? effOf(aperturaTask).end : maxEndDate;
+        if (!minStart || !endDate) return;
 
-        if (minStart && endDate) ranges[contractId] = { start: minStart, end: endDate };
+        // Disbursement: mismo criterio que GanttReportsSection -- "Obras
+        // Civiles" (inicio) y "Habilitación" (término), 30/50/20 del CAPEX CLP.
+        let disbursement: ContractInvestmentInfo["disbursement"] = null;
+        const obrasCiviles = tasks.find((t: any) => t.name.trim().toLowerCase() === "obras civiles");
+        const habilitacion = tasks.find((t: any) => t.name.trim().toLowerCase() === "habilitación");
+        const obrasStart = obrasCiviles ? effOf(obrasCiviles).start : null;
+        const habilEnd = habilitacion ? effOf(habilitacion).end : null;
+        const capexCLP = capexCLPByContract.get(contractId) || 0;
+        if (obrasStart && habilEnd && capexCLP > 0) {
+          const start = parseISO(obrasStart);
+          const end = parseISO(habilEnd);
+          const midDay = addDays(start, Math.round(differenceInDays(end, start) / 2));
+          disbursement = {
+            startDate: obrasStart,
+            midDate: format(midDay, "yyyy-MM-dd"),
+            endDate: habilEnd,
+            anticipo: Math.round(capexCLP * 0.30),
+            pago1: Math.round(capexCLP * 0.50),
+            pago2: Math.round(capexCLP * 0.20),
+          };
+        }
+
+        info[contractId] = { start: minStart, end: endDate, taskCount: tasks.length, timelineName, disbursement };
       });
-      if (!cancelled) setContractDateRanges(ranges);
+      if (!cancelled) setContractInvestmentInfo(info);
     })();
     return () => {
       cancelled = true;
     };
-  }, [listedContractIdsKey]);
+  }, [listedContractIdsKey, capexCLPByContract]);
 
   // Cuando el filtro "No Autorizados" está activo, solo se muestran los
   // contratos con líneas No Autorizado por un monto mayor a 0 (usa el mismo
@@ -495,39 +549,54 @@ export default function CapexDashboard() {
   // del CONTRATO (iguales en todas sus filas de budget), sumar por fila acá
   // da el mismo total que los memos por-contrato de más abajo, solo que
   // desglosado por año.
+  //
+  // A diferencia de `filteredBudgets`, ACÁ no se aplica el filtro de año: el
+  // desglose debe mostrar un chip por cada año que tenga CAPEX (con o sin
+  // "yearFilter" puesto en un año puntual), igual que ya se hace en
+  // `filterBudgetsExcept` para los otros dropdowns.
+  const budgetsAllYears = React.useMemo(() => {
+    return budgets.filter((b) => {
+      if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+      return true;
+    });
+  }, [budgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+
   const yearBreakdownTotal = React.useMemo(() => {
     const m: Record<number, number> = {};
-    filteredBudgets.forEach((b) => {
+    budgetsAllYears.forEach((b) => {
       const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
       m[b.year] = (m[b.year] || 0) + clp;
     });
     return m;
-  }, [filteredBudgets, authByBudget, ufValue]);
+  }, [budgetsAllYears, authByBudget, ufValue]);
 
   const yearBreakdownByCompanyBucket = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = { Autoplanet: {}, Agroplanet: {}, Otros: {} };
-    filteredBudgets.forEach((b) => {
+    budgetsAllYears.forEach((b) => {
       const bucket = getCompanyBucket(b.company_names);
       const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
       m[bucket][b.year] = (m[bucket][b.year] || 0) + clp;
     });
     return m;
-  }, [filteredBudgets, authByBudget, ufValue]);
+  }, [budgetsAllYears, authByBudget, ufValue]);
 
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
-    filteredBudgets.forEach((b) => {
+    budgetsAllYears.forEach((b) => {
       if (!b.clasificacion) return;
       const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
       if (!m[b.clasificacion]) m[b.clasificacion] = {};
       m[b.clasificacion][b.year] = (m[b.clasificacion][b.year] || 0) + clp;
     });
     return m;
-  }, [filteredBudgets, authByBudget, ufValue]);
+  }, [budgetsAllYears, authByBudget, ufValue]);
 
   const yearBreakdownByCompanyAndClasificacion = React.useMemo(() => {
     const m: Record<string, Record<string, Record<number, number>>> = {};
-    filteredBudgets.forEach((b) => {
+    budgetsAllYears.forEach((b) => {
       if (!b.clasificacion) return;
       const companyKey = getCompanyGroupKey(b.company_names);
       const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
@@ -676,7 +745,7 @@ export default function CapexDashboard() {
       toast.info("Generando Excel...");
       const payload = listedContracts.map(([contractId, cBudgets]) => {
         const legacy = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
-        const dateRange = contractDateRanges[contractId];
+        const dateRange = contractInvestmentInfo[contractId];
         return {
           contract_id: contractId,
           contract_name: cBudgets[0].contract_name,
@@ -1078,11 +1147,41 @@ export default function CapexDashboard() {
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <div className="min-w-0">
                                     <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
-                                    {contractDateRanges[contractId] && (
-                                      <p className="text-xs text-muted-foreground whitespace-nowrap">
-                                        {format(parseISO(contractDateRanges[contractId].start), "dd/MM/yyyy")} - {format(parseISO(contractDateRanges[contractId].end), "dd/MM/yyyy")}
-                                      </p>
-                                    )}
+                                    {contractInvestmentInfo[contractId] && (() => {
+                                      const info = contractInvestmentInfo[contractId];
+                                      return (
+                                        <>
+                                          {/* Espejo de "Cartas Gantt - Vista General" (/reports): mismo
+                                              texto "N tareas · Fecha término" por línea de contrato. */}
+                                          <p className="text-xs text-muted-foreground whitespace-nowrap">
+                                            {info.timelineName && <>{info.timelineName} · </>}
+                                            {info.taskCount} tarea{info.taskCount !== 1 ? "s" : ""} · Fecha término:{" "}
+                                            <span className="font-medium text-foreground">
+                                              {format(parseISO(info.end), "dd/MM/yyyy")}
+                                            </span>
+                                          </p>
+                                          {/* Espejo del desglose de pagos (Anticipo/Pago 1/Pago 2) que
+                                              también muestra esa misma vista, cuando el contrato tiene
+                                              las tareas "Obras Civiles" y "Habilitación". */}
+                                          {info.disbursement && (
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+                                              <span>
+                                                Anticipo (30%): <span className="font-medium text-foreground">${formatCLP(info.disbursement.anticipo)}</span>
+                                                {" "}({format(parseISO(info.disbursement.startDate), "dd/MM/yy")})
+                                              </span>
+                                              <span>
+                                                Pago 1 (50%): <span className="font-medium text-foreground">${formatCLP(info.disbursement.pago1)}</span>
+                                                {" "}({format(parseISO(info.disbursement.midDate), "dd/MM/yy")})
+                                              </span>
+                                              <span>
+                                                Pago 2 (20%): <span className="font-medium text-foreground">${formatCLP(info.disbursement.pago2)}</span>
+                                                {" "}({format(parseISO(info.disbursement.endDate), "dd/MM/yy")})
+                                              </span>
+                                            </div>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                   <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
                                     <Select
