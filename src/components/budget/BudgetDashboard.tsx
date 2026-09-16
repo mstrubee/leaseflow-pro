@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock, Edit2 } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock, Edit2, Building2 } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
@@ -21,6 +21,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
 import { CapexCloseYearDialog } from "./CapexCloseYearDialog";
+import { CapexCompanySplitDialog } from "./CapexCompanySplitDialog";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -82,6 +83,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const [showDeleteYearDialog1, setShowDeleteYearDialog1] = useState(false);
   const [showDeleteYearDialog2, setShowDeleteYearDialog2] = useState(false);
   const [showCloseYearDialog, setShowCloseYearDialog] = useState(false);
+  const [showCompanySplitDialog, setShowCompanySplitDialog] = useState(false);
+  const [contractCompanyNames, setContractCompanyNames] = useState<string[]>([]);
   
   // Edit CAPEX form state
   const [editCapexAmount, setEditCapexAmount] = useState("");
@@ -116,6 +119,22 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     loadAvailableYears();
     loadContractName();
     setLoading(false);
+  }, [contractId]);
+
+  // Empresas asociadas al contrato -- controla la visibilidad del botón
+  // "CAPEX x Empresa" (solo tiene sentido con 2 o más empresas).
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("contract_companies")
+        .select("companies(name)")
+        .eq("contract_id", contractId)
+        .returns<Array<{ companies: { name: string } | null }>>();
+      const names = (data || [])
+        .map((row) => row.companies?.name)
+        .filter((name): name is string => !!name);
+      setContractCompanyNames(names);
+    })();
   }, [contractId]);
 
   const loadContractName = async () => {
@@ -721,6 +740,12 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               </Button>
             </>
           )}
+          {contractCompanyNames.length > 1 && (
+            <Button variant="outline" size="sm" onClick={() => setShowCompanySplitDialog(true)}>
+              <Building2 className="h-4 w-4 mr-1" />
+              CAPEX x Empresa
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => {
             setNewYear(new Date().getFullYear() + 1);
             checkPreviousYearPendingOCs(new Date().getFullYear() + 1);
@@ -1038,6 +1063,15 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           />
         </TabsContent>
       </Tabs>
+
+      {/* Dialog: CAPEX x Empresa */}
+      <CapexCompanySplitDialog
+        open={showCompanySplitDialog}
+        onOpenChange={setShowCompanySplitDialog}
+        contractId={contractId}
+        companyNames={contractCompanyNames}
+        totalAmountClp={convertUFToPesos(capexSummary.budget)}
+      />
 
       {/* Dialog: Nuevo Año CAPEX */}
       <Dialog open={showNewYearDialog} onOpenChange={setShowNewYearDialog}>
