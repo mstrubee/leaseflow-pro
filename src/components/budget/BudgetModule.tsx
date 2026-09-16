@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
+import { BCInputs, computeBC, defaultAdminConfig } from "@/lib/businessCase/model";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -947,11 +948,25 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       try {
         const { data } = await supabase
           .from("contract_business_cases")
-          .select("computed")
+          .select("computed, inputs")
           .eq("contract_id", contractId)
           .maybeSingle();
+
+        let fisicaMmClp: number | undefined;
+
+        // Primero intentar desde el resultado guardado
         const computed = data?.computed as any;
-        const fisicaMmClp: number | undefined = computed?.inv?.fisica;
+        fisicaMmClp = computed?.inv?.fisica;
+
+        // Si no hay computed guardado, calcular desde inputs
+        if ((typeof fisicaMmClp !== "number" || fisicaMmClp <= 0) && data?.inputs) {
+          const stored = data.inputs as unknown as Partial<BCInputs>;
+          if (stored.categoria !== undefined) {
+            const result = computeBC(stored as BCInputs, defaultAdminConfig);
+            fisicaMmClp = result.inv.fisica;
+          }
+        }
+
         if (typeof fisicaMmClp === "number" && fisicaMmClp > 0) {
           bcUf = Math.round((fisicaMmClp * 1_000_000 / ufValue) * 100) / 100;
           defaultValue = bcUf;
