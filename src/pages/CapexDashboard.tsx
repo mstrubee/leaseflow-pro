@@ -38,6 +38,10 @@ interface ContractBudget {
   // Preferencia persistida por contrato (contracts.excluded_from_capex_dashboard)
   // -- true = no cuenta en cards/PPT/Excel y va a la sección "Contratos excluidos".
   excluded: boolean;
+  // Estado de Comité GP (ej. "Aceptada 2027") -- respaldo del año de CAPEX
+  // cuando el contrato no tiene fechas de inversión de las que derivarlo
+  // (ver contractYearAmounts).
+  comite_gp_status: string | null;
 }
 
 interface AuthBreakdown {
@@ -86,6 +90,16 @@ const normalizeTaskName = (name: string) =>
 const findGanttTaskByNameHint = <T extends { name: string }>(tasks: T[], hint: string): T | undefined =>
   tasks.find((t) => normalizeTaskName(t.name) === hint) ??
   tasks.find((t) => normalizeTaskName(t.name).includes(hint));
+
+// El badge de Comité GP de un contrato en negociación suele venir con el año
+// pegado al estado (ej. "Aceptada 2027") -- se usa como respaldo del año de
+// CAPEX cuando el contrato no tiene fechas de inversión de las que
+// derivarlo (ver contractYearAmounts). Toma el primer año de 4 dígitos que
+// aparezca en el texto.
+const extractYearFromComiteGP = (comiteGpStatus: string | null): number | null => {
+  const match = comiteGpStatus?.match(/\b(20\d{2})\b/);
+  return match ? Number(match[1]) : null;
+};
 
 const toggleArrayValue = (arr: string[], value: string): string[] =>
   arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
@@ -213,7 +227,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
         // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
@@ -240,6 +254,7 @@ export default function CapexDashboard() {
         superficie: b.contracts?.superficie_edificada_local || 0,
         company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
         excluded: !!b.contracts?.excluded_from_capex_dashboard,
+        comite_gp_status: b.contracts?.comite_gp_status || null,
       }));
 
       // Contratos "autorizados" en negociación (status = en_negociacion,
@@ -250,7 +265,7 @@ export default function CapexDashboard() {
       // no tengan ninguna fila en contract_budgets (con $0 / "Sin CAPEX").
       const { data: acceptedNegotiationContracts, error: negErr } = await supabase
         .from("contracts")
-        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, contract_companies(companies(name))")
+        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, contract_companies(companies(name))")
         .eq("status", "en_negociacion")
         .is("deleted_at", null)
         .ilike("comite_gp_status", "%acepta%")
@@ -289,7 +304,10 @@ export default function CapexDashboard() {
         contract_name: c.name || "Sin nombre",
         clasificacion: c.clasificacion || null,
         capex_avance_status: c.capex_avance_status || null,
-        year: currentYear,
+        // El año del badge "Aceptada (año)" (ej. "Aceptada 2027") si lo trae,
+        // ya que estos contratos todavía no tienen fechas de Gantt de las
+        // que derivar un año -- ver extractYearFromComiteGP/contractYearAmounts.
+        year: extractYearFromComiteGP(c.comite_gp_status) ?? currentYear,
         amount_uf: capexEstUFByContract[c.id] || 0,
         // Id sintético (no hay fila real en contract_budgets todavía) --
         // único por contrato, no colisiona con ids reales (uuid).
@@ -297,6 +315,7 @@ export default function CapexDashboard() {
         superficie: c.superficie_edificada_local || 0,
         company_names: (c.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
         excluded: !!c.excluded_from_capex_dashboard,
+        comite_gp_status: c.comite_gp_status || null,
       }));
 
       const allProcessed = [...processed, ...negotiationOnly];
@@ -427,9 +446,15 @@ export default function CapexDashboard() {
         addToYear(disbursement.midDate, disbursement.pago1);
         addToYear(disbursement.endDate, disbursement.pago2);
       } else {
+        // Sin fechas de inversión de las que derivar un año: se usa el año
+        // del badge de Comité GP (ej. "Aceptada 2027") si lo trae -- es
+        // solo un año, sin más detalle, así que todo el monto del contrato
+        // va ahí. Como último recurso (ni fechas ni año en el badge) se cae
+        // al campo "Año" manual de la fila.
         rows.forEach((b) => {
           const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
-          yearMap[b.year] = (yearMap[b.year] || 0) + clp;
+          const year = extractYearFromComiteGP(b.comite_gp_status) ?? b.year;
+          yearMap[year] = (yearMap[year] || 0) + clp;
         });
       }
       m.set(contractId, yearMap);
