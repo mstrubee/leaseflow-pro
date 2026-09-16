@@ -34,6 +34,9 @@ export interface ClasificacionTotal {
   color: string;
   uf: number;
   count: number;
+  /** Desglose CLP por año, igual al que muestran las cards de /capex --
+   * opcional (no lo arma buildCapexPPTData, que es de un solo año). */
+  yearBreakdown?: Record<number, number>;
 }
 
 interface CompanyGroup {
@@ -52,6 +55,9 @@ export interface CapexPPTData {
   clasificacionTotals: ClasificacionTotal[];
   totalLocales: number;
   companyGroups: CompanyGroup[];
+  /** Desglose CLP por año del total general -- mismo formato "mm$ X año YYYY"
+   * que las cards de /capex. */
+  totalYearBreakdown?: Record<number, number>;
 }
 
 interface RawBudget {
@@ -241,6 +247,17 @@ const fmtUF = (v: number) =>
 const fmtUF2 = (v: number) =>
   v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Mismo formato que las cards de /capex: "mm$ 1.711 año 2026".
+const fmtYearChip = (clp: number, year: number) =>
+  `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${year}`;
+
+const yearBreakdownLine = (breakdown: Record<number, number> | undefined): string => {
+  if (!breakdown) return "";
+  const years = Object.keys(breakdown).map(Number).sort((a, b) => a - b);
+  if (years.length === 0) return "";
+  return years.map((y) => fmtYearChip(breakdown[y], y)).join("  ·  ");
+};
+
 // El nombre de la clasificación es el mismo texto libre que se guarda en
 // contracts.clasificacion (el "name" de cualquier "Tipo de CAPEX" que exista
 // en Admin en el momento en que se asignó) -- no hay 3 valores fijos.
@@ -389,24 +406,33 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     fontSize: 14, fontFace: "Arial", color: "F5C6D0", align: "right",
   });
 
+  const totalYearLine = yearBreakdownLine(data.totalYearBreakdown);
+  if (totalYearLine) {
+    s2.addText(totalYearLine, {
+      x: 5, y: 2.05, w: 4.3, h: 0.3,
+      fontSize: 9, fontFace: "Arial", color: "F5C6D0", align: "right",
+    });
+  }
+
   // Classification cards -- dinámico según los "Tipos de CAPEX" que tengan
   // algún local asignado (ya no son 3 fijos).
-  const classCards = data.clasificacionTotals.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color) }));
+  const classCards = data.clasificacionTotals.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color), yearLine: yearBreakdownLine(t.yearBreakdown) }));
   const cardGap = 0.15;
   const cardW = classCards.length > 0 ? (9 - cardGap * (classCards.length - 1)) / classCards.length : 0;
+  const classCardH = 1.55;
 
   classCards.forEach((card, i) => {
     const x = 0.5 + i * (cardW + cardGap);
     const y = 2.7;
 
     s2.addShape(SHAPES.RECTANGLE, {
-      x, y, w: cardW, h: 1.4,
+      x, y, w: cardW, h: classCardH,
       fill: { color: LIGHT_BG },
     });
 
     // Left accent
     s2.addShape(SHAPES.RECTANGLE, {
-      x, y, w: 0.06, h: 1.4,
+      x, y, w: 0.06, h: classCardH,
       fill: { color: card.color },
     });
 
@@ -429,6 +455,13 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       x: x + 0.2, y: y + 1.05, w: cardW - 0.4, h: 0.25,
       fontSize: 9, fontFace: "Arial", color: MUTED,
     });
+
+    if (card.yearLine) {
+      s2.addText(card.yearLine, {
+        x: x + 0.2, y: y + 1.28, w: cardW - 0.4, h: 0.24,
+        fontSize: 6.5, fontFace: "Arial", color: MUTED,
+      });
+    }
   });
 
   // Pie chart
@@ -438,7 +471,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       labels: data.clasificacionTotals.map((t) => t.name),
       values: data.clasificacionTotals.map((t) => t.uf),
     }], {
-      x: 1.5, y: 4.2, w: 3, h: 1.0,
+      x: 1.5, y: 4.35, w: 3, h: 1.0,
       showPercent: true,
       showTitle: false,
       showLegend: true,
@@ -471,20 +504,21 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     });
 
     // Company summary cards -- dinámico según los tipos con locales en esta empresa
-    const companyCards = group.totals.byType.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color) }));
+    const companyCards = group.totals.byType.map((t) => ({ label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color), yearLine: yearBreakdownLine(t.yearBreakdown) }));
     const companyCardGap = 0.15;
     const companyCardW = companyCards.length > 0 ? (9 - companyCardGap * (companyCards.length - 1)) / companyCards.length : 0;
+    const companyCardH = 1.05;
 
     companyCards.forEach((card, i) => {
       const x = 0.5 + i * (companyCardW + companyCardGap);
 
       s.addShape(SHAPES.RECTANGLE, {
-        x, y: 1.1, w: companyCardW, h: 0.9,
+        x, y: 1.1, w: companyCardW, h: companyCardH,
         fill: { color: LIGHT_BG },
       });
 
       s.addShape(SHAPES.RECTANGLE, {
-        x, y: 1.1, w: 0.06, h: 0.9,
+        x, y: 1.1, w: 0.06, h: companyCardH,
         fill: { color: card.color },
       });
 
@@ -502,6 +536,13 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         x: x + 0.15, y: 1.7, w: companyCardW - 0.3, h: 0.2,
         fontSize: 9, fontFace: "Arial", color: MUTED,
       });
+
+      if (card.yearLine) {
+        s.addText(card.yearLine, {
+          x: x + 0.15, y: 1.9, w: companyCardW - 0.3, h: 0.2,
+          fontSize: 6.5, fontFace: "Arial", color: MUTED,
+        });
+      }
     });
 
     // Detail table
@@ -546,7 +587,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         });
       }
 
-      const tableY = pageIdx === 0 ? 2.2 : 0.9;
+      const tableY = pageIdx === 0 ? 2.35 : 0.9;
 
       const rows: PptxGenJS.TableRow[] = [tableHeader];
 

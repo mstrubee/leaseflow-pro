@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { format, parseISO } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { BudgetLine, buildBudgetTree } from "@/components/budget/BudgetLineTree";
 
@@ -14,6 +15,11 @@ export interface CapexExportContract {
   year: number;
   budget_ids: string[];
   legacy_amount_uf?: number;
+  /** Rango de fecha de inversión (dd/MM/yyyy), mismo cálculo que /capex y
+   * "Cartas Gantt - Vista General" en /reports -- null si el contrato no
+   * tiene Gantt/tareas/fechas. */
+  investment_start?: string | null;
+  investment_end?: string | null;
 }
 
 interface Row {
@@ -73,7 +79,7 @@ const pickSaveLocation = async (filename: string): Promise<SaveTarget> => {
 // Column layout (0-indexed)
 // 0 Contrato | 1 Empresa | 2 Clasif | 3 Año | 4 Nivel | 5 Categoría/Línea
 // 6 Proveedor | 7 Cantidad | 8 Unidad | 9 Precio UF | 10 Monto UF
-// 11 Monto CLP | 12 UF/m² | 13 m²
+// 11 Monto CLP | 12 UF/m² | 13 m² | 14 Fecha Inicio | 15 Fecha Término
 const HEADERS = [
   "Contrato",
   "Empresa",
@@ -89,6 +95,8 @@ const HEADERS = [
   "Monto (CLP)",
   "UF/m²",
   "m²",
+  "Fecha Inicio Inversión",
+  "Fecha Término Inversión",
 ];
 const COL = {
   qty: 7,
@@ -97,6 +105,8 @@ const COL = {
   clp: 11,
   ufm2: 12,
   m2: 13,
+  investStart: 14,
+  investEnd: 15,
 };
 
 const colLetter = (idx: number) => XLSX.utils.encode_col(idx);
@@ -159,6 +169,9 @@ export async function exportCapexToExcel(
   contracts: CapexExportContract[],
   ufValue: number,
   yearLabel: string,
+  /** Desglose CLP por año (Total CAPEX), igual al que muestran las cards de
+   * /capex -- opcional, se agrega como bloque de resumen al final. */
+  yearBreakdown?: Record<number, number>,
 ): Promise<CapexExcelExportResult> {
   const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
@@ -176,7 +189,7 @@ export async function exportCapexToExcel(
   const rows: Row[] = [];
   // Row 0: UF value
   rows.push({
-    values: ["Valor UF", ufValue, null, null, null, null, null, null, null, null, null, null, null, null],
+    values: ["Valor UF", ufValue, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
     formulas: {},
     style: "group",
   });
@@ -204,6 +217,8 @@ export async function exportCapexToExcel(
         null, // monto clp formula
         null, // UF/m² formula
         c.superficie || null,
+        c.investment_start ? format(parseISO(c.investment_start), "dd/MM/yyyy") : null,
+        c.investment_end ? format(parseISO(c.investment_end), "dd/MM/yyyy") : null,
       ],
       formulas: {},
       style: "contract",
@@ -246,6 +261,8 @@ export async function exportCapexToExcel(
           null, // CLP
           null, // UF/m²
           null,
+          null, // Fecha Inicio Inversión (solo en la fila de contrato)
+          null, // Fecha Término Inversión (solo en la fila de contrato)
         ],
         formulas: {},
         style: hasChildren ? "group" : "leaf",
@@ -298,7 +315,7 @@ export async function exportCapexToExcel(
   // Grand total row
   const grandRowIdx = rows.length;
   const grandRow: Row = {
-    values: ["TOTAL GENERAL", null, null, null, null, null, null, null, null, null, null, null, null, null],
+    values: ["TOTAL GENERAL", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
     formulas: {},
     style: "grand",
   };
@@ -311,6 +328,33 @@ export async function exportCapexToExcel(
     grandRow.values[COL.clp] = 0;
   }
   rows.push(grandRow);
+
+  // Desglose por año (CLP) -- mismo formato "mm$ X año YYYY" que las cards de
+  // /capex. Se agrega como bloque final para no alterar los índices de fila
+  // que usan las fórmulas de arriba (SUM/producto referencian filas por
+  // posición).
+  if (yearBreakdown && Object.keys(yearBreakdown).length > 0) {
+    rows.push({ values: Array(HEADERS.length).fill(null), formulas: {}, style: "group" });
+    rows.push({
+      values: ["Desglose CAPEX por año", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      formulas: {},
+      style: "group",
+    });
+    Object.keys(yearBreakdown)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .forEach((y) => {
+        const clp = yearBreakdown[y];
+        rows.push({
+          values: [
+            `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${y}`,
+            null, null, y, null, null, null, null, null, null, null, clp, null, null, null, null,
+          ],
+          formulas: {},
+          style: "leaf",
+        });
+      });
+  }
 
   // Build sheet
   const aoa = rows.map((r) => r.values);
@@ -336,7 +380,7 @@ export async function exportCapexToExcel(
   ws["!cols"] = [
     { wch: 32 }, { wch: 18 }, { wch: 14 }, { wch: 8 }, { wch: 6 },
     { wch: 50 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
-    { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 },
+    { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 16 },
   ];
   ws["!freeze"] = { xSplit: 0, ySplit: 2 } as any;
 

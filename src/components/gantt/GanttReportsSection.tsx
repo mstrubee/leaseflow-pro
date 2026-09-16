@@ -41,7 +41,7 @@ import { useAppLogos } from "@/hooks/useAppLogos";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday } from "@/hooks/useGantt";
-import { getGanttDateRange } from "@/lib/ganttDateUtils";
+import { getGanttDateRange, computeEffectiveDatesMap } from "@/lib/ganttDateUtils";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import jsPDF from "jspdf";
@@ -108,48 +108,6 @@ const buildTree = (flat: GanttTask[]): GanttTask[] => {
   };
   sortRec(roots);
   return roots;
-};
-
-/**
- * Calcula las fechas EFECTIVAS de cada tarea: una hoja usa sus propias fechas;
- * una tarea madre refleja el mínimo inicio y máximo término de sus descendientes
- * (recursivo). Igual que el Gantt editable (getEffectiveDates), garantiza que la
- * madre siempre refleje a sus hijas aunque el valor guardado esté desactualizado.
- */
-const computeEffectiveDatesMap = (
-  tasks: GanttTask[]
-): Map<string, { start: string | null; end: string | null }> => {
-  const childrenByParent = new Map<string, GanttTask[]>();
-  tasks.forEach((t) => {
-    if (t.parent_id) {
-      const arr = childrenByParent.get(t.parent_id) || [];
-      arr.push(t);
-      childrenByParent.set(t.parent_id, arr);
-    }
-  });
-  const memo = new Map<string, { start: string | null; end: string | null }>();
-  const compute = (task: GanttTask): { start: string | null; end: string | null } => {
-    const cached = memo.get(task.id);
-    if (cached) return cached;
-    const kids = childrenByParent.get(task.id) || [];
-    if (kids.length === 0) {
-      const r = { start: task.start_date, end: task.end_date };
-      memo.set(task.id, r);
-      return r;
-    }
-    let minStart: string | null = null;
-    let maxEnd: string | null = null;
-    for (const c of kids) {
-      const { start, end } = compute(c);
-      if (start && (!minStart || start < minStart)) minStart = start;
-      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
-    }
-    const r = { start: minStart, end: maxEnd };
-    memo.set(task.id, r);
-    return r;
-  };
-  tasks.forEach((t) => compute(t));
-  return memo;
 };
 
 const flattenTree = (

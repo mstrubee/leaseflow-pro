@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { format, parseISO } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+import { computeEffectiveDatesMap } from "@/lib/ganttDateUtils";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -73,7 +75,50 @@ const getCompanyBucket = (names: string[]): CompanyBucket => {
 const toggleArrayValue = (arr: string[], value: string): string[] =>
   arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 
+// Agrupamiento de empresa "detallado" (Autoplanet / Agroplanet / Grupo Planet
+// / Otra) -- mismo criterio que ya usa companyGroups más abajo para las
+// secciones por empresa y sus cards de clasificación. Se separa acá porque
+// también lo necesita el desglose por año (mismo bucket, otra dimensión).
+type CompanyGroupKey = "Autoplanet" | "Agroplanet" | "Grupo Planet" | "Otra";
+const getCompanyGroupKey = (names: string[]): CompanyGroupKey => {
+  const hasAgroplanet = names.some((n) => n.toLowerCase().includes("agroplanet"));
+  const hasAutoplanet = names.some((n) => n.toLowerCase().includes("autoplanet"));
+  const hasGrupoPlanet = names.some((n) => /grupo\s*planet/.test(n.toLowerCase()));
+  return hasAgroplanet && hasAutoplanet
+    ? "Agroplanet"
+    : hasAutoplanet
+    ? "Autoplanet"
+    : hasAgroplanet
+    ? "Agroplanet"
+    : hasGrupoPlanet
+    ? "Grupo Planet"
+    : "Otra";
+};
 
+// Formato pedido por Matias para el desglose por año en las cards: monto en
+// millones de pesos (sin decimales, separador de miles CLP) + " año " + año.
+// Ej: $1.711.245.615 en 2026 -> "mm$ 1.711 año 2026".
+const fmtYearChip = (clp: number, year: number) =>
+  `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${year}`;
+
+/** Chip/badge con el desglose por año de una card CAPEX -- esquina superior
+ * derecha, sin romper el layout existente (la card sigue con fondo blanco). */
+function YearBreakdownChips({ breakdown }: { breakdown: Record<number, number> | undefined }) {
+  const years = breakdown ? Object.keys(breakdown).map(Number).sort((a, b) => a - b) : [];
+  if (years.length === 0) return null;
+  return (
+    <div className="absolute top-1.5 right-1.5 flex flex-wrap gap-1 justify-end max-w-[62%] z-10">
+      {years.map((y) => (
+        <span
+          key={y}
+          className="text-[9px] leading-none font-medium bg-muted text-muted-foreground border border-border/60 rounded px-1.5 py-1 whitespace-nowrap"
+        >
+          {fmtYearChip(breakdown![y], y)}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function CapexDashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -322,6 +367,91 @@ export default function CapexDashboard() {
     return companyGroups.flatMap(({ contracts }) => contracts);
   }, [companyGroups]);
 
+  // Rango de fecha de inversión por contrato (inicio - término), calculado
+  // con la MISMA lógica que "Cartas Gantt - Vista General" en /reports
+  // (GanttReportsSection): fechas EFECTIVAS de las tareas del cronograma
+  // "general" del contrato (computeEffectiveDatesMap, compartido con
+  // GanttChart.tsx vía src/lib/ganttDateUtils.ts). El término usa la tarea
+  // "Apertura" si existe (fecha real de apertura al público, no el máximo de
+  // TODAS las tareas); si no existe, se usa el máximo término efectivo. El
+  // inicio es el mínimo inicio efectivo entre todas las tareas del
+  // cronograma -- análogo a "overallStart" en GanttChart.tsx. Contratos sin
+  // Gantt/tareas/fechas simplemente no entran en el mapa (sin placeholder).
+  const [contractDateRanges, setContractDateRanges] = useState<Record<string, { start: string; end: string }>>({});
+  const listedContractIdsKey = React.useMemo(
+    () => Array.from(new Set(listedContracts.map(([id]) => id))).sort().join(","),
+    [listedContracts]
+  );
+
+  useEffect(() => {
+    const contractIds = listedContractIdsKey ? listedContractIdsKey.split(",") : [];
+    if (contractIds.length === 0) {
+      setContractDateRanges({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Solo el cronograma PRINCIPAL (category = 'general') de cada
+      // contrato, igual que GanttReportsSection -- el de mantenciones no
+      // corresponde acá.
+      const { data: timelines } = await supabase
+        .from("gantt_timelines")
+        .select("id, contract_id")
+        .in("contract_id", contractIds)
+        .eq("category", "general")
+        .order("is_priority", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      const timelineByContract = new Map<string, string>();
+      (timelines || []).forEach((t: any) => {
+        if (!timelineByContract.has(t.contract_id)) timelineByContract.set(t.contract_id, t.id);
+      });
+      const timelineIds = Array.from(timelineByContract.values());
+      if (timelineIds.length === 0) {
+        if (!cancelled) setContractDateRanges({});
+        return;
+      }
+
+      let allTasks: any[] = [];
+      const PAGE = 1000;
+      let from = 0;
+      let more = true;
+      while (more) {
+        const { data: page, error } = await supabase
+          .from("gantt_tasks")
+          .select("id, timeline_id, parent_id, start_date, end_date, name")
+          .in("timeline_id", timelineIds)
+          .range(from, from + PAGE - 1);
+        if (error) break;
+        allTasks = allTasks.concat(page || []);
+        more = (page?.length || 0) === PAGE;
+        from += PAGE;
+      }
+
+      const ranges: Record<string, { start: string; end: string }> = {};
+      timelineByContract.forEach((timelineId, contractId) => {
+        const tasks = allTasks.filter((t) => t.timeline_id === timelineId);
+        if (tasks.length === 0) return;
+        const effMap = computeEffectiveDatesMap(tasks);
+        const effOf = (t: any) => effMap.get(t.id) ?? { start: t.start_date, end: t.end_date };
+
+        const starts = tasks.map((t) => effOf(t).start).filter(Boolean) as string[];
+        const minStart = starts.length > 0 ? starts.reduce((min, d) => (d < min ? d : min), starts[0]) : null;
+
+        const endDates = tasks.map((t) => effOf(t).end).filter(Boolean) as string[];
+        const maxEndDate = endDates.length > 0 ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0]) : null;
+        const aperturaTask = tasks.find((t: any) => t.name.trim().toLowerCase() === "apertura");
+        const endDate = aperturaTask ? effOf(aperturaTask).end : maxEndDate;
+
+        if (minStart && endDate) ranges[contractId] = { start: minStart, end: endDate };
+      });
+      if (!cancelled) setContractDateRanges(ranges);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listedContractIdsKey]);
+
   // Cuando el filtro "No Autorizados" está activo, solo se muestran los
   // contratos con líneas No Autorizado por un monto mayor a 0 (usa el mismo
   // desglose que las tarjetas de resumen).
@@ -358,6 +488,55 @@ export default function CapexDashboard() {
     });
     return stats;
   }, [companyGroups, authByContract]);
+
+  // Desglose por año (CLP) para cada agrupamiento de cards -- usa el campo
+  // contract_budgets.year, que ya viene en cada línea de ContractBudget
+  // (ver interface arriba). Como company_names/clasificacion son atributos
+  // del CONTRATO (iguales en todas sus filas de budget), sumar por fila acá
+  // da el mismo total que los memos por-contrato de más abajo, solo que
+  // desglosado por año.
+  const yearBreakdownTotal = React.useMemo(() => {
+    const m: Record<number, number> = {};
+    filteredBudgets.forEach((b) => {
+      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
+      m[b.year] = (m[b.year] || 0) + clp;
+    });
+    return m;
+  }, [filteredBudgets, authByBudget, ufValue]);
+
+  const yearBreakdownByCompanyBucket = React.useMemo(() => {
+    const m: Record<string, Record<number, number>> = { Autoplanet: {}, Agroplanet: {}, Otros: {} };
+    filteredBudgets.forEach((b) => {
+      const bucket = getCompanyBucket(b.company_names);
+      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
+      m[bucket][b.year] = (m[bucket][b.year] || 0) + clp;
+    });
+    return m;
+  }, [filteredBudgets, authByBudget, ufValue]);
+
+  const yearBreakdownByClasificacion = React.useMemo(() => {
+    const m: Record<string, Record<number, number>> = {};
+    filteredBudgets.forEach((b) => {
+      if (!b.clasificacion) return;
+      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
+      if (!m[b.clasificacion]) m[b.clasificacion] = {};
+      m[b.clasificacion][b.year] = (m[b.clasificacion][b.year] || 0) + clp;
+    });
+    return m;
+  }, [filteredBudgets, authByBudget, ufValue]);
+
+  const yearBreakdownByCompanyAndClasificacion = React.useMemo(() => {
+    const m: Record<string, Record<string, Record<number, number>>> = {};
+    filteredBudgets.forEach((b) => {
+      if (!b.clasificacion) return;
+      const companyKey = getCompanyGroupKey(b.company_names);
+      const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0);
+      if (!m[companyKey]) m[companyKey] = {};
+      if (!m[companyKey][b.clasificacion]) m[companyKey][b.clasificacion] = {};
+      m[companyKey][b.clasificacion][b.year] = (m[companyKey][b.clasificacion][b.year] || 0) + clp;
+    });
+    return m;
+  }, [filteredBudgets, authByBudget, ufValue]);
 
   const totalCapexUF = React.useMemo(() => {
     let total = 0;
@@ -413,7 +592,13 @@ export default function CapexDashboard() {
         const stats = companyClasificacionStats[company] || {};
         const byType = clasificacionTypes
           .filter((t) => stats[t.name])
-          .map((t) => ({ name: t.name, color: t.color, uf: stats[t.name].uf, count: stats[t.name].count }));
+          .map((t) => ({
+            name: t.name,
+            color: t.color,
+            uf: stats[t.name].uf,
+            count: stats[t.name].count,
+            yearBreakdown: yearBreakdownByCompanyAndClasificacion[company]?.[t.name],
+          }));
         return {
           company,
           contracts: contracts.map(([contractId, cBudgets]) => {
@@ -439,7 +624,13 @@ export default function CapexDashboard() {
 
       const clasifTotalsArr = clasificacionTypes
         .filter((t) => clasificacionTotals[t.name])
-        .map((t) => ({ name: t.name, color: t.color, uf: clasificacionTotals[t.name].uf, count: clasificacionTotals[t.name].count }));
+        .map((t) => ({
+          name: t.name,
+          color: t.color,
+          uf: clasificacionTotals[t.name].uf,
+          count: clasificacionTotals[t.name].count,
+          yearBreakdown: yearBreakdownByClasificacion[t.name],
+        }));
 
       await generateCapexPPT({
         year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
@@ -448,6 +639,7 @@ export default function CapexDashboard() {
         clasificacionTotals: clasifTotalsArr,
         totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
+        totalYearBreakdown: yearBreakdownTotal,
       });
       toast.success("Presentación descargada");
     } catch (err) {
@@ -484,6 +676,7 @@ export default function CapexDashboard() {
       toast.info("Generando Excel...");
       const payload = listedContracts.map(([contractId, cBudgets]) => {
         const legacy = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
+        const dateRange = contractDateRanges[contractId];
         return {
           contract_id: contractId,
           contract_name: cBudgets[0].contract_name,
@@ -493,10 +686,12 @@ export default function CapexDashboard() {
           year: cBudgets[0].year,
           budget_ids: cBudgets.map((b) => b.budget_id),
           legacy_amount_uf: legacy,
+          investment_start: dateRange?.start ?? null,
+          investment_end: dateRange?.end ?? null,
         };
       });
       const label = yearFilter !== "todos" ? yearFilter : "todos";
-      const result = await exportCapexToExcel(payload, ufValue || 0, label);
+      const result = await exportCapexToExcel(payload, ufValue || 0, label, yearBreakdownTotal);
       if (result.method === "cancelled") {
         toast.info("Descarga cancelada");
       } else if (result.method === "file-picker") {
@@ -623,8 +818,9 @@ export default function CapexDashboard() {
             onClick={() => { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); }}
             onKeyDown={(e) => { if (e.key === "Enter") { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); } }}
             title="Ver todo (limpia los filtros de empresa, tipo y estado de avance)"
-            className="cursor-pointer transition-colors hover:bg-muted/50"
+            className="relative cursor-pointer transition-colors hover:bg-muted/50"
           >
+            <YearBreakdownChips breakdown={yearBreakdownTotal} />
             <CardContent className="p-4 flex items-center gap-3">
               <DollarSign className="h-8 w-8 text-primary" />
               <div>
@@ -645,8 +841,9 @@ export default function CapexDashboard() {
                 onClick={() => setCompanyFilter((prev) => toggleArrayValue(prev, bucket))}
                 onKeyDown={(e) => { if (e.key === "Enter") setCompanyFilter((prev) => toggleArrayValue(prev, bucket)); }}
                 title={`Filtrar por ${bucket}`}
-                className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
               >
+                <YearBreakdownChips breakdown={yearBreakdownByCompanyBucket[bucket]} />
                 <CardContent className="p-4 flex items-center gap-3">
                   <Building2 className={`h-8 w-8 ${accentClass}`} />
                   <div>
@@ -676,8 +873,9 @@ export default function CapexDashboard() {
                     onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
                     onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
                     title={`Filtrar por ${t.name}`}
-                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                    className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
                   >
+                    <YearBreakdownChips breakdown={yearBreakdownByClasificacion[t.name]} />
                     <CardContent className="p-4 flex items-center gap-3">
                       <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
                       <div className="min-w-0">
@@ -833,8 +1031,9 @@ export default function CapexDashboard() {
                             onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
                             onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
                             title={`Filtrar por ${t.name}`}
-                            className={`cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                            className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
                           >
+                            <YearBreakdownChips breakdown={yearBreakdownByCompanyAndClasificacion[company]?.[t.name]} />
                             <CardContent className="p-3 flex items-center gap-3">
                               <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
                               <div className="min-w-0">
@@ -877,7 +1076,14 @@ export default function CapexDashboard() {
                                 <div className="grid grid-cols-[24px_auto_200px_190px_190px_1fr_64px] items-center gap-3">
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
-                                  <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
+                                  <div className="min-w-0">
+                                    <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
+                                    {contractDateRanges[contractId] && (
+                                      <p className="text-xs text-muted-foreground whitespace-nowrap">
+                                        {format(parseISO(contractDateRanges[contractId].start), "dd/MM/yyyy")} - {format(parseISO(contractDateRanges[contractId].end), "dd/MM/yyyy")}
+                                      </p>
+                                    )}
+                                  </div>
                                   <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
                                     <Select
                                       value={clasificacion || ""}

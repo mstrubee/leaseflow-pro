@@ -169,6 +169,57 @@ export function applyCarryOverRule(
   return nthBusinessDayOfMonth(nextMonthStart, landingBusinessDay, holidays);
 }
 
+export interface EffectiveDatesTask {
+  id: string;
+  parent_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+/**
+ * Calcula las fechas EFECTIVAS de cada tarea: una hoja usa sus propias fechas;
+ * una tarea madre refleja el mínimo inicio y máximo término de sus
+ * descendientes (recursivo). Misma lógica que usa el Gantt editable
+ * (getEffectiveDates en GanttChart.tsx) y los reportes (GanttReportsSection),
+ * centralizada acá para que cualquier vista que necesite fechas de un
+ * cronograma (ej. /capex) use exactamente el mismo cálculo.
+ */
+export function computeEffectiveDatesMap(
+  tasks: EffectiveDatesTask[]
+): Map<string, { start: string | null; end: string | null }> {
+  const childrenByParent = new Map<string, EffectiveDatesTask[]>();
+  tasks.forEach((t) => {
+    if (t.parent_id) {
+      const arr = childrenByParent.get(t.parent_id) || [];
+      arr.push(t);
+      childrenByParent.set(t.parent_id, arr);
+    }
+  });
+  const memo = new Map<string, { start: string | null; end: string | null }>();
+  const compute = (task: EffectiveDatesTask): { start: string | null; end: string | null } => {
+    const cached = memo.get(task.id);
+    if (cached) return cached;
+    const kids = childrenByParent.get(task.id) || [];
+    if (kids.length === 0) {
+      const r = { start: task.start_date, end: task.end_date };
+      memo.set(task.id, r);
+      return r;
+    }
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of kids) {
+      const { start, end } = compute(c);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    const r = { start: minStart, end: maxEnd };
+    memo.set(task.id, r);
+    return r;
+  };
+  tasks.forEach((t) => compute(t));
+  return memo;
+}
+
 /**
  * Get date range for Gantt chart display
  */
