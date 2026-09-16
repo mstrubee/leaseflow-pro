@@ -162,13 +162,16 @@ const fmtYearChip = (clp: number, year: number) =>
   `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${year}`;
 
 /** Chip/badge con el desglose por año de una card CAPEX -- esquina superior
- * derecha, sin romper el layout existente (la card sigue con fondo blanco). */
-function YearBreakdownChips({ breakdown }: { breakdown: Record<number, number> | undefined }) {
+ * derecha, sin romper el layout existente (la card sigue con fondo blanco).
+ * Si hay un año puntual seleccionado en el filtro "Año" (activeYear), el
+ * chip deja de ser "estático" ante ese filtro: solo muestra ese año (o
+ * nada, si esa card no tiene CAPEX en él) en vez de siempre todos los años. */
+function YearBreakdownChips({ breakdown, activeYear }: { breakdown: Record<number, number> | undefined; activeYear?: number }) {
   // Solo años con CAPEX real (> 0) -- una fila de presupuesto en $0 no debe
   // aparecer como si existiera CAPEX en ese año. Más antiguo arriba, más
   // reciente abajo (uno sobre otro, no en fila).
   const years = breakdown
-    ? Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0).sort((a, b) => a - b)
+    ? Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0 && (activeYear === undefined || y === activeYear)).sort((a, b) => a - b)
     : [];
   if (years.length === 0) return null;
   return (
@@ -791,21 +794,41 @@ export default function CapexDashboard() {
       });
   }, [filteredBudgets, sortBy, getCopiesForContract]);
 
-  // Total CAPEX por COPIA (groupKey), usando el breakdown efectivo (card
-  // amount o líneas) -- amount_uf ya viene escalado por % en contractGroups.
+  // Total CAPEX por COPIA (groupKey). OJO: se calcula el breakdown efectivo
+  // (card amount o líneas) sobre las filas REALES sin escalar (`filteredBudgets`,
+  // no las `contractGroups` ya escaladas) y RECIÉN AHÍ se multiplica por el %
+  // de la copia -- si se llamara getEffectiveBudgetBreakdown directamente
+  // sobre una fila con `amount_uf` ya escalado, el fallback a líneas de
+  // detalle (`breakdown.grand`, que sale de authByBudget SIN escalar) daría
+  // un monto real (100%) en vez del de esa copia. Mismo criterio que ya usa
+  // contractYearAmounts para el disbursement.
   const authByContract = React.useMemo(() => {
+    const byContract = new Map<string, ContractBudget[]>();
+    filteredBudgets.forEach((b) => {
+      const existing = byContract.get(b.contract_id) || [];
+      existing.push(b);
+      byContract.set(b.contract_id, existing);
+    });
     const result: Record<string, AuthBreakdown> = {};
-    contractGroups.forEach(([groupKey, rows]) => {
-      if (!result[groupKey]) result[groupKey] = { authorized: 0, unauthorized: 0, grand: 0 };
+    byContract.forEach((rows, contractId) => {
+      const real = { authorized: 0, unauthorized: 0, grand: 0 };
       rows.forEach((b) => {
         const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
-        result[groupKey].authorized += eff.authorized;
-        result[groupKey].unauthorized += eff.unauthorized;
-        result[groupKey].grand += eff.grand;
+        real.authorized += eff.authorized;
+        real.unauthorized += eff.unauthorized;
+        real.grand += eff.grand;
+      });
+      getCopiesForContract(contractId).forEach(({ groupKey, percentage }) => {
+        const factor = percentage / 100;
+        result[groupKey] = {
+          authorized: real.authorized * factor,
+          unauthorized: real.unauthorized * factor,
+          grand: real.grand * factor,
+        };
       });
     });
     return result;
-  }, [contractGroups, authByBudget]);
+  }, [filteredBudgets, authByBudget, getCopiesForContract]);
 
   // Group contractGroups by company
   const companyGroups = React.useMemo(() => {
@@ -1327,7 +1350,7 @@ export default function CapexDashboard() {
             title="Ver todo (limpia los filtros de empresa, tipo y estado de avance)"
             className="relative cursor-pointer transition-colors hover:bg-muted/50"
           >
-            <YearBreakdownChips breakdown={yearBreakdownTotal} />
+            <YearBreakdownChips breakdown={yearBreakdownTotal} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
             <CardContent className="p-4 flex items-center gap-3">
               <DollarSign className="h-8 w-8 text-primary" />
               <div>
@@ -1350,7 +1373,7 @@ export default function CapexDashboard() {
                 title={`Filtrar por ${bucket}`}
                 className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
               >
-                <YearBreakdownChips breakdown={yearBreakdownByCompanyBucket[bucket]} />
+                <YearBreakdownChips breakdown={yearBreakdownByCompanyBucket[bucket]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                 <CardContent className="p-4 flex items-center gap-3">
                   <Building2 className={`h-8 w-8 ${accentClass}`} />
                   <div>
@@ -1382,7 +1405,7 @@ export default function CapexDashboard() {
                     title={`Filtrar por ${t.name}`}
                     className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
                   >
-                    <YearBreakdownChips breakdown={yearBreakdownByClasificacion[t.name]} />
+                    <YearBreakdownChips breakdown={yearBreakdownByClasificacion[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                     <CardContent className="p-4 flex items-center gap-3">
                       <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
                       <div className="min-w-0">
@@ -1540,7 +1563,7 @@ export default function CapexDashboard() {
                             title={`Filtrar por ${t.name}`}
                             className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
                           >
-                            <YearBreakdownChips breakdown={yearBreakdownByCompanyAndClasificacion[company]?.[t.name]} />
+                            <YearBreakdownChips breakdown={yearBreakdownByCompanyAndClasificacion[company]?.[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                             <CardContent className="p-3 flex items-center gap-3">
                               <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
                               <div className="min-w-0">
