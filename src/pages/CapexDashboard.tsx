@@ -1155,7 +1155,7 @@ export default function CapexDashboard() {
                                     {contractInvestmentInfo[contractId] && (
                                       // Espejo de "Cartas Gantt - Vista General" (/reports): mismo
                                       // texto "N tareas · Fecha término" por línea de contrato.
-                                      <p className="text-xs text-muted-foreground whitespace-nowrap">
+                                      <p className="text-xs text-muted-foreground">
                                         {contractInvestmentInfo[contractId].timelineName && <>{contractInvestmentInfo[contractId].timelineName} · </>}
                                         {contractInvestmentInfo[contractId].taskCount} tarea{contractInvestmentInfo[contractId].taskCount !== 1 ? "s" : ""} · Fecha término:{" "}
                                         <span className="font-medium text-foreground">
