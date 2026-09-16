@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -53,6 +54,10 @@ interface ContractBudget {
   splitId?: string;
   // % de CAPEX asignado a esta copia (undefined si no es una copia con split).
   splitPercentage?: number;
+  // Año forzado manualmente (contracts.capex_year_override) -- si está
+  // presente, anula el año derivado de fechas/badge de Comité GP para TODO
+  // el CAPEX del contrato (ver contractYearAmounts). null = automático.
+  capexYearOverride: number | null;
 }
 
 // Una fila de capex_company_splits: contrato duplicado con % de CAPEX propio
@@ -188,6 +193,65 @@ function YearBreakdownChips({ breakdown, activeYear }: { breakdown: Record<numbe
   );
 }
 
+/** Botón por línea de contrato para forzar manualmente su año de CAPEX
+ * (contracts.capex_year_override), independiente de cuándo se vaya a
+ * gastar realmente -- ej. presupuesto ya aprobado para el año N. Reversible
+ * (botón "Quitar"), persistido en DB. */
+function YearOverrideButton({
+  currentOverride,
+  onSet,
+}: {
+  currentOverride: number | null;
+  onSet: (year: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(currentOverride ? String(currentOverride) : "");
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setValue(currentOverride ? String(currentOverride) : ""); }}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${currentOverride ? "text-amber-600" : ""}`}
+          title={currentOverride ? `Año de CAPEX forzado a ${currentOverride} -- click para cambiar` : "Forzar año de CAPEX"}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <CalendarClock className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64" onClick={(e) => e.stopPropagation()}>
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Forzar año de CAPEX</p>
+          <p className="text-xs text-muted-foreground">
+            Asigna este contrato a un año específico (presupuesto aprobado), sin importar cuándo se vaya a gastar realmente.
+          </p>
+          <Input
+            type="number"
+            placeholder="Ej: 2027"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <div className="flex justify-end gap-2 pt-1">
+            {currentOverride && (
+              <Button variant="outline" size="sm" onClick={() => { onSet(null); setOpen(false); }}>
+                Quitar (automático)
+              </Button>
+            )}
+            <Button
+              size="sm"
+              disabled={!value || !Number.isFinite(parseInt(value))}
+              onClick={() => { onSet(parseInt(value)); setOpen(false); }}
+            >
+              Forzar
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function CapexDashboard() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -304,7 +368,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
         // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
@@ -332,6 +396,7 @@ export default function CapexDashboard() {
         company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
         excluded: !!b.contracts?.excluded_from_capex_dashboard,
         comite_gp_status: b.contracts?.comite_gp_status || null,
+        capexYearOverride: b.contracts?.capex_year_override ?? null,
       }));
 
       // Contratos "autorizados" en negociación (status = en_negociacion,
@@ -342,7 +407,7 @@ export default function CapexDashboard() {
       // no tengan ninguna fila en contract_budgets (con $0 / "Sin CAPEX").
       const { data: acceptedNegotiationContracts, error: negErr } = await supabase
         .from("contracts")
-        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, contract_companies(companies(name))")
+        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, contract_companies(companies(name))")
         .eq("status", "en_negociacion")
         .is("deleted_at", null)
         .ilike("comite_gp_status", "%acepta%")
@@ -384,7 +449,7 @@ export default function CapexDashboard() {
         // El año del badge "Aceptada (año)" (ej. "Aceptada 2027") si lo trae,
         // ya que estos contratos todavía no tienen fechas de Gantt de las
         // que derivar un año -- ver extractYearFromComiteGP/contractYearAmounts.
-        year: extractYearFromComiteGP(c.comite_gp_status) ?? currentYear,
+        year: c.capex_year_override ?? extractYearFromComiteGP(c.comite_gp_status) ?? currentYear,
         amount_uf: capexEstUFByContract[c.id] || 0,
         // Id sintético (no hay fila real en contract_budgets todavía) --
         // único por contrato, no colisiona con ids reales (uuid).
@@ -393,6 +458,7 @@ export default function CapexDashboard() {
         company_names: (c.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
         excluded: !!c.excluded_from_capex_dashboard,
         comite_gp_status: c.comite_gp_status || null,
+        capexYearOverride: c.capex_year_override ?? null,
       }));
 
       const allProcessed = [...processed, ...negotiationOnly];
@@ -532,10 +598,20 @@ export default function CapexDashboard() {
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
       const totalCLP = capexCLPByContract.get(contractId) || 0;
       const disbursement = contractInvestmentInfo[contractId]?.disbursement;
+      const yearOverride = rows[0]?.capexYearOverride ?? null;
       getCopiesForContract(contractId).forEach(({ groupKey, percentage }) => {
         const factor = percentage / 100;
         const yearMap: Record<number, number> = {};
-        if (disbursement && totalCLP > 0) {
+        if (yearOverride !== null) {
+          // Año forzado manualmente (contracts.capex_year_override): anula
+          // cualquier derivación automática -- todo el CAPEX de esta copia
+          // va a ese único año, sin importar fechas de Gantt ni Comité GP.
+          const clp = rows.reduce(
+            (sum, b) => sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0),
+            0
+          ) * factor;
+          yearMap[yearOverride] = clp;
+        } else if (disbursement && totalCLP > 0) {
           const addToYear = (dateStr: string, amount: number) => {
             const year = parseISO(dateStr).getFullYear();
             yearMap[year] = (yearMap[year] || 0) + amount * factor;
@@ -1265,6 +1341,23 @@ export default function CapexDashboard() {
     toast.success(excluded ? "Contrato excluido del dashboard" : "Contrato incluido nuevamente");
   };
 
+  // Forzar/quitar manualmente el año de CAPEX de un contrato
+  // (contracts.capex_year_override) -- reversible: pasar `year: null` vuelve
+  // al año derivado automáticamente. Aplica al contrato completo (a todas
+  // sus copias si tiene split entre empresas, no una por una).
+  const handleSetYearOverride = async (contractId: string, year: number | null) => {
+    const { error } = await supabase
+      .from("contracts")
+      .update({ capex_year_override: year } as never)
+      .eq("id", contractId);
+    if (error) {
+      toast.error("Error al forzar el año de CAPEX");
+      return;
+    }
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, capexYearOverride: year } : b));
+    toast.success(year ? `Año de CAPEX forzado a ${year}` : "Año de CAPEX vuelto a automático");
+  };
+
   const BADGE_COLOR_MAP: Record<string, string> = {
     green: 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
     red: 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
@@ -1586,6 +1679,7 @@ export default function CapexDashboard() {
                       const contractId = contractBudgets[0].contract_id;
                       const splitId = contractBudgets[0].splitId;
                       const splitPercentage = contractBudgets[0].splitPercentage;
+                      const capexYearOverride = contractBudgets[0].capexYearOverride;
                       const isExpanded = expandedContract === groupKey;
                       const contractName = contractBudgets[0].contract_name;
                       const clasificacion = contractBudgets[0].clasificacion;
@@ -1622,6 +1716,11 @@ export default function CapexDashboard() {
                                       {splitId && (
                                         <Badge variant="outline" className="ml-2 text-[10px] align-middle">
                                           {companyNames[0]} · {splitPercentage}%
+                                        </Badge>
+                                      )}
+                                      {capexYearOverride && (
+                                        <Badge variant="outline" className="ml-2 text-[10px] align-middle text-amber-600 border-amber-300" title="Año de CAPEX forzado manualmente">
+                                          Año forzado: {capexYearOverride}
                                         </Badge>
                                       )}
                                     </CardTitle>
@@ -1753,6 +1852,10 @@ export default function CapexDashboard() {
                                     >
                                       <ExternalLink className="h-4 w-4" />
                                     </Button>
+                                    <YearOverrideButton
+                                      currentOverride={capexYearOverride}
+                                      onSet={(year) => handleSetYearOverride(contractId, year)}
+                                    />
                                     <Button
                                       variant="ghost"
                                       size="icon"
