@@ -111,7 +111,7 @@ function YearBreakdownChips({ breakdown }: { breakdown: Record<number, number> |
       {years.map((y) => (
         <span
           key={y}
-          className="text-[9px] leading-none font-medium bg-muted text-muted-foreground border border-border/60 rounded px-1.5 py-1 whitespace-nowrap"
+          className="text-[9px] leading-none font-medium text-muted-foreground whitespace-nowrap"
         >
           {fmtYearChip(breakdown![y], y)}
         </span>
