@@ -207,6 +207,11 @@ function YearOverrideButton({
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(currentOverride ? String(currentOverride) : "");
 
+  // Rango fijo pedido: desde 2026 hasta 1 año más que el año en curso.
+  const currentYear = new Date().getFullYear();
+  const years: number[] = [];
+  for (let y = 2026; y <= currentYear + 1; y++) years.push(y);
+
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setValue(currentOverride ? String(currentOverride) : ""); }}>
       <PopoverTrigger asChild>
@@ -226,12 +231,16 @@ function YearOverrideButton({
           <p className="text-xs text-muted-foreground">
             Asigna este contrato a un año específico (presupuesto aprobado), sin importar cuándo se vaya a gastar realmente.
           </p>
-          <Input
-            type="number"
-            placeholder="Ej: 2027"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
+          <Select value={value} onValueChange={setValue}>
+            <SelectTrigger>
+              <SelectValue placeholder="Elegir año..." />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((y) => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex justify-end gap-2 pt-1">
             {currentOverride && (
               <Button variant="outline" size="sm" onClick={() => { onSet(null); setOpen(false); }}>
@@ -240,7 +249,7 @@ function YearOverrideButton({
             )}
             <Button
               size="sm"
-              disabled={!value || !Number.isFinite(parseInt(value))}
+              disabled={!value}
               onClick={() => { onSet(parseInt(value)); setOpen(false); }}
             >
               Forzar
@@ -1713,17 +1722,21 @@ export default function CapexDashboard() {
                                   <div className="min-w-0">
                                     <CardTitle className="text-base whitespace-nowrap">
                                       {contractName}
-                                      {splitId && (
-                                        <Badge variant="outline" className="ml-2 text-[10px] align-middle">
-                                          {companyNames[0]} · {splitPercentage}%
-                                        </Badge>
-                                      )}
-                                      {capexYearOverride && (
-                                        <Badge variant="outline" className="ml-2 text-[10px] align-middle text-amber-600 border-amber-300" title="Año de CAPEX forzado manualmente">
-                                          Año forzado: {capexYearOverride}
-                                        </Badge>
-                                      )}
                                     </CardTitle>
+                                    {(splitId || capexYearOverride) && (
+                                      <div className="flex flex-wrap gap-1 mt-0.5">
+                                        {splitId && (
+                                          <Badge variant="outline" className="text-[10px]">
+                                            {companyNames[0]} · {splitPercentage}%
+                                          </Badge>
+                                        )}
+                                        {capexYearOverride && (
+                                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300" title="Año de CAPEX forzado manualmente">
+                                            Ppto {capexYearOverride}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    )}
                                     {contractInvestmentInfo[contractId] && (
                                       // Espejo de "Cartas Gantt - Vista General" (/reports): mismo
                                       // texto "N tareas · Fecha término" por línea de contrato.
