@@ -338,132 +338,6 @@ export default function CapexDashboard() {
     });
   }, [activeBudgets, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
 
-  const filteredBudgets = React.useMemo(() => {
-    return activeBudgets.filter(b => {
-      if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
-      if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
-      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
-      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
-      return true;
-    });
-  }, [activeBudgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
-
-  // Aplica los mismos filtros que filteredBudgets pero salteando uno de los
-  // filtros -- se usa para calcular qué opciones de CADA dropdown todavía
-  // tienen algún resultado dado el resto de los filtros activos, y esconder
-  // las que quedarían en 0 (evita ofrecer una combinación sin resultados).
-  const filterBudgetsExcept = React.useCallback(
-    (except: "company" | "clasificacion" | "avance") =>
-      activeBudgets.filter((b) => {
-        if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
-        if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-        if (except !== "company" && companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
-        if (except !== "clasificacion" && clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
-        if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
-        return true;
-      }),
-    [activeBudgets, yearFilter, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
-  );
-
-  const availableCompanyBuckets = React.useMemo(() => {
-    const set = new Set<string>();
-    filterBudgetsExcept("company").forEach((b) => set.add(getCompanyBucket(b.company_names)));
-    return set;
-  }, [filterBudgetsExcept]);
-
-  const availableClasificaciones = React.useMemo(() => {
-    const set = new Set<string>();
-    filterBudgetsExcept("clasificacion").forEach((b) => { if (b.clasificacion) set.add(b.clasificacion); });
-    return set;
-  }, [filterBudgetsExcept]);
-
-  const availableAvanceStatuses = React.useMemo(() => {
-    const set = new Set<string>();
-    filterBudgetsExcept("avance").forEach((b) => { if (b.capex_avance_status) set.add(b.capex_avance_status); });
-    return set;
-  }, [filterBudgetsExcept]);
-
-  const hasActiveFilters = searchTerm !== "" || companyFilter.length > 0 || clasificacionFilter.length > 0 || avanceStatusFilter.length > 0;
-
-  const clearFilters = () => {
-    setSearchTerm("");
-    setCompanyFilter([]);
-    setClasificacionFilter([]);
-    setAvanceStatusFilter([]);
-  };
-
-  // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
-  const contractGroups = React.useMemo(() => {
-    const map = new Map<string, ContractBudget[]>();
-    filteredBudgets.forEach(b => {
-      const existing = map.get(b.contract_id) || [];
-      existing.push(b);
-      map.set(b.contract_id, existing);
-    });
-    return Array.from(map.entries())
-      .sort((a, b) => {
-        const aB = a[1][0], bB = b[1][0];
-        if (sortBy === "empresa") {
-          const aComp = aB.company_names[0] || "";
-          const bComp = bB.company_names[0] || "";
-          return aComp.localeCompare(bComp) || aB.contract_name.localeCompare(bB.contract_name);
-        }
-        if (sortBy === "clasificacion") {
-          const aC = aB.clasificacion || "zzz";
-          const bC = bB.clasificacion || "zzz";
-          return aC.localeCompare(bC) || aB.contract_name.localeCompare(bB.contract_name);
-        }
-        return aB.contract_name.localeCompare(bB.contract_name);
-      });
-  }, [filteredBudgets, sortBy]);
-
-  // Total CAPEX por contrato, usando el breakdown efectivo (card amount o líneas)
-  const authByContract = React.useMemo(() => {
-    const result: Record<string, AuthBreakdown> = {};
-    filteredBudgets.forEach(b => {
-      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0, grand: 0 };
-      const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
-      result[b.contract_id].authorized += eff.authorized;
-      result[b.contract_id].unauthorized += eff.unauthorized;
-      result[b.contract_id].grand += eff.grand;
-    });
-    return result;
-  }, [filteredBudgets, authByBudget]);
-
-  // Group contractGroups by company
-  const companyGroups = React.useMemo(() => {
-    const groups = new Map<string, typeof contractGroups>();
-    contractGroups.forEach(entry => {
-      const [, cBudgets] = entry;
-      const names = cBudgets[0].company_names;
-      const hasAgroplanet = names.some(n => n.toLowerCase().includes("agroplanet"));
-      const hasAutoplanet = names.some(n => n.toLowerCase().includes("autoplanet"));
-      const hasGrupoPlanet = names.some(n => /grupo\s*planet/.test(n.toLowerCase()));
-      // Multi-company contracts go to Agroplanet
-      const companyKey = (hasAgroplanet && hasAutoplanet) ? "Agroplanet"
-        : hasAutoplanet ? "Autoplanet"
-        : hasAgroplanet ? "Agroplanet"
-        : hasGrupoPlanet ? "Grupo Planet"
-        : "Otra";
-
-      // Todos los contratos con registro CAPEX se muestran, sin filtrar por monto
-
-      const existing = groups.get(companyKey) || [];
-      existing.push(entry);
-      groups.set(companyKey, existing);
-    });
-    const order = ["Autoplanet", "Agroplanet", "Grupo Planet", "Otra"];
-    return order
-      .filter(k => groups.has(k))
-      .map(k => ({ company: k, contracts: groups.get(k)! }));
-  }, [contractGroups]);
-
-  // Lista plana de contratos exactamente como aparecen en el dashboard
-  const listedContracts = React.useMemo(() => {
-    return companyGroups.flatMap(({ contracts }) => contracts);
-  }, [companyGroups]);
-
   // Rango de fecha de inversión por contrato (inicio - término), calculado
   // con la MISMA lógica que "Cartas Gantt - Vista General" en /reports
   // (GanttReportsSection): fechas EFECTIVAS de las tareas del cronograma
@@ -674,6 +548,146 @@ export default function CapexDashboard() {
       cancelled = true;
     };
   }, [contractIdsForInvestmentInfoKey, capexCLPByContract]);
+
+  // El filtro "Año" compara contra el año DERIVADO de las fechas reales de
+  // pago (contractYearAmounts), el mismo que ya usan las cards -- no el
+  // campo manual `year` de la fila. Si se comparara contra el campo manual,
+  // un contrato cuyo año real difiere de ese campo (ej. reprogramado a
+  // 2027, con el campo todavía en 2026) directamente desaparecía del
+  // listado al filtrar por su año real, aunque las cards ya lo mostraran
+  // ahí. `contractYearAmounts` ya cae de vuelta al campo manual cuando el
+  // contrato no tiene fechas de las que derivar un año.
+  const contractHasYear = React.useCallback(
+    (contractId: string, year: number) => !!contractYearAmounts.get(contractId)?.[year],
+    [contractYearAmounts],
+  );
+
+  const filteredBudgets = React.useMemo(() => {
+    return activeBudgets.filter(b => {
+      if (yearFilter !== "todos" && !contractHasYear(b.contract_id, parseInt(yearFilter))) return false;
+      if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+      if (clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+      if (avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+      return true;
+    });
+  }, [activeBudgets, yearFilter, contractHasYear, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter]);
+
+  // Aplica los mismos filtros que filteredBudgets pero salteando uno de los
+  // filtros -- se usa para calcular qué opciones de CADA dropdown todavía
+  // tienen algún resultado dado el resto de los filtros activos, y esconder
+  // las que quedarían en 0 (evita ofrecer una combinación sin resultados).
+  const filterBudgetsExcept = React.useCallback(
+    (except: "company" | "clasificacion" | "avance") =>
+      activeBudgets.filter((b) => {
+        if (yearFilter !== "todos" && !contractHasYear(b.contract_id, parseInt(yearFilter))) return false;
+        if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+        if (except !== "company" && companyFilter.length > 0 && !companyFilter.includes(getCompanyBucket(b.company_names))) return false;
+        if (except !== "clasificacion" && clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+        if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+        return true;
+      }),
+    [activeBudgets, yearFilter, contractHasYear, searchTerm, companyFilter, clasificacionFilter, avanceStatusFilter],
+  );
+
+  const availableCompanyBuckets = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("company").forEach((b) => set.add(getCompanyBucket(b.company_names)));
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const availableClasificaciones = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("clasificacion").forEach((b) => { if (b.clasificacion) set.add(b.clasificacion); });
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const availableAvanceStatuses = React.useMemo(() => {
+    const set = new Set<string>();
+    filterBudgetsExcept("avance").forEach((b) => { if (b.capex_avance_status) set.add(b.capex_avance_status); });
+    return set;
+  }, [filterBudgetsExcept]);
+
+  const hasActiveFilters = searchTerm !== "" || companyFilter.length > 0 || clasificacionFilter.length > 0 || avanceStatusFilter.length > 0;
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setCompanyFilter([]);
+    setClasificacionFilter([]);
+    setAvanceStatusFilter([]);
+  };
+
+  // Group by contract. A CAPEX budget must be visible even when it has no detail lines yet.
+  const contractGroups = React.useMemo(() => {
+    const map = new Map<string, ContractBudget[]>();
+    filteredBudgets.forEach(b => {
+      const existing = map.get(b.contract_id) || [];
+      existing.push(b);
+      map.set(b.contract_id, existing);
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => {
+        const aB = a[1][0], bB = b[1][0];
+        if (sortBy === "empresa") {
+          const aComp = aB.company_names[0] || "";
+          const bComp = bB.company_names[0] || "";
+          return aComp.localeCompare(bComp) || aB.contract_name.localeCompare(bB.contract_name);
+        }
+        if (sortBy === "clasificacion") {
+          const aC = aB.clasificacion || "zzz";
+          const bC = bB.clasificacion || "zzz";
+          return aC.localeCompare(bC) || aB.contract_name.localeCompare(bB.contract_name);
+        }
+        return aB.contract_name.localeCompare(bB.contract_name);
+      });
+  }, [filteredBudgets, sortBy]);
+
+  // Total CAPEX por contrato, usando el breakdown efectivo (card amount o líneas)
+  const authByContract = React.useMemo(() => {
+    const result: Record<string, AuthBreakdown> = {};
+    filteredBudgets.forEach(b => {
+      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0, grand: 0 };
+      const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
+      result[b.contract_id].authorized += eff.authorized;
+      result[b.contract_id].unauthorized += eff.unauthorized;
+      result[b.contract_id].grand += eff.grand;
+    });
+    return result;
+  }, [filteredBudgets, authByBudget]);
+
+  // Group contractGroups by company
+  const companyGroups = React.useMemo(() => {
+    const groups = new Map<string, typeof contractGroups>();
+    contractGroups.forEach(entry => {
+      const [, cBudgets] = entry;
+      const names = cBudgets[0].company_names;
+      const hasAgroplanet = names.some(n => n.toLowerCase().includes("agroplanet"));
+      const hasAutoplanet = names.some(n => n.toLowerCase().includes("autoplanet"));
+      const hasGrupoPlanet = names.some(n => /grupo\s*planet/.test(n.toLowerCase()));
+      // Multi-company contracts go to Agroplanet
+      const companyKey = (hasAgroplanet && hasAutoplanet) ? "Agroplanet"
+        : hasAutoplanet ? "Autoplanet"
+        : hasAgroplanet ? "Agroplanet"
+        : hasGrupoPlanet ? "Grupo Planet"
+        : "Otra";
+
+      // Todos los contratos con registro CAPEX se muestran, sin filtrar por monto
+
+      const existing = groups.get(companyKey) || [];
+      existing.push(entry);
+      groups.set(companyKey, existing);
+    });
+    const order = ["Autoplanet", "Agroplanet", "Grupo Planet", "Otra"];
+    return order
+      .filter(k => groups.has(k))
+      .map(k => ({ company: k, contracts: groups.get(k)! }));
+  }, [contractGroups]);
+
+  // Lista plana de contratos exactamente como aparecen en el dashboard
+  const listedContracts = React.useMemo(() => {
+    return companyGroups.flatMap(({ contracts }) => contracts);
+  }, [companyGroups]);
+
 
   // Cuando el filtro "No Autorizados" está activo, solo se muestran los
   // contratos con líneas No Autorizado por un monto mayor a 0 (usa el mismo
