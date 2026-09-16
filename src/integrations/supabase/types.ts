@@ -1568,6 +1568,7 @@ export type Database = {
           clasificacion: string | null
           comite_gp_status: string | null
           company_id: string | null
+          contract_signed_pending: boolean | null
           created_at: string
           deleted_at: string | null
           display_currency: string | null
@@ -1607,6 +1608,7 @@ export type Database = {
           clasificacion?: string | null
           comite_gp_status?: string | null
           company_id?: string | null
+          contract_signed_pending?: boolean | null
           created_at?: string
           deleted_at?: string | null
           display_currency?: string | null
@@ -1646,6 +1648,7 @@ export type Database = {
           clasificacion?: string | null
           comite_gp_status?: string | null
           company_id?: string | null
+          contract_signed_pending?: boolean | null
           created_at?: string
           deleted_at?: string | null
           display_currency?: string | null

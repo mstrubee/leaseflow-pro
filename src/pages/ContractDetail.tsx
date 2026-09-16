@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, BarChart3 } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, BarChart3, CheckCircle } from "lucide-react";
 import { BusinessCaseDialog } from "@/components/contracts/BusinessCaseDialog";
 import { BusinessCaseFinanciero } from "@/components/contracts/BusinessCaseFinanciero";
 import { generateOfferLetter } from "@/lib/generateOfferLetter";
@@ -545,7 +545,8 @@ const ContractDetail = () => {
           error: contractError
         } = await supabase.from("contracts").update({
           status: "firmado",
-          signed_date: new Date().toISOString().split("T")[0]
+          signed_date: new Date().toISOString().split("T")[0],
+          contract_signed_pending: false
         }).eq("id", contract.id);
         if (contractError) throw contractError;
         const {
@@ -705,7 +706,35 @@ const ContractDetail = () => {
       });
     }
   };
-  const getStatusBadge = (status: string) => {
+  const handleMarkAsVigente = async () => {
+    if (!contract) return;
+    const { error } = await supabase
+      .from("contracts")
+      .update({ status: "firmado", contract_signed_pending: true })
+      .eq("id", contract.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el estado" });
+      return;
+    }
+    toast({ title: "Contrato marcado como Vigente*", description: "Recuerda adjuntar el contrato firmado cuando esté disponible" });
+    loadContract();
+  };
+
+  const handleUnmarkAsVigente = async () => {
+    if (!contract) return;
+    const { error } = await supabase
+      .from("contracts")
+      .update({ status: "en_negociacion", contract_signed_pending: false })
+      .eq("id", contract.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el estado" });
+      return;
+    }
+    toast({ title: "Contrato vuelto a En Negociación" });
+    loadContract();
+  };
+
+  const getStatusBadge = (status: string, signedPending?: boolean | null) => {
     const statusMap: {
       [key: string]: {
         label: string;
@@ -717,7 +746,7 @@ const ContractDetail = () => {
         className: "bg-yellow-500 text-white"
       },
       firmado: {
-        label: "Vigente",
+        label: signedPending ? "Vigente*" : "Vigente",
         className: "bg-green-500 text-white"
       },
       vencido: {
@@ -729,7 +758,7 @@ const ContractDetail = () => {
       label: status,
       className: ""
     };
-    return <Badge className={statusInfo.className}>{statusInfo.label}</Badge>;
+    return <Badge className={statusInfo.className} title={signedPending ? "Vigente sin contrato adjunto" : undefined}>{statusInfo.label}</Badge>;
   };
   const formatCurrency = (amount: number) => {
     return `UF ${amount.toLocaleString("es-CL", {
@@ -815,7 +844,7 @@ const ContractDetail = () => {
                   size="md" 
                 />
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
-                {getStatusBadge(contract.status)}
+                {getStatusBadge(contract.status, contract.contract_signed_pending)}
               </div>
               {(companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
                 <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
@@ -880,6 +909,26 @@ const ContractDetail = () => {
                 >
                   {generatingOffer ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                   Carta Oferta
+                </Button>
+              )}
+              {contract.status === "en_negociacion" && isAdmin && (
+                <Button
+                  variant="outline"
+                  className="gap-2 border-green-500 text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
+                  onClick={handleMarkAsVigente}
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Marcar como Vigente
+                </Button>
+              )}
+              {contract.status === "firmado" && contract.contract_signed_pending && isAdmin && (
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleUnmarkAsVigente}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Volver a Negociación
                 </Button>
               )}
               {/* Business Case */}

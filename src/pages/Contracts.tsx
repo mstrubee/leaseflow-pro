@@ -885,10 +885,10 @@ const Contracts = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, signedPending?: boolean | null) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
       en_negociacion: { label: "En Negociación", className: "bg-yellow-500 text-white" },
-      firmado: { label: "Vigente", className: "bg-green-500 text-white" },
+      firmado: { label: signedPending ? "Vigente*" : "Vigente", className: "bg-green-500 text-white" },
       vencido: { label: "Vencido", className: "bg-red-500 text-white" },
     };
 
