@@ -616,9 +616,13 @@ const BudgetLineItemInner = ({
   } = useSortable({ id: line.id, data: { line, siblingIds }, disabled: !canDragLine });
   const dragStyle = { transform: CSS.Transform.toString(dragTransform), transition: dragTransition };
 
-  // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
+  // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here).
+  // NOTE: intentionally NOT gated on `isParent` — a line that had a pending surcharge and later
+  // became a parent (e.g. via the move "clone as self-child" mechanism, which reparents its
+  // original value under itself) must keep showing that request; it still counts fully in every
+  // total, so hiding it here made it silently invisible while still moving the budget's numbers.
   const pendingSurcharges = useMemo(() => {
-    if (isSurchargeRow || isParent) return [];
+    if (isSurchargeRow) return [];
     const arr: BudgetLine[] = [];
     linesMap.forEach((l) => {
       if (l.is_surcharge && l.surcharge_parent_line_id === line.id && !l.merged_into_line_id) {
@@ -626,7 +630,7 @@ const BudgetLineItemInner = ({
       }
     });
     return arr;
-  }, [linesMap, line.id, isSurchargeRow, isParent]);
+  }, [linesMap, line.id, isSurchargeRow]);
 
   // Merged surcharges already folded into this line (for indicator)
   const mergedSurcharges = useMemo(() => {
