@@ -1502,11 +1502,11 @@ export default function CapexDashboard() {
                             a la derecha -- misma columna para los tres, así
                             quedan alineados entre sí. */}
                         <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 items-baseline">
-                          <span className="text-sm text-muted-foreground">Capex Ppto. {year}</span>
+                          <span className="text-sm text-muted-foreground">Ppto. {year}</span>
                           <span className="text-sm font-semibold text-right">{fmtMM(aprobadoMM)}</span>
-                          <span className="text-sm text-muted-foreground">Capex Aprob. Gasto {year}</span>
+                          <span className="text-sm text-muted-foreground">Aprob. Gasto {year}</span>
                           <span className="text-sm font-semibold text-right">{fmtMM(totalMM)}</span>
-                          <span className="text-sm text-muted-foreground border-t pt-1.5">Capex Disponible</span>
+                          <span className="text-sm text-muted-foreground border-t pt-1.5">Disponible</span>
                           <span className={`text-sm font-bold text-right border-t pt-1.5 ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
                             {fmtMM(disponibleMM)}
                           </span>
