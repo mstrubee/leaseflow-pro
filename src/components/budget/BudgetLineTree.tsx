@@ -666,6 +666,12 @@ const BudgetLineItemInner = ({
           .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
         return sum + childBase + childSurcharges;
       }
+      // Leaf exclusions — must mirror getEffectiveAmount, or this total drifts from the
+      // "No Autorizado"/grand-total badges that use it (ghost/merged/internal-transfer lines
+      // would otherwise be counted here but correctly excluded there).
+      if (child.is_ghost || child.merged_into_line_id) return sum;
+      if (child.supplier_id && internalTransferSupplierIds?.has(child.supplier_id)) return sum;
+      if (child.is_surcharge) return sum + (child.amount_uf || 0);
       // Leaf: qty * price (prefer local unit_price, fallback to template)
       const qty = child.quantity || 0;
       const localPrice = child.unit_price || 0;
@@ -703,6 +709,8 @@ const BudgetLineItemInner = ({
           .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
         return sum + childBase + childSurcharges;
       }
+      if (child.is_ghost || child.merged_into_line_id) return sum;
+      if (child.supplier_id && internalTransferSupplierIds?.has(child.supplier_id)) return sum;
       return sum + (child.amount_uf || 0);
     }, 0);
   };
