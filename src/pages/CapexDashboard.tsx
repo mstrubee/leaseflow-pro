@@ -1420,8 +1420,11 @@ export default function CapexDashboard() {
   const fmtUF = (v: number) => v.toLocaleString("es-CL", { maximumFractionDigits: 2 });
   // Miles de millones de $ (billones), para la card de Capex Aprobado --
   // pedido explícito de Matias, sin conversión a UF.
-  const fmtBillions = (clp: number) =>
-    `$${(clp / 1_000_000_000).toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MM`;
+  // Millones de $ (MM$), para la card de Capex Aprobado -- pedido explícito
+  // de Matias, sin conversión a UF. Todo se redondea a millones ANTES de
+  // restar (no CLP crudo) para que Disponible = Aprobado - Total dé un
+  // número consistente con lo que se ve en pantalla.
+  const fmtMM = (mm: number) => `mm$ ${Math.round(mm).toLocaleString("es-CL")}`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1462,126 +1465,135 @@ export default function CapexDashboard() {
           </div>
         </div>
 
-        {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos).
-            Todas son clickeables y actúan como filtro acumulativo: clickear una
-            la agrega/quita del filtro correspondiente, sin borrar las demás. */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card
-            role="button"
-            tabIndex={0}
-            onClick={() => { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); }}
-            onKeyDown={(e) => { if (e.key === "Enter") { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); } }}
-            title="Ver todo (limpia los filtros de empresa, tipo y estado de avance)"
-            className="relative cursor-pointer transition-colors hover:bg-muted/50"
-          >
-            <YearBreakdownChips breakdown={yearBreakdownTotal} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
-            <CardContent className="p-4 flex items-center gap-3">
-              <DollarSign className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">Total CAPEX ({contractsWithCapex.length} {contractsWithCapex.length === 1 ? "local" : "locales"})</p>
-                <p className="text-xl font-bold">{formatCLP(totalCapexUF * (ufValue || 0))}</p>
-                <p className="text-xs text-muted-foreground">({fmtUF(totalCapexUF)} UF)</p>
-              </div>
-            </CardContent>
-          </Card>
-          {(["Autoplanet", "Agroplanet", "Otros"] as const).map((bucket, i) => {
-            const active = companyFilter.includes(bucket);
-            const accentClass = i === 0 ? "text-chart-1" : i === 1 ? "text-chart-2" : "text-chart-3";
-            return (
-              <Card
-                key={bucket}
-                role="button"
-                tabIndex={0}
-                onClick={() => setCompanyFilter((prev) => toggleArrayValue(prev, bucket))}
-                onKeyDown={(e) => { if (e.key === "Enter") setCompanyFilter((prev) => toggleArrayValue(prev, bucket)); }}
-                title={`Filtrar por ${bucket}`}
-                className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
-              >
-                <YearBreakdownChips breakdown={yearBreakdownByCompanyBucket[bucket]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
-                <CardContent className="p-4 flex items-center gap-3">
-                  <Building2 className={`h-8 w-8 ${accentClass}`} />
-                  <div>
-                    <p className="text-xs text-muted-foreground">CAPEX {bucket} ({companyBucketTotals[bucket].count})</p>
-                    <p className="text-lg font-bold">{formatCLP(companyBucketTotals[bucket].uf * (ufValue || 0))}</p>
-                    <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals[bucket].uf)} UF)</p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Card de Capex Aprobado vs. Total vs. Disponible -- una por cada año
-            que tenga un presupuesto aprobado cargado (botón "Presupuestos
-            Aprobados"). Montos en miles de millones ($ MM), sin conversión a UF. */}
-        {Object.keys(approvedBudgetsByYear).length > 0 && (
-          <div className="grid gap-4 md:grid-cols-4">
-            {Object.keys(approvedBudgetsByYear)
-              .map(Number)
-              .sort((a, b) => b - a)
-              .map((year) => {
-                const aprobado = approvedBudgetsByYear[year] || 0;
-                const totalCapexClp = yearBreakdownTotal[year] || 0;
-                const disponible = aprobado - totalCapexClp;
-                return (
-                  <Card key={year}>
-                    <CardContent className="p-4">
-                      <p className="text-xs text-muted-foreground mb-2">Capex Aprobado {year}</p>
-                      <div className="space-y-1.5">
+        <div className="flex gap-4 items-stretch">
+          {/* Card de Capex Aprobado vs. Total vs. Disponible -- alta y angosta,
+              a la izquierda, con una sección por cada año que tenga un
+              presupuesto aprobado cargado ("Presupuestos Aprobados"). Ocupa la
+              misma altura que las dos filas de cards de la derecha juntas
+              (items-stretch + h-full). Todo en millones de $ (mm$), sin
+              conversión a UF. */}
+          {Object.keys(approvedBudgetsByYear).length > 0 && (
+            <Card className="w-64 shrink-0">
+              <CardContent className="p-4 h-full flex flex-col justify-center gap-4">
+                {Object.keys(approvedBudgetsByYear)
+                  .map(Number)
+                  .sort((a, b) => b - a)
+                  .map((year) => {
+                    // Todo redondeado a millones ANTES de restar -- si se
+                    // resta en CLP crudo y recién después se muestra en
+                    // millones, un desfase de redondeo puede hacer que la
+                    // resta mostrada en pantalla no cierre.
+                    const aprobadoMM = Math.round((approvedBudgetsByYear[year] || 0) / 1_000_000);
+                    const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
+                    const disponibleMM = aprobadoMM - totalMM;
+                    return (
+                      <div key={year} className="space-y-1.5">
+                        <p className="text-xs text-muted-foreground font-medium">Capex Aprobado {year}</p>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-muted-foreground">Aprobado</span>
-                          <span className="text-sm font-bold">{fmtBillions(aprobado)}</span>
+                          <span className="text-sm font-bold">{fmtMM(aprobadoMM)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-muted-foreground">Total Capex</span>
-                          <span className="text-sm font-medium">{fmtBillions(totalCapexClp)}</span>
+                          <span className="text-sm font-medium">{fmtMM(totalMM)}</span>
                         </div>
                         <div className="flex items-center justify-between border-t pt-1.5">
                           <span className="text-xs text-muted-foreground">Disponible</span>
-                          <span className={`text-sm font-bold ${disponible < 0 ? "text-destructive" : "text-green-600"}`}>
-                            {fmtBillions(disponible)}
+                          <span className={`text-sm font-bold ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
+                            {fmtMM(disponibleMM)}
                           </span>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-          </div>
-        )}
+                    );
+                  })}
+              </CardContent>
+            </Card>
+          )}
 
-        {/* Summary Cards Row 2: por Tipo de CAPEX -- dinámico según Admin > Tipos de CAPEX */}
-        {Object.keys(clasificacionTotals).length > 0 && (
-          <div className="grid gap-4 md:grid-cols-4">
-            {clasificacionTypes
-              .filter((t) => clasificacionTotals[t.name])
-              .map((t) => {
-                const totals = clasificacionTotals[t.name];
-                const active = clasificacionFilter.includes(t.name);
+          <div className="flex-1 space-y-4">
+            {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos).
+                Todas son clickeables y actúan como filtro acumulativo: clickear una
+                la agrega/quita del filtro correspondiente, sin borrar las demás. */}
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { setCompanyFilter([]); setClasificacionFilter([]); setAvanceStatusFilter([]); } }}
+                title="Ver todo (limpia los filtros de empresa, tipo y estado de avance)"
+                className="relative cursor-pointer transition-colors hover:bg-muted/50"
+              >
+                <YearBreakdownChips breakdown={yearBreakdownTotal} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
+                <CardContent className="p-4 flex items-center gap-3">
+                  <DollarSign className="h-8 w-8 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total CAPEX ({contractsWithCapex.length} {contractsWithCapex.length === 1 ? "local" : "locales"})</p>
+                    <p className="text-xl font-bold">{formatCLP(totalCapexUF * (ufValue || 0))}</p>
+                    <p className="text-xs text-muted-foreground">({fmtUF(totalCapexUF)} UF)</p>
+                  </div>
+                </CardContent>
+              </Card>
+              {(["Autoplanet", "Agroplanet", "Otros"] as const).map((bucket, i) => {
+                const active = companyFilter.includes(bucket);
+                const accentClass = i === 0 ? "text-chart-1" : i === 1 ? "text-chart-2" : "text-chart-3";
                 return (
                   <Card
-                    key={t.id}
+                    key={bucket}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
-                    onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
-                    title={`Filtrar por ${t.name}`}
+                    onClick={() => setCompanyFilter((prev) => toggleArrayValue(prev, bucket))}
+                    onKeyDown={(e) => { if (e.key === "Enter") setCompanyFilter((prev) => toggleArrayValue(prev, bucket)); }}
+                    title={`Filtrar por ${bucket}`}
                     className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
                   >
-                    <YearBreakdownChips breakdown={yearBreakdownByClasificacion[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
+                    <YearBreakdownChips breakdown={yearBreakdownByCompanyBucket[bucket]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                     <CardContent className="p-4 flex items-center gap-3">
-                      <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
-                      <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground truncate">CAPEX {t.name} ({totals.count} {totals.count === 1 ? "local" : "locales"})</p>
-                        <p className="text-lg font-bold">{formatCLP(totals.uf * (ufValue || 0))}</p>
-                        <p className="text-xs text-muted-foreground">({fmtUF(totals.uf)} UF)</p>
+                      <Building2 className={`h-8 w-8 ${accentClass}`} />
+                      <div>
+                        <p className="text-xs text-muted-foreground">CAPEX {bucket} ({companyBucketTotals[bucket].count})</p>
+                        <p className="text-lg font-bold">{formatCLP(companyBucketTotals[bucket].uf * (ufValue || 0))}</p>
+                        <p className="text-xs text-muted-foreground">({fmtUF(companyBucketTotals[bucket].uf)} UF)</p>
                       </div>
                     </CardContent>
                   </Card>
                 );
               })}
+            </div>
+
+            {/* Summary Cards Row 2: por Tipo de CAPEX -- dinámico según Admin > Tipos de CAPEX */}
+            {Object.keys(clasificacionTotals).length > 0 && (
+              <div className="grid gap-4 md:grid-cols-4">
+                {clasificacionTypes
+                  .filter((t) => clasificacionTotals[t.name])
+                  .map((t) => {
+                    const totals = clasificacionTotals[t.name];
+                    const active = clasificacionFilter.includes(t.name);
+                    return (
+                      <Card
+                        key={t.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
+                        onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                        title={`Filtrar por ${t.name}`}
+                        className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                      >
+                        <YearBreakdownChips breakdown={yearBreakdownByClasificacion[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
+                        <CardContent className="p-4 flex items-center gap-3">
+                          <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground truncate">CAPEX {t.name} ({totals.count} {totals.count === 1 ? "local" : "locales"})</p>
+                            <p className="text-lg font-bold">{formatCLP(totals.uf * (ufValue || 0))}</p>
+                            <p className="text-xs text-muted-foreground">({fmtUF(totals.uf)} UF)</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
