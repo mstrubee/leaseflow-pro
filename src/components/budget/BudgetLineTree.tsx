@@ -309,6 +309,9 @@ interface BudgetLineTreeProps {
    *  Solo se calcula para CAPEX; si está presente, cada línea de gasto muestra su
    *  disponible (autorizado - consumido) debajo del monto autorizado. */
   consumedByLineClp?: Record<string, number>;
+  /** Called when the user clicks the "%" button on a parent line and confirms adding
+   *  a percentage-based line (Gastos Generales, Utilidades, etc.). */
+  onAddPercentageLine?: (sourceLineId: string, name: string, percentage: number) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -340,6 +343,7 @@ export const BudgetLineTree = ({
   onReload,
   onMoveLine,
   consumedByLineClp,
+  onAddPercentageLine,
 }: BudgetLineTreeProps) => {
   const { isAdmin, hasPermission } = useAuth();
   // Build linesMap only at root level (level === 0), pass down to children
@@ -430,6 +434,7 @@ export const BudgetLineTree = ({
       onReload={onReload}
       onMoveLine={onMoveLine}
       consumedByLineClp={consumedByLineClp}
+      onAddPercentageLine={onAddPercentageLine}
       siblingIds={siblingIds}
     />
   );
@@ -481,6 +486,7 @@ interface BudgetLineItemProps {
    *  padre y mismo estado autorizado/no-autorizado) — define hasta dónde
    *  puede reordenarse por arrastre. */
   siblingIds?: string[];
+  onAddPercentageLine?: (sourceLineId: string, name: string, percentage: number) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -518,6 +524,7 @@ const BudgetLineItemInner = ({
   onReload,
   onMoveLine,
   consumedByLineClp,
+  onAddPercentageLine,
   siblingIds = [],
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
@@ -565,6 +572,9 @@ const BudgetLineItemInner = ({
   const [editTotal, setEditTotal] = useState("");
   const [editPercentage, setEditPercentage] = useState((line.calc_percentage || 0).toString());
   const [editTotalCurrency, setEditTotalCurrency] = useState<"UF" | "CLP">("UF");
+  const [showPercentPopover, setShowPercentPopover] = useState(false);
+  const [percentName, setPercentName] = useState("");
+  const [percentValue, setPercentValue] = useState("");
   const {
     formatUF,
     formatCLP,
@@ -1717,6 +1727,66 @@ const BudgetLineItemInner = ({
               <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0" title="Agregar línea hija">
                 <Plus className="h-3 w-3" />
               </Button>
+              {hasChildren && onAddPercentageLine && (
+                <Popover open={showPercentPopover} onOpenChange={(open) => {
+                  setShowPercentPopover(open);
+                  if (!open) { setPercentName(""); setPercentValue(""); }
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700" title="Agregar línea porcentual (Gastos Generales, Utilidades, etc.)">
+                      <Percent className="h-3 w-3" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3 space-y-3" align="end" onClick={(e) => e.stopPropagation()}>
+                    <div className="text-xs font-medium text-muted-foreground">Agregar línea porcentual sobre "{line.name}"</div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {["Gastos Generales", "Utilidades"].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setPercentName(preset)}
+                          className={`text-xs px-2 py-1 rounded border transition-colors ${percentName === preset ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-accent"}`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                    <Input
+                      placeholder="Nombre personalizado"
+                      value={percentName}
+                      onChange={(e) => setPercentName(e.target.value)}
+                      className="h-7 text-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        placeholder="%"
+                        value={percentValue}
+                        onChange={(e) => setPercentValue(e.target.value)}
+                        className="h-7 text-xs w-20"
+                      />
+                      <span className="text-xs text-muted-foreground">% de esta línea</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs"
+                      disabled={!percentName.trim() || !percentValue || Number(percentValue) <= 0}
+                      onClick={() => {
+                        if (!percentName.trim() || !percentValue || Number(percentValue) <= 0) return;
+                        onAddPercentageLine(line.id, percentName.trim(), Number(percentValue));
+                        setShowPercentPopover(false);
+                        setPercentName("");
+                        setPercentValue("");
+                      }}
+                    >
+                      Agregar
+                    </Button>
+                  </PopoverContent>
+                </Popover>
+              )}
               {onMoveLine && !line.is_ghost && !line.merged_into_line_id && (
                 <Button
                   size="sm"
@@ -1737,7 +1807,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (

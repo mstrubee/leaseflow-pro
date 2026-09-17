@@ -802,6 +802,45 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     }
   };
 
+  const handleAddPercentageLine = async (sourceLineId: string, name: string, percentage: number) => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget || budget.is_closed) return;
+
+    const flattenTree = (items: BudgetLine[]): BudgetLine[] => {
+      const result: BudgetLine[] = [];
+      items.forEach(item => {
+        result.push(item);
+        if (item.children?.length) result.push(...flattenTree(item.children));
+      });
+      return result;
+    };
+    const sourceLine = flattenTree(lines).find((l) => l.id === sourceLineId);
+    if (!sourceLine) return;
+
+    try {
+      const { error } = await (supabase.from("budget_lines").insert({
+        budget_id: budget.id,
+        parent_id: sourceLine.parent_id,
+        name,
+        amount_uf: 0,
+        status: "no_autorizado",
+        quantity: 1,
+        unit_type: "m2",
+        currency: "UF",
+        unit_price: 0,
+        calc_type: "percentage",
+        calc_source_line_id: sourceLineId,
+        calc_percentage: percentage,
+      } as any) as any);
+
+      if (error) throw error;
+      await loadLines(budget.id);
+      await recalcPercentageLinesLocally(budget.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   // Called by BudgetLineTreeWithDrag when drag-to-reorder completes.
   // siblingIds = ordered array of IDs for siblings at the dragged level.
   const handleReorderLines = async (lineId: string, siblingIds: string[]) => {
@@ -2287,6 +2326,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 }}
                 onReorderLine={!(isClosed || forceReadOnly) && canEditLines ? handleReorderLines : undefined}
                 consumedByLineClp={consumedByLineClp ?? undefined}
+                onAddPercentageLine={canEditLines ? handleAddPercentageLine : undefined}
               />
             </div>
 
