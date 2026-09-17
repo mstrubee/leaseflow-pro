@@ -398,10 +398,16 @@ export default function CapexDashboard() {
         // estado del contrato.
         .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada", { foreignTable: "contracts" })
         // Los contratos "En Negociación" además solo se muestran si el
-        // Comité GP los aceptó ("Aceptada") -- otros estados de comité
-        // (Buscar, En Revisión, etc.) quedan afuera. El resto de los estados
-        // de contrato (ej. Firmado) se muestra igual, sin depender de esto.
-        .or("status.neq.en_negociacion,comite_gp_status.eq.Aceptada", { foreignTable: "contracts" })
+        // Comité GP los aceptó -- "Aceptada", "Aceptado", "Aceptada 2027",
+        // etc. (misma comparación flexible que la query de "autorizados en
+        // negociación" más abajo -- .eq exacto excluía contratos con
+        // presupuesto CAPEX real ya cargado cuyo estado no fuera EXACTAMENTE
+        // "Aceptada", ej. "Aceptada 2026", mostrándolos con $0 por la vía de
+        // respaldo del Business Case en vez de con su monto real). Otros
+        // estados de comité (Buscar, En Revisión, etc.) quedan afuera. El
+        // resto de los estados de contrato (ej. Firmado) se muestra igual,
+        // sin depender de esto.
+        .or("status.neq.en_negociacion,comite_gp_status.ilike.%acepta%", { foreignTable: "contracts" })
         .order("year", { ascending: false });
 
       if (error) throw error;
