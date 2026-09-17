@@ -2067,30 +2067,78 @@ export const buildBudgetTree = (flatLines: BudgetLine[]): BudgetLine[] => {
   return roots;
 };
 
+// Live total of one line: for a parent, (non-% children total * this line's own quantity
+// multiplier) + its direct percentage children computed off that same multiplied base.
+// Mirrors calculateChildrenSubtotal/calculatedAmountWithSurcharges in BudgetLineItemInner —
+// keep both in sync. Computing % lines live (instead of trusting their possibly-stale stored
+// amount_uf) and applying each parent's own "x N unidades" multiplier is what makes this match
+// the row's own displayed total.
+const calculateLineTotal = (
+  item: BudgetLine,
+  templatePricesMap?: Record<string, number>,
+  ufValue?: number,
+  internalTransferSupplierIds?: Set<string>,
+): number => {
+  if (item.children && item.children.length > 0) {
+    const nonPctChildren = item.children.filter((c) => c.calc_type !== "percentage");
+    const pctChildren = item.children.filter((c) => c.calc_type === "percentage");
+    const base =
+      nonPctChildren.reduce(
+        (sum, c) => sum + calculateLineTotal(c, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * (item.quantity || 1);
+    const surcharges = pctChildren.reduce((sum, c) => sum + (base * (c.calc_percentage || 0)) / 100, 0);
+    return base + surcharges;
+  }
+  return getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds);
+};
+
+// Same shape as calculateLineTotal, but only counts the portion of the total whose OWN
+// status matches wantedStatus — still sizing percentage surcharges off the FULL (status-
+// agnostic) base, since a % line is always a percentage of the whole subtree, not just its
+// authorized or unauthorized slice.
+const calculateStatusFilteredTotal = (
+  item: BudgetLine,
+  wantedStatus: "autorizado" | "no_autorizado",
+  templatePricesMap?: Record<string, number>,
+  ufValue?: number,
+  internalTransferSupplierIds?: Set<string>,
+): number => {
+  if (item.children && item.children.length > 0) {
+    const nonPctChildren = item.children.filter((c) => c.calc_type !== "percentage");
+    const pctChildren = item.children.filter((c) => c.calc_type === "percentage");
+    const mult = item.quantity || 1;
+    const fullBase =
+      nonPctChildren.reduce(
+        (sum, c) => sum + calculateLineTotal(c, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * mult;
+    const filteredBase =
+      nonPctChildren.reduce(
+        (sum, c) =>
+          sum + calculateStatusFilteredTotal(c, wantedStatus, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * mult;
+    const filteredSurcharges = pctChildren.reduce((sum, c) => {
+      if (c.status !== wantedStatus) return sum;
+      return sum + (fullBase * (c.calc_percentage || 0)) / 100;
+    }, 0);
+    return filteredBase + filteredSurcharges;
+  }
+  return item.status === wantedStatus
+    ? getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds)
+    : 0;
+};
+
 export const calculateGrandTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
-  return items.reduce((sum, item) => {
-    if (item.children && item.children.length > 0) {
-      return sum + calculateGrandTotal(item.children, templatePricesMap, ufValue, internalTransferSupplierIds);
-    }
-    return sum + getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds);
-  }, 0);
+  return items.reduce((sum, item) => sum + calculateLineTotal(item, templatePricesMap, ufValue, internalTransferSupplierIds), 0);
 };
 
 export const calculateAuthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
-  return items.reduce((sum, item) => {
-    if (item.children && item.children.length > 0) {
-      return sum + calculateAuthorizedTotal(item.children, templatePricesMap, ufValue, internalTransferSupplierIds);
-    }
-    return item.status === "autorizado" ? sum + getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds) : sum;
-  }, 0);
+  return items.reduce((sum, item) => sum + calculateStatusFilteredTotal(item, "autorizado", templatePricesMap, ufValue, internalTransferSupplierIds), 0);
 };
 export const calculateUnauthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
-  return items.reduce((sum, item) => {
-    if (item.children && item.children.length > 0) {
-      return sum + calculateUnauthorizedTotal(item.children, templatePricesMap, ufValue, internalTransferSupplierIds);
-    }
-    return item.status === "no_autorizado" ? sum + getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds) : sum;
-  }, 0);
+  return items.reduce((sum, item) => sum + calculateStatusFilteredTotal(item, "no_autorizado", templatePricesMap, ufValue, internalTransferSupplierIds), 0);
 };
 export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {
   const result: BudgetLine[] = [];
