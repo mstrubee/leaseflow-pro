@@ -58,6 +58,14 @@ export interface CapexPPTData {
   /** Desglose CLP por año del total general -- mismo formato "mm$ X año YYYY"
    * que las cards de /capex. */
   totalYearBreakdown?: Record<number, number>;
+  /** Totales por Estado de Avance CAPEX (Terminado/En Curso/Programado/Caído),
+   * mismos datos que la fila de cards de avance en /capex -- opcional, agrega
+   * una slide extra. */
+  avanceTotals?: ClasificacionTotal[];
+  /** Presupuesto Aprobado/Total/Disponible por año, mismos datos y cálculo
+   * que la card "Capex Aprobado" de /capex -- opcional, va en la misma slide
+   * extra que avanceTotals. */
+  approvedBudgetsSummary?: Array<{ year: number; aprobadoMM: number; totalMM: number; disponibleMM: number }>;
 }
 
 interface RawBudget {
@@ -581,6 +589,102 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   });
 
   addFooter(s2, pageNum++);
+
+  // ═══════════ SLIDE (opcional): Estado de Avance + Presupuesto Aprobado ═══
+  // Mismos datos que la fila de cards de Estado de Avance y la card "Capex
+  // Aprobado" de /capex -- se agrega como slide propia (en vez de forzarla
+  // en la ya muy ajustada slide 2) para no arriesgar solapamientos.
+  if ((data.avanceTotals && data.avanceTotals.length > 0) || (data.approvedBudgetsSummary && data.approvedBudgetsSummary.length > 0)) {
+    const s2b = pres.addSlide();
+    s2b.background = { color: "F2F2F2" };
+
+    s2b.addText("PRESUPUESTO CAPEX", {
+      x: 0.5, y: 0.2, w: 9, h: 0.3,
+      fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
+    });
+    s2b.addText("Estado de Avance y Presupuesto Aprobado", {
+      x: 0.5, y: 0.5, w: 9.2, h: 0.35,
+      fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
+    });
+    s2b.addShape(SHAPES.LINE, {
+      x: 0.5, y: 0.87, w: 9, h: 0,
+      line: { color: BORDER, width: 1 },
+    });
+
+    let nextY = 1.2;
+
+    if (data.avanceTotals && data.avanceTotals.length > 0) {
+      // Mismo orden fijo que las cards de /capex: Terminado, En Curso,
+      // Programado, Caído (no el display_order administrado en Admin).
+      const AVANCE_ORDER = ["Terminado", "En Curso", "Programado", "Caído"];
+      const avanceCards = [...data.avanceTotals].sort((a, b) => {
+        const ia = AVANCE_ORDER.indexOf(a.name), ib = AVANCE_ORDER.indexOf(b.name);
+        if (ia === -1 && ib === -1) return a.name.localeCompare(b.name);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      });
+      const cardGap = 0.15;
+      const cardW = (9 - cardGap * (avanceCards.length - 1)) / avanceCards.length;
+      const cardH = 1.1;
+      avanceCards.forEach((card, i) => {
+        const x = 0.5 + i * (cardW + cardGap);
+        s2b.addShape(SHAPES.RECTANGLE, { x, y: nextY, w: cardW, h: cardH, fill: { color: LIGHT_BG } });
+        s2b.addShape(SHAPES.RECTANGLE, { x, y: nextY, w: 0.06, h: cardH, fill: { color: colorHex(card.color) } });
+        s2b.addText(`${card.name} (${card.count})`, {
+          x: x + 0.15, y: nextY + 0.1, w: cardW - 0.3, h: 0.25,
+          fontSize: 10, fontFace: "Arial", color: MUTED,
+        });
+        s2b.addText(`${fmtUF(card.uf)} UF`, {
+          x: x + 0.15, y: nextY + 0.4, w: cardW - 0.3, h: 0.35,
+          fontSize: 15, fontFace: "Arial", color: DARK, bold: true,
+        });
+        s2b.addText(formatCLP(card.uf * data.ufValue), {
+          x: x + 0.15, y: nextY + 0.75, w: cardW - 0.3, h: 0.25,
+          fontSize: 9, fontFace: "Arial", color: MUTED,
+        });
+      });
+      nextY += cardH + 0.4;
+    }
+
+    if (data.approvedBudgetsSummary && data.approvedBudgetsSummary.length > 0) {
+      s2b.addText("Presupuesto Aprobado", {
+        x: 0.5, y: nextY, w: 9, h: 0.3,
+        fontSize: 13, fontFace: "Arial", color: DARK, bold: true,
+      });
+      nextY += 0.35;
+
+      const tableHeader: PptxGenJS.TableCell[] = [
+        { text: "Año", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "left" } },
+        { text: "Ppto.", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "right" } },
+        { text: "Aprob. Gasto", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "right" } },
+        { text: "Disponible", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "right" } },
+      ];
+      const cellOpts = (align: "left" | "right"): PptxGenJS.TextPropsOptions => ({
+        fontSize: 10, fontFace: "Arial", color: DARK, align,
+      });
+      const rows: PptxGenJS.TableRow[] = [tableHeader];
+      [...data.approvedBudgetsSummary].sort((a, b) => b.year - a.year).forEach((row) => {
+        rows.push([
+          { text: String(row.year), options: cellOpts("left") },
+          { text: `mm$ ${row.aprobadoMM.toLocaleString("es-CL")}`, options: cellOpts("right") },
+          { text: `mm$ ${row.totalMM.toLocaleString("es-CL")}`, options: cellOpts("right") },
+          {
+            text: `mm$ ${row.disponibleMM.toLocaleString("es-CL")}`,
+            options: { ...cellOpts("right"), color: row.disponibleMM < 0 ? "C0003F" : "1E8E3E", bold: true },
+          },
+        ]);
+      });
+      s2b.addTable(rows, {
+        x: 0.5, y: nextY, w: 9,
+        colW: [2, 2.33, 2.33, 2.34],
+        border: { type: "solid", color: BORDER, pt: 0.5 },
+        autoPage: false,
+      });
+    }
+
+    addFooter(s2b, pageNum++);
+  }
 
   // ═══════════ SLIDES 3+: Per Company ═══════════
   for (const group of data.companyGroups) {

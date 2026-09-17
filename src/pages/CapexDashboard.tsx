@@ -1383,6 +1383,28 @@ export default function CapexDashboard() {
           yearBreakdown: yearBreakdownByClasificacion[t.name],
         }));
 
+      const avanceTotalsArr = avanceStatusTypesOrdered
+        .filter((t) => avanceTotals[t.name])
+        .map((t) => ({
+          name: t.name,
+          color: t.color,
+          uf: avanceTotals[t.name].uf,
+          count: avanceTotals[t.name].count,
+        }));
+
+      const approvedBudgetsSummary = Object.keys(approvedBudgetsByYear)
+        .map(Number)
+        .map((year) => {
+          const row = approvedBudgetsByYear[year];
+          const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
+          const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
+          const caidoLabel = AVANCE_CARD_ORDER[3];
+          const caidosMM = row.includeCaidos
+            ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
+            : 0;
+          return { year, aprobadoMM, totalMM, disponibleMM: aprobadoMM - totalMM + caidosMM };
+        });
+
       await generateCapexPPT({
         year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
         ufValue: ufValue || 0,
@@ -1391,6 +1413,8 @@ export default function CapexDashboard() {
         totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
         totalYearBreakdown: yearBreakdownTotal,
+        avanceTotals: avanceTotalsArr,
+        approvedBudgetsSummary,
       });
       toast.success("Presentación descargada");
     } catch (err) {
@@ -1425,11 +1449,15 @@ export default function CapexDashboard() {
     setExportingExcel(true);
     try {
       toast.info("Generando Excel...");
-      const payload = listedContracts.map(([contractId, cBudgets]) => {
+      const payload = listedContracts.map(([groupKey, cBudgets]) => {
         const legacy = cBudgets.reduce((sum, b) => sum + (b.amount_uf || 0), 0);
-        const dateRange = contractInvestmentInfo[contractId];
+        // contractInvestmentInfo está keyed por el contrato REAL (las fechas
+        // son las mismas para todas las copias de un contrato con split), no
+        // por groupKey -- si se usara groupKey acá, una copia con split
+        // quedaba siempre sin fechas de inversión en el Excel.
+        const dateRange = contractInvestmentInfo[cBudgets[0].contract_id];
         return {
-          contract_id: contractId,
+          contract_id: groupKey,
           contract_name: cBudgets[0].contract_name,
           clasificacion: cBudgets[0].clasificacion,
           company_names: cBudgets[0].company_names,
@@ -1439,10 +1467,23 @@ export default function CapexDashboard() {
           legacy_amount_uf: legacy,
           investment_start: dateRange?.start ?? null,
           investment_end: dateRange?.end ?? null,
+          avance_status: cBudgets[0].capex_avance_status,
         };
       });
       const label = yearFilter !== "todos" ? yearFilter : "todos";
-      const result = await exportCapexToExcel(payload, ufValue || 0, label, yearBreakdownTotal);
+      const approvedBudgetsSummary = Object.keys(approvedBudgetsByYear)
+        .map(Number)
+        .map((year) => {
+          const row = approvedBudgetsByYear[year];
+          const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
+          const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
+          const caidoLabel = AVANCE_CARD_ORDER[3];
+          const caidosMM = row.includeCaidos
+            ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
+            : 0;
+          return { year, aprobadoMM, totalMM, disponibleMM: aprobadoMM - totalMM + caidosMM };
+        });
+      const result = await exportCapexToExcel(payload, ufValue || 0, label, yearBreakdownTotal, avanceTotals, approvedBudgetsSummary);
       if (result.method === "cancelled") {
         toast.info("Descarga cancelada");
       } else if (result.method === "file-picker") {

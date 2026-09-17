@@ -20,6 +20,8 @@ export interface CapexExportContract {
    * tiene Gantt/tareas/fechas. */
   investment_start?: string | null;
   investment_end?: string | null;
+  /** Estado de Avance CAPEX (Terminado/En Curso/Programado/Caído). */
+  avance_status?: string | null;
 }
 
 interface Row {
@@ -97,6 +99,7 @@ const HEADERS = [
   "m²",
   "Fecha Inicio Inversión",
   "Fecha Término Inversión",
+  "Estado de Avance",
 ];
 const COL = {
   qty: 7,
@@ -172,6 +175,13 @@ export async function exportCapexToExcel(
   /** Desglose CLP por año (Total CAPEX), igual al que muestran las cards de
    * /capex -- opcional, se agrega como bloque de resumen al final. */
   yearBreakdown?: Record<number, number>,
+  /** Desglose UF+cantidad por Estado de Avance CAPEX, igual a las cards de
+   * /capex -- opcional, se agrega como bloque de resumen al final. */
+  avanceBreakdown?: Record<string, { uf: number; count: number }>,
+  /** Presupuesto Aprobado/Total/Disponible por año (todo en millones, ya
+   * calculado igual que la card "Capex Aprobado" de /capex, con Caídos
+   * sumados si correspondía) -- opcional, se agrega como bloque final. */
+  approvedBudgetsSummary?: Array<{ year: number; aprobadoMM: number; totalMM: number; disponibleMM: number }>,
 ): Promise<CapexExcelExportResult> {
   const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const filename = `CAPEX_${yearLabel}_${ts}.xlsx`;
@@ -189,7 +199,7 @@ export async function exportCapexToExcel(
   const rows: Row[] = [];
   // Row 0: UF value
   rows.push({
-    values: ["Valor UF", ufValue, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    values: ["Valor UF", ufValue, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
     formulas: {},
     style: "group",
   });
@@ -219,6 +229,7 @@ export async function exportCapexToExcel(
         c.superficie || null,
         c.investment_start ? format(parseISO(c.investment_start), "dd/MM/yyyy") : null,
         c.investment_end ? format(parseISO(c.investment_end), "dd/MM/yyyy") : null,
+        c.avance_status || null,
       ],
       formulas: {},
       style: "contract",
@@ -263,6 +274,7 @@ export async function exportCapexToExcel(
           null,
           null, // Fecha Inicio Inversión (solo en la fila de contrato)
           null, // Fecha Término Inversión (solo en la fila de contrato)
+          null, // Estado de Avance (solo en la fila de contrato)
         ],
         formulas: {},
         style: hasChildren ? "group" : "leaf",
@@ -315,7 +327,7 @@ export async function exportCapexToExcel(
   // Grand total row
   const grandRowIdx = rows.length;
   const grandRow: Row = {
-    values: ["TOTAL GENERAL", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    values: ["TOTAL GENERAL", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
     formulas: {},
     style: "grand",
   };
@@ -336,7 +348,7 @@ export async function exportCapexToExcel(
   if (yearBreakdown && Object.keys(yearBreakdown).length > 0) {
     rows.push({ values: Array(HEADERS.length).fill(null), formulas: {}, style: "group" });
     rows.push({
-      values: ["Desglose CAPEX por año", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      values: ["Desglose CAPEX por año", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
       formulas: {},
       style: "group",
     });
@@ -351,11 +363,71 @@ export async function exportCapexToExcel(
         rows.push({
           values: [
             `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${y}`,
-            null, null, y, null, null, null, null, null, null, null, clp, null, null, null, null,
+            null, null, y, null, null, null, null, null, null, null, clp, null, null, null, null, null,
           ],
           formulas: {},
           style: "leaf",
         });
+      });
+  }
+
+  // Desglose por Estado de Avance CAPEX -- mismo criterio de orden fijo
+  // (Terminado/En Curso/Programado/Caído) que las cards de /capex.
+  if (avanceBreakdown && Object.keys(avanceBreakdown).length > 0) {
+    rows.push({ values: Array(HEADERS.length).fill(null), formulas: {}, style: "group" });
+    rows.push({
+      values: ["Desglose CAPEX por Estado de Avance", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      formulas: {},
+      style: "group",
+    });
+    const AVANCE_ORDER = ["Terminado", "En Curso", "Programado", "Caído"];
+    Object.keys(avanceBreakdown)
+      .filter((name) => avanceBreakdown[name].uf > 0)
+      .sort((a, b) => {
+        const ia = AVANCE_ORDER.indexOf(a), ib = AVANCE_ORDER.indexOf(b);
+        if (ia === -1 && ib === -1) return a.localeCompare(b);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      })
+      .forEach((name) => {
+        const { uf, count } = avanceBreakdown[name];
+        rows.push({
+          values: [
+            `${name} (${count} ${count === 1 ? "local" : "locales"})`,
+            null, null, null, null, null, null, null, null, null, uf, uf * ufValue, null, null, null, null, null,
+          ],
+          formulas: {},
+          style: "leaf",
+        });
+      });
+  }
+
+  // Presupuesto Aprobado / Total / Disponible -- mismos datos y mismo
+  // cálculo (todo en millones ANTES de restar) que la card "Capex Aprobado"
+  // de /capex.
+  if (approvedBudgetsSummary && approvedBudgetsSummary.length > 0) {
+    rows.push({ values: Array(HEADERS.length).fill(null), formulas: {}, style: "group" });
+    rows.push({
+      values: ["Presupuesto Aprobado", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+      formulas: {},
+      style: "group",
+    });
+    approvedBudgetsSummary
+      .slice()
+      .sort((a, b) => b.year - a.year)
+      .forEach(({ year, aprobadoMM, totalMM, disponibleMM }) => {
+        const mkRow = (label: string, mm: number) => ({
+          values: [
+            `${label} ${year}: mm$ ${mm.toLocaleString("es-CL")}`,
+            null, null, year, null, null, null, null, null, null, null, mm * 1_000_000, null, null, null, null, null,
+          ],
+          formulas: {},
+          style: "leaf" as const,
+        });
+        rows.push(mkRow("Ppto.", aprobadoMM));
+        rows.push(mkRow("Aprob. Gasto", totalMM));
+        rows.push(mkRow("Disponible", disponibleMM));
       });
   }
 
