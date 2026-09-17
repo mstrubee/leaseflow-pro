@@ -823,7 +823,10 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         parent_id: sourceLineId,
         name,
         amount_uf: 0,
-        status: "no_autorizado",
+        // A surcharge on an already-authorized line should itself count as authorized —
+        // hardcoding "no_autorizado" here left it silently contributing to the "No
+        // Autorizado" total forever, with no obvious status control to fix it from.
+        status: sourceLine.status,
         quantity: 1,
         unit_type: "m2",
         currency: "UF",
