@@ -310,6 +310,21 @@ export default function CapexDashboard() {
   // desde Admin > Estados y Categorías -- el "name" es el mismo texto que
   // se guarda en contracts.capex_avance_status.
   const [avanceStatusTypes, setAvanceStatusTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  // Orden pedido explícitamente para las cards de Estado de Avance CAPEX (acá
+  // y por empresa), de izquierda a derecha -- independiente del
+  // display_order administrado en Admin. Un tipo que no esté en esta lista
+  // (ej. uno nuevo agregado a futuro) queda al final, sin romper.
+  const AVANCE_CARD_ORDER = ["Terminado", "En Curso", "Programado", "Caído"];
+  const avanceStatusTypesOrdered = React.useMemo(() => {
+    return [...avanceStatusTypes].sort((a, b) => {
+      const ia = AVANCE_CARD_ORDER.indexOf(a.name);
+      const ib = AVANCE_CARD_ORDER.indexOf(b.name);
+      if (ia === -1 && ib === -1) return a.name.localeCompare(b.name);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [avanceStatusTypes]);
   // Splits de empresa (capex_company_splits) por contrato -- contratos
   // "duplicados" entre empresas con % de CAPEX propio. Ver getCopiesForContract.
   const [splitsByContract, setSplitsByContract] = useState<Map<string, CapexCompanySplit[]>>(new Map());
@@ -1235,6 +1250,13 @@ export default function CapexDashboard() {
     return computeStatsByKey(filterBudgetsExcept("clasificacion"), (b) => b.clasificacion);
   }, [filterBudgetsExcept, computeStatsByKey]);
 
+  // Totales por Estado de Avance CAPEX (Terminado/En Curso/Programado/Caído)
+  // -- misma lógica que clasificacionTotals, para la tercera fila de cards
+  // generales.
+  const avanceTotals = React.useMemo(() => {
+    return computeStatsByKey(filterBudgetsExcept("avance"), (b) => b.capex_avance_status);
+  }, [filterBudgetsExcept, computeStatsByKey]);
+
   const handleExportPPT = async () => {
     try {
       toast.info("Generando presentación...");
@@ -1663,6 +1685,40 @@ export default function CapexDashboard() {
                   })}
               </div>
             )}
+
+            {/* Summary Cards Row 3: por Estado de Avance CAPEX -- orden fijo
+                Terminado/En Curso/Programado/Caído, no el display_order de Admin. */}
+            {Object.keys(avanceTotals).length > 0 && (
+              <div className="grid gap-4 md:grid-cols-4">
+                {avanceStatusTypesOrdered
+                  .filter((t) => avanceTotals[t.name])
+                  .map((t) => {
+                    const totals = avanceTotals[t.name];
+                    const active = avanceStatusFilter.includes(t.name);
+                    const dimmed = avanceStatusFilter.length > 0 && !active;
+                    return (
+                      <Card
+                        key={t.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setAvanceStatusFilter((prev) => toggleArrayValue(prev, t.name))}
+                        onKeyDown={(e) => { if (e.key === "Enter") setAvanceStatusFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                        title={`Filtrar por ${t.name}`}
+                        className={`relative cursor-pointer transition-all hover:bg-muted/50 hover:opacity-100 ${active ? "ring-2 ring-primary" : ""} ${dimmed ? "opacity-40" : ""}`}
+                      >
+                        <CardContent className="p-4 flex items-center gap-3">
+                          <span className={`w-3 h-3 rounded-full bg-${t.color}-500 shrink-0`} />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground truncate">CAPEX {t.name} ({totals.count} {totals.count === 1 ? "local" : "locales"})</p>
+                            <p className="text-lg font-bold">{formatCLP(totals.uf * (ufValue || 0))}</p>
+                            <p className="text-xs text-muted-foreground">({fmtUF(totals.uf)} UF)</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1837,7 +1893,7 @@ export default function CapexDashboard() {
                       (Programado/En Curso/Terminado/Caído) -- mismo criterio
                       que la fila de clasificación de arriba. */}
                   {(() => {
-                    const companyAvanceCards = avanceStatusTypes.filter((t) => companyAvanceStats[company]?.[t.name]);
+                    const companyAvanceCards = avanceStatusTypesOrdered.filter((t) => companyAvanceStats[company]?.[t.name]);
                     if (companyAvanceCards.length === 0) return null;
                     return (
                       <div
