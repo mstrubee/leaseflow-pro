@@ -820,7 +820,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     try {
       const { error } = await (supabase.from("budget_lines").insert({
         budget_id: budget.id,
-        parent_id: sourceLine.parent_id,
+        parent_id: sourceLineId,
         name,
         amount_uf: 0,
         status: "no_autorizado",
@@ -831,6 +831,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         calc_type: "percentage",
         calc_source_line_id: sourceLineId,
         calc_percentage: percentage,
+        display_order: 99999,
       } as any) as any);
 
       if (error) throw error;
@@ -1047,9 +1048,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       const lineMap = new Map(allFlatLines.map(l => [l.id, l]));
       
       const calcSubtotal = (parentId: string): number => {
-        const children = allFlatLines.filter(l => l.parent_id === parentId);
+        const children = allFlatLines.filter(l => l.parent_id === parentId && l.calc_type !== "percentage");
         return children.reduce((sum, child) => {
-          const childChildren = allFlatLines.filter(l => l.parent_id === child.id);
+          const childChildren = allFlatLines.filter(l => l.parent_id === child.id && l.calc_type !== "percentage");
           if (childChildren.length > 0) {
             const sub = calcSubtotal(child.id);
             const mult = child.quantity || 1;
@@ -1552,10 +1553,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
     const computeChildrenSubtotal = (children: BudgetLine[]): number => {
       return children.reduce((sum, child) => {
-        if (child.calc_type === "percentage") {
-          // Percentage children are surcharges — already accounted in parent's surcharge logic when needed
-          return sum + computeLineUF(child);
-        }
+        // Skip percentage lines — handled by the surcharges loop in computeLineUF to avoid circular refs
+        if (child.calc_type === "percentage") return sum;
         if (child.children?.length) {
           const sub = computeChildrenSubtotal(child.children);
           const mult = child.quantity || 1;

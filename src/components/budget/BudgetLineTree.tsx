@@ -374,6 +374,11 @@ export const BudgetLineTree = ({
         if (aIsProyectos && !bIsProyectos) return -1;
         if (!aIsProyectos && bIsProyectos) return 1;
       }
+      // Percentage lines (Gastos Generales, Utilidades) always last
+      const aIsPct = a.calc_type === "percentage";
+      const bIsPct = b.calc_type === "percentage";
+      if (aIsPct && !bIsPct) return 1;
+      if (!aIsPct && bIsPct) return -1;
       // "No Autorizado" always at end within each parent
       if (a.status !== b.status) {
         if (a.status === "no_autorizado") return 1;
@@ -649,6 +654,8 @@ const BudgetLineItemInner = ({
   // Calculate subtotal of children recursively (for parent lines) using template prices when available
   const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
+      // Skip percentage lines — they're surcharges added on top via calculatedAmountWithSurcharges
+      if (child.calc_type === "percentage") return sum;
       if (child.children && child.children.length > 0) {
         const childSubtotal = calculateChildrenSubtotal(child.children);
         const childMultiplier = child.quantity || 1;
@@ -681,6 +688,8 @@ const BudgetLineItemInner = ({
   // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations)
   const calculateStoredSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
+      // Skip percentage lines — they're surcharges computed separately to avoid circular references
+      if (child.calc_type === "percentage") return sum;
       if (child.children && child.children.length > 0) {
         const childSub = calculateStoredSubtotal(child.children);
         const mult = child.quantity || 1;
