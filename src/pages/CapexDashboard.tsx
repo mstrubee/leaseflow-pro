@@ -1424,7 +1424,7 @@ export default function CapexDashboard() {
   // de Matias, sin conversión a UF. Todo se redondea a millones ANTES de
   // restar (no CLP crudo) para que Disponible = Aprobado - Total dé un
   // número consistente con lo que se ve en pantalla.
-  const fmtMM = (mm: number) => `mm$ ${Math.round(mm).toLocaleString("es-CL")}`;
+  const fmtMM = (mm: number) => `mm $${Math.round(mm).toLocaleString("es-CL")}`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1488,19 +1488,22 @@ export default function CapexDashboard() {
                     const disponibleMM = aprobadoMM - totalMM;
                     return (
                       <div key={year} className="space-y-2">
-                        {/* Mismo tratamiento visual que la card "Total CAPEX":
-                            ícono + label chico arriba, monto grande abajo. */}
                         <div className="flex items-center gap-2">
-                          <Wallet className="h-6 w-6 text-primary shrink-0" />
-                          <p className="text-xs text-muted-foreground">Capex Aprobado {year}</p>
+                          <Wallet className="h-5 w-5 text-primary shrink-0" />
+                          <p className="text-sm font-medium">Capex Aprobado {year}</p>
                         </div>
-                        <p className="text-xl font-bold">{fmtMM(aprobadoMM)}</p>
-                        <p className="text-xs text-muted-foreground">Total Capex: {fmtMM(totalMM)}</p>
-                        <div className="pt-2 border-t">
-                          <p className="text-xs text-muted-foreground">Disponible</p>
-                          <p className={`text-lg font-bold ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
+                        {/* Texto justificado a la izquierda, montos justificados
+                            a la derecha -- misma columna para los tres, así
+                            quedan alineados entre sí. */}
+                        <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 items-baseline">
+                          <span className="text-sm text-muted-foreground">Capex Ppto. {year}</span>
+                          <span className="text-sm font-semibold text-right">{fmtMM(aprobadoMM)}</span>
+                          <span className="text-sm text-muted-foreground">Capex Aprob. Gasto {year}</span>
+                          <span className="text-sm font-semibold text-right">{fmtMM(totalMM)}</span>
+                          <span className="text-sm text-muted-foreground border-t pt-1.5">Capex Disponible</span>
+                          <span className={`text-sm font-bold text-right border-t pt-1.5 ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
                             {fmtMM(disponibleMM)}
-                          </p>
+                          </span>
                         </div>
                       </div>
                     );
