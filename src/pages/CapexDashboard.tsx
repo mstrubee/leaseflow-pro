@@ -386,6 +386,50 @@ export default function CapexDashboard() {
     [splitsByContract]
   );
 
+  // Totales (UF + cantidad) agrupados por un campo del contrato (clasificación,
+  // estado de avance, o el bucket de empresa vía `keyOf`), a partir de un
+  // conjunto de filas ya filtrado -- usado para los cards "sin auto-ocultarse"
+  // de más abajo: se les pasa `filterBudgetsExcept(<esa dimensión>)` en vez de
+  // `filteredBudgets`, para que un tipo sin match bajo el filtro ACTUAL de esa
+  // misma dimensión (pero sí bajo las demás) siga apareciendo con su monto
+  // real, en vez de desaparecer.
+  const computeStatsByKey = React.useCallback(
+    (
+      rows: ContractBudget[],
+      // Recibe también la copia (percentage/companyName si es un split) -- lo
+      // necesita el bucket de empresa (cada copia puede caer en un bucket
+      // distinto según su propia empresa), aunque clasificación/avance
+      // (atributos del contrato, iguales en todas sus copias) lo ignoren.
+      keyOf: (b: ContractBudget, copy: ContractCopy) => string | null
+    ): Record<string, { uf: number; count: number }> => {
+      const byContract = new Map<string, ContractBudget[]>();
+      rows.forEach((b) => {
+        const arr = byContract.get(b.contract_id) || [];
+        arr.push(b);
+        byContract.set(b.contract_id, arr);
+      });
+      const result: Record<string, { uf: number; count: number }> = {};
+      byContract.forEach((contractRows, contractId) => {
+        let authorized = 0, unauthorized = 0;
+        contractRows.forEach((b) => {
+          const eff = getEffectiveBudgetBreakdown(b, authByBudget[b.budget_id]);
+          authorized += eff.authorized;
+          unauthorized += eff.unauthorized;
+        });
+        getCopiesForContract(contractId).forEach((copy) => {
+          const key = keyOf(contractRows[0], copy);
+          if (!key) return;
+          const factor = copy.percentage / 100;
+          if (!result[key]) result[key] = { uf: 0, count: 0 };
+          result[key].uf += (authorized + unauthorized) * factor;
+          result[key].count++;
+        });
+      });
+      return result;
+    },
+    [authByBudget, getCopiesForContract]
+  );
+
   const loadBudgets = async () => {
     setLoading(true);
     try {
@@ -1048,52 +1092,46 @@ export default function CapexDashboard() {
     return entries.sort((a, b) => a.contractName.localeCompare(b.contractName) || (a.splitLabel || "").localeCompare(b.splitLabel || ""));
   }, [budgets, splitsByContract]);
 
+  // Filas de un contrato que pertenecen a `company` (mismo agrupamiento de 4
+  // que companyGroups: Autoplanet/Agroplanet/Grupo Planet/Otra), respetando
+  // año/búsqueda/empresa y TODOS los filtros salvo el indicado en `except`
+  // -- para que los cards de clasificación/avance de esa empresa no
+  // desaparezcan cuando su propio filtro los saca de `filteredBudgets`.
+  const rowsForCompanyExcept = React.useCallback(
+    (company: string, except: "clasificacion" | "avance") =>
+      activeBudgets.filter((b) => {
+        if (getCompanyGroupKey(b.company_names) !== company) return false;
+        if (yearFilter !== "todos" && !contractHasYear(b.contract_id, parseInt(yearFilter))) return false;
+        if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+        if (except !== "clasificacion" && clasificacionFilter.length > 0 && !clasificacionFilter.includes(b.clasificacion || "")) return false;
+        if (except !== "avance" && avanceStatusFilter.length > 0 && !avanceStatusFilter.includes(b.capex_avance_status || "")) return false;
+        return true;
+      }),
+    [activeBudgets, yearFilter, contractHasYear, searchTerm, clasificacionFilter, avanceStatusFilter]
+  );
+
   // Per-company clasificacion stats -- dinámico según los "Tipos de CAPEX"
-  // administrados en Admin (ya no son 3 fijos).
+  // administrados en Admin (ya no son 3 fijos). Usa rowsForCompanyExcept
+  // ("clasificacion") para que un tipo no seleccionado siga mostrando su
+  // monto real bajo esa empresa en vez de desaparecer.
   const companyClasificacionStats = React.useMemo(() => {
     const stats: Record<string, Record<string, { uf: number; count: number }>> = {};
-    companyGroups.forEach(({ company, contracts }) => {
-      const s: Record<string, { uf: number; count: number }> = {};
-      const seen = new Set<string>();
-      contracts.forEach(([contractId, cBudgets]) => {
-        if (seen.has(contractId)) return;
-        seen.add(contractId);
-        const bd = authByContract[contractId];
-        const uf = bd ? bd.authorized + bd.unauthorized : 0;
-        const cl = cBudgets[0].clasificacion;
-        if (!cl) return;
-        if (!s[cl]) s[cl] = { uf: 0, count: 0 };
-        s[cl].uf += uf;
-        s[cl].count++;
-      });
-      stats[company] = s;
+    companyGroups.forEach(({ company }) => {
+      stats[company] = computeStatsByKey(rowsForCompanyExcept(company, "clasificacion"), (b) => b.clasificacion);
     });
     return stats;
-  }, [companyGroups, authByContract]);
+  }, [companyGroups, rowsForCompanyExcept, computeStatsByKey]);
 
   // Mismo criterio que companyClasificacionStats, pero agrupado por Estado
   // de Avance CAPEX (Programado/En Curso/Terminado/Caído) en vez de
   // Clasificación -- para la segunda fila de cards por empresa.
   const companyAvanceStats = React.useMemo(() => {
     const stats: Record<string, Record<string, { uf: number; count: number }>> = {};
-    companyGroups.forEach(({ company, contracts }) => {
-      const s: Record<string, { uf: number; count: number }> = {};
-      const seen = new Set<string>();
-      contracts.forEach(([groupKey, cBudgets]) => {
-        if (seen.has(groupKey)) return;
-        seen.add(groupKey);
-        const bd = authByContract[groupKey];
-        const uf = bd ? bd.authorized + bd.unauthorized : 0;
-        const avance = cBudgets[0].capex_avance_status;
-        if (!avance) return;
-        if (!s[avance]) s[avance] = { uf: 0, count: 0 };
-        s[avance].uf += uf;
-        s[avance].count++;
-      });
-      stats[company] = s;
+    companyGroups.forEach(({ company }) => {
+      stats[company] = computeStatsByKey(rowsForCompanyExcept(company, "avance"), (b) => b.capex_avance_status);
     });
     return stats;
-  }, [companyGroups, authByContract]);
+  }, [companyGroups, rowsForCompanyExcept, computeStatsByKey]);
 
   const yearBreakdownTotal = React.useMemo(() => {
     const m: Record<number, number> = {};
@@ -1169,40 +1207,33 @@ export default function CapexDashboard() {
 
   const contractsWithCapex = listedContracts;
 
-  // Total CAPEX por empresa (Autoplanet / Agroplanet / Otros) -- respeta los
-  // filtros activos, igual que totalCapexUF.
+  // Total CAPEX por empresa (Autoplanet / Agroplanet / Otros). A propósito NO
+  // usa `filteredBudgets` (que ya viene filtrado por `companyFilter`) sino
+  // `filterBudgetsExcept("company")` -- así una empresa que quede afuera del
+  // filtro de Empresa actual sigue mostrando su monto real (bajo los demás
+  // filtros activos) en vez de caer a $0/desaparecer; el propio card se
+  // encarga de mostrarse "nublado" cuando no está seleccionada (ver render).
   const companyBucketTotals = React.useMemo(() => {
+    const stats = computeStatsByKey(
+      filterBudgetsExcept("company"),
+      (b, copy) => getCompanyBucket(copy.companyName ? [copy.companyName] : b.company_names)
+    );
     const buckets: Record<"Autoplanet" | "Agroplanet" | "Otros", { uf: number; count: number }> = {
-      Autoplanet: { uf: 0, count: 0 },
-      Agroplanet: { uf: 0, count: 0 },
-      Otros: { uf: 0, count: 0 },
+      Autoplanet: stats.Autoplanet || { uf: 0, count: 0 },
+      Agroplanet: stats.Agroplanet || { uf: 0, count: 0 },
+      Otros: stats.Otros || { uf: 0, count: 0 },
     };
-    companyGroups.forEach(({ company, contracts }) => {
-      const bucket = company === "Autoplanet" ? "Autoplanet" : company === "Agroplanet" ? "Agroplanet" : "Otros";
-      contracts.forEach(([contractId]) => {
-        const bd = authByContract[contractId];
-        if (bd) buckets[bucket].uf += bd.authorized + bd.unauthorized;
-        buckets[bucket].count++;
-      });
-    });
     return buckets;
-  }, [companyGroups, authByContract]);
+  }, [filterBudgetsExcept, computeStatsByKey]);
 
   // Totales por "Tipo de CAPEX" -- dinámico según los tipos administrados en
-  // Admin > Estados y Categorías > Tipos de CAPEX (ya no son 3 fijos).
+  // Admin > Estados y Categorías > Tipos de CAPEX (ya no son 3 fijos). Mismo
+  // criterio que companyBucketTotals: se calcula sobre
+  // `filterBudgetsExcept("clasificacion")`, no sobre el listado ya filtrado
+  // por clasificación, para que un tipo no seleccionado no desaparezca.
   const clasificacionTotals = React.useMemo(() => {
-    const result: Record<string, { uf: number; count: number }> = {};
-    contractsWithCapex.forEach(([contractId, cBudgets]) => {
-      const bd = authByContract[contractId];
-      const effectiveUF = bd ? (bd.authorized + bd.unauthorized) : cBudgets.reduce((s, b) => s + (b.amount_uf || 0), 0);
-      const cl = cBudgets[0].clasificacion;
-      if (!cl) return;
-      if (!result[cl]) result[cl] = { uf: 0, count: 0 };
-      result[cl].uf += effectiveUF;
-      result[cl].count++;
-    });
-    return result;
-  }, [contractsWithCapex, authByContract]);
+    return computeStatsByKey(filterBudgetsExcept("clasificacion"), (b) => b.clasificacion);
+  }, [filterBudgetsExcept, computeStatsByKey]);
 
   const handleExportPPT = async () => {
     try {
@@ -1567,6 +1598,10 @@ export default function CapexDashboard() {
               </Card>
               {(["Autoplanet", "Agroplanet", "Otros"] as const).map((bucket, i) => {
                 const active = companyFilter.includes(bucket);
+                // "Nublado" (no oculto) cuando hay OTRAS empresas seleccionadas y
+                // esta no es una de ellas -- sigue siendo clickeable para sumarla
+                // al filtro (ej. Autoplanet + Agroplanet juntos).
+                const dimmed = companyFilter.length > 0 && !active;
                 const accentClass = i === 0 ? "text-chart-1" : i === 1 ? "text-chart-2" : "text-chart-3";
                 return (
                   <Card
@@ -1576,7 +1611,7 @@ export default function CapexDashboard() {
                     onClick={() => setCompanyFilter((prev) => toggleArrayValue(prev, bucket))}
                     onKeyDown={(e) => { if (e.key === "Enter") setCompanyFilter((prev) => toggleArrayValue(prev, bucket)); }}
                     title={`Filtrar por ${bucket}`}
-                    className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                    className={`relative cursor-pointer transition-all hover:bg-muted/50 hover:opacity-100 ${active ? "ring-2 ring-primary" : ""} ${dimmed ? "opacity-40" : ""}`}
                   >
                     <YearBreakdownChips breakdown={yearBreakdownByCompanyBucket[bucket]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                     <CardContent className="p-4 flex items-center gap-3">
@@ -1600,6 +1635,10 @@ export default function CapexDashboard() {
                   .map((t) => {
                     const totals = clasificacionTotals[t.name];
                     const active = clasificacionFilter.includes(t.name);
+                    // "Nublado" (no oculto) cuando hay otros tipos seleccionados y
+                    // este no es uno de ellos -- sigue siendo clickeable para
+                    // sumarlo al filtro (ej. Nuevo + Reemplazo juntos).
+                    const dimmed = clasificacionFilter.length > 0 && !active;
                     return (
                       <Card
                         key={t.id}
@@ -1608,7 +1647,7 @@ export default function CapexDashboard() {
                         onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
                         onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
                         title={`Filtrar por ${t.name}`}
-                        className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                        className={`relative cursor-pointer transition-all hover:bg-muted/50 hover:opacity-100 ${active ? "ring-2 ring-primary" : ""} ${dimmed ? "opacity-40" : ""}`}
                       >
                         <YearBreakdownChips breakdown={yearBreakdownByClasificacion[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                         <CardContent className="p-4 flex items-center gap-3">
@@ -1767,6 +1806,7 @@ export default function CapexDashboard() {
                         {companyClasifCards.map((t) => {
                           const s = stats[t.name];
                           const active = clasificacionFilter.includes(t.name);
+                          const dimmed = clasificacionFilter.length > 0 && !active;
                           return (
                             <Card
                               key={t.id}
@@ -1775,7 +1815,7 @@ export default function CapexDashboard() {
                               onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
                               onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
                               title={`Filtrar por ${t.name}`}
-                              className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                              className={`relative cursor-pointer transition-all hover:bg-muted/50 hover:opacity-100 ${active ? "ring-2 ring-primary" : ""} ${dimmed ? "opacity-40" : ""}`}
                             >
                               <YearBreakdownChips breakdown={yearBreakdownByCompanyAndClasificacion[company]?.[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
                               <CardContent className="p-3 flex items-center gap-2">
@@ -1807,6 +1847,7 @@ export default function CapexDashboard() {
                         {companyAvanceCards.map((t) => {
                           const s = companyAvanceStats[company][t.name];
                           const active = avanceStatusFilter.includes(t.name);
+                          const dimmed = avanceStatusFilter.length > 0 && !active;
                           return (
                             <Card
                               key={t.id}
@@ -1815,7 +1856,7 @@ export default function CapexDashboard() {
                               onClick={() => setAvanceStatusFilter((prev) => toggleArrayValue(prev, t.name))}
                               onKeyDown={(e) => { if (e.key === "Enter") setAvanceStatusFilter((prev) => toggleArrayValue(prev, t.name)); }}
                               title={`Filtrar por ${t.name}`}
-                              className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                              className={`relative cursor-pointer transition-all hover:bg-muted/50 hover:opacity-100 ${active ? "ring-2 ring-primary" : ""} ${dimmed ? "opacity-40" : ""}`}
                             >
                               <CardContent className="p-3 flex items-center gap-2">
                                 <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
