@@ -297,9 +297,27 @@ export default function CapexDashboard() {
     const { data } = await (supabase as any)
       .from("capex_approved_budgets")
       .select("id, year, amount_clp, include_caidos_in_disponible");
+    const ids = (data || []).map((r: any) => r.id);
+    // Aumentos de presupuesto (capex_approved_budget_increases) -- acá se
+    // suman al monto original sin desglosar; el detalle de cada aumento solo
+    // se ve en el diálogo "Presupuestos Anuales".
+    let increasesByBudget: Record<string, number> = {};
+    if (ids.length > 0) {
+      const { data: increases } = await (supabase as any)
+        .from("capex_approved_budget_increases")
+        .select("budget_id, amount_clp")
+        .in("budget_id", ids);
+      (increases || []).forEach((inc: any) => {
+        increasesByBudget[inc.budget_id] = (increasesByBudget[inc.budget_id] || 0) + inc.amount_clp;
+      });
+    }
     const byYear: Record<number, ApprovedBudgetRow> = {};
     (data || []).forEach((r: any) => {
-      byYear[r.year] = { id: r.id, amount_clp: r.amount_clp, includeCaidos: !!r.include_caidos_in_disponible };
+      byYear[r.year] = {
+        id: r.id,
+        amount_clp: (r.amount_clp || 0) + (increasesByBudget[r.id] || 0),
+        includeCaidos: !!r.include_caidos_in_disponible,
+      };
     });
     setApprovedBudgetsByYear(byYear);
   }, []);

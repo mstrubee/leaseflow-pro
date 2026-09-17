@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Trash2, Pencil, FileText, Download, X, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, FileText, Download, X, Check, TrendingUp } from "lucide-react";
 import { sanitizeFileName, validateFile } from "@/lib/fileValidation";
 
 const BUCKET = "repository-files";
@@ -16,11 +16,19 @@ interface ApprovedBudgetFile {
   file_path: string;
 }
 
+interface BudgetIncrease {
+  id: string;
+  amount_clp: number;
+  note: string | null;
+  created_at: string;
+}
+
 interface ApprovedBudget {
   id: string;
   year: number;
   amount_clp: number;
   files: ApprovedBudgetFile[];
+  increases: BudgetIncrease[];
 }
 
 interface Props {
@@ -40,6 +48,15 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Id del presupuesto al que se le está por registrar un aumento -- null =
+  // ninguno. El aumento queda registrado como fila propia (con fecha e
+  // importe), pero en la card principal de /capex se ve solo el total
+  // (original + aumentos), sin desglosar.
+  const [addingIncreaseFor, setAddingIncreaseFor] = useState<string | null>(null);
+  const [increaseAmount, setIncreaseAmount] = useState("");
+  const [increaseNote, setIncreaseNote] = useState("");
+  const [savingIncrease, setSavingIncrease] = useState(false);
+
   const loadBudgets = async () => {
     setLoading(true);
     try {
@@ -51,6 +68,7 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
 
       const ids = (rows || []).map((r: any) => r.id);
       let filesByBudget: Record<string, ApprovedBudgetFile[]> = {};
+      let increasesByBudget: Record<string, BudgetIncrease[]> = {};
       if (ids.length > 0) {
         const { data: files } = await (supabase as any)
           .from("capex_approved_budget_files")
@@ -60,6 +78,16 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
           if (!filesByBudget[f.budget_id]) filesByBudget[f.budget_id] = [];
           filesByBudget[f.budget_id].push({ id: f.id, file_name: f.file_name, file_path: f.file_path });
         });
+
+        const { data: increases } = await (supabase as any)
+          .from("capex_approved_budget_increases")
+          .select("id, budget_id, amount_clp, note, created_at")
+          .in("budget_id", ids)
+          .order("created_at", { ascending: true });
+        (increases || []).forEach((inc: any) => {
+          if (!increasesByBudget[inc.budget_id]) increasesByBudget[inc.budget_id] = [];
+          increasesByBudget[inc.budget_id].push({ id: inc.id, amount_clp: inc.amount_clp, note: inc.note, created_at: inc.created_at });
+        });
       }
 
       setBudgets((rows || []).map((r: any) => ({
@@ -67,6 +95,7 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
         year: r.year,
         amount_clp: r.amount_clp,
         files: filesByBudget[r.id] || [],
+        increases: increasesByBudget[r.id] || [],
       })));
     } catch (err) {
       console.error(err);
@@ -212,6 +241,49 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
     }
   };
 
+  const startAddIncrease = (budgetId: string) => {
+    setAddingIncreaseFor(budgetId);
+    setIncreaseAmount("");
+    setIncreaseNote("");
+  };
+
+  const cancelAddIncrease = () => setAddingIncreaseFor(null);
+
+  const handleSaveIncrease = async (budgetId: string) => {
+    const amountClp = increaseAmount ? Math.round(parseFloat(increaseAmount)) : NaN;
+    if (!Number.isFinite(amountClp) || amountClp <= 0) {
+      toast.error("Ingresá un monto de aumento válido (en pesos)");
+      return;
+    }
+    setSavingIncrease(true);
+    try {
+      const { error } = await (supabase as any)
+        .from("capex_approved_budget_increases")
+        .insert({ budget_id: budgetId, amount_clp: amountClp, note: increaseNote || null });
+      if (error) throw error;
+      toast.success("Aumento de presupuesto registrado");
+      setAddingIncreaseFor(null);
+      await loadBudgets();
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al registrar el aumento");
+    } finally {
+      setSavingIncrease(false);
+    }
+  };
+
+  const handleDeleteIncrease = async (increase: BudgetIncrease) => {
+    if (!confirm("¿Eliminar este aumento de presupuesto?")) return;
+    try {
+      const { error } = await (supabase as any).from("capex_approved_budget_increases").delete().eq("id", increase.id);
+      if (error) throw error;
+      setBudgets((prev) => prev.map((b) => ({ ...b, increases: b.increases.filter((i) => i.id !== increase.id) })));
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al eliminar el aumento");
+    }
+  };
+
   const handleDownloadFile = async (file: ApprovedBudgetFile) => {
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(file.file_path, 60);
     if (error || !data?.signedUrl) {
@@ -252,11 +324,64 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
                   />
                 ) : (
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium">{b.year}</div>
                       <div className="text-sm text-muted-foreground">
-                        mm$ {Math.round(b.amount_clp / 1_000_000).toLocaleString("es-CL")}
+                        Original: mm$ {Math.round(b.amount_clp / 1_000_000).toLocaleString("es-CL")}
                       </div>
+
+                      {/* Historial de aumentos -- en /capex solo se ve el total
+                          (original + aumentos), acá sí queda el detalle de cada
+                          uno, con fecha y opción de eliminarlo (reversible). */}
+                      {b.increases.length > 0 && (
+                        <div className="mt-1 space-y-0.5">
+                          {b.increases.map((inc) => (
+                            <div key={inc.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <TrendingUp className="h-3 w-3 text-green-600 shrink-0" />
+                              <span>
+                                + mm$ {Math.round(inc.amount_clp / 1_000_000).toLocaleString("es-CL")}
+                                {" "}({new Date(inc.created_at).toLocaleDateString("es-CL")}){inc.note ? ` -- ${inc.note}` : ""}
+                              </span>
+                              <button onClick={() => handleDeleteIncrease(inc)} title="Eliminar aumento">
+                                <X className="h-3 w-3 text-destructive" />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="text-sm font-medium pt-0.5">
+                            Total: mm$ {Math.round((b.amount_clp + b.increases.reduce((s, i) => s + i.amount_clp, 0)) / 1_000_000).toLocaleString("es-CL")}
+                          </div>
+                        </div>
+                      )}
+
+                      {addingIncreaseFor === b.id ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <Input
+                            type="number"
+                            placeholder="Monto del aumento ($)"
+                            value={increaseAmount}
+                            onChange={(e) => setIncreaseAmount(e.target.value)}
+                            className="h-8 max-w-[180px]"
+                          />
+                          <Input
+                            placeholder="Motivo (opcional)"
+                            value={increaseNote}
+                            onChange={(e) => setIncreaseNote(e.target.value)}
+                            className="h-8"
+                          />
+                          <Button size="sm" className="h-8" onClick={() => handleSaveIncrease(b.id)} disabled={savingIncrease}>
+                            {savingIncrease ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Guardar"}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8" onClick={cancelAddIncrease} disabled={savingIncrease}>
+                            Cancelar
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-7 mt-2 gap-1 text-xs" onClick={() => startAddIncrease(b.id)}>
+                          <TrendingUp className="h-3.5 w-3.5" />
+                          Registrar aumento
+                        </Button>
+                      )}
+
                       {b.files.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {b.files.map((f) => (
