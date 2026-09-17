@@ -281,6 +281,18 @@ export default function CapexDashboard() {
   
   const [templateOpen, setTemplateOpen] = useState(false);
   const [approvedBudgetsOpen, setApprovedBudgetsOpen] = useState(false);
+  // Presupuesto CAPEX aprobado por año (capex_approved_budgets, cargado
+  // desde el botón "Presupuestos Aprobados") -- para la card de
+  // Aprobado/Total/Disponible. Se recarga al cerrar ese diálogo, por si se
+  // editó algo mientras estaba abierto.
+  const [approvedBudgetsByYear, setApprovedBudgetsByYear] = useState<Record<number, number>>({});
+  const loadApprovedBudgets = React.useCallback(async () => {
+    const { data } = await (supabase as any).from("capex_approved_budgets").select("year, amount_clp");
+    const byYear: Record<number, number> = {};
+    (data || []).forEach((r: any) => { byYear[r.year] = r.amount_clp; });
+    setApprovedBudgetsByYear(byYear);
+  }, []);
+  useEffect(() => { loadApprovedBudgets(); }, [loadApprovedBudgets]);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
@@ -1406,6 +1418,10 @@ export default function CapexDashboard() {
   );
 
   const fmtUF = (v: number) => v.toLocaleString("es-CL", { maximumFractionDigits: 2 });
+  // Miles de millones de $ (billones), para la card de Capex Aprobado --
+  // pedido explícito de Matias, sin conversión a UF.
+  const fmtBillions = (clp: number) =>
+    `$${(clp / 1_000_000_000).toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} MM`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1494,6 +1510,45 @@ export default function CapexDashboard() {
             );
           })}
         </div>
+
+        {/* Card de Capex Aprobado vs. Total vs. Disponible -- una por cada año
+            que tenga un presupuesto aprobado cargado (botón "Presupuestos
+            Aprobados"). Montos en miles de millones ($ MM), sin conversión a UF. */}
+        {Object.keys(approvedBudgetsByYear).length > 0 && (
+          <div className="grid gap-4 md:grid-cols-4">
+            {Object.keys(approvedBudgetsByYear)
+              .map(Number)
+              .sort((a, b) => b - a)
+              .map((year) => {
+                const aprobado = approvedBudgetsByYear[year] || 0;
+                const totalCapexClp = yearBreakdownTotal[year] || 0;
+                const disponible = aprobado - totalCapexClp;
+                return (
+                  <Card key={year}>
+                    <CardContent className="p-4">
+                      <p className="text-xs text-muted-foreground mb-2">Capex Aprobado {year}</p>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Aprobado</span>
+                          <span className="text-sm font-bold">{fmtBillions(aprobado)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Total Capex</span>
+                          <span className="text-sm font-medium">{fmtBillions(totalCapexClp)}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-t pt-1.5">
+                          <span className="text-xs text-muted-foreground">Disponible</span>
+                          <span className={`text-sm font-bold ${disponible < 0 ? "text-destructive" : "text-green-600"}`}>
+                            {fmtBillions(disponible)}
+                          </span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        )}
 
         {/* Summary Cards Row 2: por Tipo de CAPEX -- dinámico según Admin > Tipos de CAPEX */}
         {Object.keys(clasificacionTotals).length > 0 && (
@@ -1982,7 +2037,13 @@ export default function CapexDashboard() {
         )}
       </div>
       <CapexTemplateManager open={templateOpen} onOpenChange={setTemplateOpen} />
-      <ApprovedBudgetsDialog open={approvedBudgetsOpen} onOpenChange={setApprovedBudgetsOpen} />
+      <ApprovedBudgetsDialog
+        open={approvedBudgetsOpen}
+        onOpenChange={(open) => {
+          setApprovedBudgetsOpen(open);
+          if (!open) loadApprovedBudgets();
+        }}
+      />
     </div>
   );
 }
