@@ -1755,7 +1755,12 @@ const BudgetLineItemInner = ({
               {hasChildren && onAddPercentageLine && (
                 <Popover open={showPercentPopover} onOpenChange={(open) => {
                   setShowPercentPopover(open);
-                  if (!open) { setPercentName(""); setPercentValue(""); percentSubmittingRef.current = false; }
+                  // Reset the submit guard both when Radix closes it (outside click, Escape) and
+                  // when it (re)opens — closing it ourselves from the "Agregar" button below sets
+                  // `showPercentPopover` directly, which does NOT route through this callback, so
+                  // relying on the close branch alone left the guard stuck after a first success.
+                  percentSubmittingRef.current = false;
+                  if (!open) { setPercentName(""); setPercentValue(""); }
                 }}>
                   <PopoverTrigger asChild>
                     <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700" title="Agregar línea porcentual (Gastos Generales, Utilidades, etc.)">

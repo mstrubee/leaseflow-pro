@@ -2376,9 +2376,10 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
             {/* Trash Panel - shows deleted lines and audit history */}
             {currentBudget && !forceReadOnly && (
               <div className="mt-4">
-                <BudgetTrashPanel 
-                  budgetId={currentBudget.id} 
-                  onRestore={() => loadLines(currentBudget.id)} 
+                <BudgetTrashPanel
+                  budgetId={currentBudget.id}
+                  onRestore={() => loadLines(currentBudget.id)}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
