@@ -90,7 +90,7 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
   const startEdit = (b: ApprovedBudget) => {
     setEditingId(b.id);
     setEditYear(String(b.year));
-    setEditAmountMM(b.amount_clp > 0 ? String(Math.round(b.amount_clp / 1_000_000)) : "");
+    setEditAmountMM(b.amount_clp > 0 ? String(Math.round(b.amount_clp)) : "");
     setPendingFiles([]);
   };
 
@@ -133,12 +133,17 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
       toast.error("Ingresá un año válido");
       return;
     }
-    const amountMM = editAmountMM ? parseFloat(editAmountMM) : 0;
-    if (!Number.isFinite(amountMM) || amountMM < 0) {
-      toast.error("Ingresá un monto válido (en millones de $)");
+    // El campo pide el monto TOTAL en pesos (no en millones) -- se guarda tal
+    // cual, y se divide por 1.000.000 recién al mostrarlo (acá y en la card
+    // de /capex). Antes se pedía "en millones" y se multiplicaba por
+    // 1.000.000 al guardar, lo que duplicaba la conversión si alguien
+    // tipeaba sin querer el monto ya completo en vez de solo los millones.
+    const amountClpRaw = editAmountMM ? parseFloat(editAmountMM) : 0;
+    if (!Number.isFinite(amountClpRaw) || amountClpRaw < 0) {
+      toast.error("Ingresá un monto válido (en pesos)");
       return;
     }
-    const amountClp = Math.round(amountMM * 1_000_000);
+    const amountClp = Math.round(amountClpRaw);
 
     setSaving(true);
     try {
@@ -222,7 +227,7 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>Presupuestos Aprobados</DialogTitle>
           <DialogDescription>
-            Presupuesto CAPEX aprobado por año (en millones de pesos), con sus respaldos adjuntos. No requiere conversión a UF.
+            Presupuesto CAPEX aprobado por año (monto total en pesos -- se muestra en millones), con sus respaldos adjuntos. No requiere conversión a UF.
           </DialogDescription>
         </DialogHeader>
 
@@ -340,8 +345,8 @@ function EditRow({
           <Input type="number" value={year} onChange={(e) => setYear(e.target.value)} disabled={!isNew} />
         </div>
         <div>
-          <label className="text-xs text-muted-foreground">Monto (millones de $)</label>
-          <Input type="number" placeholder="Ej: 2500" value={amountMM} onChange={(e) => setAmountMM(e.target.value)} />
+          <label className="text-xs text-muted-foreground">Monto total ($)</label>
+          <Input type="number" placeholder="Ej: 2709000000" value={amountMM} onChange={(e) => setAmountMM(e.target.value)} />
         </div>
       </div>
 
