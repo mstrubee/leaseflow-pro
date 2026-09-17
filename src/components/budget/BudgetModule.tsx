@@ -1050,11 +1050,13 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       const calcSubtotal = (parentId: string): number => {
         const children = allFlatLines.filter(l => l.parent_id === parentId && l.calc_type !== "percentage");
         return children.reduce((sum, child) => {
-          const childChildren = allFlatLines.filter(l => l.parent_id === child.id && l.calc_type !== "percentage");
+          const childChildren = allFlatLines.filter(l => l.parent_id === child.id);
           if (childChildren.length > 0) {
-            const sub = calcSubtotal(child.id);
-            const mult = child.quantity || 1;
-            return sum + (sub * mult);
+            const childBase = calcSubtotal(child.id) * (child.quantity || 1);
+            const childSurcharges = childChildren
+              .filter(c => c.calc_type === "percentage")
+              .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
+            return sum + childBase + childSurcharges;
           }
           return sum + (child.amount_uf || 0);
         }, 0);
@@ -1553,13 +1555,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
     const computeChildrenSubtotal = (children: BudgetLine[]): number => {
       return children.reduce((sum, child) => {
-        // Skip percentage lines — handled by the surcharges loop in computeLineUF to avoid circular refs
+        // Skip percentage lines — handled by the surcharges loop in computeLineUF to avoid circular refs.
+        // Delegate parent children to computeLineUF (not a bare recursion) so nested surcharges roll up.
         if (child.calc_type === "percentage") return sum;
-        if (child.children?.length) {
-          const sub = computeChildrenSubtotal(child.children);
-          const mult = child.quantity || 1;
-          return sum + sub * mult;
-        }
         return sum + computeLineUF(child);
       }, 0);
     };

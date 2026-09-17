@@ -651,15 +651,19 @@ const BudgetLineItemInner = ({
     return source ? source.name : null;
   }, [isCalcPercentage, line.calc_source_line_id, linesMap]);
 
-  // Calculate subtotal of children recursively (for parent lines) using template prices when available
+  // Calculate subtotal of children recursively (for parent lines) using template prices when available.
+  // Percentage children (Gastos Generales, Utilidades) are excluded from a line's own base — otherwise
+  // its % would compute off a base that already includes itself — but a nested parent's OWN percentage
+  // surcharges must still roll up into this total, or they'd vanish from every ancestor above it.
   const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
-      // Skip percentage lines — they're surcharges added on top via calculatedAmountWithSurcharges
       if (child.calc_type === "percentage") return sum;
       if (child.children && child.children.length > 0) {
-        const childSubtotal = calculateChildrenSubtotal(child.children);
-        const childMultiplier = child.quantity || 1;
-        return sum + (childSubtotal * childMultiplier);
+        const childBase = calculateChildrenSubtotal(child.children) * (child.quantity || 1);
+        const childSurcharges = child.children
+          .filter((c) => c.calc_type === "percentage")
+          .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
+        return sum + childBase + childSurcharges;
       }
       // Leaf: qty * price (prefer local unit_price, fallback to template)
       const qty = child.quantity || 0;
@@ -685,15 +689,18 @@ const BudgetLineItemInner = ({
     return qty * price;
   };
 
-  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations)
+  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations).
+  // Same rule as calculateChildrenSubtotal: exclude a line's own % children from its base, but roll up
+  // a nested sub-parent's own % surcharges so they don't disappear from the source's subtotal.
   const calculateStoredSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
-      // Skip percentage lines — they're surcharges computed separately to avoid circular references
       if (child.calc_type === "percentage") return sum;
       if (child.children && child.children.length > 0) {
-        const childSub = calculateStoredSubtotal(child.children);
-        const mult = child.quantity || 1;
-        return sum + (childSub * mult);
+        const childBase = calculateStoredSubtotal(child.children) * (child.quantity || 1);
+        const childSurcharges = child.children
+          .filter((c) => c.calc_type === "percentage")
+          .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
+        return sum + childBase + childSurcharges;
       }
       return sum + (child.amount_uf || 0);
     }, 0);
