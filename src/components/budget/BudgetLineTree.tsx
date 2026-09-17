@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -580,6 +580,7 @@ const BudgetLineItemInner = ({
   const [showPercentPopover, setShowPercentPopover] = useState(false);
   const [percentName, setPercentName] = useState("");
   const [percentValue, setPercentValue] = useState("");
+  const percentSubmittingRef = useRef(false);
   const {
     formatUF,
     formatCLP,
@@ -1746,7 +1747,7 @@ const BudgetLineItemInner = ({
               {hasChildren && onAddPercentageLine && (
                 <Popover open={showPercentPopover} onOpenChange={(open) => {
                   setShowPercentPopover(open);
-                  if (!open) { setPercentName(""); setPercentValue(""); }
+                  if (!open) { setPercentName(""); setPercentValue(""); percentSubmittingRef.current = false; }
                 }}>
                   <PopoverTrigger asChild>
                     <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700" title="Agregar línea porcentual (Gastos Generales, Utilidades, etc.)">
@@ -1792,6 +1793,8 @@ const BudgetLineItemInner = ({
                       disabled={!percentName.trim() || !percentValue || Number(percentValue) <= 0}
                       onClick={() => {
                         if (!percentName.trim() || !percentValue || Number(percentValue) <= 0) return;
+                        if (percentSubmittingRef.current) return;
+                        percentSubmittingRef.current = true;
                         onAddPercentageLine(line.id, percentName.trim(), Number(percentValue));
                         setShowPercentPopover(false);
                         setPercentName("");
