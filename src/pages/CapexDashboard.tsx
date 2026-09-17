@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock, FolderCheck } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock, FolderCheck, Wallet } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
@@ -1474,7 +1474,7 @@ export default function CapexDashboard() {
               conversión a UF. */}
           {Object.keys(approvedBudgetsByYear).length > 0 && (
             <Card className="w-64 shrink-0">
-              <CardContent className="p-4 h-full flex flex-col justify-center gap-4">
+              <CardContent className="p-4 h-full flex flex-col justify-center gap-5">
                 {Object.keys(approvedBudgetsByYear)
                   .map(Number)
                   .sort((a, b) => b - a)
@@ -1487,21 +1487,20 @@ export default function CapexDashboard() {
                     const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
                     const disponibleMM = aprobadoMM - totalMM;
                     return (
-                      <div key={year} className="space-y-1.5">
-                        <p className="text-xs text-muted-foreground font-medium">Capex Aprobado {year}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">Aprobado</span>
-                          <span className="text-sm font-bold">{fmtMM(aprobadoMM)}</span>
+                      <div key={year} className="space-y-2">
+                        {/* Mismo tratamiento visual que la card "Total CAPEX":
+                            ícono + label chico arriba, monto grande abajo. */}
+                        <div className="flex items-center gap-2">
+                          <Wallet className="h-6 w-6 text-primary shrink-0" />
+                          <p className="text-xs text-muted-foreground">Capex Aprobado {year}</p>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">Total Capex</span>
-                          <span className="text-sm font-medium">{fmtMM(totalMM)}</span>
-                        </div>
-                        <div className="flex items-center justify-between border-t pt-1.5">
-                          <span className="text-xs text-muted-foreground">Disponible</span>
-                          <span className={`text-sm font-bold ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
+                        <p className="text-xl font-bold">{fmtMM(aprobadoMM)}</p>
+                        <p className="text-xs text-muted-foreground">Total Capex: {fmtMM(totalMM)}</p>
+                        <div className="pt-2 border-t">
+                          <p className="text-xs text-muted-foreground">Disponible</p>
+                          <p className={`text-lg font-bold ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
                             {fmtMM(disponibleMM)}
-                          </span>
+                          </p>
                         </div>
                       </div>
                     );
