@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock, FolderCheck } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
 import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
+import { ApprovedBudgetsDialog } from "@/components/budget/ApprovedBudgetsDialog";
 import { exportCapexToExcel } from "@/components/budget/CapexExcelExport";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 
@@ -279,6 +280,7 @@ export default function CapexDashboard() {
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [approvedBudgetsOpen, setApprovedBudgetsOpen] = useState(false);
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
@@ -1437,6 +1439,10 @@ export default function CapexDashboard() {
               <FileSliders className="h-4 w-4" />
               Template PPT Single
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setApprovedBudgetsOpen(true)} className="gap-2">
+              <FolderCheck className="h-4 w-4" />
+              Presupuestos Aprobados
+            </Button>
           </div>
         </div>
 
@@ -1976,6 +1982,7 @@ export default function CapexDashboard() {
         )}
       </div>
       <CapexTemplateManager open={templateOpen} onOpenChange={setTemplateOpen} />
+      <ApprovedBudgetsDialog open={approvedBudgetsOpen} onOpenChange={setApprovedBudgetsOpen} />
     </div>
   );
 }
