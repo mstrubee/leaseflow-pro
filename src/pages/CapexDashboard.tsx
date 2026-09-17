@@ -1827,13 +1827,18 @@ export default function CapexDashboard() {
                                             ({fmtUF(totalUFVal)} UF)
                                           </span>
                                         </div>
-                                        {isEstimatedFromBusinessCase ? (
-                                          <div className="text-xs text-muted-foreground italic" title="Todavía no tiene presupuesto CAPEX cargado -- este es el Capex Estimado del Business Case Financiero">
-                                            Est. Business Case
-                                          </div>
-                                        ) : superficie > 0 && (
+                                        {/* El ratio UF/m² se calcula siempre que haya superficie
+                                            cargada, sea o no un monto real (con o sin presupuesto
+                                            CAPEX todavía) -- "Est. Business Case" es solo un dato
+                                            adicional, nunca debe tapar el UF/m² cuando corresponde. */}
+                                        {superficie > 0 && (
                                           <div className="text-xs text-muted-foreground">
                                             UF {fmtUF(ufM2)}/m²
+                                          </div>
+                                        )}
+                                        {isEstimatedFromBusinessCase && (
+                                          <div className="text-xs text-muted-foreground italic" title="Todavía no tiene presupuesto CAPEX cargado -- este es el Capex Estimado del Business Case Financiero">
+                                            Est. Business Case
                                           </div>
                                         )}
                                       </>
