@@ -225,7 +225,7 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Presupuestos Aprobados</DialogTitle>
+          <DialogTitle>Presupuestos Anuales</DialogTitle>
           <DialogDescription>
             Presupuesto CAPEX aprobado por año (monto total en pesos -- se muestra en millones), con sus respaldos adjuntos. No requiere conversión a UF.
           </DialogDescription>
