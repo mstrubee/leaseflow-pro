@@ -1373,10 +1373,39 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     }
   };
 
+  // Base-line ids that must survive the "Solo No Autorizado" filter even though their OWN
+  // real children may all be authorized: a pending surcharge (Adicional/Descuento) is stored
+  // as a SIBLING of its base line (parent_id = base's own parent_id, linked only via
+  // surcharge_parent_line_id) — not as its child — and BudgetLineTree only renders it inline
+  // under a live, rendered instance of that base line. Without this, filtering out the base
+  // line (because its real children don't match) silently orphans the surcharge: it survives
+  // the filter as data but has no row left to render under.
+  const surchargeBaseIdsToForceKeep = useMemo(() => {
+    if (!showOnlyUnauthorized) return null;
+    const ids = new Set<string>();
+    const walk = (items: BudgetLine[]) => {
+      items.forEach((l) => {
+        if (
+          l.is_surcharge &&
+          !l.merged_into_line_id &&
+          l.surcharge_parent_line_id &&
+          l.status === "no_autorizado" &&
+          Math.abs(l.amount_uf || 0) > 0.0001
+        ) {
+          ids.add(l.surcharge_parent_line_id);
+        }
+        if (l.children?.length) walk(l.children);
+      });
+    };
+    walk(lines);
+    return ids;
+  }, [showOnlyUnauthorized, lines]);
+
   // Líneas a mostrar: opcionalmente oculta las de monto 0 y/o filtra a solo las
   // "No Autorizado" con valor > 0 (los totales se siguen calculando sobre el
   // set completo `lines`). Un nodo hoja se conserva si cumple los filtros
-  // activos; una línea madre se conserva si alguna descendiente sobrevivió.
+  // activos; una línea madre se conserva si alguna descendiente sobrevivió, o si
+  // debe forzarse para no huerfanar una solicitud de adicional/descuento pendiente.
   const displayLines = useMemo(() => {
     if (!hideZeroLines && !showOnlyUnauthorized) return lines;
     const keep = (nodes: BudgetLine[]): BudgetLine[] =>
@@ -1391,13 +1420,14 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           const passesUnauthorizedOnly = !showOnlyUnauthorized || (n.status === "no_autorizado" && hasValue);
           matchesSelf = passesHideZero && passesUnauthorizedOnly;
         }
-        if (children.length > 0 || matchesSelf) {
-          acc.push(children.length ? { ...n, children } : n);
+        const forceKeep = !isLeaf && !!surchargeBaseIdsToForceKeep?.has(n.id);
+        if (children.length > 0 || matchesSelf || forceKeep) {
+          acc.push(!isLeaf ? { ...n, children } : n);
         }
         return acc;
       }, []);
     return keep(lines);
-  }, [hideZeroLines, showOnlyUnauthorized, lines, templatePricesMap, ufValue]);
+  }, [hideZeroLines, showOnlyUnauthorized, lines, templatePricesMap, ufValue, surchargeBaseIdsToForceKeep]);
 
   // Handle opening OC Request dialog from budget line
   const handleCreateOCRequestFromLine = async (budgetLineId: string, lineName: string) => {
