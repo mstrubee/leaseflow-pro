@@ -1071,6 +1071,30 @@ export default function CapexDashboard() {
     return stats;
   }, [companyGroups, authByContract]);
 
+  // Mismo criterio que companyClasificacionStats, pero agrupado por Estado
+  // de Avance CAPEX (Programado/En Curso/Terminado/Caído) en vez de
+  // Clasificación -- para la segunda fila de cards por empresa.
+  const companyAvanceStats = React.useMemo(() => {
+    const stats: Record<string, Record<string, { uf: number; count: number }>> = {};
+    companyGroups.forEach(({ company, contracts }) => {
+      const s: Record<string, { uf: number; count: number }> = {};
+      const seen = new Set<string>();
+      contracts.forEach(([groupKey, cBudgets]) => {
+        if (seen.has(groupKey)) return;
+        seen.add(groupKey);
+        const bd = authByContract[groupKey];
+        const uf = bd ? bd.authorized + bd.unauthorized : 0;
+        const avance = cBudgets[0].capex_avance_status;
+        if (!avance) return;
+        if (!s[avance]) s[avance] = { uf: 0, count: 0 };
+        s[avance].uf += uf;
+        s[avance].count++;
+      });
+      stats[company] = s;
+    });
+    return stats;
+  }, [companyGroups, authByContract]);
+
   const yearBreakdownTotal = React.useMemo(() => {
     const m: Record<number, number> = {};
     contractYearAmounts.forEach((yearMap) => {
@@ -1729,36 +1753,84 @@ export default function CapexDashboard() {
                   </div>
 
                   {/* Per-company clasificacion cards -- dinámico según Tipos de CAPEX.
-                      Clickeables: mismo filtro de tipo que las cards de arriba (acumulativo). */}
-                  <div className="grid gap-3 md:grid-cols-3">
-                    {clasificacionTypes
-                      .filter((t) => stats?.[t.name])
-                      .map((t) => {
-                        const s = stats[t.name];
-                        const active = clasificacionFilter.includes(t.name);
-                        return (
-                          <Card
-                            key={t.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
-                            onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
-                            title={`Filtrar por ${t.name}`}
-                            className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
-                          >
-                            <YearBreakdownChips breakdown={yearBreakdownByCompanyAndClasificacion[company]?.[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
-                            <CardContent className="p-3 flex items-center gap-3">
-                              <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
-                              <div className="min-w-0">
-                                <p className="text-xs text-muted-foreground truncate">{t.name} ({s.count})</p>
-                                <p className="text-sm font-bold">{formatCLP(s.uf * currentUF)}</p>
-                                <p className="text-xs text-muted-foreground">({fmtUF(s.uf)} UF)</p>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                  </div>
+                      Clickeables: mismo filtro de tipo que las cards de arriba
+                      (acumulativo). En una sola línea (una columna por card, sin
+                      límite fijo de 3) -- más angostas que antes. */}
+                  {(() => {
+                    const companyClasifCards = clasificacionTypes.filter((t) => stats?.[t.name]);
+                    if (companyClasifCards.length === 0) return null;
+                    return (
+                      <div
+                        className="grid gap-3"
+                        style={{ gridTemplateColumns: `repeat(${companyClasifCards.length}, minmax(0, 1fr))` }}
+                      >
+                        {companyClasifCards.map((t) => {
+                          const s = stats[t.name];
+                          const active = clasificacionFilter.includes(t.name);
+                          return (
+                            <Card
+                              key={t.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setClasificacionFilter((prev) => toggleArrayValue(prev, t.name))}
+                              onKeyDown={(e) => { if (e.key === "Enter") setClasificacionFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                              title={`Filtrar por ${t.name}`}
+                              className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                            >
+                              <YearBreakdownChips breakdown={yearBreakdownByCompanyAndClasificacion[company]?.[t.name]} activeYear={yearFilter !== "todos" ? parseInt(yearFilter) : undefined} />
+                              <CardContent className="p-3 flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
+                                <div className="min-w-0">
+                                  <p className="text-xs text-muted-foreground truncate">{t.name} ({s.count})</p>
+                                  <p className="text-sm font-bold truncate">{formatCLP(s.uf * currentUF)}</p>
+                                  <p className="text-xs text-muted-foreground">({fmtUF(s.uf)} UF)</p>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Segunda fila: montos por Estado de Avance CAPEX
+                      (Programado/En Curso/Terminado/Caído) -- mismo criterio
+                      que la fila de clasificación de arriba. */}
+                  {(() => {
+                    const companyAvanceCards = avanceStatusTypes.filter((t) => companyAvanceStats[company]?.[t.name]);
+                    if (companyAvanceCards.length === 0) return null;
+                    return (
+                      <div
+                        className="grid gap-3"
+                        style={{ gridTemplateColumns: `repeat(${companyAvanceCards.length}, minmax(0, 1fr))` }}
+                      >
+                        {companyAvanceCards.map((t) => {
+                          const s = companyAvanceStats[company][t.name];
+                          const active = avanceStatusFilter.includes(t.name);
+                          return (
+                            <Card
+                              key={t.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setAvanceStatusFilter((prev) => toggleArrayValue(prev, t.name))}
+                              onKeyDown={(e) => { if (e.key === "Enter") setAvanceStatusFilter((prev) => toggleArrayValue(prev, t.name)); }}
+                              title={`Filtrar por ${t.name}`}
+                              className={`relative cursor-pointer transition-colors hover:bg-muted/50 ${active ? "ring-2 ring-primary" : ""}`}
+                            >
+                              <CardContent className="p-3 flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full bg-${t.color}-500 shrink-0`} />
+                                <div className="min-w-0">
+                                  <p className="text-xs text-muted-foreground truncate">{t.name} ({s.count})</p>
+                                  <p className="text-sm font-bold truncate">{formatCLP(s.uf * currentUF)}</p>
+                                  <p className="text-xs text-muted-foreground">({fmtUF(s.uf)} UF)</p>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* Contracts list */}
                   <div className="space-y-2">
