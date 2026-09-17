@@ -96,6 +96,10 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
   // Ocultar líneas con monto 0
   const [hideZeroLines, setHideZeroLines] = useState(false);
+  // Mostrar solo líneas "No Autorizado" con valor > 0 (para ubicar rápido lo que
+  // hace subir el badge "No Autorizado" de una línea madre, p. ej. adicionales
+  // pendientes que quedan anidados y son fáciles de pasar por alto).
+  const [showOnlyUnauthorized, setShowOnlyUnauthorized] = useState(false);
 
   // Congelar monto (aprobado por directorio)
   const [showFreezeDialog, setShowFreezeDialog] = useState(false);
@@ -1369,21 +1373,31 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     }
   };
 
-  // Líneas a mostrar: opcionalmente oculta las de monto 0 (los totales se siguen
-  // calculando sobre el set completo `lines`).
+  // Líneas a mostrar: opcionalmente oculta las de monto 0 y/o filtra a solo las
+  // "No Autorizado" con valor > 0 (los totales se siguen calculando sobre el
+  // set completo `lines`). Un nodo hoja se conserva si cumple los filtros
+  // activos; una línea madre se conserva si alguna descendiente sobrevivió.
   const displayLines = useMemo(() => {
-    if (!hideZeroLines) return lines;
+    if (!hideZeroLines && !showOnlyUnauthorized) return lines;
     const keep = (nodes: BudgetLine[]): BudgetLine[] =>
       nodes.reduce<BudgetLine[]>((acc, n) => {
         const children = n.children ? keep(n.children) : [];
-        const total = calculateGrandTotal([n], templatePricesMap, ufValue);
-        if (children.length > 0 || Math.abs(total) > 0.0001) {
+        const isLeaf = !n.children || n.children.length === 0;
+        let matchesSelf = false;
+        if (isLeaf) {
+          const total = calculateGrandTotal([n], templatePricesMap, ufValue);
+          const hasValue = Math.abs(total) > 0.0001;
+          const passesHideZero = !hideZeroLines || hasValue;
+          const passesUnauthorizedOnly = !showOnlyUnauthorized || (n.status === "no_autorizado" && hasValue);
+          matchesSelf = passesHideZero && passesUnauthorizedOnly;
+        }
+        if (children.length > 0 || matchesSelf) {
           acc.push(children.length ? { ...n, children } : n);
         }
         return acc;
       }, []);
     return keep(lines);
-  }, [hideZeroLines, lines, templatePricesMap, ufValue]);
+  }, [hideZeroLines, showOnlyUnauthorized, lines, templatePricesMap, ufValue]);
 
   // Handle opening OC Request dialog from budget line
   const handleCreateOCRequestFromLine = async (budgetLineId: string, lineName: string) => {
@@ -2182,6 +2196,16 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 >
                   {hideZeroLines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   {hideZeroLines ? "Mostrar 0" : "Ocultar 0"}
+                </Button>
+                <Button
+                  variant={showOnlyUnauthorized ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowOnlyUnauthorized((v) => !v)}
+                  className="gap-2"
+                  title="Mostrar solo las líneas No Autorizado con valor mayor a $0"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  {showOnlyUnauthorized ? "Ver todas" : "Solo No Autorizado"}
                 </Button>
                 {budgetType === "capex" && canExport && (
                   <Button
