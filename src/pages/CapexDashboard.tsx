@@ -1631,52 +1631,72 @@ export default function CapexDashboard() {
                 <p className="text-xs text-muted-foreground">
                   Todavía no hay presupuestos cargados. Tocá el título para agregar uno.
                 </p>
-              ) : (
-                Object.keys(approvedBudgetsByYear)
-                  .map(Number)
-                  .sort((a, b) => b - a)
-                  .map((year) => {
-                    const row = approvedBudgetsByYear[year];
-                    // Todo redondeado a millones ANTES de restar -- si se
-                    // resta en CLP crudo y recién después se muestra en
-                    // millones, un desfase de redondeo puede hacer que la
-                    // resta mostrada en pantalla no cierre.
-                    const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
-                    const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
-                    const caidoLabel = AVANCE_CARD_ORDER[3]; // "Caído"
-                    const caidosMM = row.includeCaidos
-                      ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
-                      : 0;
-                    const disponibleMM = aprobadoMM - totalMM + caidosMM;
-                    return (
-                      <div key={year} className="space-y-2">
-                        <p className="text-sm font-medium">{year}</p>
-                        {/* Texto justificado a la izquierda, montos justificados
-                            a la derecha -- misma columna para los tres, así
-                            quedan alineados entre sí. */}
-                        <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 items-baseline">
-                          <span className="text-sm text-muted-foreground">Ppto. {year}</span>
-                          <span className="text-sm font-semibold text-right">{fmtMM(aprobadoMM)}</span>
-                          <span className="text-sm text-muted-foreground">Aprob. Gasto {year}</span>
-                          <span className="text-sm font-semibold text-right">{fmtMM(totalMM)}</span>
-                          <span className="text-sm text-muted-foreground border-t pt-1.5">Disponible</span>
-                          <span className={`text-sm font-bold text-right border-t pt-1.5 ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
-                            {fmtMM(disponibleMM)}
+              ) : (() => {
+                const years = Object.keys(approvedBudgetsByYear).map(Number).sort((a, b) => b - a);
+                const caidoLabel = AVANCE_CARD_ORDER[3]; // "Caído"
+                // Disponible de cada año, sumando los "Caídos" de ese año SOLO
+                // si su propio botón está activo -- no hay un botón general,
+                // el Disponible Total es simplemente la suma de estos.
+                const disponibleByYear = years.map((year) => {
+                  const row = approvedBudgetsByYear[year];
+                  const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
+                  const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
+                  const caidosMM = row.includeCaidos
+                    ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
+                    : 0;
+                  return { year, aprobadoMM, totalMM, disponibleMM: aprobadoMM - totalMM + caidosMM };
+                });
+                const disponibleTotalMM = disponibleByYear.reduce((s, d) => s + d.disponibleMM, 0);
+                return (
+                  <>
+                    {disponibleByYear.map(({ year, aprobadoMM, totalMM, disponibleMM }) => {
+                      const row = approvedBudgetsByYear[year];
+                      return (
+                        <div key={year} className="space-y-2">
+                          <p className="text-sm font-medium">{year}</p>
+                          {/* Texto justificado a la izquierda, montos justificados
+                              a la derecha -- misma columna para los tres, así
+                              quedan alineados entre sí. */}
+                          <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 items-baseline">
+                            <span className="text-sm text-muted-foreground">Ppto. {year}</span>
+                            <span className="text-sm font-semibold text-right">{fmtMM(aprobadoMM)}</span>
+                            <span className="text-sm text-muted-foreground">Aprob. Gasto {year}</span>
+                            <span className="text-sm font-semibold text-right">{fmtMM(totalMM)}</span>
+                            <span className="text-sm text-muted-foreground border-t pt-1.5">Disponible</span>
+                            <span className={`text-sm font-bold text-right border-t pt-1.5 ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
+                              {fmtMM(disponibleMM)}
+                            </span>
+                          </div>
+                          <Button
+                            variant={row.includeCaidos ? "default" : "outline"}
+                            size="sm"
+                            className="w-full text-xs h-7"
+                            title={`Sumar al Disponible el CAPEX de los contratos "${caidoLabel}" de ${year} (reversible)`}
+                            onClick={() => handleToggleIncludeCaidos(year)}
+                          >
+                            {row.includeCaidos ? "Disponible sumando caídos" : "Sumar Caídos"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Disponible Total -- suma de los Disponibles de todos los
+                        años, cada uno con o sin sus Caídos según su propio
+                        botón (no hay un botón "Caídos" general). Solo tiene
+                        sentido con más de un año cargado. */}
+                    {disponibleByYear.length > 1 && (
+                      <div className="pt-2 border-t-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Disponible Total</span>
+                          <span className={`text-base font-bold ${disponibleTotalMM < 0 ? "text-destructive" : "text-green-600"}`}>
+                            {fmtMM(disponibleTotalMM)}
                           </span>
                         </div>
-                        <Button
-                          variant={row.includeCaidos ? "default" : "outline"}
-                          size="sm"
-                          className="w-full text-xs h-7"
-                          title={`Sumar al Disponible el CAPEX de los contratos "${caidoLabel}" de ${year} (reversible)`}
-                          onClick={() => handleToggleIncludeCaidos(year)}
-                        >
-                          {row.includeCaidos ? "Sumando Caídos" : "Sumar Caídos"}
-                        </Button>
                       </div>
-                    );
-                  })
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
 
