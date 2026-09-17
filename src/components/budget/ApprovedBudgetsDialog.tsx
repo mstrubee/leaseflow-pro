@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Plus, Trash2, Pencil, FileText, Download, X, Check } from "lucide-react";
-import { formatCLP } from "@/lib/utils";
 import { sanitizeFileName, validateFile } from "@/lib/fileValidation";
 
 const BUCKET = "repository-files";
@@ -251,7 +250,7 @@ export function ApprovedBudgetsDialog({ open, onOpenChange }: Props) {
                     <div className="min-w-0">
                       <div className="font-medium">{b.year}</div>
                       <div className="text-sm text-muted-foreground">
-                        mm$ {Math.round(b.amount_clp / 1_000_000).toLocaleString("es-CL")} ({formatCLP(b.amount_clp)})
+                        mm$ {Math.round(b.amount_clp / 1_000_000).toLocaleString("es-CL")}
                       </div>
                       {b.files.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2">
