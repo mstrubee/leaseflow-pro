@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock, FolderCheck, Wallet } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders, FileSpreadsheet, AlertTriangle, ExternalLink, X, EyeOff, Eye, CalendarClock, Wallet } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
@@ -282,22 +282,63 @@ export default function CapexDashboard() {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [approvedBudgetsOpen, setApprovedBudgetsOpen] = useState(false);
   // Presupuesto CAPEX aprobado por año (capex_approved_budgets, cargado
-  // desde el botón "Presupuestos Aprobados") -- para la card de
+  // desde la card "Capex Aprobado") -- para la card de
   // Aprobado/Total/Disponible. Se recarga al cerrar ese diálogo, por si se
   // editó algo mientras estaba abierto.
-  const [approvedBudgetsByYear, setApprovedBudgetsByYear] = useState<Record<number, number>>({});
+  interface ApprovedBudgetRow {
+    id: string;
+    amount_clp: number;
+    // Si es true, el Disponible de ese año suma de vuelta el CAPEX "Caído"
+    // (reversible, con memoria en DB -- ver handleToggleIncludeCaidos).
+    includeCaidos: boolean;
+  }
+  const [approvedBudgetsByYear, setApprovedBudgetsByYear] = useState<Record<number, ApprovedBudgetRow>>({});
   const loadApprovedBudgets = React.useCallback(async () => {
-    const { data } = await (supabase as any).from("capex_approved_budgets").select("year, amount_clp");
-    const byYear: Record<number, number> = {};
-    (data || []).forEach((r: any) => { byYear[r.year] = r.amount_clp; });
+    const { data } = await (supabase as any)
+      .from("capex_approved_budgets")
+      .select("id, year, amount_clp, include_caidos_in_disponible");
+    const byYear: Record<number, ApprovedBudgetRow> = {};
+    (data || []).forEach((r: any) => {
+      byYear[r.year] = { id: r.id, amount_clp: r.amount_clp, includeCaidos: !!r.include_caidos_in_disponible };
+    });
     setApprovedBudgetsByYear(byYear);
   }, []);
   useEffect(() => { loadApprovedBudgets(); }, [loadApprovedBudgets]);
+  const handleToggleIncludeCaidos = async (year: number) => {
+    const row = approvedBudgetsByYear[year];
+    if (!row) return;
+    const next = !row.includeCaidos;
+    setApprovedBudgetsByYear((prev) => ({ ...prev, [year]: { ...prev[year], includeCaidos: next } }));
+    const { error } = await (supabase as any)
+      .from("capex_approved_budgets")
+      .update({ include_caidos_in_disponible: next })
+      .eq("id", row.id);
+    if (error) {
+      toast.error("Error al guardar la preferencia de Caídos");
+      setApprovedBudgetsByYear((prev) => ({ ...prev, [year]: { ...prev[year], includeCaidos: !next } }));
+    }
+  };
   const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   // Aísla los contratos con líneas "No Autorizado" (monto > 0) para ir
   // aprobándolas de forma más ágil, expandiendo uno a uno.
   const [onlyUnauthorized, setOnlyUnauthorized] = useState(false);
+  // Empresas expandidas manualmente (chevrón) -- arrancan todas colapsadas.
+  // Las cards de clasificación/avance de cada empresa siempre se ven; lo que
+  // colapsa es el listado de contratos de abajo. Mientras haya algún filtro
+  // activo (búsqueda/empresa/clasificación/avance/año), TODAS se muestran
+  // expandidas sin tocar este estado -- al limpiar el filtro, vuelve
+  // exactamente al estado manual que tenía antes.
+  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
+  const isAnyFilterActive = !!(searchTerm || companyFilter.length > 0 || clasificacionFilter.length > 0 || avanceStatusFilter.length > 0 || yearFilter !== "todos");
+  const toggleCompanyExpanded = (company: string) => {
+    setExpandedCompanies((prev) => {
+      const next = new Set(prev);
+      if (next.has(company)) next.delete(company);
+      else next.add(company);
+      return next;
+    });
+  };
   // Colapsable de la sección "Contratos excluidos" al final de la página --
   // arranca cerrada para no llamar la atención sobre algo que, por
   // definición, no debería mirarse a diario.
@@ -1177,6 +1218,25 @@ export default function CapexDashboard() {
     return m;
   }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
 
+  // Mismo criterio que yearBreakdownByClasificacion, pero por Estado de
+  // Avance CAPEX -- para poder descontar el CAPEX "Caído" de un año puntual
+  // en la card de Capex Aprobado (ver handleToggleIncludeCaidos).
+  const yearBreakdownByAvance = React.useMemo(() => {
+    const m: Record<string, Record<number, number>> = {};
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const avance = rows[0].capex_avance_status;
+      if (!avance) return;
+      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        if (!m[avance]) m[avance] = {};
+        Object.entries(yearMap).forEach(([year, clp]) => {
+          m[avance][Number(year)] = (m[avance][Number(year)] || 0) + clp;
+        });
+      });
+    });
+    return m;
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
+
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
@@ -1541,10 +1601,6 @@ export default function CapexDashboard() {
               <FileSliders className="h-4 w-4" />
               Template PPT Single
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setApprovedBudgetsOpen(true)} className="gap-2">
-              <FolderCheck className="h-4 w-4" />
-              Presupuestos Aprobados
-            </Button>
           </div>
         </div>
 
@@ -1555,26 +1611,46 @@ export default function CapexDashboard() {
               misma altura que las dos filas de cards de la derecha juntas
               (items-stretch + h-full). Todo en millones de $ (mm$), sin
               conversión a UF. */}
-          {Object.keys(approvedBudgetsByYear).length > 0 && (
-            <Card className="w-64 shrink-0">
-              <CardContent className="p-4 h-full flex flex-col justify-center gap-5">
-                {Object.keys(approvedBudgetsByYear)
+          {/* Card "Capex Aprobado" -- ahora es también el único punto de
+              entrada a la gestión de presupuestos aprobados (antes un botón
+              aparte en el header): clickear el título abre el diálogo. Título
+              grande arriba, card con justificación superior (no centrado). */}
+          <Card className="w-64 shrink-0">
+            <CardContent className="p-4 h-full flex flex-col justify-start gap-5">
+              <button
+                type="button"
+                onClick={() => setApprovedBudgetsOpen(true)}
+                className="flex items-center gap-2 text-left hover:opacity-70 transition-opacity"
+                title="Gestionar Presupuestos Aprobados"
+              >
+                <Wallet className="h-6 w-6 text-primary shrink-0" />
+                <p className="text-lg font-bold">Capex Aprobado</p>
+              </button>
+
+              {Object.keys(approvedBudgetsByYear).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Todavía no hay presupuestos cargados. Tocá el título para agregar uno.
+                </p>
+              ) : (
+                Object.keys(approvedBudgetsByYear)
                   .map(Number)
                   .sort((a, b) => b - a)
                   .map((year) => {
+                    const row = approvedBudgetsByYear[year];
                     // Todo redondeado a millones ANTES de restar -- si se
                     // resta en CLP crudo y recién después se muestra en
                     // millones, un desfase de redondeo puede hacer que la
                     // resta mostrada en pantalla no cierre.
-                    const aprobadoMM = Math.round((approvedBudgetsByYear[year] || 0) / 1_000_000);
+                    const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
                     const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
-                    const disponibleMM = aprobadoMM - totalMM;
+                    const caidoLabel = AVANCE_CARD_ORDER[3]; // "Caído"
+                    const caidosMM = row.includeCaidos
+                      ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
+                      : 0;
+                    const disponibleMM = aprobadoMM - totalMM + caidosMM;
                     return (
                       <div key={year} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Wallet className="h-5 w-5 text-primary shrink-0" />
-                          <p className="text-sm font-medium">Capex Aprobado {year}</p>
-                        </div>
+                        <p className="text-sm font-medium">{year}</p>
                         {/* Texto justificado a la izquierda, montos justificados
                             a la derecha -- misma columna para los tres, así
                             quedan alineados entre sí. */}
@@ -1588,12 +1664,21 @@ export default function CapexDashboard() {
                             {fmtMM(disponibleMM)}
                           </span>
                         </div>
+                        <Button
+                          variant={row.includeCaidos ? "default" : "outline"}
+                          size="sm"
+                          className="w-full text-xs h-7"
+                          title={`Sumar al Disponible el CAPEX de los contratos "${caidoLabel}" de ${year} (reversible)`}
+                          onClick={() => handleToggleIncludeCaidos(year)}
+                        >
+                          {row.includeCaidos ? "Sumando Caídos" : "Sumar Caídos"}
+                        </Button>
                       </div>
                     );
-                  })}
-              </CardContent>
-            </Card>
-          )}
+                  })
+              )}
+            </CardContent>
+          </Card>
 
           <div className="flex-1 space-y-4">
             {/* Summary Cards Row 1: Total + por empresa (reflejan los filtros activos).
@@ -1838,10 +1923,17 @@ export default function CapexDashboard() {
             displayedCompanyGroups.map(({ company, contracts }) => {
               const stats = companyClasificacionStats[company];
               const currentUF = ufValue || 0;
+              const isCompanyExpanded = isAnyFilterActive || expandedCompanies.has(company);
               return (
                 <div key={company} className="space-y-3">
-                  {/* Company header */}
-                  <div className="flex items-center gap-2">
+                  {/* Company header -- el chevrón colapsa/expande el listado de
+                      contratos de abajo (las cards de clasificación/avance
+                      siempre quedan visibles). */}
+                  <div
+                    className="flex items-center gap-2 cursor-pointer select-none"
+                    onClick={() => toggleCompanyExpanded(company)}
+                  >
+                    <ChevronRight className={`h-5 w-5 shrink-0 transition-transform duration-200 text-muted-foreground ${isCompanyExpanded ? "rotate-90" : ""}`} />
                     <CompanyLogo companyName={company} size="md" />
                     <h2 className="text-lg font-semibold text-foreground">{company}</h2>
                     <Badge variant="secondary" className="text-xs">{contracts.length} {contracts.length === 1 ? "local" : "locales"}</Badge>
@@ -1929,7 +2021,9 @@ export default function CapexDashboard() {
                     );
                   })()}
 
-                  {/* Contracts list */}
+                  {/* Contracts list -- colapsable con el chevrón del header
+                      (las cards de arriba siempre quedan visibles). */}
+                  {isCompanyExpanded && (
                   <div className="space-y-2">
                     {contracts.map(([groupKey, contractBudgets]) => {
                       // Contrato real (para navegación/acciones que operan sobre
@@ -2158,6 +2252,7 @@ export default function CapexDashboard() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               );
             })
