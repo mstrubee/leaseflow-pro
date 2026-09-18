@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,7 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Plus, X, ChevronsUpDown } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X, ChevronsUpDown, Download, Upload } from "lucide-react";
+import { generateContractFullTemplate } from "@/lib/generateContractFullTemplate";
+import { uploadContractFullTemplate } from "@/lib/contractFullTemplateUpload";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
 import { RentEscalations, Escalation, GraceMonthsInput } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
@@ -58,6 +60,9 @@ const EditContract = () => {
   const [saving, setSaving] = useState(false);
   const [showMissingFieldsDialog, setShowMissingFieldsDialog] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -393,6 +398,69 @@ const EditContract = () => {
       navigate("/");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    if (!id) return;
+    setDownloadingTemplate(true);
+    try {
+      await generateContractFullTemplate(id);
+      toast({
+        title: "Plantilla descargada",
+        description: "Se descargó la plantilla con los datos actuales del contrato",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "No se pudo generar la plantilla",
+      });
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
+  const handleUploadTemplateClick = () => {
+    templateFileInputRef.current?.click();
+  };
+
+  const handleTemplateFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !id) return;
+
+    setUploadingTemplate(true);
+    try {
+      const result = await uploadContractFullTemplate(id, versionId || null, file);
+      if (!result.success) {
+        toast({
+          variant: "destructive",
+          title: "Error al subir la plantilla",
+          description: result.errors.join(" | ") || "No se pudo procesar el archivo",
+        });
+        return;
+      }
+
+      toast({
+        title: "Plantilla aplicada",
+        description:
+          result.warnings.length > 0
+            ? `Contrato actualizado con observaciones: ${result.warnings.join(" | ")}`
+            : "Los datos del contrato fueron actualizados desde la plantilla",
+      });
+
+      // Recargar los datos del contrato para reflejar los cambios importados
+      setLoading(true);
+      await loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "No se pudo subir la plantilla",
+      });
+    } finally {
+      setUploadingTemplate(false);
     }
   };
 
@@ -891,7 +959,48 @@ const EditContract = () => {
             <ArrowLeft className="h-4 w-4" />
             Volver
           </Button>
-          <h1 className="text-2xl font-semibold text-foreground">Editar Condiciones {name}</h1>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="text-2xl font-semibold text-foreground">Editar Condiciones {name}</h1>
+            <div className="flex items-center gap-2">
+              <input
+                ref={templateFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleTemplateFileSelected}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={handleDownloadTemplate}
+                disabled={downloadingTemplate}
+              >
+                {downloadingTemplate ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Descargar Plantilla
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={handleUploadTemplateClick}
+                disabled={uploadingTemplate}
+              >
+                {uploadingTemplate ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                Subir Plantilla
+              </Button>
+            </div>
+          </div>
         </div>
       </header>
 
