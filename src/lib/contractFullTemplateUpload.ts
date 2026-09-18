@@ -104,9 +104,15 @@ export const uploadContractFullTemplate = async (
     return { success: false, errors: [`No se encontró la hoja "${SHEET_MAIN}" en el archivo`], warnings };
   }
 
-  const mainRows = XLSX.utils.sheet_to_json<Record<string, any>>(mainSheet, { defval: '' });
-  const mainRow = mainRows[0];
-  if (!mainRow) {
+  // La hoja "Datos del Contrato" viene transpuesta: dos columnas (Campo /
+  // Valor), una fila por campo -- se arma un objeto { campo: valor } igual
+  // al que se obtenía antes con sheet_to_json sobre una fila ancha.
+  const mainSheetAoa = XLSX.utils.sheet_to_json<any[]>(mainSheet, { header: 1, defval: '' });
+  const mainRow: Record<string, any> = {};
+  for (const [field, value] of mainSheetAoa.slice(1)) {
+    if (field !== undefined && field !== '') mainRow[String(field).trim()] = value;
+  }
+  if (Object.keys(mainRow).length === 0) {
     return { success: false, errors: ['La hoja de datos del contrato no tiene ninguna fila de datos'], warnings };
   }
 
