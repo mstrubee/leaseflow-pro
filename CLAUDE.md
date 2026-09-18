@@ -2,113 +2,124 @@
 
 ## Qué es este proyecto
 
-LeaseFlow-pro es un CRM para la administración de contratos de arriendo y presupuestos, con módulos integrados de mantención de propiedades. Tiene usuarios activos. Viene de un desarrollo en Lovable y está en proceso de migración hacia un stack propio.
+LeaseFlow-pro es un CRM para administración de contratos de arriendo, presupuestos y mantención de propiedades. Con usuarios activos en producción. Originado en Lovable; la **Plataforma Oficial** corre en Vercel + Supabase propio. **Lovable está retirado** (nadie lo usa, confirmado 2026-09-07) — `main` queda congelada como archivo histórico.
 
 ---
 
-## Contexto de negocio
+## Estado actual de la migración (actualizado 2026-09-07)
 
-- Mercado objetivo: administradoras de propiedades y corredoras en Chile / LATAM
-- Usuarios del sistema: administradores, propietarios, arrendatarios, técnicos de mantención
-- Módulos core: contratos, presupuestos, mantención, (otros por definir)
-- Prioridad actual: estabilidad y fidelidad a lo que ya funciona en producción — no romper lo que existe
+La migración está completa, Lovable retirado:
+
+- ✅ Etapa 1: Auditoría de código completada
+- ✅ Etapa 2: Dependencias Lovable eliminadas (GeoLocSyncDialog, Ver Backend, lovable-tagger, .env, localStorage keys, etc.)
+- ✅ Etapa 3: Auditoría de DB — tablas geoloc_sync* eliminadas, 17/17 Edge Functions activas
+- ✅ Etapa 4: Auditoría funcional — código muerto identificado
+- ✅ Etapa 5: Refactoring — sistema SelectableElement/PermissionSelection eliminado (-834 líneas)
+- ✅ Etapa 6: Profesionalización (este archivo + README + CHANGELOG)
+- ✅ Etapa 7: Sync Lovable → Oficial (`main` congelada, ya no aplica — ver abajo)
+- 🟡 Etapa 8: Certificación final — de los caveats pendientes de la certificación 2026-06-29, resueltos:
+  - CORS `*.lovable.app` removido de las 6 Edge Functions que lo tenían
+  - `process-alerts` ahora arma los links de email con `APP_URL` (default `gplanet.vercel.app`), no con `.lovable.app`
+
+  Pendientes, sin resolver (decisión de Matias, 2026-09-07):
+  - `extract-contract-data` y `match-contracts` **siguen llamando a `ai.gateway.lovable.dev`** (Gemini) — es una dependencia real de infraestructura de Lovable, pero cambiar de proveedor de IA no es viable por ahora. Sigue siendo un riesgo: si Lovable da de baja ese gateway, estas 2 funciones (extracción de datos de contratos e importación de Excel con matching) dejan de funcionar.
+  - Confirmar si queda algo en la DB de Lovable (`tgxiqvfpirwvhktgqqfa`) sin reflejar en la oficial antes de darla de baja — requiere una comparación puntual con SQL de solo lectura, que necesita confirmación explícita de Matias antes de ejecutarse (ver regla de seguridad abajo)
+
+**`main` (Lovable) queda congelada** — no se espera desarrollo nuevo ahí. El workflow de `docs/sync-lovable-a-oficial.md` ya no aplica en el día a día (queda como referencia histórica).
 
 ---
 
-## Stack actual y migración
+## Arquitectura
 
-- **Origen:** Lovable (React + Supabase `tgxiqvfpirwvhktgqqfa`, rama `main`)
-- **Destino:** Vercel + Supabase propio `ilcumthwzhmtumaklgvo` (rama `migration`)
-- **Regla crítica:** durante la migración, mantener paridad funcional con lo que está en producción. Cada cambio debe ser incremental y reversible.
-- Antes de proponer refactors grandes, preguntar si estamos en fase de migración activa o en desarrollo de nuevas features
+| Componente | Valor |
+|---|---|
+| **Plataforma Oficial** | Vercel + rama `migration` |
+| **DB Oficial** | Supabase `ilcumthwzhmtumaklgvo` |
+| **Versión de Estudio (retirada)** | Lovable + rama `main` (congelada) + Supabase `tgxiqvfpirwvhktgqqfa` (legacy, nadie la usa) |
+| **Edge Functions** | 18 funciones, todas ACTIVE en DB oficial |
 
 ---
 
-## ⛔ REGLAS DE SEGURIDAD PARA MIGRACIÓN — LEER ANTES DE CUALQUIER ACCIÓN
+## ⛔ REGLAS DE SEGURIDAD — LEER ANTES DE CUALQUIER ACCIÓN
 
-### Rama `main` = Lovable en producción. ES INTOCABLE.
-- **NUNCA** hacer commit a `main` de cambios relacionados con la migración
-- **NUNCA** modificar `supabase/config.toml` en `main` (apunta a `tgxiqvfpirwvhktgqqfa` y debe quedarse así)
-- **NUNCA** modificar archivos en `supabase/migrations/` en `main` (Lovable puede re-correrlos)
+### Rama `main` = Lovable, congelada. Se mantiene como archivo histórico.
+- **NUNCA** hacer commit a `main` sin pedirlo explícitamente — ya no recibe desarrollo activo
 - **NUNCA** hacer `git push` a `main` sin confirmación explícita de Matias
-- Cualquier cambio en `main` que Lovable detecte se despliega automáticamente en producción
+- Todo el trabajo va en rama `migration`
 
-### Todo el trabajo de migración va en la rama `migration`
-- Cambios de config (Supabase nuevo, Vercel, variables de entorno) → solo en `migration`
-- Correcciones de migraciones SQL para la DB nueva → solo en `migration`
-- Vercel está conectado a `migration`, no a `main`
+### DB: solo operar sobre `ilcumthwzhmtumaklgvo`
+- **NUNCA** correr SQL en `tgxiqvfpirwvhktgqqfa` (DB de Lovable, legacy) sin confirmación explícita de Matias — aunque esté retirada, no se debe tocar por default
+- Para SQL en DB oficial: usar Management API con PAT disponible en memoria
 
-### Antes de cualquier commit, preguntarse:
-1. ¿Estoy en la rama correcta? (`git branch` para verificar)
-2. ¿Este archivo existe en Lovable? Si sí → solo va en `migration`
-3. ¿Podría Lovable desplegar esto automáticamente? Si sí → STOP, confirmar con Matias primero
+### Antes de cualquier commit verificar:
+1. `git branch` → debe decir `migration`
+2. Ningún archivo de `supabase/migrations/` ni `supabase/config.toml` modificado
 
-### Archivos que NUNCA deben cambiar en `main` durante la migración:
-- `supabase/config.toml`
-- `supabase/migrations/*.sql` (cualquier archivo existente)
-- `.env` (el original apunta a Lovable)
-- `src/integrations/supabase/client.ts`
+---
+
+## Sistema de permisos
+
+```typescript
+// Sistema NUEVO (usar este)
+const { isAdmin, hasPermission } = useAuth();
+const canView = isAdmin || hasPermission("resource_name", "view");
+const canEdit = isAdmin || hasPermission("resource_name", "edit");
+
+// Patrón padre-hijo (la vista del padre da acceso a hijos)
+const parentEdit = isAdmin || hasPermission("contract_gantt", "edit");
+const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
+```
+
+- `user_permissions` table: permisos granulares por usuario
+- `user_profile_templates` + `profile_template_permissions`: roles reutilizables
+- `PermissionTreeEditor`: árbol jerárquico de permisos con herencia
+- `useUserPermissions.ts` (wrapper deprecado) eliminado 2026-09-07 — `DashboardStats.tsx` y `ContractDetail.tsx` ya usan `useAuth()` directo (`hasPermission`, `isHidden`), único sistema de permisos en todo el código
+
+---
+
+## Módulos del sistema
+
+| Módulo | Ruta | Estado |
+|---|---|---|
+| Contratos | `/contracts` | ✅ Producción |
+| Presupuestos | `/capex`, `/opex` | ✅ Producción |
+| Mantención | `/maintenance` | ✅ Producción |
+| Patentes | `/patents` | ✅ Producción |
+| KPI | `/kpi` | ✅ Producción |
+| Proveedores | `/suppliers` | ✅ Producción |
+| Alertas | `/alerts` | ✅ Producción |
+| GeoLoc | `/geoloc` | ✅ Producción |
+| Órdenes de Compra | `/purchase-orders` | ✅ Producción |
+| Reportes | `/reports` | ✅ Producción |
+| Admin | `/admin` | ✅ Producción |
 
 ---
 
 ## Reglas de desarrollo
 
-1. **Cambios pequeños y testeables** — preferir PR atómicos sobre cambios masivos
-2. **No asumir el stack destino** — si no está definido en la sesión, preguntar antes de generar código nuevo
-3. **Documentar decisiones** — cuando se tome una decisión de arquitectura, dejarla comentada en el código o en este archivo
-4. **Variables de entorno** — nunca hardcodear URLs, keys ni credenciales. Usar `.env` siempre
-5. **Nombres en inglés** para código (variables, funciones, componentes), **UI en español** para los usuarios finales
+1. **Cambios pequeños y testeables** — un commit por tema
+2. **Variables de entorno** — nunca hardcodear URLs, keys ni credenciales
+3. **Nombres en inglés** para código, **UI en español** para usuarios finales
+4. **RLS siempre** — cualquier tabla nueva debe tener RLS habilitado
+5. **TypeScript estricto** — correr `npx tsc --noEmit` antes de cada commit
 
 ---
 
 ## Pipeline de revisión obligatorio
 
-Antes de entregar **cualquier** código, componente, query o configuración, ejecutar estos 3 agentes internamente y mostrar su output:
+Antes de entregar cualquier código, ejecutar internamente:
 
-### 🔒 Agente 1 — Auditor de Seguridad
-Revisar:
-- ¿Hay datos sensibles expuestos (RUTs, contratos, montos)?
-- ¿Los inputs están validados y sanitizados?
-- ¿Las queries a Supabase usan RLS correctamente?
-- ¿Hay keys o secrets en el código?
+**🔒 Agente 1 — Auditor de Seguridad**
+- ¿Datos sensibles expuestos? ¿RLS correcto? ¿Keys en código?
+- Output: `[SECURITY: ✅ OK]` o `[SECURITY: ⚠️ RIESGO — descripción]`
 
-Output: `[SECURITY: ✅ OK]` o `[SECURITY: ⚠️ RIESGO — descripción]`
+**🧪 Agente 2 — Revisor de Calidad**
+- ¿Código legible? ¿Responsabilidad única? ¿Estados de carga/error manejados?
+- Output: `[QUALITY: ✅ OK]` o `[QUALITY: ⚠️ OBSERVACIÓN — descripción]`
 
-### 🧪 Agente 2 — Revisor de Calidad
-Revisar:
-- ¿El código es legible y consistente con el resto del proyecto?
-- ¿Hay lógica duplicada que debería estar en un helper o hook?
-- ¿Los componentes tienen responsabilidad única?
-- ¿Se manejan los estados de carga y error?
-
-Output: `[QUALITY: ✅ OK]` o `[QUALITY: ⚠️ OBSERVACIÓN — descripción]`
-
-### 🏗️ Agente 3 — Auditor de Migración
-Revisar:
-- ¿Este cambio es compatible con la migración en curso?
-- ¿Introduce dependencias que compliquen el cambio de stack?
-- ¿Hay algo que en Lovable funcionaba distinto y puede romper aquí?
-
-Output: `[MIGRATION: ✅ OK]` o `[MIGRATION: ⚠️ ALERTA — descripción]`
-
----
-
-## Qué hacer si hay alertas
-
-- **SECURITY ⚠️** → No entregar el código. Corregir primero y mostrar la corrección.
-- **QUALITY ⚠️** → Entregar el código con la observación visible y proponer la mejora.
-- **MIGRATION ⚠️** → Entregar el código con la alerta y esperar confirmación antes de continuar.
-
----
-
-## Módulos del sistema (actualizar según avance)
-
-| Módulo | Estado | Notas |
-|---|---|---|
-| Contratos | ✅ En producción | Core del sistema |
-| Presupuestos | ✅ En producción | |
-| Mantención | ✅ En producción | |
-| _(otros)_ | — | Definir |
+**🏗️ Agente 3 — Auditor de Plataforma**
+- ¿Cambio va en rama `migration`? ¿Toca algún archivo que no debe cambiar?
+- Output: `[PLATFORM: ✅ OK]` o `[PLATFORM: ⚠️ ALERTA — descripción]`
 
 ---
 
@@ -123,6 +134,8 @@ Output: `[MIGRATION: ✅ OK]` o `[MIGRATION: ⚠️ ALERTA — descripción]`
 
 ## Notas para Claude
 
-- Matias es el founder. Es no-técnico, así que explicar las decisiones técnicas en lenguaje simple cuando sea relevante.
-- Cuando haya más de una forma de hacer algo, presentar las opciones con sus trade-offs antes de implementar.
-- Si algo no está claro, preguntar antes de asumir — especialmente en temas que afecten datos de usuarios reales.
+- Matias es el founder. No técnico — explicar decisiones en lenguaje simple cuando sea relevante.
+- Cuando haya más de una forma de hacer algo, presentar opciones con trade-offs antes de implementar.
+- Si algo no está claro sobre datos de usuarios reales, preguntar antes de asumir.
+- Al correr SQL en la DB oficial, siempre confirmar que el proyecto destino es `ilcumthwzhmtumaklgvo`.
+- Comunicarse siempre en español genérico/neutro, nunca con modismos ni tono argentino (nada de "vos", "che", etc.).

@@ -1,73 +1,93 @@
-# Welcome to your Lovable project
+# LeaseFlow Pro
 
-## Project info
+CRM para administración de contratos de arriendo, presupuestos y mantención de propiedades. Desarrollado para el mercado chileno / LATAM.
 
-**URL**: https://lovable.dev/projects/73a8d508-7010-4c00-aa8e-6eb117cc7286
+## Stack
 
-## How can I edit this code?
+- **Frontend**: React 18 + TypeScript + Vite + shadcn/ui + Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Auth + Storage + Edge Functions)
+- **Deploy**: Vercel (rama `migration`) → Plataforma Oficial
+- **Módulo GeoLoc**: React + Leaflet/Google Maps, stack separado en `src/geoloc/`
 
-There are several ways of editing your application.
+## Estructura de ramas
 
-**Use Lovable**
+| Rama | Descripción |
+|---|---|
+| `main` | Versión de Estudio (Lovable) — solo referencia, no se modifica |
+| `migration` | **Plataforma Oficial** — desplegada en Vercel, conectada a Supabase `ilcumthwzhmtumaklgvo` |
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/73a8d508-7010-4c00-aa8e-6eb117cc7286) and start prompting.
+> **Regla crítica**: nunca hacer commit a `main`. Todo el trabajo va en `migration`.
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Desarrollo local
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+# 1. Clonar y pararse en la rama de trabajo
+git clone <repo-url>
+git checkout migration
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# 2. Instalar dependencias
+npm install
 
-# Step 3: Install the necessary dependencies.
-npm i
+# 3. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con las credenciales del Supabase oficial
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 4. Iniciar servidor de desarrollo
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Variables de entorno
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Ver `.env.example` para la lista completa. Las claves necesarias:
 
-**Use GitHub Codespaces**
+```
+VITE_SUPABASE_URL=https://ilcumthwzhmtumaklgvo.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<anon-key>
+VITE_GOOGLE_MAPS_KEY=<opcional>
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Base de datos
 
-## What technologies are used for this project?
+- **Proyecto Supabase**: `ilcumthwzhmtumaklgvo`
+- RLS habilitado en todas las tablas
+- 17 Edge Functions desplegadas y activas
+- Migraciones SQL: aplicar vía Supabase Dashboard o Management API
 
-This project is built with:
+## Edge Functions
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+| Función | Descripción |
+|---|---|
+| `create-user` / `delete-user` / `update-user` | Gestión de usuarios con service role |
+| `economic-indicators` / `refresh-economic-indicators` | Caché de UF/UTM desde mindicador.cl |
+| `extract-contract-data` | Extracción AI de datos de contratos |
+| `process-alerts` / `process-patent-alerts` | Procesamiento de alertas automáticas |
+| `isochrone` | Cálculo de isócronas para GeoLoc |
+| `google-drive` / `onedrive` | Integración con almacenamiento en la nube |
+| `send-contract-email` | Envío de emails de contratos |
+| `summarize-text` | Resumen AI de documentos |
+| `match-contracts` | Matching automático de contratos |
+| `recent-logins` / `force-logout-all` | Auditoría y control de sesiones |
+| `recommend-form-time` | Sugerencia de tiempos en formularios |
 
-## How can I deploy this project?
+## Sistema de permisos
 
-Simply open [Lovable](https://lovable.dev/projects/73a8d508-7010-4c00-aa8e-6eb117cc7286) and click on Share -> Publish.
+- `isAdmin`: acceso total
+- `hasPermission(resource, level)`: verifica tabla `user_permissions` para "view" / "edit"
+- `user_profile_templates` + `profile_template_permissions`: roles reutilizables (se asignan desde AdminPanel → Roles)
+- Árbol de permisos en `PermissionTreeEditor` con herencia padre-hijo
 
-## Can I connect a custom domain to my Lovable project?
+## Módulos
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+| Módulo | Ruta | Estado |
+|---|---|---|
+| Contratos | `/contracts` | ✅ Producción |
+| Presupuestos | `/capex`, `/opex` | ✅ Producción |
+| Mantención | `/maintenance` | ✅ Producción |
+| Patentes | `/patents` | ✅ Producción |
+| KPI | `/kpi` | ✅ Producción |
+| Proveedores | `/suppliers` | ✅ Producción |
+| Alertas | `/alerts` | ✅ Producción |
+| GeoLoc | `/geoloc` | ✅ Producción |
+| Órdenes de Compra | `/purchase-orders` | ✅ Producción |
+| Reportes | `/reports` | ✅ Producción |
+| Admin | `/admin` | ✅ Producción |

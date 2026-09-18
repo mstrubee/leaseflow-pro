@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 /**
  * Parse a user-entered numeric string supporting Chilean and international formats.
@@ -116,7 +135,7 @@ export interface BudgetLine {
   children?: BudgetLine[];
 }
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, onOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; onOcRequired?: (lineId: string, newStatusId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -137,11 +156,24 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
     else toast.success("Estado actualizado");
   };
 
+  // "OC Requerida" no se aplica directo: el padre (CAPEX) pide la cotización
+  // PDF primero -- si el usuario cancela ese diálogo, el badge no cambia.
+  const handleSelect = (s: { id: string; name: string }) => {
+    if (onOcRequired && s.name.trim().toLowerCase() === "oc requerida") {
+      setOpen(false);
+      onOcRequired(lineId, s.id);
+    } else {
+      handleChange(s.id);
+    }
+  };
+
   const badge = (
-    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap cursor-pointer", getProgressColorClass(current?.color))}>
+    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", readOnly ? "cursor-default" : "cursor-pointer", getProgressColorClass(current?.color))}>
       {current?.name || "Sin estado"}
     </Badge>
   );
+
+  if (readOnly) return badge;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -150,7 +182,7 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
         <div className="space-y-1">
           <button type="button" onClick={() => handleChange(null)} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent text-muted-foreground">Sin estado</button>
           {selectable.map(s => (
-            <button key={s.id} type="button" onClick={() => handleChange(s.id)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
+            <button key={s.id} type="button" onClick={() => handleSelect(s)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
               <Badge className={cn("text-[10px] px-2 py-0", getProgressColorClass(s.color))}>{s.name}</Badge>
             </button>
           ))}
@@ -163,6 +195,70 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { 
 
 const EMPTY_LINES_MAP = new Map<string, BudgetLine>();
 
+// Objeto estable (fuera del componente) para el activationConstraint del
+// PointerSensor. Si se pasa un literal inline, useSensor() lo memoiza por
+// referencia y una nueva referencia en cada render hace que dnd-kit
+// reinicie sus listeners internos — abortando un arrastre en curso.
+const POINTER_ACTIVATION_CONSTRAINT = { distance: 5 };
+
+// ── Drag-to-reorder (dnd-kit) ──────────────────────────────────────────────
+// Un solo DndContext para todo el árbol; cada nivel agrupa a sus hermanos
+// (separando autorizados de no-autorizados, ver BudgetLineTree más abajo) en
+// su propio SortableContext, así el reordenamiento por arrastre solo es
+// válido dentro del mismo grupo — igual que ya exigía la lógica anterior,
+// pero ahora es imposible soltar en un grupo inválido en vez de fallar en
+// silencio. Cada fila expone su grupo de hermanos vía `data.siblingIds`.
+export const BudgetLineTreeWithDrag = ({
+  onReorderLine,
+  ...props
+}: BudgetLineTreeProps & { onReorderLine?: (lineId: string, siblingIds: string[]) => Promise<void> }) => {
+  const [activeLine, setActiveLine] = useState<BudgetLine | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: POINTER_ACTIVATION_CONSTRAINT }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const data = event.active.data.current as { line?: BudgetLine } | undefined;
+    setActiveLine(data?.line ?? null);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveLine(null);
+    if (!over || active.id === over.id || !onReorderLine) return;
+    const siblingIds = (over.data.current as { siblingIds?: string[] } | undefined)?.siblingIds;
+    if (!siblingIds || !siblingIds.includes(active.id as string)) return;
+    const oldIndex = siblingIds.indexOf(active.id as string);
+    const newIndex = siblingIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorderLine(active.id as string, arrayMove(siblingIds, oldIndex, newIndex));
+  }, [onReorderLine]);
+
+  const handleDragCancel = useCallback(() => setActiveLine(null), []);
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <BudgetLineTree {...props} />
+      <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+        {activeLine ? (
+          <div className="flex items-center gap-2 py-1.5 px-3 rounded-md bg-background border-2 border-primary shadow-xl">
+            <GripVertical className="h-4 w-4 text-primary flex-shrink-0" />
+            <span className="text-sm font-medium truncate max-w-xs">{activeLine.name}</span>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  );
+};
+
 interface BudgetLineTreeProps {
   lines: BudgetLine[];
   onAddLine: (parentId: string | null) => void;
@@ -172,6 +268,14 @@ interface BudgetLineTreeProps {
   onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
+  /** Se llama en vez de cambiar el estado directo cuando el usuario elige "OC
+   *  Requerida" -- el padre debe abrir el diálogo de cotización antes de
+   *  aplicar el cambio. Solo se pasa desde presupuestos CAPEX. */
+  onOcRequired?: (lineId: string, newStatusId: string) => void;
+  /** Ids de líneas que tienen algo que mostrar en "Ver Ppto/OC/Factura"
+   *  (cotización, OC/solicitud o factura asociada) -- controla si el botón
+   *  está habilitado. */
+  linesWithDetails?: Set<string>;
   level?: number;
   readOnly?: boolean;
   compactView?: boolean;
@@ -187,6 +291,12 @@ interface BudgetLineTreeProps {
   internalTransferSupplierIds?: Set<string>;
   /** When true, show a checkbox at the start of every line for bulk move. */
   selectionMode?: boolean;
+  /** Con selectionMode activo, restringe qué líneas se pueden tildar a las
+   *  que estén "autorizado" (flujo "OC Requerida" > seleccionar adicionales). */
+  restrictSelectionToAuthorized?: boolean;
+  /** Línea que ya viene seleccionada y no se puede destildar (la línea de
+   *  origen del flujo "OC Requerida" > seleccionar adicionales). */
+  lockedLineId?: string;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
@@ -195,6 +305,13 @@ interface BudgetLineTreeProps {
   onMoveLine?: (lineId: string) => void;
   /** Id of a newly created line to focus/scroll into view. */
   focusNewLineId?: string | null;
+  /** Monto consumido (CLP) por línea de gasto — suma de OC del año, por budget_line_id.
+   *  Solo se calcula para CAPEX; si está presente, cada línea de gasto muestra su
+   *  disponible (autorizado - consumido) debajo del monto autorizado. */
+  consumedByLineClp?: Record<string, number>;
+  /** Called when the user clicks the "%" button on a parent line and confirms adding
+   *  a percentage-based line (Gastos Generales, Utilidades, etc.). */
+  onAddPercentageLine?: (sourceLineId: string, name: string, percentage: number) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -205,6 +322,8 @@ export const BudgetLineTree = ({
   onCreateOCRequest,
   onCreateInvoice,
   onViewLineDetails,
+  onOcRequired,
+  linesWithDetails,
   level = 0,
   readOnly = false,
   compactView = false,
@@ -217,12 +336,16 @@ export const BudgetLineTree = ({
   superficieEdificada = 0,
   internalTransferSupplierIds,
   selectionMode = false,
+  restrictSelectionToAuthorized = false,
+  lockedLineId,
   selectedIds,
   onToggleSelect,
   onReload,
   onMoveLine,
+  consumedByLineClp,
+  onAddPercentageLine,
 }: BudgetLineTreeProps) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
     if (level > 0) return null; // Don't compute for nested trees
@@ -251,6 +374,11 @@ export const BudgetLineTree = ({
         if (aIsProyectos && !bIsProyectos) return -1;
         if (!aIsProyectos && bIsProyectos) return 1;
       }
+      // Percentage lines (Gastos Generales, Utilidades) always last
+      const aIsPct = a.calc_type === "percentage";
+      const bIsPct = b.calc_type === "percentage";
+      if (aIsPct && !bIsPct) return 1;
+      if (!aIsPct && bIsPct) return -1;
       // "No Autorizado" always at end within each parent
       if (a.status !== b.status) {
         if (a.status === "no_autorizado") return 1;
@@ -262,35 +390,70 @@ export const BudgetLineTree = ({
     });
   }, [lines, compactView]);
 
+  // "No Autorizado" siempre va al final (ver sortedLines) — se agrupan en su
+  // propio SortableContext para que el arrastre solo pueda reordenar dentro
+  // del mismo grupo (autorizadas entre sí, no-autorizadas entre sí). Antes
+  // era posible arrastrar una línea no-autorizada entre autorizadas y el
+  // drop parecía funcionar, pero el orden se revertía en silencio al
+  // re-renderizar; ahora esa combinación no es un destino de drop válido.
+  const { authorizedSiblings, unauthorizedSiblings, authorizedIds, unauthorizedIds } = useMemo(() => {
+    const authorizedSiblings = sortedLines.filter(l => l.status !== "no_autorizado");
+    const unauthorizedSiblings = sortedLines.filter(l => l.status === "no_autorizado");
+    return {
+      authorizedSiblings,
+      unauthorizedSiblings,
+      authorizedIds: authorizedSiblings.map(l => l.id),
+      unauthorizedIds: unauthorizedSiblings.map(l => l.id),
+    };
+  }, [sortedLines]);
+
+  const renderItem = (line: BudgetLine, siblingIds: string[]) => (
+    <BudgetLineItem
+      key={line.id}
+      line={line}
+      level={level}
+      linesMap={effectiveLinesMap}
+      onAddLine={onAddLine}
+      onUpdateLine={onUpdateLine}
+      onDeleteLine={onDeleteLine}
+      onCreateOC={onCreateOC}
+      onCreateOCRequest={onCreateOCRequest}
+      onCreateInvoice={onCreateInvoice}
+      onViewLineDetails={onViewLineDetails}
+      onOcRequired={onOcRequired}
+      linesWithDetails={linesWithDetails}
+      readOnly={readOnly}
+      compactView={compactView}
+      parentCategoryId={line.category_id || parentCategoryId}
+      globalExpandState={globalExpandState}
+      templatePricesMap={templatePricesMap}
+      collapsedIds={collapsedIds}
+      onToggleExpand={onToggleExpand}
+      superficieEdificada={superficieEdificada}
+      internalTransferSupplierIds={internalTransferSupplierIds}
+      selectionMode={selectionMode}
+      restrictSelectionToAuthorized={restrictSelectionToAuthorized}
+      lockedLineId={lockedLineId}
+      selectedIds={selectedIds}
+      onToggleSelect={onToggleSelect}
+      onReload={onReload}
+      onMoveLine={onMoveLine}
+      consumedByLineClp={consumedByLineClp}
+      onAddPercentageLine={onAddPercentageLine}
+      siblingIds={siblingIds}
+    />
+  );
+
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-    {sortedLines.map(line => <BudgetLineItem
-        key={line.id} 
-        line={line} 
-        level={level} 
-        linesMap={effectiveLinesMap}
-        onAddLine={onAddLine} 
-        onUpdateLine={onUpdateLine} 
-        onDeleteLine={onDeleteLine} 
-        onCreateOC={onCreateOC} 
-        onCreateOCRequest={onCreateOCRequest}
-        onCreateInvoice={onCreateInvoice} 
-        onViewLineDetails={onViewLineDetails} 
-        readOnly={readOnly}
-        compactView={compactView}
-        parentCategoryId={line.category_id || parentCategoryId}
-        globalExpandState={globalExpandState}
-        templatePricesMap={templatePricesMap}
-        collapsedIds={collapsedIds}
-        onToggleExpand={onToggleExpand}
-        superficieEdificada={superficieEdificada}
-        internalTransferSupplierIds={internalTransferSupplierIds}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        onToggleSelect={onToggleSelect}
-        onReload={onReload}
-        onMoveLine={onMoveLine}
-      />)}
-      {level === 0 && !readOnly && isAdmin && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
+    <SortableContext items={authorizedIds} strategy={verticalListSortingStrategy}>
+      {authorizedSiblings.map(line => renderItem(line, authorizedIds))}
+    </SortableContext>
+    {unauthorizedSiblings.length > 0 && (
+      <SortableContext items={unauthorizedIds} strategy={verticalListSortingStrategy}>
+        {unauthorizedSiblings.map(line => renderItem(line, unauthorizedIds))}
+      </SortableContext>
+    )}
+      {level === 0 && !readOnly && (isAdmin || hasPermission("budget_editar_lineas", "edit")) && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
         </Button>}
@@ -307,6 +470,8 @@ interface BudgetLineItemProps {
   onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
+  onOcRequired?: (lineId: string, newStatusId: string) => void;
+  linesWithDetails?: Set<string>;
   readOnly?: boolean;
   compactView?: boolean;
   parentCategoryId?: string | null;
@@ -321,6 +486,12 @@ interface BudgetLineItemProps {
   onToggleSelect?: (id: string) => void;
   onReload?: () => void;
   onMoveLine?: (lineId: string) => void;
+  consumedByLineClp?: Record<string, number>;
+  /** Ids ordenados del grupo de hermanos al que pertenece esta línea (mismo
+   *  padre y mismo estado autorizado/no-autorizado) — define hasta dónde
+   *  puede reordenarse por arrastre. */
+  siblingIds?: string[];
+  onAddPercentageLine?: (sourceLineId: string, name: string, percentage: number) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -339,6 +510,8 @@ const BudgetLineItemInner = ({
   onCreateOCRequest,
   onCreateInvoice,
   onViewLineDetails,
+  onOcRequired,
+  linesWithDetails,
   readOnly = false,
   compactView = false,
   parentCategoryId = null,
@@ -349,14 +522,27 @@ const BudgetLineItemInner = ({
   superficieEdificada = 0,
   internalTransferSupplierIds,
   selectionMode = false,
+  restrictSelectionToAuthorized = false,
+  lockedLineId,
   selectedIds,
   onToggleSelect,
   onReload,
   onMoveLine,
+  consumedByLineClp,
+  onAddPercentageLine,
+  siblingIds = [],
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
+  // Una línea "autorizada" solo la puede editar (monto/cantidad) un admin --
+  // ningún otro permiso la habilita, aunque tenga budget_editar_montos/cantidades.
+  const isAuthorizedLine = line.status === "autorizado";
+  const canEditCantidades = isAdmin || (!isAuthorizedLine && hasPermission("budget_editar_cantidades", "edit"));
+  const canEditMontos     = isAdmin || (!isAuthorizedLine && hasPermission("budget_editar_montos", "edit"));
+  const canEditEstado     = isAdmin || hasPermission("budget_editar_estado", "edit");
+  const canAutorizar      = isAdmin || hasPermission("budget_autorizar", "edit");
+  const canEditLineas     = isAdmin || hasPermission("budget_editar_lineas", "edit");
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
   const isExpanded = collapsedIds ? !collapsedIds.has(line.id) : localExpanded;
@@ -391,6 +577,10 @@ const BudgetLineItemInner = ({
   const [editTotal, setEditTotal] = useState("");
   const [editPercentage, setEditPercentage] = useState((line.calc_percentage || 0).toString());
   const [editTotalCurrency, setEditTotalCurrency] = useState<"UF" | "CLP">("UF");
+  const [showPercentPopover, setShowPercentPopover] = useState(false);
+  const [percentName, setPercentName] = useState("");
+  const [percentValue, setPercentValue] = useState("");
+  const percentSubmittingRef = useRef(false);
   const {
     formatUF,
     formatCLP,
@@ -410,12 +600,29 @@ const BudgetLineItemInner = ({
   const isSurchargeRow = !!line.is_surcharge;
   // Authorized lines are locked for non-admins. They can still request adicionales/descuentos
   // via the dedicated surcharge "+" button (kept accessible via originalReadOnly below).
-  const isAuthorizedLockedForUser = line.status === "autorizado" && !isAdmin && !isSurchargeRow;
+  const isAuthorizedLockedForUser = line.status === "autorizado" && !canAutorizar && !isSurchargeRow;
   const effectiveReadOnly = readOnly || isAuthorizedLockedForUser;
 
-  // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
+  // Drag-to-reorder (dnd-kit) — el handle real es el ícono GripVertical (ver
+  // más abajo), no toda la fila, para no competir con botones/inputs.
+  const canDragLine = !effectiveReadOnly && !selectionMode && !compactView;
+  const {
+    attributes: dragAttributes,
+    listeners: dragListeners,
+    setNodeRef: setDragNodeRef,
+    transform: dragTransform,
+    transition: dragTransition,
+    isDragging,
+  } = useSortable({ id: line.id, data: { line, siblingIds }, disabled: !canDragLine });
+  const dragStyle = { transform: CSS.Transform.toString(dragTransform), transition: dragTransition };
+
+  // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here).
+  // NOTE: intentionally NOT gated on `isParent` — a line that had a pending surcharge and later
+  // became a parent (e.g. via the move "clone as self-child" mechanism, which reparents its
+  // original value under itself) must keep showing that request; it still counts fully in every
+  // total, so hiding it here made it silently invisible while still moving the budget's numbers.
   const pendingSurcharges = useMemo(() => {
-    if (isSurchargeRow || isParent) return [];
+    if (isSurchargeRow) return [];
     const arr: BudgetLine[] = [];
     linesMap.forEach((l) => {
       if (l.is_surcharge && l.surcharge_parent_line_id === line.id && !l.merged_into_line_id) {
@@ -423,7 +630,7 @@ const BudgetLineItemInner = ({
       }
     });
     return arr;
-  }, [linesMap, line.id, isSurchargeRow, isParent]);
+  }, [linesMap, line.id, isSurchargeRow]);
 
   // Merged surcharges already folded into this line (for indicator)
   const mergedSurcharges = useMemo(() => {
@@ -449,14 +656,26 @@ const BudgetLineItemInner = ({
     return source ? source.name : null;
   }, [isCalcPercentage, line.calc_source_line_id, linesMap]);
 
-  // Calculate subtotal of children recursively (for parent lines) using template prices when available
+  // Calculate subtotal of children recursively (for parent lines) using template prices when available.
+  // Percentage children (Gastos Generales, Utilidades) are excluded from a line's own base — otherwise
+  // its % would compute off a base that already includes itself — but a nested parent's OWN percentage
+  // surcharges must still roll up into this total, or they'd vanish from every ancestor above it.
   const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
+      if (child.calc_type === "percentage") return sum;
       if (child.children && child.children.length > 0) {
-        const childSubtotal = calculateChildrenSubtotal(child.children);
-        const childMultiplier = child.quantity || 1;
-        return sum + (childSubtotal * childMultiplier);
+        const childBase = calculateChildrenSubtotal(child.children) * (child.quantity || 1);
+        const childSurcharges = child.children
+          .filter((c) => c.calc_type === "percentage")
+          .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
+        return sum + childBase + childSurcharges;
       }
+      // Leaf exclusions — must mirror getEffectiveAmount, or this total drifts from the
+      // "No Autorizado"/grand-total badges that use it (ghost/merged/internal-transfer lines
+      // would otherwise be counted here but correctly excluded there).
+      if (child.is_ghost || child.merged_into_line_id) return sum;
+      if (child.supplier_id && internalTransferSupplierIds?.has(child.supplier_id)) return sum;
+      if (child.is_surcharge) return sum + (child.amount_uf || 0);
       // Leaf: qty * price (prefer local unit_price, fallback to template)
       const qty = child.quantity || 0;
       const localPrice = child.unit_price || 0;
@@ -481,14 +700,21 @@ const BudgetLineItemInner = ({
     return qty * price;
   };
 
-  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations)
+  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations).
+  // Same rule as calculateChildrenSubtotal: exclude a line's own % children from its base, but roll up
+  // a nested sub-parent's own % surcharges so they don't disappear from the source's subtotal.
   const calculateStoredSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
+      if (child.calc_type === "percentage") return sum;
       if (child.children && child.children.length > 0) {
-        const childSub = calculateStoredSubtotal(child.children);
-        const mult = child.quantity || 1;
-        return sum + (childSub * mult);
+        const childBase = calculateStoredSubtotal(child.children) * (child.quantity || 1);
+        const childSurcharges = child.children
+          .filter((c) => c.calc_type === "percentage")
+          .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
+        return sum + childBase + childSurcharges;
       }
+      if (child.is_ghost || child.merged_into_line_id) return sum;
+      if (child.supplier_id && internalTransferSupplierIds?.has(child.supplier_id)) return sum;
       return sum + (child.amount_uf || 0);
     }, 0);
   };
@@ -532,6 +758,59 @@ const BudgetLineItemInner = ({
     });
     return calculatedAmount + surcharges;
   }, [isParent, linesMap, line.id, calculatedAmount]);
+
+  // Para líneas madre: el estado y el monto no son uno solo, dependen de sus
+  // hijas. "Autorizado" se muestra si al menos una hija (a cualquier
+  // profundidad) está autorizada; "No Autorizado" si al menos una no lo está.
+  // Cada badge lleva su propio monto (suma de las hijas en ese estado), en vez
+  // de un solo total que mezcla ambos.
+  const { parentHasAuthorized, parentHasUnauthorized, parentAuthorizedUf, parentUnauthorizedUf } = useMemo(() => {
+    if (!isParent) return { parentHasAuthorized: false, parentHasUnauthorized: false, parentAuthorizedUf: 0, parentUnauthorizedUf: 0 };
+    let hasAuthorized = false;
+    let hasUnauthorized = false;
+    const walk = (items: BudgetLine[]) => {
+      items.forEach(item => {
+        if (item.children && item.children.length > 0) {
+          walk(item.children);
+          return;
+        }
+        if (item.status === "autorizado") hasAuthorized = true;
+        else hasUnauthorized = true;
+      });
+    };
+    walk(line.children || []);
+    return {
+      parentHasAuthorized: hasAuthorized,
+      parentHasUnauthorized: hasUnauthorized,
+      parentAuthorizedUf: calculateAuthorizedTotal(line.children || [], templatePricesMap, ufValue, internalTransferSupplierIds),
+      parentUnauthorizedUf: calculateUnauthorizedTotal(line.children || [], templatePricesMap, ufValue, internalTransferSupplierIds),
+    };
+  }, [isParent, line.children, templatePricesMap, ufValue, internalTransferSupplierIds]);
+
+  // Línea madre: el badge de proveedor responde al de sus hijas (a
+  // cualquier profundidad), no al propio de la madre -- si todas comparten
+  // un mismo proveedor, se muestra ese; si hay más de uno distinto, "Varios".
+  // Ver también handleSupplierChange, que sigue permitiendo elegir uno desde
+  // la madre para propagarlo a todas las hijas.
+  const { hasMultipleChildSuppliers, commonChildSupplierId, commonChildSupplierName } = useMemo(() => {
+    if (!isParent) return { hasMultipleChildSuppliers: false, commonChildSupplierId: null as string | null, commonChildSupplierName: null as string | null };
+    const suppliers = new Map<string, string | null>();
+    const walk = (items: BudgetLine[]) => {
+      items.forEach(item => {
+        if (item.children && item.children.length > 0) {
+          walk(item.children);
+          return;
+        }
+        if (item.supplier_id) suppliers.set(item.supplier_id, item.supplier_name ?? null);
+      });
+    };
+    walk(line.children || []);
+    if (suppliers.size === 1) {
+      const [id, name] = [...suppliers.entries()][0];
+      return { hasMultipleChildSuppliers: false, commonChildSupplierId: id, commonChildSupplierName: name };
+    }
+    return { hasMultipleChildSuppliers: suppliers.size > 1, commonChildSupplierId: null, commonChildSupplierName: null };
+  }, [isParent, line.children]);
 
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
@@ -770,7 +1049,7 @@ const BudgetLineItemInner = ({
   };
 
   const toggleStatus = () => {
-    if (readOnly || !isAdmin) return;
+    if (readOnly || !canAutorizar) return;
     onUpdateLine(line.id, {
       status: line.status === "autorizado" ? "no_autorizado" : "autorizado"
     });
@@ -793,16 +1072,37 @@ const BudgetLineItemInner = ({
       return segments.length ? segments.join(" › ") : "(destino eliminado)";
     };
     const destinationPath = buildPath(line.moved_to_line_id);
+    // Las marcas de movimiento pueden gestionarlas admins o quienes tengan permiso
+    // de edición de líneas (p. ej. rol Equipo Desarrollo); la selección se habilita igual.
+    const ghostSelectable = selectionMode && canEditLineas;
 
     return (
       <div>
         <div
+          onClick={ghostSelectable ? (e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest('button, a, input, textarea, select, [role="button"], [role="checkbox"]')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleSelect?.(line.id);
+          } : undefined}
           className={cn(
             "flex items-center gap-2 py-1.5 px-2 rounded-md border border-dashed border-muted-foreground/30 bg-muted/10 opacity-60 italic",
             level === 0 && "ml-0",
+            ghostSelectable && "cursor-pointer select-none",
           )}
         >
-          <div className="h-3.5 w-3.5 flex-shrink-0" />
+          {ghostSelectable ? (
+            <Checkbox
+              aria-label={`Seleccionar ${line.name}`}
+              checked={isSelected}
+              onCheckedChange={() => onToggleSelect?.(line.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-shrink-0"
+            />
+          ) : (
+            <div className="h-3.5 w-3.5 flex-shrink-0" />
+          )}
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
           <span className="text-sm flex-shrink-0 max-w-[280px] truncate text-muted-foreground line-through">
             {line.name}
@@ -810,7 +1110,7 @@ const BudgetLineItemInner = ({
           <span className="text-xs text-muted-foreground truncate">
             Movida a: <span className="font-medium not-italic">{destinationPath}</span>
           </span>
-          {!effectiveReadOnly && isAdmin && (
+          {!effectiveReadOnly && canEditLineas && (
             <Button
               variant="ghost"
               size="sm"
@@ -826,10 +1126,19 @@ const BudgetLineItemInner = ({
     );
   }
 
+  // Con restrictSelectionToAuthorized (flujo "OC Requerida" > seleccionar
+  // líneas adicionales), solo las líneas "Autorizado" se pueden tildar -- el
+  // resto queda visible pero inerte para la selección. lockedLineId (la línea
+  // de origen del mismo flujo) siempre queda tildada y no se puede destildar.
+  const isLocked = !!lockedLineId && line.id === lockedLineId;
+  const isSelectable = selectionMode && !isLocked && (!restrictSelectionToAuthorized || line.status === "autorizado");
+
   return <div>
       <div
+        ref={setDragNodeRef}
+        style={dragStyle}
         data-line-id={line.id}
-        onClick={selectionMode ? (e) => {
+        onClick={isSelectable ? (e) => {
           // Ignore clicks on interactive children (inputs, buttons, dropdowns, etc.)
           const target = e.target as HTMLElement;
           if (target.closest('button, a, input, textarea, select, [role="button"], [role="checkbox"], [role="combobox"], [role="menuitem"], [data-no-select]')) return;
@@ -849,22 +1158,34 @@ const BudgetLineItemInner = ({
         level >= 3 && hasChildren && "bg-muted/35",
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
-        selectionMode && "cursor-pointer select-none",
-        // Selection styles last so they win precedence
-        selectionMode && isSelected && "!bg-primary/20 border-l-4 border-primary font-medium shadow-sm ring-1 ring-primary/40"
+        isSelectable && "cursor-pointer select-none",
+        selectionMode && !isSelectable && !isLocked && "opacity-50",
+        isLocked && "ring-1 ring-primary/40 bg-primary/5",
+        // Drag-to-reorder visual state: dim the source, dnd-kit slides the rest
+        isDragging && "opacity-40 z-10 relative",
       )}>
         {selectionMode && (
-          <div
+          <Checkbox
             aria-label={`Seleccionar ${line.name}`}
-            className={cn(
-              "h-5 w-5 flex-shrink-0 rounded border-2 flex items-center justify-center transition-colors pointer-events-none",
-              isSelected
-                ? "bg-primary border-primary text-primary-foreground"
-                : "bg-background border-muted-foreground/40"
-            )}
+            checked={isSelected || isLocked}
+            disabled={!isSelectable}
+            onCheckedChange={() => onToggleSelect?.(line.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-shrink-0"
+            title={isLocked ? "Línea de origen — siempre incluida" : !isSelectable ? "Solo se pueden seleccionar líneas Autorizadas" : undefined}
+          />
+        )}
+        {canDragLine && (
+          <button
+            type="button"
+            {...dragAttributes}
+            {...dragListeners}
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 -m-1 rounded cursor-grab active:cursor-grabbing hover:bg-accent flex-shrink-0 touch-none"
+            title="Arrastrar para reordenar"
           >
-            {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
-          </div>
+            <GripVertical className="h-4 w-4 text-muted-foreground/50 group-hover:text-muted-foreground" />
+          </button>
         )}
         <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
@@ -998,8 +1319,8 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[50px] text-right cursor-text hover:bg-accent/50"
-                onDoubleClick={() => !effectiveReadOnly && setIsEditingQuantity(true)}
-                title="Doble clic para editar"
+                onDoubleClick={() => !effectiveReadOnly && canEditCantidades && setIsEditingQuantity(true)}
+                title={canEditCantidades ? "Doble clic para editar" : isAuthorizedLine ? "Línea autorizada: solo un admin puede editar cantidades" : "Sin permiso para editar cantidades"}
               >
                 {line.quantity || 0}
               </span>
@@ -1007,7 +1328,12 @@ const BudgetLineItemInner = ({
 
             {/* Unit type - editable on double click */}
             {isEditingUnit && !effectiveReadOnly ? (
-              <Select value={editUnit} onValueChange={handleSaveUnit} open={true}>
+              <Select
+                value={editUnit}
+                onValueChange={handleSaveUnit}
+                defaultOpen
+                onOpenChange={(open) => { if (!open) setIsEditingUnit(false); }}
+              >
                 <SelectTrigger className="h-6 w-14 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -1020,8 +1346,8 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs text-muted-foreground min-w-[24px] cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
-                onDoubleClick={() => !effectiveReadOnly && setIsEditingUnit(true)}
-                title="Doble clic para editar"
+                onDoubleClick={() => !effectiveReadOnly && canEditCantidades && setIsEditingUnit(true)}
+                title={canEditCantidades ? "Doble clic para editar" : isAuthorizedLine ? "Línea autorizada: solo un admin puede editar cantidades" : "Sin permiso para editar cantidades"}
               >
                 {line.unit_type === "m2" ? "m²" : line.unit_type || "m²"}
               </span>
@@ -1035,7 +1361,12 @@ const BudgetLineItemInner = ({
           <div className="flex items-center gap-1 w-[180px] min-w-[180px] max-w-[180px]">
             {/* Currency - editable on double click */}
             {isEditingCurrency && !effectiveReadOnly ? (
-              <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
+              <Select
+                value={editCurrency}
+                onValueChange={handleSaveCurrency}
+                defaultOpen
+                onOpenChange={(open) => { if (!open) setIsEditingCurrency(false); }}
+              >
                 <SelectTrigger className="h-6 w-16 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -1047,7 +1378,7 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs text-muted-foreground cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
-                onDoubleClick={() => !effectiveReadOnly && setIsEditingCurrency(true)}
+                onDoubleClick={() => !effectiveReadOnly && canEditMontos && setIsEditingCurrency(true)}
                 title="Doble clic para editar"
               >
                 {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
@@ -1062,7 +1393,7 @@ const BudgetLineItemInner = ({
                 onChange={e => setEditUnitPrice(e.target.value)} 
                 onBlur={handleSavePrice}
                 onKeyDown={handlePriceKeyDown}
-                className="h-6 w-20 text-xs" 
+                className="h-6 w-28 text-xs"
                 autoFocus
                 min="0"
                 step="0.01"
@@ -1075,7 +1406,7 @@ const BudgetLineItemInner = ({
                     templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
                   )}
                   onDoubleClick={() => {
-                    if (effectiveReadOnly) return;
+                    if (effectiveReadOnly || !canEditMontos) return;
                     const localP = line.unit_price || 0;
                     const dp = localP > 0 ? localP : (templateUnitPrice ?? 0);
                     setEditUnitPrice(dp.toString());
@@ -1160,18 +1491,55 @@ const BudgetLineItemInner = ({
               return formatUF(isParent ? calculatedAmountWithSurcharges : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
           </span>
-          <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
+          <div className="flex flex-col items-center min-w-[100px]">
             {(() => {
-              if (isCalcPercentage) return formatCLP(convertUFToPesos(calculatedAmount));
-              if (!isParent && line.currency === "CLP") {
-                const qty = line.quantity || 0;
-                const localP = line.unit_price || 0;
-                const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
-                return formatCLP(qty * price);
-              }
-              return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
+              const lineAuthorizedClp = (() => {
+                if (isCalcPercentage) return convertUFToPesos(calculatedAmount);
+                if (!isParent && line.currency === "CLP") {
+                  const qty = line.quantity || 0;
+                  const localP = line.unit_price || 0;
+                  const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
+                  return qty * price;
+                }
+                return convertUFToPesos(calculatedAmountWithSurcharges);
+              })();
+              // Consumido de esta línea: para líneas de gasto, su propio
+              // consumo; para líneas madre, la suma real (sin topar) del
+              // consumo de todos sus descendientes — así una línea hija
+              // sobregastada sí reduce el disponible visible de la madre.
+              const lineConsumedClp = (() => {
+                if (!consumedByLineClp) return 0;
+                if (!isParent) return consumedByLineClp[line.id] ?? 0;
+                const collectIds = (l: BudgetLine): string[] => {
+                  const ids = [l.id];
+                  (l.children || []).forEach(child => { ids.push(...collectIds(child)); });
+                  return ids;
+                };
+                return collectIds(line).reduce((sum, id) => sum + (consumedByLineClp[id] ?? 0), 0);
+              })();
+              // El disponible real nunca es negativo: si el consumo supera lo
+              // autorizado, el mínimo disponible es $0 (no se le puede "sacar
+              // plata" a una línea que ya no tiene margen).
+              const lineAvailableClp = Math.max(0, lineAuthorizedClp - lineConsumedClp);
+              return (
+                <>
+                  <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap text-center">
+                    {formatCLP(lineAuthorizedClp)}
+                  </span>
+                  {/* Disponible por línea (autorizado - consumido en OC, piso
+                      $0): en líneas de gasto y en líneas madre (agregado de
+                      sus hijas), solo cuando el mapa de consumo está
+                      disponible (hoy, CAPEX de contratos regulares). Centrado
+                      con el monto de arriba, dentro de la misma columna. */}
+                  {consumedByLineClp && (
+                    <span className="text-[10px] text-muted-foreground/80 font-mono whitespace-nowrap text-center">
+                      ({`Disp. ${formatCLP(lineAvailableClp)}`})
+                    </span>
+                  )}
+                </>
+              );
             })()}
-          </span>
+          </div>
           {(
             (!isParent && mergedSurcharges.length > 0) ||
             (!isParent && !isSurchargeRow && line.status === "autorizado" && !effectiveReadOnly)
@@ -1221,18 +1589,33 @@ const BudgetLineItemInner = ({
               )}
             </div>
           )}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", isAdmin && "cursor-pointer", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
-                  {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
+          {isParent ? (
+            <div className="flex items-center gap-1">
+              {parentHasAuthorized && (
+                <Badge className="text-[10px] px-2.5 py-0 whitespace-nowrap bg-green-500 hover:bg-green-600">
+                  {`Autorizado ${formatCLP(convertUFToPesos(parentAuthorizedUf))}`}
                 </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                {!isAdmin ? "Solo administradores pueden cambiar el estado" : line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              )}
+              {parentHasUnauthorized && (
+                <Badge className="text-[10px] px-2.5 py-0 whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white">
+                  {`No Autorizado ${formatCLP(convertUFToPesos(parentUnauthorizedUf))}`}
+                </Badge>
+              )}
+            </div>
+          ) : (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", isAdmin && "cursor-pointer", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
+                    {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {!isAdmin ? "Solo administradores pueden cambiar el estado" : line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
@@ -1243,38 +1626,53 @@ const BudgetLineItemInner = ({
             </TooltipProvider>}
           
           {/* View details button - for leaf lines */}
-          {!isParent && !effectiveReadOnly && onViewLineDetails && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onViewLineDetails(line.id, line.name)}
-                    className="h-6 px-2 text-[10px] border-muted-foreground/30 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    <FileText className="h-3 w-3 mr-1" />
-                    Ver OC/Fact.
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Ver Órdenes de Compra y Facturas</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+          {!isParent && !effectiveReadOnly && onViewLineDetails && (() => {
+            const hasDetails = !linesWithDetails || linesWithDetails.has(line.id);
+            return (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onViewLineDetails(line.id, line.name)}
+                        disabled={!hasDetails}
+                        className="h-6 px-2 text-[10px] border-muted-foreground/30 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Ver Ppto/OC/Factura
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {hasDetails
+                      ? "Ver Presupuesto (cotización), Órdenes de Compra y Facturas"
+                      : "Sin presupuesto, OC ni factura asociada"}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })()}
 
-          {/* Supplier dropdown - for all lines (parent and leaf) */}
+          {/* Supplier dropdown - for all lines (parent and leaf). En líneas
+              madre, el proveedor efectivo lo determinan las hijas: si
+              comparten uno solo, se muestra ese (aunque la madre no tenga
+              uno propio asignado); si hay más de uno, "Varios". */}
           {!effectiveReadOnly && (
             <SupplierSelect
-              value={line.supplier_id || null}
+              value={hasMultipleChildSuppliers ? null : (commonChildSupplierId ?? line.supplier_id ?? null)}
+              supplierName={hasMultipleChildSuppliers ? null : (commonChildSupplierName ?? line.supplier_name ?? null)}
               onChange={handleSupplierChange}
               templateLineId={line.template_line_id}
               categoryId={line.category_id || parentCategoryId}
               disabled={effectiveReadOnly}
+              placeholder={hasMultipleChildSuppliers ? "Varios" : "Proveedor"}
             />
           )}
-          {effectiveReadOnly && !compactView && line.supplier_name && (
+          {effectiveReadOnly && !compactView && (hasMultipleChildSuppliers || commonChildSupplierName || line.supplier_name) && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
-              {line.supplier_name}
+              {hasMultipleChildSuppliers ? "Varios" : (commonChildSupplierName ?? line.supplier_name)}
             </span>
           )}
           {isInternalTransfer && (
@@ -1288,8 +1686,9 @@ const BudgetLineItemInner = ({
             <ProgressStatusBadge
               lineId={line.id}
               currentStatusId={line.progress_status_id}
-              readOnly={effectiveReadOnly}
+              readOnly={effectiveReadOnly || !canEditEstado}
               isParent={isParent}
+              onOcRequired={onOcRequired}
             />
           )}
 
@@ -1357,6 +1756,73 @@ const BudgetLineItemInner = ({
               <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0" title="Agregar línea hija">
                 <Plus className="h-3 w-3" />
               </Button>
+              {hasChildren && onAddPercentageLine && (
+                <Popover open={showPercentPopover} onOpenChange={(open) => {
+                  setShowPercentPopover(open);
+                  // Reset the submit guard both when Radix closes it (outside click, Escape) and
+                  // when it (re)opens — closing it ourselves from the "Agregar" button below sets
+                  // `showPercentPopover` directly, which does NOT route through this callback, so
+                  // relying on the close branch alone left the guard stuck after a first success.
+                  percentSubmittingRef.current = false;
+                  if (!open) { setPercentName(""); setPercentValue(""); }
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700" title="Agregar línea porcentual (Gastos Generales, Utilidades, etc.)">
+                      <Percent className="h-3 w-3" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3 space-y-3" align="end" onClick={(e) => e.stopPropagation()}>
+                    <div className="text-xs font-medium text-muted-foreground">Agregar línea porcentual sobre "{line.name}"</div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {["Gastos Generales", "Utilidades"].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setPercentName(preset)}
+                          className={`text-xs px-2 py-1 rounded border transition-colors ${percentName === preset ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-accent"}`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                    <Input
+                      placeholder="Nombre personalizado"
+                      value={percentName}
+                      onChange={(e) => setPercentName(e.target.value)}
+                      className="h-7 text-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        placeholder="%"
+                        value={percentValue}
+                        onChange={(e) => setPercentValue(e.target.value)}
+                        className="h-7 text-xs w-20"
+                      />
+                      <span className="text-xs text-muted-foreground">% de esta línea</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs"
+                      disabled={!percentName.trim() || !percentValue || Number(percentValue) <= 0}
+                      onClick={() => {
+                        if (!percentName.trim() || !percentValue || Number(percentValue) <= 0) return;
+                        if (percentSubmittingRef.current) return;
+                        percentSubmittingRef.current = true;
+                        onAddPercentageLine(line.id, percentName.trim(), Number(percentValue));
+                        setShowPercentPopover(false);
+                        setPercentName("");
+                        setPercentValue("");
+                      }}
+                    >
+                      Agregar
+                    </Button>
+                  </PopoverContent>
+                </Popover>
+              )}
               {onMoveLine && !line.is_ghost && !line.merged_into_line_id && (
                 <Button
                   size="sm"
@@ -1368,7 +1834,7 @@ const BudgetLineItemInner = ({
                   <CornerDownRight className="h-3 w-3" />
                 </Button>
               )}
-              {(isAdmin || (line.status === "no_autorizado" && line.parent_id !== null)) && (
+              {(canEditLineas || (line.status === "no_autorizado" && line.parent_id !== null)) && (
                 <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive" title="Eliminar línea">
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -1377,7 +1843,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
@@ -1528,8 +1994,25 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   // For percentage lines and parent lines (which sum sibling surcharges), recalc when linesMap changes
   const isParentLine = !!(prev.line.children && prev.line.children.length > 0);
   if ((prev.line.calc_type === "percentage" || isParentLine) && prev.linesMap !== next.linesMap) return false;
+  // A parent line renders its descendants inside a nested subtree. When expansion or
+  // selection changes anywhere below it, a descendant's checked/expanded state may have
+  // changed even though this line's own state did not — so the parent must re-render to
+  // propagate the update down. collapsedIds/selectedIds keep a stable reference except
+  // when they actually change, so this does NOT add re-renders while editing.
+  if (isParentLine) {
+    if (prev.collapsedIds !== next.collapsedIds) return false;
+    if (prev.selectedIds !== next.selectedIds) return false;
+  }
   if (prev.parentCategoryId !== next.parentCategoryId) return false;
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
+  if (prev.consumedByLineClp !== next.consumedByLineClp) return false;
+  if (prev.siblingIds !== next.siblingIds) return false;
+  // "Ver Ppto/OC/Factura" depende de linesWithDetails -- sin este chequeo
+  // quedaba con el estado (des)habilitado obsoleto tras cargar/recargar,
+  // porque ningún otro prop comparado arriba cambia en ese momento.
+  if (prev.linesWithDetails !== next.linesWithDetails) return false;
+  if (prev.restrictSelectionToAuthorized !== next.restrictSelectionToAuthorized) return false;
+  if (prev.lockedLineId !== next.lockedLineId) return false;
   // Callbacks are stable (useCallback in parent), skip comparing
   return true;
 });
@@ -1593,30 +2076,78 @@ export const buildBudgetTree = (flatLines: BudgetLine[]): BudgetLine[] => {
   return roots;
 };
 
+// Live total of one line: for a parent, (non-% children total * this line's own quantity
+// multiplier) + its direct percentage children computed off that same multiplied base.
+// Mirrors calculateChildrenSubtotal/calculatedAmountWithSurcharges in BudgetLineItemInner —
+// keep both in sync. Computing % lines live (instead of trusting their possibly-stale stored
+// amount_uf) and applying each parent's own "x N unidades" multiplier is what makes this match
+// the row's own displayed total.
+const calculateLineTotal = (
+  item: BudgetLine,
+  templatePricesMap?: Record<string, number>,
+  ufValue?: number,
+  internalTransferSupplierIds?: Set<string>,
+): number => {
+  if (item.children && item.children.length > 0) {
+    const nonPctChildren = item.children.filter((c) => c.calc_type !== "percentage");
+    const pctChildren = item.children.filter((c) => c.calc_type === "percentage");
+    const base =
+      nonPctChildren.reduce(
+        (sum, c) => sum + calculateLineTotal(c, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * (item.quantity || 1);
+    const surcharges = pctChildren.reduce((sum, c) => sum + (base * (c.calc_percentage || 0)) / 100, 0);
+    return base + surcharges;
+  }
+  return getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds);
+};
+
+// Same shape as calculateLineTotal, but only counts the portion of the total whose OWN
+// status matches wantedStatus — still sizing percentage surcharges off the FULL (status-
+// agnostic) base, since a % line is always a percentage of the whole subtree, not just its
+// authorized or unauthorized slice.
+const calculateStatusFilteredTotal = (
+  item: BudgetLine,
+  wantedStatus: "autorizado" | "no_autorizado",
+  templatePricesMap?: Record<string, number>,
+  ufValue?: number,
+  internalTransferSupplierIds?: Set<string>,
+): number => {
+  if (item.children && item.children.length > 0) {
+    const nonPctChildren = item.children.filter((c) => c.calc_type !== "percentage");
+    const pctChildren = item.children.filter((c) => c.calc_type === "percentage");
+    const mult = item.quantity || 1;
+    const fullBase =
+      nonPctChildren.reduce(
+        (sum, c) => sum + calculateLineTotal(c, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * mult;
+    const filteredBase =
+      nonPctChildren.reduce(
+        (sum, c) =>
+          sum + calculateStatusFilteredTotal(c, wantedStatus, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * mult;
+    const filteredSurcharges = pctChildren.reduce((sum, c) => {
+      if (c.status !== wantedStatus) return sum;
+      return sum + (fullBase * (c.calc_percentage || 0)) / 100;
+    }, 0);
+    return filteredBase + filteredSurcharges;
+  }
+  return item.status === wantedStatus
+    ? getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds)
+    : 0;
+};
+
 export const calculateGrandTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
-  return items.reduce((sum, item) => {
-    if (item.children && item.children.length > 0) {
-      return sum + calculateGrandTotal(item.children, templatePricesMap, ufValue, internalTransferSupplierIds);
-    }
-    return sum + getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds);
-  }, 0);
+  return items.reduce((sum, item) => sum + calculateLineTotal(item, templatePricesMap, ufValue, internalTransferSupplierIds), 0);
 };
 
 export const calculateAuthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
-  return items.reduce((sum, item) => {
-    if (item.children && item.children.length > 0) {
-      return sum + calculateAuthorizedTotal(item.children, templatePricesMap, ufValue, internalTransferSupplierIds);
-    }
-    return item.status === "autorizado" ? sum + getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds) : sum;
-  }, 0);
+  return items.reduce((sum, item) => sum + calculateStatusFilteredTotal(item, "autorizado", templatePricesMap, ufValue, internalTransferSupplierIds), 0);
 };
 export const calculateUnauthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
-  return items.reduce((sum, item) => {
-    if (item.children && item.children.length > 0) {
-      return sum + calculateUnauthorizedTotal(item.children, templatePricesMap, ufValue, internalTransferSupplierIds);
-    }
-    return item.status === "no_autorizado" ? sum + getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds) : sum;
-  }, 0);
+  return items.reduce((sum, item) => sum + calculateStatusFilteredTotal(item, "no_autorizado", templatePricesMap, ufValue, internalTransferSupplierIds), 0);
 };
 export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {
   const result: BudgetLine[] = [];

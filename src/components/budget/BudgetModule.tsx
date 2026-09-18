@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useCapexLineSelection } from "@/contexts/CapexLineSelectionContext";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake, CheckSquare } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
-import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
+import { BudgetLineTree, BudgetLineTreeWithDrag, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -19,13 +22,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
+import { CapexOCRequiredDialog } from "./CapexOCRequiredDialog";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
 import { useAuth } from "@/hooks/useAuth";
 
 interface Budget {
   id: string;
-  contract_id: string;
+  contract_id: string | null;
+  service_contract_id?: string | null;
   year: number;
   budget_type: string;
   amount_uf: number;
@@ -38,7 +43,8 @@ interface Budget {
 }
 
 interface BudgetModuleProps {
-  contractId: string;
+  contractId?: string;
+  serviceContractId?: string;
   contractName?: string;
   contractCebe?: string | null;
   budgetType: "capex" | "opex";
@@ -51,11 +57,17 @@ interface BudgetModuleProps {
   readOnly?: boolean;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, serviceContractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+
+  // "Ver Ppto/OC/Factura": líneas CAPEX con cotización/OC/factura asociada
+  const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
+
+  // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
+  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null } | null>(null);
   
   // Update template state
   const [showUpdateTemplateDialog, setShowUpdateTemplateDialog] = useState(false);
@@ -67,13 +79,27 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const [showStatePropagation, setShowStatePropagation] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
 
-  // Bulk-move (line selection) state
+  // Bulk-move (line selection) state -- también se reutiliza para "OC
+  // Requerida" > seleccionar líneas adicionales (selectionPurpose distingue
+  // qué hacer al confirmar).
   const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionPurpose, setSelectionPurpose] = useState<"move" | "capexOc" | null>(null);
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const { setActive: setCapexLineSelectionActive } = useCapexLineSelection();
+
+  // Líneas adicionales elegidas para "OC Requerida" -- additionalLinesVersion
+  // se incrementa cada vez que el usuario termina de seleccionar (incluso si
+  // no eligió ninguna), para que el diálogo sepa que debe avanzar al resumen.
+  const [capexAdditionalLines, setCapexAdditionalLines] = useState<{ id: string; name: string; amount_uf: number; status: string }[]>([]);
+  const [capexAdditionalLinesVersion, setCapexAdditionalLinesVersion] = useState(0);
 
   // Ocultar líneas con monto 0
   const [hideZeroLines, setHideZeroLines] = useState(false);
+  // Mostrar solo líneas "No Autorizado" con valor > 0 (para ubicar rápido lo que
+  // hace subir el badge "No Autorizado" de una línea madre, p. ej. adicionales
+  // pendientes que quedan anidados y son fáciles de pasar por alto).
+  const [showOnlyUnauthorized, setShowOnlyUnauthorized] = useState(false);
 
   // Congelar monto (aprobado por directorio)
   const [showFreezeDialog, setShowFreezeDialog] = useState(false);
@@ -83,15 +109,48 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const handleToggleSelectLine = useCallback((id: string) => {
     setSelectedLineIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+
+      // Mapas plano id->parent e id->hijos del árbol actual.
+      const parentOf = new Map<string, string | null>();
+      const childrenOf = new Map<string, string[]>();
+      const walk = (arr: BudgetLine[], parentId: string | null) => arr.forEach((l) => {
+        parentOf.set(l.id, parentId);
+        if (l.children?.length) {
+          childrenOf.set(l.id, l.children.map((c) => c.id));
+          walk(l.children, l.id);
+        }
+      });
+      walk(lines, null);
+
+      const willSelect = !prev.has(id);
+
+      // 1) Cascada hacia abajo: la línea y TODOS sus descendientes toman el nuevo estado.
+      const downward = [id, ...getAllDescendantIds(lines, id)];
+      for (const d of downward) {
+        if (willSelect) next.add(d); else next.delete(d);
+      }
+
+      // 2) Recalcular ancestros de abajo hacia arriba: un padre queda marcado solo si
+      //    TODOS sus hijos están marcados; si falta al menos uno, se desmarca. Así el
+      //    estado del padre siempre refleja el de sus descendientes (simétrico).
+      let cursor = parentOf.get(id) ?? null;
+      while (cursor) {
+        const kids = childrenOf.get(cursor) ?? [];
+        const allSelected = kids.length > 0 && kids.every((k) => next.has(k));
+        if (allSelected) next.add(cursor); else next.delete(cursor);
+        cursor = parentOf.get(cursor) ?? null;
+      }
+
       return next;
     });
-  }, []);
+  }, [lines]);
 
   const handleExitSelectionMode = useCallback(() => {
     setSelectionMode(false);
     setSelectedLineIds(new Set());
-  }, []);
+    setSelectionPurpose(null);
+    setCapexLineSelectionActive(false);
+  }, [setCapexLineSelectionActive]);
 
   const handleConfirmMove = useCallback(async (targetParentId: string | null) => {
     const ids = Array.from(selectedLineIds);
@@ -283,6 +342,14 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     supplier_name: string | null;
     request_date: string;
   }[]>([]);
+  const [lineDetailsRequirements, setLineDetailsRequirements] = useState<{
+    quotation_number: string;
+    amount_uf: number;
+    amount_clp: number;
+    supplier_name: string | null;
+    quotation_date: string;
+    converted: boolean;
+  }[]>([]);
   const [loadingLineDetails, setLoadingLineDetails] = useState(false);
   
   // Global expand/collapse state
@@ -292,6 +359,10 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   // Using a "collapsed set" approach: all lines are expanded by default, this set tracks collapsed ones
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   // collapsedIds is passed directly to the tree - no need to compute expandedIds
+  // Al abrir un presupuesto por primera vez, el árbol arranca totalmente colapsado.
+  // Este ref evita volver a colapsar en recargas posteriores del MISMO presupuesto
+  // (p. ej. tras editar una línea), para no perder lo que el usuario haya expandido.
+  const collapseInitedBudgetRef = useRef<string | null>(null);
   
   const handleToggleExpand = useCallback((id: string) => {
     setCollapsedIds(prev => {
@@ -337,6 +408,46 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     walk(items);
     return out;
   }, []);
+
+  // El usuario entra en modo selección de líneas CAPEX para "OC Requerida"
+  // (botón "Seleccionar líneas adicionales" del diálogo, o "Editar selección"
+  // desde el resumen). initialIds siempre incluye la línea de origen (queda
+  // marcada y bloqueada, ver lockedLineId) más lo ya elegido si se está
+  // reeditando una selección previa.
+  const handleEnterCapexLineSelection = useCallback((initialIds: string[]) => {
+    setSelectedLineIds(new Set(initialIds));
+    setSelectionPurpose("capexOc");
+    setSelectionMode(true);
+    setCapexLineSelectionActive(true);
+  }, [setCapexLineSelectionActive]);
+
+  // Terminó de elegir (botón flotante "Terminar selección") -- resuelve los
+  // ids a objetos completos y se los pasa al diálogo, que estaba esperando
+  // en su paso "selecting". Se excluye la línea de origen: el diálogo ya la
+  // maneja aparte (originLine) y quedaría duplicada si también viniera acá.
+  // También se excluyen las líneas madre: la cascada de selección (ver
+  // handleToggleSelectLine) marca una madre cuando TODOS sus hijos quedan
+  // tildados, pero acá solo interesan las líneas hoja -- si no, la madre
+  // aparecía duplicada junto a su única hija en el resumen.
+  const handleFinishCapexLineSelection = useCallback(() => {
+    const chosen = flattenLines(lines)
+      .filter((l) => selectedLineIds.has(l.id) && l.id !== ocRequiredPrompt?.lineId && !l.children?.length)
+      .map((l) => ({ id: l.id, name: l.name, amount_uf: l.amount_uf, status: l.status }));
+    setCapexAdditionalLines(chosen);
+    setCapexAdditionalLinesVersion((v) => v + 1);
+    handleExitSelectionMode();
+  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt]);
+
+  // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
+  // sin tener que expandir el árbol completo y marcarlas una por una.
+  const handleSelectAllMoved = useCallback(() => {
+    const movedIds = flattenLines(lines).filter((l) => l.is_ghost).map((l) => l.id);
+    if (movedIds.length === 0) {
+      toast({ title: "Sin líneas movidas", description: "No hay marcas de movimiento pendientes." });
+      return;
+    }
+    setSelectedLineIds(new Set(movedIds));
+  }, [lines, flattenLines]);
 
   const focusLine = useCallback((id: string, allLines: BudgetLine[]) => {
     // Expand ancestors: remove them from collapsed set
@@ -396,11 +507,100 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const [ocRequestLineName, setOcRequestLineName] = useState("");
   const [ocRequestLineAvailable, setOcRequestLineAvailable] = useState(0);
   const [ocRequestLineBudget, setOcRequestLineBudget] = useState(0);
+  const [ocRequestLineSupplierId, setOcRequestLineSupplierId] = useState<string | null>(null);
+  const [ocRequestLineSupplierName, setOcRequestLineSupplierName] = useState<string | null>(null);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
+
+  // Budget granular permissions — parent grant (contract_budget:edit) covers all sub-actions
+  const parentBudgetEdit = isAdmin || hasPermission("contract_budget", "edit");
+  const canEditLines   = parentBudgetEdit || hasPermission("budget_editar_lineas",  "edit");
+  const canApprove     = parentBudgetEdit || hasPermission("budget_aprobar_gastos", "edit");
+  const canManageOC    = parentBudgetEdit || hasPermission("budget_ordenes_compra", "edit");
+  const canExport      = isAdmin || hasPermission("budget_exportar", "view")
+    || hasPermission("contract_budget", "view");
+
   const [focusNewLineId, setFocusNewLineId] = useState<string | null>(null);
+
+  // Monto consumido (CLP) por línea de gasto — suma de OC del año en curso,
+  // agrupada por budget_line_id. Alimenta el "disponible por línea" que se
+  // muestra debajo del monto autorizado en cada línea de gasto de CAPEX.
+  // Solo se calcula para contratos regulares (contractId) — los contratos de
+  // servicio no comparten el mismo modelo de OC por línea.
+  const [consumedByLineClp, setConsumedByLineClp] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    if (budgetType !== "capex" || !contractId) {
+      setConsumedByLineClp(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: pos, error } = await supabase
+        .from("purchase_orders")
+        .select("id, budget_line_id, amount_uf, amount_clp, uf_value_at_entry, opex_master_id, opex_category_id, budget_classification")
+        .eq("contract_id", contractId)
+        .eq("year", selectedYear)
+        .is("deleted_at", null);
+      if (cancelled) return;
+      if (error) {
+        console.error("Error loading consumido por línea:", error);
+        setConsumedByLineClp({});
+        return;
+      }
+      const resolveClp = (rec: { amount_clp?: number | null; amount_uf: number; uf_value_at_entry?: number | null }): number => {
+        if (rec.amount_clp != null && rec.amount_clp !== 0) return rec.amount_clp;
+        if (rec.uf_value_at_entry) return Math.round(rec.amount_uf * rec.uf_value_at_entry);
+        return Math.round(rec.amount_uf * (ufValue || 1));
+      };
+      // Las OC creadas sobre varias líneas a la vez quedan con budget_line_id =
+      // la primera línea elegida y amount_uf/amount_clp = el TOTAL de todas.
+      // El reparto real por línea vive en purchase_order_budget_lines (una fila
+      // por línea con su amount_uf individual) — mismo patrón que
+      // loadCapexLineUsage en CentralizedOrderCreator.tsx. Solo se usa el monto
+      // completo de la OC como fallback cuando no tiene ninguna fila asociada
+      // (OC legado de una sola línea).
+      const capexPos = (pos || []).filter((o) => {
+        const isOpex = o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX";
+        return !isOpex;
+      });
+      const capexPoIds = capexPos.map((o) => o.id);
+      const poById = new Map(capexPos.map((o) => [o.id, o]));
+
+      let assocRows: { purchase_order_id: string; budget_line_id: string | null; amount_uf: number }[] = [];
+      if (capexPoIds.length > 0) {
+        const { data: assoc, error: assocError } = await supabase
+          .from("purchase_order_budget_lines")
+          .select("purchase_order_id, budget_line_id, amount_uf")
+          .in("purchase_order_id", capexPoIds);
+        if (cancelled) return;
+        if (assocError) {
+          console.error("Error loading purchase_order_budget_lines:", assocError);
+        } else {
+          assocRows = assoc || [];
+        }
+      }
+      const assocOrderIdSet = new Set(assocRows.map((a) => a.purchase_order_id));
+
+      const map: Record<string, number> = {};
+      assocRows.forEach((a) => {
+        const po = poById.get(a.purchase_order_id);
+        if (!po || !a.budget_line_id) return;
+        const splitClp = po.uf_value_at_entry
+          ? Math.round((a.amount_uf || 0) * po.uf_value_at_entry)
+          : Math.round((a.amount_uf || 0) * (ufValue || 1));
+        map[a.budget_line_id] = (map[a.budget_line_id] || 0) + splitClp;
+      });
+      capexPos.forEach((o) => {
+        if (!o.budget_line_id || assocOrderIdSet.has(o.id)) return;
+        map[o.budget_line_id] = (map[o.budget_line_id] || 0) + resolveClp(o);
+      });
+      setConsumedByLineClp(map);
+    })();
+    return () => { cancelled = true; };
+  }, [budgetType, contractId, selectedYear, ufValue]);
 
   useEffect(() => {
     loadBudgets();
@@ -421,10 +621,12 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
   const loadBudgets = async () => {
     try {
+      const filterCol = serviceContractId ? "service_contract_id" : "contract_id";
+      const filterVal = serviceContractId ?? contractId!;
       const { data, error } = await supabase
         .from("contract_budgets")
         .select("*")
-        .eq("contract_id", contractId)
+        .eq(filterCol, filterVal)
         .eq("budget_type", budgetType)
         .order("year", { ascending: false });
 
@@ -434,6 +636,67 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       console.error("Error loading budgets:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Líneas CAPEX que tienen algo que mostrar en "Ver Ppto/OC/Factura":
+   * cotización (oc_quotations), OC/solicitud de OC (directa o vía tabla
+   * puente) o factura de alguna de esas OC. Mismas tablas que
+   * handleViewLineDetails, pero en lote para todas las líneas del
+   * presupuesto de una vez (no una consulta por línea).
+   */
+  const computeLinesWithDetails = async (lineIds: string[]): Promise<Set<string>> => {
+    if (lineIds.length === 0) return new Set();
+    try {
+      const [
+        { data: quotations },
+        { data: directPOs },
+        { data: poJunction },
+        { data: directRequests },
+        { data: reqJunction },
+      ] = await Promise.all([
+        supabase.from("oc_quotations").select("budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("purchase_orders").select("id, budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("purchase_order_budget_lines").select("purchase_order_id, budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("oc_requests").select("id, budget_line_id").in("budget_line_id", lineIds),
+        supabase.from("oc_budget_lines").select("oc_request_id, budget_line_id").in("budget_line_id", lineIds),
+      ]);
+
+      const result = new Set<string>();
+      (quotations || []).forEach((q: any) => q.budget_line_id && result.add(q.budget_line_id));
+      (directRequests || []).forEach((r: any) => r.budget_line_id && result.add(r.budget_line_id));
+      (reqJunction || []).forEach((r: any) => r.budget_line_id && result.add(r.budget_line_id));
+
+      // Mapa po_id -> lineIds (directo + vía tabla puente), para saber a qué
+      // líneas asociar las facturas de cada OC en el siguiente paso.
+      const poToLines = new Map<string, Set<string>>();
+      const addPoLine = (poId: string | null, lineId: string | null) => {
+        if (!poId || !lineId) return;
+        result.add(lineId);
+        const set = poToLines.get(poId) ?? new Set<string>();
+        set.add(lineId);
+        poToLines.set(poId, set);
+      };
+      (directPOs || []).forEach((po: any) => addPoLine(po.id, po.budget_line_id));
+      (poJunction || []).forEach((j: any) => addPoLine(j.purchase_order_id, j.budget_line_id));
+
+      const allPoIds = Array.from(poToLines.keys());
+      if (allPoIds.length > 0) {
+        const { data: invoicedPOs } = await supabase
+          .from("invoices")
+          .select("purchase_order_id")
+          .in("purchase_order_id", allPoIds);
+        (invoicedPOs || []).forEach((inv: any) => {
+          const lineIdsForPo = poToLines.get(inv.purchase_order_id);
+          lineIdsForPo?.forEach((id) => result.add(id));
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error computing lines with details:", error);
+      return new Set();
     }
   };
 
@@ -448,8 +711,26 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
       if (error) throw error;
       const flatLines = (data || []) as BudgetLine[];
-      setLines(buildTree(flatLines));
-      
+      const tree = buildTree(flatLines);
+      setLines(tree);
+
+      if (budgetType === "capex") {
+        computeLinesWithDetails(flatLines.map((l) => l.id)).then(setLinesWithDetails);
+      }
+
+      // Estado inicial: al abrir este presupuesto por primera vez, colapsar todas
+      // las ramas. Solo la primera carga de cada budgetId; recargas posteriores
+      // conservan el estado de expansión actual.
+      if (collapseInitedBudgetRef.current !== budgetId) {
+        collapseInitedBudgetRef.current = budgetId;
+        const parentIds: string[] = [];
+        const collectParents = (items: BudgetLine[]) => items.forEach((i) => {
+          if (i.children?.length) { parentIds.push(i.id); collectParents(i.children); }
+        });
+        collectParents(tree);
+        setCollapsedIds(new Set(parentIds));
+      }
+
       // Fetch template prices for lines with template_line_id
       const templateLineIds = flatLines
         .filter(l => l.template_line_id)
@@ -515,7 +796,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         unit_type: "m2",
         currency: "UF",
         unit_price: 0,
-      } as any).select("id").single() as any);
+      } as any).select("id, parent_id, display_order").single() as any);
 
       if (error) throw error;
       setFocusNewLineId(newLine?.id ?? null);
@@ -525,12 +806,57 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     }
   };
 
-  const handleReorderLines = async (reorderedSiblings: BudgetLine[]) => {
+  const handleAddPercentageLine = async (sourceLineId: string, name: string, percentage: number) => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget || budget.is_closed) return;
+
+    const flattenTree = (items: BudgetLine[]): BudgetLine[] => {
+      const result: BudgetLine[] = [];
+      items.forEach(item => {
+        result.push(item);
+        if (item.children?.length) result.push(...flattenTree(item.children));
+      });
+      return result;
+    };
+    const sourceLine = flattenTree(lines).find((l) => l.id === sourceLineId);
+    if (!sourceLine) return;
+
+    try {
+      const { error } = await (supabase.from("budget_lines").insert({
+        budget_id: budget.id,
+        parent_id: sourceLineId,
+        name,
+        amount_uf: 0,
+        // A surcharge on an already-authorized line should itself count as authorized —
+        // hardcoding "no_autorizado" here left it silently contributing to the "No
+        // Autorizado" total forever, with no obvious status control to fix it from.
+        status: sourceLine.status,
+        quantity: 1,
+        unit_type: "m2",
+        currency: "UF",
+        unit_price: 0,
+        calc_type: "percentage",
+        calc_source_line_id: sourceLineId,
+        calc_percentage: percentage,
+        display_order: 99999,
+      } as any) as any);
+
+      if (error) throw error;
+      await loadLines(budget.id);
+      await recalcPercentageLinesLocally(budget.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  // Called by BudgetLineTreeWithDrag when drag-to-reorder completes.
+  // siblingIds = ordered array of IDs for siblings at the dragged level.
+  const handleReorderLines = async (lineId: string, siblingIds: string[]) => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     await Promise.all(
-      reorderedSiblings.map((line, index) =>
-        supabase.from("budget_lines").update({ display_order: index } as any).eq("id", line.id)
+      siblingIds.map((id, index) =>
+        supabase.from("budget_lines").update({ display_order: index } as any).eq("id", id)
       )
     );
     loadLines(budget.id);
@@ -657,7 +983,42 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     try {
       const { error } = await supabase.from("budget_lines").update(data).eq("id", id);
       if (error) throw error;
-      
+
+      // Un cambio de status dispara triggers en la DB que recalculan
+      // progress_status_id (badge "Sin Cotización"/"Con OC"/etc.); el update
+      // optimista de arriba no conoce ese valor nuevo, así que hay que
+      // releerlo para que el badge se actualice sin recargar la página.
+      if (data.status) {
+        const { data: refreshed } = await supabase
+          .from("budget_lines")
+          .select("progress_status_id")
+          .eq("id", id)
+          .maybeSingle();
+        if (refreshed) {
+          setLines(prev => {
+            const updateInTree = (items: BudgetLine[]): BudgetLine[] => {
+              let changed = false;
+              const result = items.map(item => {
+                if (item.id === id) {
+                  changed = true;
+                  return { ...item, progress_status_id: refreshed.progress_status_id };
+                }
+                if (item.children?.length) {
+                  const newChildren = updateInTree(item.children);
+                  if (newChildren !== item.children) {
+                    changed = true;
+                    return { ...item, children: newChildren };
+                  }
+                }
+                return item;
+              });
+              return changed ? result : items;
+            };
+            return updateInTree(prev);
+          });
+        }
+      }
+
       // 3. Recalculate percentage lines in background, update local state only
       if (budget && (data.amount_uf !== undefined || data.quantity !== undefined || data.unit_price !== undefined || data.currency !== undefined)) {
         recalcPercentageLinesLocally(budget.id);
@@ -694,13 +1055,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       const lineMap = new Map(allFlatLines.map(l => [l.id, l]));
       
       const calcSubtotal = (parentId: string): number => {
-        const children = allFlatLines.filter(l => l.parent_id === parentId);
+        const children = allFlatLines.filter(l => l.parent_id === parentId && l.calc_type !== "percentage");
         return children.reduce((sum, child) => {
           const childChildren = allFlatLines.filter(l => l.parent_id === child.id);
           if (childChildren.length > 0) {
-            const sub = calcSubtotal(child.id);
-            const mult = child.quantity || 1;
-            return sum + (sub * mult);
+            const childBase = calcSubtotal(child.id) * (child.quantity || 1);
+            const childSurcharges = childChildren
+              .filter(c => c.calc_type === "percentage")
+              .reduce((s, c) => s + (childBase * (c.calc_percentage || 0)) / 100, 0);
+            return sum + childBase + childSurcharges;
           }
           return sum + (child.amount_uf || 0);
         }, 0);
@@ -818,12 +1181,13 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     };
     const targetLine = findInTree(lines);
 
-    // Ghost lines (movement markers) can ONLY be deleted by admins
-    if (targetLine?.is_ghost && !isAdmin) {
+    // Las marcas de movimiento (ghost) pueden eliminarlas admins o quienes tengan
+    // permiso de edición de líneas de presupuesto (p. ej. el rol Equipo Desarrollo).
+    if (targetLine?.is_ghost && !canEditLines) {
       toast({
         variant: "destructive",
         title: "No autorizado",
-        description: "Solo un administrador puede eliminar marcas de movimiento.",
+        description: "No tienes permiso para eliminar marcas de movimiento.",
       });
       return;
     }
@@ -944,6 +1308,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const handleConfirmFreeze = async () => {
+    if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     const val = parseFloat(freezeValue.replace(",", "."));
@@ -985,6 +1350,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const handleUnfreeze = async () => {
+    if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     if (!window.confirm("¿Descongelar el monto aprobado por directorio? Dejará de mostrarse como referencia.")) return;
@@ -1007,21 +1373,61 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     }
   };
 
-  // Líneas a mostrar: opcionalmente oculta las de monto 0 (los totales se siguen
-  // calculando sobre el set completo `lines`).
+  // Base-line ids that must survive the "Solo No Autorizado" filter even though their OWN
+  // real children may all be authorized: a pending surcharge (Adicional/Descuento) is stored
+  // as a SIBLING of its base line (parent_id = base's own parent_id, linked only via
+  // surcharge_parent_line_id) — not as its child — and BudgetLineTree only renders it inline
+  // under a live, rendered instance of that base line. Without this, filtering out the base
+  // line (because its real children don't match) silently orphans the surcharge: it survives
+  // the filter as data but has no row left to render under.
+  const surchargeBaseIdsToForceKeep = useMemo(() => {
+    if (!showOnlyUnauthorized) return null;
+    const ids = new Set<string>();
+    const walk = (items: BudgetLine[]) => {
+      items.forEach((l) => {
+        if (
+          l.is_surcharge &&
+          !l.merged_into_line_id &&
+          l.surcharge_parent_line_id &&
+          l.status === "no_autorizado" &&
+          Math.abs(l.amount_uf || 0) > 0.0001
+        ) {
+          ids.add(l.surcharge_parent_line_id);
+        }
+        if (l.children?.length) walk(l.children);
+      });
+    };
+    walk(lines);
+    return ids;
+  }, [showOnlyUnauthorized, lines]);
+
+  // Líneas a mostrar: opcionalmente oculta las de monto 0 y/o filtra a solo las
+  // "No Autorizado" con valor > 0 (los totales se siguen calculando sobre el
+  // set completo `lines`). Un nodo hoja se conserva si cumple los filtros
+  // activos; una línea madre se conserva si alguna descendiente sobrevivió, o si
+  // debe forzarse para no huerfanar una solicitud de adicional/descuento pendiente.
   const displayLines = useMemo(() => {
-    if (!hideZeroLines) return lines;
+    if (!hideZeroLines && !showOnlyUnauthorized) return lines;
     const keep = (nodes: BudgetLine[]): BudgetLine[] =>
       nodes.reduce<BudgetLine[]>((acc, n) => {
         const children = n.children ? keep(n.children) : [];
-        const total = calculateGrandTotal([n], templatePricesMap, ufValue);
-        if (children.length > 0 || Math.abs(total) > 0.0001) {
-          acc.push(children.length ? { ...n, children } : n);
+        const isLeaf = !n.children || n.children.length === 0;
+        let matchesSelf = false;
+        if (isLeaf) {
+          const total = calculateGrandTotal([n], templatePricesMap, ufValue);
+          const hasValue = Math.abs(total) > 0.0001;
+          const passesHideZero = !hideZeroLines || hasValue;
+          const passesUnauthorizedOnly = !showOnlyUnauthorized || (n.status === "no_autorizado" && hasValue);
+          matchesSelf = passesHideZero && passesUnauthorizedOnly;
+        }
+        const forceKeep = !isLeaf && !!surchargeBaseIdsToForceKeep?.has(n.id);
+        if (children.length > 0 || matchesSelf || forceKeep) {
+          acc.push(!isLeaf ? { ...n, children } : n);
         }
         return acc;
       }, []);
     return keep(lines);
-  }, [hideZeroLines, lines, templatePricesMap, ufValue]);
+  }, [hideZeroLines, showOnlyUnauthorized, lines, templatePricesMap, ufValue, surchargeBaseIdsToForceKeep]);
 
   // Handle opening OC Request dialog from budget line
   const handleCreateOCRequestFromLine = async (budgetLineId: string, lineName: string) => {
@@ -1043,6 +1449,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     const budgetLine = findLine(lines);
     const lineAmount = budgetLine?.amount_uf || 0;
     setOcRequestLineBudget(lineAmount);
+    setOcRequestLineSupplierId(budgetLine?.supplier_id ?? null);
+    setOcRequestLineSupplierName(budgetLine?.supplier_name ?? null);
     
     // Calculate available (budget - existing OCs - existing requests)
     try {
@@ -1194,15 +1602,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
     const computeChildrenSubtotal = (children: BudgetLine[]): number => {
       return children.reduce((sum, child) => {
-        if (child.calc_type === "percentage") {
-          // Percentage children are surcharges — already accounted in parent's surcharge logic when needed
-          return sum + computeLineUF(child);
-        }
-        if (child.children?.length) {
-          const sub = computeChildrenSubtotal(child.children);
-          const mult = child.quantity || 1;
-          return sum + sub * mult;
-        }
+        // Skip percentage lines — handled by the surcharges loop in computeLineUF to avoid circular refs.
+        // Delegate parent children to computeLineUF (not a bare recursion) so nested surcharges roll up.
+        if (child.calc_type === "percentage") return sum;
         return sum + computeLineUF(child);
       }, 0);
     };
@@ -1352,8 +1754,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         amountClp = amount * ufValue;
       }
 
-      const { error } = await supabase.from("purchase_orders").insert({
-        contract_id: contractId,
+      const ocPayload: Record<string, unknown> = {
         budget_id: budget.id,
         budget_line_id: ocBudgetLineId,
         order_number: ocForm.order_number,
@@ -1364,8 +1765,14 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         input_currency: ocForm.currency,
         uf_value_at_entry: ufValue,
         year: selectedYear,
-        status: "abierta"
-      });
+        status: "abierta",
+      };
+      if (serviceContractId) {
+        ocPayload.service_contract_id = serviceContractId;
+      } else {
+        ocPayload.contract_id = contractId;
+      }
+      const { error } = await supabase.from("purchase_orders").insert(ocPayload);
 
       if (error) throw error;
 
@@ -1464,23 +1871,80 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setLoadingLineDetails(true);
 
     try {
-      // Fetch OCs for this budget line
-      const { data: ocs, error: ocsError } = await supabase
+      // Además del vínculo directo budget_line_id, una OC/solicitud puede estar
+      // asignada a esta línea vía las tablas puente (asignación a múltiples
+      // líneas) — hay que incluir ambos casos o "Ver OC/Fact." queda incompleto.
+      // El monto de esas filas puente es el que corresponde a ESTA línea (el
+      // total de la OC/solicitud se reparte entre varias) — a diferencia del
+      // monto total en purchase_orders/oc_requests, que es el de todas las
+      // líneas juntas.
+      const [{ data: poJunction }, { data: reqJunction }] = await Promise.all([
+        supabase.from("purchase_order_budget_lines").select("purchase_order_id, amount_uf").eq("budget_line_id", budgetLineId),
+        supabase.from("oc_budget_lines").select("oc_request_id, amount_uf").eq("budget_line_id", budgetLineId),
+      ]);
+      const junctionPoIds = Array.from(new Set((poJunction || []).map(r => r.purchase_order_id).filter(Boolean)));
+      const junctionReqIds = Array.from(new Set((reqJunction || []).map(r => r.oc_request_id).filter(Boolean)));
+      const lineUfByPoId = new Map((poJunction || []).filter(r => r.purchase_order_id).map(r => [r.purchase_order_id as string, r.amount_uf || 0]));
+      const lineUfByReqId = new Map((reqJunction || []).filter(r => r.oc_request_id).map(r => [r.oc_request_id as string, r.amount_uf || 0]));
+
+      // Fetch OCs for this budget line (directo + vía tabla puente)
+      const ocsBaseQuery = supabase
         .from("purchase_orders")
         .select("id, order_number, supplier_name, amount_uf, amount_clp, uf_value_at_entry, status")
-        .eq("budget_line_id", budgetLineId)
         .order("order_date", { ascending: false });
+      const { data: ocs, error: ocsError } = junctionPoIds.length > 0
+        ? await ocsBaseQuery.or(`budget_line_id.eq.${budgetLineId},id.in.(${junctionPoIds.join(",")})`)
+        : await ocsBaseQuery.eq("budget_line_id", budgetLineId);
 
       if (ocsError) throw ocsError;
 
-      // Fetch OC Requests for this line
-      const { data: requests } = await supabase
+      // Fetch OC Requests for this line (directo + vía tabla puente)
+      const requestsBaseQuery = supabase
         .from("oc_requests")
         .select("id, request_number, amount_uf, amount_clp, uf_value_at_entry, status, supplier_name, request_date")
-        .eq("budget_line_id", budgetLineId)
         .order("created_at", { ascending: false });
-      
-      setLineDetailsRequests((requests || []) as any);
+      const { data: requests } = junctionReqIds.length > 0
+        ? await requestsBaseQuery.or(`budget_line_id.eq.${budgetLineId},id.in.(${junctionReqIds.join(",")})`)
+        : await requestsBaseQuery.eq("budget_line_id", budgetLineId);
+
+      // Si la solicitud está repartida entre varias líneas, el monto a
+      // mostrar acá es el de ESTA línea (tabla puente), no el total de la
+      // solicitud completa.
+      const requestsForLine = (requests || []).map((req: any) => {
+        const lineUf = lineUfByReqId.get(req.id);
+        if (lineUf === undefined) return req;
+        return { ...req, amount_uf: lineUf, amount_clp: null };
+      });
+      setLineDetailsRequests(requestsForLine as any);
+
+      // Requerimientos de OC (oc_quotations) asociados a esta línea -- el
+      // monto no se reparte entre líneas (todo el grupo comparte el mismo
+      // monto por diseño), así que se muestra tal cual.
+      const { data: quotationRows } = await supabase
+        .from("oc_quotations")
+        .select("quotation_number, amount_uf, amount_clp, supplier_name, quotation_date")
+        .eq("budget_line_id", budgetLineId)
+        .order("quotation_date", { ascending: false });
+      if (quotationRows && quotationRows.length > 0) {
+        const quotationNumbers = quotationRows.map((r: any) => r.quotation_number);
+        const { data: convertedReqs } = await (supabase as any)
+          .from("oc_requests")
+          .select("source_quotation_number")
+          .in("source_quotation_number", quotationNumbers);
+        const convertedSet = new Set((convertedReqs || []).map((r: any) => r.source_quotation_number).filter(Boolean));
+        setLineDetailsRequirements(
+          quotationRows.map((r: any) => ({
+            quotation_number: r.quotation_number,
+            amount_uf: r.amount_uf || 0,
+            amount_clp: r.amount_clp || 0,
+            supplier_name: r.supplier_name ?? null,
+            quotation_date: r.quotation_date,
+            converted: convertedSet.has(r.quotation_number),
+          }))
+        );
+      } else {
+        setLineDetailsRequirements([]);
+      }
 
       // For each OC, fetch invoices and credit notes
       const ocsWithDetails = await Promise.all(
@@ -1497,8 +1961,12 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             .eq("purchase_order_id", oc.id)
             .order("credit_note_date", { ascending: false });
 
+          // Si la OC está repartida entre varias líneas, el monto a mostrar
+          // acá es el de ESTA línea (tabla puente), no el total de la OC.
+          const lineUf = lineUfByPoId.get(oc.id);
           return {
             ...oc,
+            ...(lineUf !== undefined ? { amount_uf: lineUf, amount_clp: null } : {}),
             invoices: invoices || [],
             credit_notes: creditNotes || [],
           };
@@ -1640,7 +2108,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </p>
                       </div>
                     </div>
-                    {!isClosed && !forceReadOnly && (
+                    {!isClosed && !forceReadOnly && isAdmin && (
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2">
                           <Snowflake className="h-4 w-4" /> Editar monto
@@ -1654,7 +2122,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 );
               })()
             ) : (
-              !isClosed && !forceReadOnly && (
+              !isClosed && !forceReadOnly && isAdmin && (
                 <div className="flex justify-end">
                   <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2"
                     title="Congelar el total actual como monto aprobado por directorio (referencial)">
@@ -1705,7 +2173,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   )}
                 </div>
 
-                {!isClosed && !forceReadOnly && (
+                {!isClosed && !forceReadOnly && canEditLines && (
                   <>
                     <Button
                       variant="outline"
@@ -1723,9 +2191,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                       {collapsedIds.size === 0 ? <ChevronsDownUp className="h-4 w-4" /> : <ChevronsUpDown className="h-4 w-4" />}
                       {collapsedIds.size === 0 ? "Colapsar" : "Expandir"}
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={async () => {
                         const currentTemplateIdLoaded = await getCurrentTemplateId(currentBudget.id);
                         setUpdateTemplateId(currentTemplateIdLoaded || "");
@@ -1738,15 +2206,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     </Button>
                   </>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportExcel}
-                  className="gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  Descargar Excel
-                </Button>
+                {canExport && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportExcel}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar Excel
+                  </Button>
+                )}
                 <Button
                   variant={hideZeroLines ? "default" : "outline"}
                   size="sm"
@@ -1757,7 +2227,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   {hideZeroLines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   {hideZeroLines ? "Mostrar 0" : "Ocultar 0"}
                 </Button>
-                {budgetType === "capex" && (
+                <Button
+                  variant={showOnlyUnauthorized ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowOnlyUnauthorized((v) => !v)}
+                  className="gap-2"
+                  title="Mostrar solo las líneas No Autorizado con valor mayor a $0"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  {showOnlyUnauthorized ? "Ver todas" : "Solo No Autorizado"}
+                </Button>
+                {budgetType === "capex" && canExport && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1768,12 +2248,29 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     Descargar Proveedores
                   </Button>
                 )}
-                {!isClosed && !forceReadOnly && (
+                {selectionPurpose === "capexOc" && (
+                  <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
+                    Selecciona líneas "Autorizado" en el árbol — usa el botón flotante para terminar
+                  </span>
+                )}
+                {!isClosed && !forceReadOnly && canEditLines && selectionPurpose !== "capexOc" && (
                   selectionMode ? (
                     <>
                       <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
                         {selectedLineIds.size} línea{selectedLineIds.size === 1 ? "" : "s"} seleccionada{selectedLineIds.size === 1 ? "" : "s"}
                       </span>
+                      {canEditLines && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSelectAllMoved}
+                          className="gap-2"
+                          title="Selecciona de una sola vez todas las marcas de líneas movidas"
+                        >
+                          <CheckSquare className="h-4 w-4" />
+                          Seleccionar movidas
+                        </Button>
+                      )}
                       <Button
                         variant="default"
                         size="sm"
@@ -1828,33 +2325,64 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               </div>
             )}
 
-            <BudgetLineTree
-              lines={displayLines}
-              onAddLine={handleAddLine}
-              onUpdateLine={handleUpdateLine}
-              onDeleteLine={handleDeleteLine}
-              onCreateOC={handleCreateOCFromLine}
-              onCreateOCRequest={handleCreateOCRequestFromLine}
-              onCreateInvoice={handleCreateInvoiceFromLine}
-              onViewLineDetails={handleViewLineDetails}
-              readOnly={isClosed || forceReadOnly}
-              compactView={forceReadOnly}
-              
-              focusNewLineId={focusNewLineId}
-              globalExpandState={globalExpandState}
-              templatePricesMap={templatePricesMap}
-              collapsedIds={collapsedIds}
-              onToggleExpand={handleToggleExpand}
-              superficieEdificada={superficieEdificada}
-              selectionMode={selectionMode}
-              selectedIds={selectedLineIds}
-              onToggleSelect={handleToggleSelectLine}
-              onReload={() => currentBudget && loadLines(currentBudget.id)}
-              onMoveLine={(lineId) => {
-                setSelectedLineIds(new Set([lineId]));
-                setShowMoveDialog(true);
-              }}
-            />
+            <div className={cn(selectionPurpose === "capexOc" && "pointer-events-auto")}>
+              <BudgetLineTreeWithDrag
+                lines={displayLines}
+                onAddLine={canEditLines ? handleAddLine : undefined}
+                onUpdateLine={canEditLines ? handleUpdateLine : undefined}
+                onDeleteLine={canEditLines ? handleDeleteLine : undefined}
+                onCreateOC={canManageOC ? handleCreateOCFromLine : undefined}
+                onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
+                onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
+                onViewLineDetails={handleViewLineDetails}
+                onOcRequired={budgetType === "capex" ? (lineId, newStatusId) => {
+                  const findLine = (items: BudgetLine[]): BudgetLine | null => {
+                    for (const item of items) {
+                      if (item.id === lineId) return item;
+                      if (item.children?.length) {
+                        const found = findLine(item.children);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+                  const line = findLine(lines);
+                  setCapexAdditionalLines([]);
+                  setCapexAdditionalLinesVersion(0);
+                  setOcRequiredPrompt({
+                    lineId,
+                    lineName: line?.name ?? "",
+                    lineAmountUf: line?.amount_uf ?? 0,
+                    lineStatus: line?.status ?? "no_autorizado",
+                    newStatusId,
+                    supplierId: line?.supplier_id ?? null,
+                    supplierName: line?.supplier_name ?? null,
+                  });
+                } : undefined}
+                linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
+                readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
+                compactView={forceReadOnly || !canEditLines}
+                focusNewLineId={focusNewLineId}
+                globalExpandState={globalExpandState}
+                templatePricesMap={templatePricesMap}
+                collapsedIds={collapsedIds}
+                onToggleExpand={handleToggleExpand}
+                superficieEdificada={superficieEdificada}
+                selectionMode={selectionMode}
+                restrictSelectionToAuthorized={selectionPurpose === "capexOc"}
+                lockedLineId={selectionPurpose === "capexOc" ? ocRequiredPrompt?.lineId : undefined}
+                selectedIds={selectedLineIds}
+                onToggleSelect={handleToggleSelectLine}
+                onReload={() => currentBudget && loadLines(currentBudget.id)}
+                onMoveLine={(lineId) => {
+                  setSelectedLineIds(new Set([lineId]));
+                  setShowMoveDialog(true);
+                }}
+                onReorderLine={!(isClosed || forceReadOnly) && canEditLines ? handleReorderLines : undefined}
+                consumedByLineClp={consumedByLineClp ?? undefined}
+                onAddPercentageLine={canEditLines ? handleAddPercentageLine : undefined}
+              />
+            </div>
 
             <MoveLinesDialog
               open={showMoveDialog}
@@ -1905,9 +2433,10 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             {/* Trash Panel - shows deleted lines and audit history */}
             {currentBudget && !forceReadOnly && (
               <div className="mt-4">
-                <BudgetTrashPanel 
-                  budgetId={currentBudget.id} 
-                  onRestore={() => loadLines(currentBudget.id)} 
+                <BudgetTrashPanel
+                  budgetId={currentBudget.id}
+                  onRestore={() => loadLines(currentBudget.id)}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
@@ -2245,12 +2774,38 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               <Loader2 className="h-6 w-6 animate-spin" />
               <span className="ml-2">Cargando...</span>
             </div>
-          ) : lineDetailsOCs.length === 0 && lineDetailsRequests.length === 0 ? (
+          ) : lineDetailsOCs.length === 0 && lineDetailsRequests.length === 0 && lineDetailsRequirements.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No hay órdenes de compra ni solicitudes asociadas a esta línea.</p>
             </div>
           ) : (
             <div className="space-y-4">
+              {/* OC Requirements Section (Requerimientos de OC) */}
+              {lineDetailsRequirements.length > 0 && (
+                <div className="border rounded-lg p-4 space-y-2 bg-orange-50/50 dark:bg-orange-950/20">
+                  <h4 className="font-medium text-sm text-orange-700 dark:text-orange-300">
+                    Requerimientos de OC ({lineDetailsRequirements.length})
+                  </h4>
+                  {lineDetailsRequirements.map((req) => (
+                    <div key={req.quotation_number} className="flex items-center justify-between text-sm p-2 bg-background rounded">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs">{req.quotation_number}</span>
+                        <Badge variant={req.converted ? "default" : "secondary"}
+                          className={req.converted ? "bg-green-500" : "bg-yellow-500"}>
+                          {req.converted ? "Convertido" : "Pendiente"}
+                        </Badge>
+                      </div>
+                      <span className="font-mono text-right">
+                        {formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}
+                        <span className="text-muted-foreground font-normal ml-1">
+                          (UF {req.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* OC Requests Section */}
               {lineDetailsRequests.length > 0 && (
                 <div className="border rounded-lg p-4 space-y-2 bg-purple-50/50 dark:bg-purple-950/20">
@@ -2266,12 +2821,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                           {req.status === "converted" ? "Convertida" : "Pendiente"}
                         </Badge>
                       </div>
-                      <span className="font-mono">{formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}</span>
+                      <span className="font-mono text-right">
+                        {formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}
+                        <span className="text-muted-foreground font-normal ml-1">
+                          (UF {req.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        </span>
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
-              
+
               {/* OCs Section */}
               {lineDetailsOCs.map((oc) => {
                 const totalInvoicedClp = oc.invoices.reduce((sum, inv) => sum + (inv.amount_clp || Math.round(convertUFToPesos(inv.amount_uf))), 0);
@@ -2288,8 +2848,13 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}</span>
-                        <Badge 
+                        <span className="text-sm font-medium">
+                          {formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}
+                          <span className="text-muted-foreground font-normal ml-1">
+                            (UF {oc.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </span>
+                        </span>
+                        <Badge
                           variant={
                             oc.status === "cerrada" ? "default" : 
                             oc.status === "descuadrada" ? "destructive" : 
@@ -2386,6 +2951,52 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         </DialogContent>
       </Dialog>
 
+      {/* Diálogo de cotización al marcar una línea CAPEX como "OC Requerida" */}
+      {ocRequiredPrompt && currentBudget && (
+        <CapexOCRequiredDialog
+          open={!!ocRequiredPrompt}
+          onOpenChange={(open) => {
+            if (!open) {
+              setOcRequiredPrompt(null);
+              handleExitSelectionMode();
+            }
+          }}
+          contractId={contractId}
+          projectName={contractName}
+          originLine={{
+            id: ocRequiredPrompt.lineId,
+            name: ocRequiredPrompt.lineName,
+            amount_uf: ocRequiredPrompt.lineAmountUf,
+            status: ocRequiredPrompt.lineStatus,
+            supplier_id: ocRequiredPrompt.supplierId,
+            supplier_name: ocRequiredPrompt.supplierName,
+          }}
+          ocRequeridaStatusId={ocRequiredPrompt.newStatusId}
+          ufValue={ufValue}
+          formatCLP={formatCLP}
+          convertUFToPesos={convertUFToPesos}
+          onRequestLineSelection={handleEnterCapexLineSelection}
+          additionalLines={capexAdditionalLines}
+          additionalLinesVersion={capexAdditionalLinesVersion}
+          onComplete={() => {
+            setOcRequiredPrompt(null);
+            loadLines(currentBudget.id);
+          }}
+        />
+      )}
+
+      {/* Botón flotante para terminar de seleccionar líneas adicionales CAPEX */}
+      {selectionPurpose === "capexOc" && createPortal(
+        <Button
+          onClick={handleFinishCapexLineSelection}
+          className="fixed bottom-6 right-6 z-50 gap-2 shadow-lg"
+        >
+          <CheckSquare className="h-4 w-4" />
+          Terminar selección ({selectedLineIds.size})
+        </Button>,
+        document.body
+      )}
+
       {/* OC Request Dialog */}
       <OCRequestDialog
         open={showOCRequestDialog}
@@ -2398,6 +3009,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         lineName={ocRequestLineName}
         lineAvailable={ocRequestLineAvailable}
         lineBudget={ocRequestLineBudget}
+        initialSupplierId={ocRequestLineSupplierId}
+        initialSupplierName={ocRequestLineSupplierName}
         year={selectedYear}
         ufValue={ufValue}
         formatUF={formatUF}

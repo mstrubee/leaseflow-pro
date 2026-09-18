@@ -19,6 +19,8 @@ import { OCRequestViewDialog } from "./OCRequestViewDialog";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 
 interface OCRequest {
   id: string;
@@ -54,6 +56,21 @@ interface SelectedLine {
   maxAmount: number;
 }
 
+/** Prellenado al convertir una "OC Requerida" (ver OCRequiredList.tsx) en
+ *  Solicitud de OC: abre el mismo diálogo de "Nueva Solicitud" ya existente,
+ *  con las líneas/monto/archivo del requerimiento ya cargados -- el usuario
+ *  solo debe elegir proveedor y completar el plan de pagos, igual que hoy. */
+export interface OCRequestPrefillDraft {
+  quotationNumber: string;
+  lines: { lineId: string; lineName: string; amountUf: number }[];
+  totalAmountClp: number;
+  fileUrl: string | null;
+  fileName: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  paymentPlan: PaymentPlanItem[];
+}
+
 interface PaymentPlanItem {
   description: string;
   amount: string;
@@ -63,6 +80,7 @@ interface PaymentPlanItem {
 interface OCRequestsListProps {
   contractId: string;
   contractName?: string;
+  contractCebe?: string | null;
   budgetId?: string;
   year: number;
   ufValue: number;
@@ -72,11 +90,14 @@ interface OCRequestsListProps {
   isAdmin?: boolean;
   budgetLineId?: string;
   allowCreate?: boolean;
+  prefillDraft?: OCRequestPrefillDraft | null;
+  onPrefillConsumed?: () => void;
 }
 
 export const OCRequestsList = ({
   contractId,
   contractName = "",
+  contractCebe = null,
   budgetId,
   year,
   ufValue,
@@ -85,7 +106,9 @@ export const OCRequestsList = ({
   onRefresh,
   isAdmin = false,
   budgetLineId,
-  allowCreate = true
+  allowCreate = true,
+  prefillDraft,
+  onPrefillConsumed
 }: OCRequestsListProps) => {
   const [requests, setRequests] = useState<OCRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +142,18 @@ export const OCRequestsList = ({
     supplier_id: null as string | null,
     supplier_name: null as string | null
   });
+  // Al convertir una "OC Requerida" en Solicitud (ver OCRequiredList.tsx):
+  // archivo a transferir y quotation_number de origen, para marcarlo
+  // "Convertida" una vez creada la solicitud.
+  const [prefillFile, setPrefillFile] = useState<{ url: string | null; name: string | null }>({ url: null, name: null });
+  const [conversionQuotationNumber, setConversionQuotationNumber] = useState<string | null>(null);
+  // Al convertir, las líneas quedan fijas a las que ya traía el requerimiento
+  // -- no se puede agregar ni quitar ninguna (a diferencia de una solicitud
+  // creada desde cero).
+  const [linesLocked, setLinesLocked] = useState(false);
   const [creatingRequest, setCreatingRequest] = useState(false);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
@@ -371,6 +405,9 @@ export const OCRequestsList = ({
     setPaymentPlan([]);
     setCancelConfirm(false);
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
+    setPrefillFile({ url: null, name: null });
+    setConversionQuotationNumber(null);
+    setLinesLocked(false);
     setLoadingBudgets(true);
 
     try {
@@ -457,6 +494,38 @@ export const OCRequestsList = ({
     setSelectedBudgetId(budget?.id || "");
   };
 
+  // Llega un draft desde "Convertir a Solicitud" en OCRequiredList: abre el
+  // diálogo de siempre y lo prellena por completo (líneas, monto, archivo,
+  // proveedor y plan de pagos ya vienen del requerimiento) -- las líneas
+  // quedan fijas, no se pueden agregar ni quitar.
+  useEffect(() => {
+    if (!prefillDraft) return;
+    (async () => {
+      await handleOpenNewRequestDialog();
+      setSelectedLines(
+        prefillDraft.lines.map((l) => ({
+          lineId: l.lineId,
+          lineName: l.lineName,
+          amount: l.amountUf,
+          maxAmount: l.amountUf,
+        }))
+      );
+      setNewRequestForm((prev) => ({
+        ...prev,
+        amount: String(Math.round(prefillDraft.totalAmountClp)),
+        currency: "CLP",
+        supplier_id: prefillDraft.supplierId,
+        supplier_name: prefillDraft.supplierName,
+      }));
+      setPaymentPlan(prefillDraft.paymentPlan);
+      setPrefillFile({ url: prefillDraft.fileUrl, name: prefillDraft.fileName });
+      setConversionQuotationNumber(prefillDraft.quotationNumber);
+      setLinesLocked(true);
+      onPrefillConsumed?.();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillDraft]);
+
   const addPaymentItem = () => {
     setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
   };
@@ -506,16 +575,18 @@ export const OCRequestsList = ({
       return;
     }
 
-    // Payment plan must not exceed total requested
-    const totalPlanAmt = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-    if (paymentPlan.length > 0 && totalPlanAmt > enteredAmount) {
-      toast({ variant: "destructive", title: "Error", description: "El total planificado de pagos supera el monto de la solicitud. Use 'Cuadrar' para ajustar." });
+    if (paymentPlan.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe agregar al menos un pago al plan de pagos" });
       return;
     }
 
     const validLines = selectedLines.filter(l => l.lineId);
     if (validLines.length === 0) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea de imputación" });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: budgetType === "opex" ? "Seleccione al menos una categoría OPEX" : "Seleccione al menos una línea de imputación"
+      });
       return;
     }
 
@@ -535,6 +606,23 @@ export const OCRequestsList = ({
       // UF
       totalAmountUf = Math.round(enteredAmount * 10000) / 10000;
       totalAmountClp = Math.round(enteredAmount * currentUfValue);
+    }
+
+    // El plan de pagos debe sumar EXACTO el monto solicitado, no solo "no
+    // superarlo": un plan incompleto dejaría un pago sin registrar. Se
+    // convierte a CLP antes de comparar — si la moneda es UF, comparar los
+    // montos crudos con una tolerancia de "1 peso" habría sido inútil (1 UF
+    // son ~$38.000).
+    if (paymentPlan.length > 0) {
+      const resolvedPaymentsClp = paymentPlan.map((p) => {
+        const raw = parseFloat(p.amount) || 0;
+        return inputCurrency === "CLP" ? Math.round(raw) : Math.round(raw * currentUfValue);
+      });
+      const planError = validatePaymentPlanTotal(resolvedPaymentsClp, totalAmountClp);
+      if (planError) {
+        toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: `${planError} Usa "Cuadrar" para ajustar.` });
+        return;
+      }
     }
 
     const lineNames = validLines.map(l => l.lineName);
@@ -568,10 +656,21 @@ export const OCRequestsList = ({
         supplier_name: newRequestForm.supplier_name,
         year: year,
         status: "pending",
-        created_by: user?.id
+        created_by: user?.id,
+        quotation_url: prefillFile.url,
+        quotation_file_name: prefillFile.name,
       }).select().single();
 
       if (error) throw error;
+
+      // Viene de "Convertir a Solicitud" en OCRequiredList -- marca el
+      // requerimiento de origen como convertido.
+      if (requestData && conversionQuotationNumber) {
+        await supabase
+          .from("oc_requests")
+          .update({ source_quotation_number: conversionQuotationNumber } as any)
+          .eq("id", requestData.id);
+      }
 
       // Create budget line assignments
       if (requestData) {
@@ -588,14 +687,16 @@ export const OCRequestsList = ({
             .filter(p => parseFloat(p.amount) > 0)
             .map((p, idx) => {
               const pAmount = parseFloat(p.amount);
-              const amountUf = inputCurrency === "CLP" && currentUfValue > 0 
-                ? Math.round((pAmount / currentUfValue) * 10000) / 10000 
+              const amountUf = inputCurrency === "CLP" && currentUfValue > 0
+                ? Math.round((pAmount / currentUfValue) * 10000) / 10000
                 : pAmount;
+              const amountClp = inputCurrency === "CLP" ? Math.round(pAmount) : Math.round(pAmount * currentUfValue);
               return {
                 oc_request_id: requestData.id,
                 payment_number: idx + 1,
                 description: p.description || `Pago ${idx + 1}`,
                 amount_uf: amountUf,
+                amount_clp: amountClp,
                 due_date: p.due_date || null,
                 status: "pending"
               };
@@ -610,16 +711,57 @@ export const OCRequestsList = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: totalAmountClp,
             due_date: null,
             status: "pending"
           });
         }
       }
 
-      toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+      toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
       setShowNewRequestDialog(false);
+      setPrefillFile({ url: null, name: null });
+      setConversionQuotationNumber(null);
       loadRequests();
       onRefresh?.();
+
+      let supplierRut: string | null = null;
+      if (newRequestForm.supplier_id) {
+        const { data: supplierData } = await supabase
+          .from("suppliers")
+          .select("rut")
+          .eq("id", newRequestForm.supplier_id)
+          .single();
+        supplierRut = supplierData?.rut || null;
+      }
+
+      setShareData({
+        requestDate: new Date().toISOString().split("T")[0],
+        currency: inputCurrency as "UF" | "CLP",
+        contractNames: [contractName || ""].filter(Boolean),
+        contractCebe,
+        description: newRequestForm.description,
+        lines: validLines.map((l) => ({
+          lineName: l.lineName,
+          amountClp: Math.round(l.amount * currentUfValue),
+        })),
+        totalAmountClp,
+        sequenceNumber: requestData?.sequence_number,
+        requestId: requestData?.id,
+        verificationCode: (requestData as any)?.verification_code,
+        payments: paymentPlan
+          .filter((p) => parseFloat(p.amount) > 0)
+          .map((p) => ({
+            description: p.description || "Pago",
+            amountClp: inputCurrency === "CLP"
+              ? Math.round(parseFloat(p.amount))
+              : Math.round(parseFloat(p.amount) * currentUfValue),
+            dueDate: p.due_date || null,
+          })),
+        supplierName: newRequestForm.supplier_name,
+        supplierRut,
+      });
+      setShareRequestId(requestData?.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -1059,7 +1201,9 @@ export const OCRequestsList = ({
             <Tabs value={newRequestTab} onValueChange={setNewRequestTab}>
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="basic">Tipo y Datos</TabsTrigger>
-                <TabsTrigger value="lines" disabled={!selectedBudgetId}>Líneas</TabsTrigger>
+                <TabsTrigger value="lines" disabled={!selectedBudgetId}>
+                  {budgetType === "opex" ? "Categoría OPEX" : "Líneas"}
+                </TabsTrigger>
                 <TabsTrigger value="payments" disabled={selectedLines.length === 0}>Pagos</TabsTrigger>
               </TabsList>
 
@@ -1162,10 +1306,11 @@ export const OCRequestsList = ({
                   <Label>Proveedor *</Label>
                   <SupplierSelect
                     value={newRequestForm.supplier_id}
-                    onChange={(id, name) => setNewRequestForm(prev => ({ 
-                      ...prev, 
-                      supplier_id: id, 
-                      supplier_name: name 
+                    supplierName={newRequestForm.supplier_name}
+                    onChange={(id, name) => setNewRequestForm(prev => ({
+                      ...prev,
+                      supplier_id: id,
+                      supplier_name: name
                     }))}
                   />
                 </div>
@@ -1181,17 +1326,35 @@ export const OCRequestsList = ({
               </TabsContent>
 
               <TabsContent value="lines" className="space-y-4 mt-4">
-                {selectedBudgetId && (
-                  <MultipleLinesSelector
-                    budgetId={selectedBudgetId}
-                    selectedLines={selectedLines}
-                    onSelectionChange={setSelectedLines}
-                    formatUF={formatUF}
-                    formatCLP={formatCLP}
-                    year={year}
-                    contractId={contractId}
-                    ufValue={ufValue}
-                  />
+                {linesLocked ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Estas líneas vienen del requerimiento de OC convertido y no se pueden modificar.
+                    </p>
+                    <div className="rounded-md border divide-y">
+                      {selectedLines.map((l) => (
+                        <div key={l.lineId} className="flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="truncate">{l.lineName}</span>
+                          <span className="text-muted-foreground shrink-0">
+                            UF {l.amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  selectedBudgetId && (
+                    <MultipleLinesSelector
+                      budgetId={selectedBudgetId}
+                      selectedLines={selectedLines}
+                      onSelectionChange={setSelectedLines}
+                      formatUF={formatUF}
+                      formatCLP={formatCLP}
+                      year={year}
+                      contractId={contractId}
+                      ufValue={ufValue}
+                    />
+                  )
                 )}
 
                 {selectedLines.length > 0 && (
@@ -1208,7 +1371,7 @@ export const OCRequestsList = ({
 
               <TabsContent value="payments" className="space-y-4 mt-4">
                 <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos (opcional)</Label>
+                  <Label>Plan de Pagos *</Label>
                   <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
                     <Plus className="h-3 w-3" />
                     Agregar Pago
@@ -1218,7 +1381,7 @@ export const OCRequestsList = ({
                 {paymentPlan.length === 0 ? (
                   <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
                     <p>No hay pagos planificados.</p>
-                    <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
+                    <p className="text-xs mt-1">Debes agregar al menos un pago para poder crear la solicitud.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1362,7 +1525,8 @@ export const OCRequestsList = ({
                     !newRequestForm.amount ||
                     parseFloat(newRequestForm.amount) <= 0 ||
                     !newRequestForm.supplier_id ||
-                    (paymentPlan.length > 0 && totalPlanned > totalSelected)
+                    paymentPlan.length === 0 ||
+                    Math.abs(totalPlanned - totalSelected) > 0.01
                   }
                 >
                   {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -1373,6 +1537,13 @@ export const OCRequestsList = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ShareOCRequestDialog
+        open={!!shareData}
+        onOpenChange={(o) => { if (!o) setShareData(null); }}
+        data={shareData}
+        requestId={shareRequestId}
+      />
     </div>
   );
 };

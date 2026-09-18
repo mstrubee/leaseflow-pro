@@ -1,29 +1,40 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Check, FileText, Sheet, Save, X, AlertCircle } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Loader2, Check, FileText, Sheet, MapPin, Save, X, AlertCircle, ChevronUp, ChevronDown, Wand2, TriangleAlert, CalendarRange } from "lucide-react";
 import { exportBusinessCasePDF, exportBusinessCaseExcel } from "@/lib/businessCase/exportV2";
+import { listSavedIsochrones, fetchSalesProjection, normalizeIsochroneName } from "@/lib/geochile/client";
 import { toast } from "sonner";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip as RTooltip, Legend, CartesianGrid,
 } from "recharts";
 import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
-import type { BCSeed, BCInputs } from "@/lib/businessCase/model";
+import type { BCSeed, BCInputs, BCEscalation, FormatoLocal } from "@/lib/businessCase/model";
+import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta, averageCanonUfM2 } from "@/lib/businessCase/model";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
+import {
+  computeEscalationYearTargets, buildSuggestedTiers, buildAdjustedTiers, simulateEscalationProposal,
+  modelYearBounds, modelYearForMonth, EBITDA_TARGET_PCT, ARRIENDO_CAP_PCT, ESCALATION_STEP,
+  type EscalationPreviewYear,
+} from "@/lib/businessCase/escalationSolver";
+import { computeFullTermProjection, type FullTermProjection } from "@/lib/businessCase/fullTermProjection";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contractId: string;
+  contractName?: string;
   seed: BCSeed;
   canEdit?: boolean;
 }
@@ -31,35 +42,89 @@ interface Props {
 const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#64748b", "#f43f5e", "#06b6d4"];
 const yearCols = [0, 1, 2, 3, 4, 5];
 
-function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
+// Default de "Apertura al público" = inicio + gracia (mismo cálculo que dtCanonIso
+// en computeBC), mostrado en el campo hasta que el usuario lo modifique a mano.
+function addMonthsIso(iso: string, months: number): string {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return "";
+  d.setMonth(d.getMonth() + (months || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
   return (
-    <Input type="number" step={step} value={Number.isFinite(value) ? value : 0}
-      onChange={(e) => onChange(parseFloat(e.target.value) || 0)} disabled={disabled}
+    <DecimalInput value={value} decimals={decimals}
+      onChange={(v) => { if (v !== null) onChange(v); }} disabled={disabled}
       className={`h-7 ${w} text-xs text-right px-1`} />
   );
 }
 
-export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, canEdit }: Props) {
-  const { config, inputs, result, loading, saving, dirty, update, updateArr, setInvOverride, undo, save } =
+// Variante del NumCell con flechas +/- para el monto de escalonamiento —
+// avanza de a ESCALATION_STEP (0,05 UF) por click, sin tener que tipear.
+function StepperNumCell({ value, onChange, disabled, decimals = 2 }: { value: number; onChange: (v: number) => void; disabled?: boolean; decimals?: number }) {
+  return (
+    <div className="inline-flex items-center gap-0.5">
+      <DecimalInput value={value} decimals={decimals}
+        onChange={(v) => { if (v !== null) onChange(v); }} disabled={disabled}
+        className="h-7 w-20 text-xs text-right px-1" />
+      <div className="flex flex-col">
+        <button type="button" disabled={disabled} tabIndex={-1}
+          onClick={() => onChange(Math.round((value + ESCALATION_STEP) * 100) / 100)}
+          className="h-3.5 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+          <ChevronUp className="h-2.5 w-2.5" />
+        </button>
+        <button type="button" disabled={disabled} tabIndex={-1}
+          onClick={() => onChange(Math.max(0, Math.round((value - ESCALATION_STEP) * 100) / 100))}
+          className="h-3.5 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
+          <ChevronDown className="h-2.5 w-2.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contractName, seed, canEdit }: Props) {
+  const { config, inputs, result, loading, saving, dirty, update, updateArr, updateVentaConCrecimiento, updateEscalationAmount, applyEscalationTiers, setFormato, setInvOverride, undo, save } =
     useBusinessCaseV2({ contractId, seed, enabled: open });
   const ro = !canEdit;
 
+  const [syncingGeo, setSyncingGeo] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [optimizePreview, setOptimizePreview] = useState<{
+    mode: "crear" | "ajustar"; years: EscalationPreviewYear[]; tiers: BCEscalation[]; aniosNoCubiertos?: number[];
+  } | null>(null);
+  const [fullTermData, setFullTermData] = useState<FullTermProjection | null>(null);
+  const handleViewFullTerm = () => {
+    if (!inputs) return;
+    setFullTermData(computeFullTermProjection(inputs, config));
+  };
 
-  // Cerrar es siempre una acción explícita: si hay cambios sin guardar se
-  // pregunta antes, en vez de perderlos en silencio (ya no hay autoguardado).
-  const requestClose = () => {
-    if (dirty) setConfirmCloseOpen(true);
-    else onOpenChange(false);
+  // Arma la propuesta de escalonamiento (crea desde cero si no hay tramos
+  // cargados, o ajusta el monto de los ya existentes) y la deja en preview —
+  // recién se aplica si el usuario confirma en el diálogo. El antes/después
+  // que se muestra sale de simular el modelo completo con los tramos
+  // propuestos (simulateEscalationProposal), no de una fórmula por año
+  // aislada: un solo tramo puede seguir vigente por varios años y mover el
+  // EBITDA de todos ellos a la vez.
+  const handleOptimizeRentClick = () => {
+    if (!inputs || !result) return;
+    const rawTargets = computeEscalationYearTargets(inputs, result);
+    if (inputs.escalations.length === 0) {
+      const tiers = buildSuggestedTiers(inputs, result, rawTargets);
+      const years = simulateEscalationProposal(inputs, result, config, tiers);
+      setOptimizePreview({ mode: "crear", years, tiers });
+    } else {
+      const { tiers, aniosNoCubiertos } = buildAdjustedTiers(inputs, result, rawTargets);
+      const years = simulateEscalationProposal(inputs, result, config, tiers);
+      setOptimizePreview({ mode: "ajustar", years, tiers, aniosNoCubiertos });
+    }
   };
-  const handleSaveAndClose = async () => {
-    await save();
-    setConfirmCloseOpen(false);
-    onOpenChange(false);
-  };
-  const handleDiscardAndClose = () => {
-    setConfirmCloseOpen(false);
-    onOpenChange(false);
+  const handleApplyOptimizedRent = () => {
+    if (!optimizePreview) return;
+    applyEscalationTiers(optimizePreview.tiers);
+    toast.success("Escalonamiento aplicado — Ctrl+Z para deshacer, Guardar para confirmar", { duration: 6000 });
+    setOptimizePreview(null);
   };
 
   // Ctrl+Z / Cmd+Z deshace la última edición mientras el diálogo está abierto
@@ -77,16 +142,80 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, ro, undo]);
 
+  // Cerrar es siempre una acción explícita (botón "Cerrar"): si hay cambios
+  // sin guardar se pregunta antes, en vez de perderlos en silencio.
+  const requestClose = () => {
+    if (dirty) setConfirmCloseOpen(true);
+    else onOpenChange(false);
+  };
+  const handleSaveAndClose = async () => {
+    await save();
+    setConfirmCloseOpen(false);
+    onOpenChange(false);
+  };
+  const handleDiscardAndClose = () => {
+    setConfirmCloseOpen(false);
+    onOpenChange(false);
+  };
+
+  const handleSyncGeoplanet = async () => {
+    if (!inputs?.nombre?.trim()) {
+      toast.error("Ingresá el nombre del proyecto antes de sincronizar");
+      return;
+    }
+    setSyncingGeo(true);
+    try {
+      const target = normalizeIsochroneName(inputs.nombre);
+      const isochrones = await listSavedIsochrones();
+      const matches = isochrones.filter((iso) => normalizeIsochroneName(iso.name) === target);
+      if (matches.length === 0) {
+        toast.error(`No se encontró ninguna isócrona en Geochile Compass llamada "${inputs.nombre}"`);
+        return;
+      }
+      if (matches.length > 1) {
+        toast.error(`Hay ${matches.length} isócronas llamadas "${inputs.nombre}" en Geochile Compass — asigná una específica desde el Informe Directorio`);
+        return;
+      }
+      const projection = await fetchSalesProjection(matches[0].id);
+      update("ventaMes", projection.ventaMes);
+      // Curva de maduración de Geochile (columna "Crec." de su panel) — NO
+      // toca ufRates, que es la UF real/inflación, un supuesto aparte.
+      update("ventaGrowthPct", projection.growthRates);
+      // Recalibrar Ocupación % sobre la nueva Venta Año 1 (mismo criterio que
+      // updateVentaConCrecimiento/setFormato — sigue editable a mano después).
+      update("ocupPct", ocupPctFromVenta(inputs.formato, projection.ventaMes[0]));
+      // La proyección de Geochile Compass trae su propio ajuste "Express"
+      // (independiente del "Formato de local" de este Business Case) — si no
+      // coinciden, las ventas importadas están calibradas para el formato
+      // equivocado y hay que avisar en vez de aplicarlas en silencio.
+      const bcIsExpress = inputs.formato === "Express";
+      const geoIsExpress = !!projection.meta?.isExpress;
+      if (bcIsExpress !== geoIsExpress) {
+        toast.warning(
+          `Ojo: este Business Case es "${inputs.formato}", pero la proyección de "${matches[0].name}" en Geochile Compass ${geoIsExpress ? "SÍ" : "NO"} tiene el ajuste Express aplicado. Las ventas importadas pueden estar sobre/sub-estimadas — revisá el ajuste Express de esa isócrona en Geochile Compass.`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(`Ventas sincronizadas desde "${matches[0].name}" (Geochile Compass)`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "No se pudo sincronizar con Geochile Compass");
+    } finally {
+      setSyncingGeo(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
       <DialogContent
         className="max-w-5xl max-h-[92vh] overflow-y-auto"
+        hideCloseButton
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Business Case Financiero
+            Business Case Financiero{contractName ? ` ${contractName}` : ""}
             {saving && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Guardando…</span>}
             {!saving && dirty && <span className="text-xs text-amber-600 inline-flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Cambios sin guardar</span>}
             {!saving && !dirty && !loading && <span className="text-xs text-green-600 inline-flex items-center gap-1"><Check className="h-3 w-3" /> Guardado</span>}
@@ -97,7 +226,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                 </Button>
                 <Button size="sm" variant="outline" className="h-7 gap-1 text-xs"
                   onClick={() => {
-                    toast.promise(exportBusinessCaseExcel(inputs, result), {
+                    toast.promise(exportBusinessCaseExcel(inputs, result, config), {
                       loading: "Generando Excel…", success: "Excel generado", error: "No se pudo generar el Excel",
                     });
                   }}>
@@ -131,7 +260,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
             {/* ───────── RESUMEN ───────── */}
             <TabsContent value="resumen" className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Kpi label="TIR" value={result.tir != null ? fmtPct(result.tir) : "N/A"} sub={`Hurdle ${inputs.waccRate}%`} good={result.tir != null && result.tir > inputs.waccRate / 100} />
+                <Kpi label="TIR" value={result.tir != null ? fmtPct(result.tir) : "N/A"} good={result.tir != null && result.tir > inputs.waccRate / 100} />
                 <Kpi label="VAN (MM CLP)" value={`$${fmtMM(result.van)}`} good={result.van > 0} />
                 <Kpi label="Payback" value={result.paybackAnio > 0 ? `${result.paybackAnio} año${result.paybackAnio === 1 ? "" : "s"}` : ">5 años"} />
                 <Kpi label="Inversión (MM)" value={`$${fmtMM(result.totalCapex)}`} />
@@ -154,60 +283,122 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <SelectContent>{config.categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
+                  <FieldConv
+                    label="Formato de local"
+                    conv={`Precarga ${FORMATO_PRESETS[inputs.formato].personalY1} trabajadores, $${FORMATO_PRESETS[inputs.formato].inventarioMM} MM de inventario y Ocupación calibrada a $${OCUPACION_TARGET_MM[inputs.formato]} MM/mes (editables)`}
+                  >
+                    <Select value={inputs.formato} disabled={ro} onValueChange={(v) => setFormato(v as FormatoLocal)}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>{FORMATOS_LOCAL.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FieldConv>
                 </div>
               </Card>
 
               <Card title="Contrato (resumen)">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <Stat label="Canon" value={`${fmtMM(result.canonUF)} UF/mes`} />
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-sm">
+                  <Stat label="Canon (vigente)" value={`${fmtMM(result.canonUF)} UF/mes`} />
+                  <Stat label="Canon UF/m²" value={`${fmtMM(inputs.ufM2, 2)} UF/m²`} />
                   <Stat label="Garantía" value={`${fmtMM(result.garantiaUF)} UF`} />
-                  <Stat label="Meses año 1" value={`${result.mesesY1}`} />
+                  <Stat label="Meses año 1" value={fmtMM(result.mesesY1, 1)} />
                   <Stat label="EBITDA Margin Año 5" value={fmtPct(result.ebitdaMargin5)} />
                 </div>
+                {seed.contractPeriods && seed.contractPeriods.length > 0 && (
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="text-xs text-muted-foreground mb-1.5">
+                      Arriendo por periodo (desde el contrato{seed.contractPeriods.length > 1 ? " — escalonado" : ""})
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead><tr className="text-muted-foreground border-b">
+                        <th className="text-left py-1 font-normal">Periodo</th>
+                        <th className="text-right font-normal">Canon</th>
+                        <th className="text-right font-normal">GGCC</th>
+                        <th className="text-right font-normal">F.Prom</th>
+                        <th className="text-right font-normal">Otros</th>
+                        <th className="text-right font-normal">Total</th>
+                        <th className="text-right font-normal">UF/m²</th>
+                      </tr></thead>
+                      <tbody>
+                        {seed.contractPeriods.map((p) => (
+                          <tr key={p.label} className="border-b border-gray-50">
+                            <td className="py-1">{p.label}</td>
+                            <td className="text-right">{fmtMM(p.canon, 2)}</td>
+                            <td className="text-right">{p.ggcc ? fmtMM(p.ggcc, 2) : "-"}</td>
+                            <td className="text-right">{p.fProm ? fmtMM(p.fProm, 2) : "-"}</td>
+                            <td className="text-right">{p.otros ? fmtMM(p.otros, 2) : "-"}</td>
+                            <td className="text-right font-medium">{fmtMM(p.total, 2)}</td>
+                            <td className="text-right">{p.ufM2 != null ? fmtMM(p.ufM2, 2) : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Card>
             </TabsContent>
 
             {/* ───────── INVERSIÓN ───────── */}
             <TabsContent value="inversion" className="space-y-4">
-              <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — las líneas dependen de la categoría (config global). Los montos son editables por proyecto.">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-xs text-muted-foreground border-b">
-                    <th className="py-1 text-left">Línea</th><th className="text-left">Método</th><th className="text-center">Monto (MM)</th><th className="text-right">% · UF/m²</th>
-                  </tr></thead>
-                  <tbody>
-                    {result.inv.rows.map((r) => {
-                      const ufM2eq = inputs.superficie && inputs.ufBase ? (r.monto * 1e6) / inputs.ufBase / inputs.superficie : 0;
-                      return (
-                        <tr key={r.id} className="border-b border-gray-100">
-                          <td className="py-1">{r.nombre}</td>
-                          <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
-                          <td className="text-center"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
-                          <td className="text-right text-muted-foreground whitespace-nowrap">
-                            {r.pct.toFixed(1)}% · {ufM2eq.toFixed(1).replace(".", ",")} UF/m²
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    <tr className="font-semibold">
-                      <td className="py-1.5">Total</td><td />
-                      <td className="text-center">{fmtMM(result.inv.total)}</td>
-                      <td className="text-right">100% · {(inputs.superficie && inputs.ufBase ? (result.inv.total * 1e6) / inputs.ufBase / inputs.superficie : 0).toFixed(1).replace(".", ",")} UF/m²</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </Card>
-              <Card title="Composición del CAPEX">
-                <div style={{ height: 260 }}>
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={result.inv.rows.filter((r) => r.monto > 0)} dataKey="monto" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={(e: { nombre: string }) => e.nombre}>
-                        {result.inv.rows.filter((r) => r.monto > 0).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <RTooltip formatter={(v: number) => `${fmtMM(v)} MM`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
+              {(() => {
+                // El inventario es capital de trabajo, no CAPEX físico: se muestra
+                // aparte y no participa del % ni del UF/m² del plan de inversión.
+                const capexRows = result.inv.rows.filter((r) => r.id !== "inv");
+                const inventarioRow = result.inv.rows.find((r) => r.id === "inv");
+                const capexTotal = capexRows.reduce((s, r) => s + r.monto, 0);
+                const ufM2total = inputs.superficie && inputs.ufBase ? (capexTotal * 1e6) / inputs.ufBase / inputs.superficie : 0;
+                return (
+                  <>
+                    <Card title={`Plan de Inversión — ${inputs.categoria}`} sub="MM CLP — CAPEX físico (sin inventario). Los montos son editables por proyecto.">
+                      <table className="w-full text-sm">
+                        <thead><tr className="text-xs text-muted-foreground border-b">
+                          <th className="py-1 text-left">Línea</th><th className="text-left">Método</th><th className="text-center">Monto (MM)</th><th className="text-right">% · UF/m²</th>
+                        </tr></thead>
+                        <tbody>
+                          {capexRows.map((r) => {
+                            const pct = capexTotal > 0 ? (r.monto / capexTotal) * 100 : 0;
+                            const ufM2eq = inputs.superficie && inputs.ufBase ? (r.monto * 1e6) / inputs.ufBase / inputs.superficie : 0;
+                            return (
+                              <tr key={r.id} className="border-b border-gray-100">
+                                <td className="py-1">{r.nombre}</td>
+                                <td className="text-xs">{r.metodo === "uf_m2" ? "UF/m²" : r.metodo === "auto" ? "Sistema" : "Total"}</td>
+                                <td className="text-center"><NumCell value={r.monto} disabled={ro} w="w-24" onChange={(v) => setInvOverride(r.id, v)} /></td>
+                                <td className="text-right text-muted-foreground whitespace-nowrap">
+                                  {pct.toFixed(1)}% · {ufM2eq.toFixed(1).replace(".", ",")} UF/m²
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="font-semibold">
+                            <td className="py-1.5">Total CAPEX</td><td />
+                            <td className="text-center">{fmtMM(capexTotal)}</td>
+                            <td className="text-right">100% · {ufM2total.toFixed(1).replace(".", ",")} UF/m²</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </Card>
+                    {inventarioRow && (
+                      <Card title="Inventario" sub="Capital de trabajo — no es CAPEX, no participa del cálculo de UF/m².">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Monto (MM CLP)</span>
+                          <NumCell value={inventarioRow.monto} disabled={ro} w="w-28" onChange={(v) => setInvOverride(inventarioRow.id, v)} />
+                        </div>
+                      </Card>
+                    )}
+                    <Card title="Composición del CAPEX">
+                      <div style={{ height: 260 }}>
+                        <ResponsiveContainer>
+                          <PieChart>
+                            <Pie data={capexRows.filter((r) => r.monto > 0)} dataKey="monto" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={(e: { nombre: string }) => e.nombre}>
+                              {capexRows.filter((r) => r.monto > 0).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                            </Pie>
+                            <RTooltip formatter={(v: number) => `${fmtMM(v)} MM`} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Card>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             {/* ───────── PROYECCIONES ───────── */}
@@ -218,20 +409,88 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                     <thead><tr className="text-right text-muted-foreground border-b">
                       <th className="text-left py-1">Línea</th>{yearCols.map((i) => <th key={i} className="px-2">{i === 0 ? "Año 0" : `Año ${i}`}</th>)}
                     </tr></thead>
-                    <tbody>
-                      <PnlRow label="Ingresos" vals={result.ingresos} bold />
+                    <tbody style={{ backgroundColor: "hsl(173 80% 40% / 0.05)" }}>
+                      <SectionRow label="Ingresos y Costos Directos" color="teal" />
+                      <PnlRow label="Ingresos" vals={result.ingresos} bold detail={(i) => {
+                        if (i === 0) return null;
+                        const tramos = result.ingresosTramos[i] || [];
+                        if (tramos.length === 0) return null;
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Ingresos — Año {i}</p>
+                            {tramos.map((t, idx) => (
+                              <p key={idx}>{fmtMM(t.meses, 1)} mes{t.meses === 1 ? "" : "es"} × {fmtMM(t.tasa, 1)} MM/mes <span className="text-muted-foreground">(venta año de vida {t.anoVida})</span></p>
+                            ))}
+                            {result.scenarioFactor !== 1 && (
+                              <p className="pt-1 border-t">× {fmtMM(result.scenarioFactor, 2)} (factor de escenario)</p>
+                            )}
+                            <p className="font-semibold">= {fmtMM(result.ingresos[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
                       <PnlRow label="Costo de Ventas" vals={result.costoVentas} />
                       <PnlRow label="Otros costos dir." vals={result.otrosCostos} />
                       <PnlRow label="Costos variables" vals={result.costosVar} />
                       <PnlRow label="Margen Contribución" vals={result.margenCtrib} bold />
+                    </tbody>
+                    <tbody style={{ backgroundColor: "hsl(var(--primary) / 0.05)" }}>
+                      <SectionRow label="Gastos Operacionales" color="orange" />
                       <PnlRow label="Personal" vals={result.personal} />
                       <PnlRow label="Publicidad" vals={result.publicidad} />
                       <PnlRow label="Gastos Generales" vals={result.gastosGral} />
                       <PnlRow label="Tecnología" vals={result.tecnologia} />
                       <PnlRow label="Ocupación" vals={result.ocupacion} />
-                      <PnlRow label="Canon Arriendo" vals={result.canonArr} />
-                      <PnlRow label="Gasto Común" vals={result.gastoComun} />
+                      <PnlRow label="Canon Arriendo" vals={result.canonArr} detail={(i) => {
+                        if (i === 0) return null;
+                        const tramos = result.canonTramos[i] || [];
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Canon Arriendo — Año {i}</p>
+                            {tramos.map((t, idx) => (
+                              <p key={idx}>{t.meses} mes{t.meses === 1 ? "" : "es"} × {fmtMM(t.ufMes, 2)} UF/mes</p>
+                            ))}
+                            <p className="text-muted-foreground">= {fmtMM(result.canonUfPromedio[i], 2)} UF/mes promedio del año</p>
+                            <p className="pt-1 border-t">
+                              {fmtMM(result.canonUfPromedio[i], 2)} UF/mes × {fmtMM(result.mesesArr[i], 1)} meses × {fmtMM(result.ufAvgs[i - 1])} CLP/UF (UF promedio del año anterior) ÷ 1.000.000
+                            </p>
+                            <p className="font-semibold">= {fmtMM(result.canonArr[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
+                      <PnlRow label="Fondo Promoción" vals={result.fondoPromocion} detail={(i) => {
+                        if (i === 0) return null;
+                        const canonProm = result.canonUfPromedio[i];
+                        const fondoUf = canonProm * ((inputs.fondoPromocionPct || 0) / 100);
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Fondo Promoción — Año {i}</p>
+                            <p>{fmtMM(inputs.fondoPromocionPct, 1)}% × {fmtMM(canonProm, 2)} UF/mes (canon promedio del año) = {fmtMM(fondoUf, 2)} UF/mes</p>
+                            <p className="pt-1 border-t">
+                              {fmtMM(fondoUf, 2)} UF/mes × {fmtMM(result.mesesArr[i], 1)} meses × {fmtMM(result.ufAvgs[i - 1])} CLP/UF (UF promedio del año anterior) ÷ 1.000.000
+                            </p>
+                            <p className="font-semibold">= {fmtMM(result.fondoPromocion[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
+                      <PnlRow label="Gasto Común" vals={result.gastoComun} detail={(i) => {
+                        if (i === 0) return null;
+                        const gcomUfMes = (inputs.gastoComunUf || 0) * (inputs.superficie || 0);
+                        return (
+                          <div className="space-y-1">
+                            <p className="font-semibold">Gasto Común — Año {i}</p>
+                            <p>{fmtMM(inputs.gastoComunUf, 2)} UF/m² × {fmtMM(inputs.superficie, 0)} m² = {fmtMM(gcomUfMes, 2)} UF/mes</p>
+                            <p className="pt-1 border-t">
+                              {fmtMM(gcomUfMes, 2)} UF/mes × {fmtMM(result.mesesArr[i], 1)} meses × {fmtMM(result.ufAvgs[i - 1])} CLP/UF (UF promedio del año anterior) ÷ 1.000.000
+                            </p>
+                            <p className="font-semibold">= {fmtMM(result.gastoComun[i])} MM CLP</p>
+                          </div>
+                        );
+                      }} />
                       <PnlRow label="EBITDA" vals={result.ebitda} bold />
+                      <MarginRow label="% EBITDA / Ventas" vals={yearCols.map((i) => (result.ingresos[i] ? result.ebitda[i] / result.ingresos[i] : 0))} />
+                    </tbody>
+                    <tbody style={{ backgroundColor: "hsl(271 91% 65% / 0.05)" }}>
+                      <SectionRow label="Resultado y Flujo" color="purple" />
                       <PnlRow label="Depreciación" vals={result.depreciacion} />
                       <PnlRow label="EBIT" vals={result.ebit} bold />
                       <PnlRow label="Impuesto" vals={result.impuesto} />
@@ -285,15 +544,81 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
 
             {/* ───────── SUPUESTOS ───────── */}
             <TabsContent value="supuestos" className="space-y-4">
-              <Card title="Contrato">
+              <Card
+                title="Contrato"
+                action={!ro && (
+                  <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs shrink-0" onClick={handleOptimizeRentClick}>
+                    <Wand2 className="h-3.5 w-3.5" /> Optimizar renta a {EBITDA_TARGET_PCT}% EBITDA
+                  </Button>
+                )}
+              >
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
-                  <Field label="UF / m²"><NumCell value={inputs.ufM2} disabled={ro} w="w-full" onChange={(v) => update("ufM2", v)} /></Field>
-                  <Field label="Gasto común (UF/mes)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" onChange={(v) => update("gastoComunUf", v)} /></Field>
+                  {(() => {
+                    // Con escalonamiento, el UF/m² inicial no representa el
+                    // arriendo real del contrato — se muestra el promedio
+                    // ponderado por los meses de cada tramo (solo arriendo,
+                    // sin gasto común ni fondo de promoción, que tienen sus
+                    // propios campos más abajo).
+                    const hasEscalation = inputs.escalations.length > 0;
+                    const ufM2Display = hasEscalation ? averageCanonUfM2(inputs) : (inputs.ufM2 || 0);
+                    return (
+                      <FieldConv
+                        label={hasEscalation ? "UF / m² (promedio)" : "UF / m²"}
+                        conv={`$${fmtMM((inputs.superficie || 0) * ufM2Display * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * ufM2Display, 2)} UF/mes)${hasEscalation ? " — promedio a toda la duración del contrato" : ""}`}
+                      >
+                        <NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></FieldConv>
+                    );
+                  })()}
+                  <Field label="Gasto común (UF/m²)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
                   <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
                   <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
                   <Field label="Inicio"><Input type="date" value={inputs.inicio} disabled={ro} onChange={(e) => update("inicio", e.target.value)} className="h-8 text-sm" /></Field>
+                  <FieldConv
+                    label="Apertura al público"
+                    conv={`Opera ${result.mesesOperacion} ${result.mesesOperacion === 1 ? "mes" : "meses"} el año 1 · personal desde 1 mes antes (${result.mesesPersonal})`}
+                  >
+                    <Input
+                      type="date"
+                      value={inputs.apertura || addMonthsIso(inputs.inicio, inputs.graciaMeses)}
+                      disabled={ro}
+                      onChange={(e) => update("apertura", e.target.value)}
+                      placeholder="Inicio de pago de renta"
+                      className="h-8 text-sm"
+                    />
+                  </FieldConv>
                 </div>
+
+                {inputs.escalations.length > 0 && (() => {
+                  const bounds = modelYearBounds(inputs, result);
+                  return (
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="text-xs text-muted-foreground mb-1.5">
+                        Escalonamiento de renta — solo el monto es editable acá (los plazos se gestionan desde el contrato); sincroniza con el contrato
+                      </div>
+                      <div className="space-y-1.5">
+                        {inputs.escalations.map((esc, i) => {
+                          const fueraDeVentana = modelYearForMonth(esc.monthNumber, bounds) == null;
+                          return (
+                            <div key={esc.id ?? i} className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground w-24 shrink-0">Desde mes {esc.monthNumber}</span>
+                              <StepperNumCell value={esc.amount} disabled={ro} onChange={(v) => updateEscalationAmount(i, v)} />
+                              <span className="text-[10px] text-muted-foreground">{esc.isUfM2 ? "UF/m²" : "UF"}</span>
+                              {fueraDeVentana && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px] text-amber-600"
+                                  title="Este tramo empieza después del horizonte de 5 años que modela el Business Case — cambiar su monto no afecta el EBITDA/VAN/TIR que ves acá."
+                                >
+                                  <TriangleAlert className="h-3 w-3" /> fuera de la ventana de 5 años
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </Card>
 
               <Card title="UF y económico">
@@ -304,8 +629,34 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                 </div>
               </Card>
 
-              {/* Ventas + Crecimiento UF en una sola sección, alineadas por año y en tiempo real */}
-              <Card title="Ventas y Crecimiento UF anual" sub="Editar cualquiera recalcula el modelo en tiempo real">
+              {/* Ventas + supuestos de crecimiento en una sola sección, alineadas por
+                  año y en tiempo real. Dos tasas distintas, no confundir: Crec.
+                  Ventas % es la curva de maduración del local (la usa la cascada
+                  al editar Venta); Crec. UF anual % es la UF real (inflación,
+                  ~3-4%/año) y solo convierte a CLP canon/gasto común/personal. */}
+              <Card
+                title="Ventas y Supuestos de Crecimiento"
+                sub="Editar cualquiera recalcula el modelo en tiempo real"
+                action={
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={handleViewFullTerm}>
+                      <CalendarRange className="h-3.5 w-3.5" /> Ver negocio completo ({inputs.durContratoAnios || 0} años)
+                    </Button>
+                    {!ro && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1.5 text-xs"
+                        disabled={syncingGeo}
+                        onClick={handleSyncGeoplanet}
+                      >
+                        {syncingGeo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
+                        Sincronizar con GeoPlanet
+                      </Button>
+                    )}
+                  </div>
+                }
+              >
                 <div className="overflow-x-auto">
                   <table className="text-xs">
                     <thead><tr className="text-muted-foreground">
@@ -316,7 +667,13 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                       <tr>
                         <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Venta (MM/mes)</td>
                         {inputs.ventaMes.map((v, i) => (
-                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} onChange={(val) => updateArr("ventaMes", i, val)} /></td>
+                          <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} step="1" decimals={1} onChange={(val) => updateVentaConCrecimiento(i, val)} /></td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Crec. Ventas %</td>
+                        {inputs.ventaGrowthPct.map((r, i) => (
+                          <td key={i} className="px-1 text-center"><NumCell value={r} disabled={ro} onChange={(v) => updateArr("ventaGrowthPct", i, v)} /></td>
                         ))}
                       </tr>
                       <tr>
@@ -331,41 +688,218 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
                           <td key={y} className="px-1 text-center text-[10px] text-muted-foreground">{fmtMM(result.ingresos[y])}</td>
                         ))}
                       </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-[10px] text-muted-foreground" title="Canon + Fondo Promoción + Gasto Común, sobre Ingresos del mismo año">Arriendo/Vta %</td>
+                        {[1, 2, 3, 4, 5].map((y) => {
+                          const arriendoTotal = Math.abs(result.canonArr[y]) + Math.abs(result.fondoPromocion[y]) + Math.abs(result.gastoComun[y]);
+                          const ratio = result.ingresos[y] > 0 ? arriendoTotal / result.ingresos[y] : 0;
+                          return (
+                            <td key={y} className="px-1 text-center text-[10px] font-medium text-amber-600">{fmtPct(ratio)}</td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="pr-3 py-1 whitespace-nowrap text-[10px] text-muted-foreground" title="EBITDA / Ingresos del mismo año">EBITDA / año</td>
+                        {[1, 2, 3, 4, 5].map((y) => {
+                          const ratio = result.ingresos[y] > 0 ? result.ebitda[y] / result.ingresos[y] : 0;
+                          return (
+                            <td key={y} className="px-1 text-center text-[10px] font-medium text-green-700">{fmtPct(ratio)}</td>
+                          );
+                        })}
+                      </tr>
                     </tbody>
                   </table>
                 </div>
               </Card>
 
-              <Card title="Márgenes y costos" sub="Conversión a MM CLP (Año 1) bajo cada campo">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card title="Márgenes y costos" sub="Conversión a MM CLP/mes (promedio) bajo cada campo">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(result.costoVentas[1]))} MM`}>
-                    <NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></FieldConv>
-                  <FieldConv label="Otros costos dir. %" conv={`A1: $${fmtMM(Math.abs(result.otrosCostos[1]))} MM`}>
-                    <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
-                  <FieldConv label="Costos variables %" conv={`A1: $${fmtMM(Math.abs(result.costosVar[1]))} MM`}>
-                    <NumCell value={inputs.costosVar} disabled={ro} w="w-full" onChange={(v) => update("costosVar", v)} /></FieldConv>
-                  <FieldConv label="Gastos generales %" conv={`A1: $${fmtMM(Math.abs(result.gastosGral[1]))} MM`}>
-                    <NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></FieldConv>
-                  <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(result.tecnologia[1]))} MM`}>
-                    <NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></FieldConv>
-                  <FieldConv label="Ocupación %" conv={`A1: $${fmtMM(Math.abs(result.ocupacion[1]))} MM`}>
-                    <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></FieldConv>
-                  <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM/año`}>
-                    <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
+                    <NumCell value={inputs.margenDir} disabled={ro} w="w-20" onChange={(v) => update("margenDir", v)} /></FieldConv>
+                  {(() => {
+                    // Año 1 es parcial (result.mesesOperacion meses, porque el
+                    // local abre a mitad de año) — un "A1: $X MM" ahí no es un
+                    // valor mensual, es el total de un año incompleto. Para un
+                    // $/mes comparable se promedia el total de costo de los 5
+                    // años sobre el total de meses de operación proyectados
+                    // (años 2-5 siempre son 12 meses completos, mismo criterio
+                    // que mesesOperArr en computeBC).
+                    const totalMesesOperacion = result.mesesOperacion + 48;
+                    const promedioMensual = (arr: number[]) => {
+                      const total = arr.slice(1, 6).reduce((s, x) => s + Math.abs(x), 0);
+                      return totalMesesOperacion > 0 ? total / totalMesesOperacion : 0;
+                    };
+                    return (
+                      <>
+                        <FieldConv label="Otros costos dir. %" conv={`Prom: $${fmtMM(promedioMensual(result.otrosCostos))} MM/mes`}>
+                          <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
+                        <FieldConv label="Costos variables %" conv={`Prom: $${fmtMM(promedioMensual(result.costosVar))} MM/mes`}>
+                          <NumCell value={inputs.costosVar} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("costosVar", v)} /></FieldConv>
+                        <FieldConv label="Gastos generales %" conv={`Prom: $${fmtMM(promedioMensual(result.gastosGral))} MM/mes`}>
+                          <NumCell value={inputs.gralPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
+                        <FieldConv label="Tecnología %" conv={`Prom: $${fmtMM(promedioMensual(result.tecnologia))} MM/mes`}>
+                          <NumCell value={inputs.tecPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
+                        <FieldConv label="Ocupación %" conv={`Prom: $${fmtMM(promedioMensual(result.ocupacion))} MM/mes`}>
+                          <NumCell value={inputs.ocupPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+                      </>
+                    );
+                  })()}
+                  <FieldConv label="# Personas" conv={`= $${fmtMM(Math.abs(result.personal[1]))} MM`}>
+                    <NumCell value={inputs.personalY1} disabled={ro} w="w-20" onChange={(v) => update("personalY1", v)} /></FieldConv>
                   <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
-                    <NumCell value={inputs.costoPersonaMM} disabled={ro} w="w-full" onChange={(v) => update("costoPersonaMM", v)} /></FieldConv>
-                  <FieldConv label="Crec. personal %" conv={`A5: $${fmtMM(Math.abs(result.personal[5]))} MM`}>
-                    <NumCell value={inputs.personalCrec} disabled={ro} w="w-full" onChange={(v) => update("personalCrec", v)} /></FieldConv>
+                    <NumCell value={inputs.costoPersonaMM} disabled={ro} w="w-20" onChange={(v) => update("costoPersonaMM", v)} /></FieldConv>
+                  {/* El crecimiento de personal ya no es un input: los años 2..5
+                      se reajustan por la variación de UF del año anterior, igual
+                      que la planilla oficial. Se muestra el resultado del año 5. */}
+                  <FieldConv label="Personal Año 5" conv="Reajustado por variación UF">
+                    <Input value={`$${fmtMM(Math.abs(result.personal[5]))} MM`} disabled readOnly className="h-7 w-20 text-xs text-right px-1 bg-muted/40" /></FieldConv>
                   <FieldConv label="CAPEX depreciable (MM)" conv="Se lee desde Inversión (física)">
-                    <Input value={fmtMM(result.inv.fisica)} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
+                    <Input value={fmtMM(result.inv.fisica)} disabled readOnly className="h-7 w-20 text-xs text-right px-1 bg-muted/40" /></FieldConv>
                   <FieldConv label="Años depreciación" conv={`Depr. anual: $${fmtMM(Math.abs(result.depreciacion[1]))} MM`}>
-                    <NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></FieldConv>
+                    <NumCell value={inputs.deprAnos} disabled={ro} w="w-20" onChange={(v) => update("deprAnos", v)} /></FieldConv>
                 </div>
               </Card>
             </TabsContent>
           </Tabs>
         )}
       </DialogContent>
+
+      <Dialog open={!!optimizePreview} onOpenChange={(next) => { if (!next) setOptimizePreview(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {optimizePreview?.mode === "crear" ? "Escalonado sugerido" : "Ajuste de escalonado existente"}
+            </DialogTitle>
+          </DialogHeader>
+          {optimizePreview && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Objetivo: EBITDA {EBITDA_TARGET_PCT}% por año, con Arriendo/Vta% ≤ {ARRIENDO_CAP_PCT}%.
+                Los montos se redondean a pasos de {fmtMM(ESCALATION_STEP, 2)} UF. Los números de abajo son el resultado real de simular el modelo completo con la propuesta — no siempre da exacto el {EBITDA_TARGET_PCT}%: un mismo tramo puede seguir vigente varios años, y el tope de {ARRIENDO_CAP_PCT}% tiene prioridad sobre el objetivo de EBITDA.
+              </p>
+              {optimizePreview.mode === "ajustar" && optimizePreview.aniosNoCubiertos && optimizePreview.aniosNoCubiertos.length > 0 && (
+                <p className="text-xs text-amber-600 flex items-start gap-1.5">
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  Año{optimizePreview.aniosNoCubiertos.length > 1 ? "s" : ""} {optimizePreview.aniosNoCubiertos.join(", ")} sin un tramo propio — toma{optimizePreview.aniosNoCubiertos.length > 1 ? "n" : ""} el valor de un tramo de un año anterior. Si querés que cada año tenga su propio escalón, quitá los tramos actuales del contrato y volvé a usar "Optimizar" para generar uno nuevo desde cero.
+                </p>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="text-muted-foreground border-b">
+                    <th className="text-left py-1">Año</th>
+                    <th className="text-right px-2">Canon UF/m² actual → propuesto</th>
+                    <th className="text-right px-2">EBITDA actual → propuesto</th>
+                    <th className="text-right px-2">Arriendo/Vta actual → propuesto</th>
+                  </tr></thead>
+                  <tbody>
+                    {optimizePreview.years.map((y) => {
+                      const sinCambio = Math.abs(y.canonUfM2Propuesto - y.canonUfM2Actual) < 0.001;
+                      return (
+                        <tr key={y.year} className="border-b border-gray-50">
+                          <td className="py-1.5">Año {y.year}</td>
+                          <td className="text-right px-2">
+                            {sinCambio ? fmtMM(y.canonUfM2Actual, 2) : `${fmtMM(y.canonUfM2Actual, 2)} → ${fmtMM(y.canonUfM2Propuesto, 2)}`}
+                          </td>
+                          <td className="text-right px-2">
+                            {sinCambio ? fmtPct(y.ebitdaPctActual) : `${fmtPct(y.ebitdaPctActual)} → `}
+                            {!sinCambio && <span className="font-medium text-green-700">{fmtPct(y.ebitdaPctPropuesto)}</span>}
+                          </td>
+                          <td className="text-right px-2">
+                            {sinCambio ? fmtPct(y.arriendoPctActual) : `${fmtPct(y.arriendoPctActual)} → `}
+                            {!sinCambio && <span className="font-medium text-amber-600">{fmtPct(y.arriendoPctPropuesto)}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOptimizePreview(null)}>Cancelar</Button>
+            <Button onClick={handleApplyOptimizedRent}>Aplicar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!fullTermData} onOpenChange={(next) => { if (!next) setFullTermData(null); }}>
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Negocio completo — {fullTermData?.totalYears} años (solo visualización)</DialogTitle>
+          </DialogHeader>
+          {fullTermData && (
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Extiende los mismos supuestos del Business Case (ventas, costos, escalonamiento de renta) a toda la
+                duración del contrato, en vez de los 5 años de Proyecciones/Retorno. Después del año 5 de vida del
+                local, la venta sigue creciendo a la última tasa de maduración cargada (Crec. Ventas % del año 5,
+                {" "}{fmtMM(inputs.ventaGrowthPct?.[4] ?? 0, 1)}% por defecto); la UF sigue creciendo a la última tasa
+                cargada. No se guarda ni reemplaza el Business Case oficial a 5 años.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Kpi label="Inversión (MM)" value={`$${fmtMM(fullTermData.totalCapex)}`} />
+                <Kpi label={`TIR (${fullTermData.totalYears} años)`} value={fullTermData.tir != null ? fmtPct(fullTermData.tir) : "N/A"} good={fullTermData.tir != null && fullTermData.tir > (inputs.waccRate || 0) / 100} />
+                <Kpi label="VAN (MM CLP)" value={`$${fmtMM(fullTermData.van)}`} good={fullTermData.van > 0} />
+                <Kpi label="Payback" value={fullTermData.paybackAnio > 0 ? `Año ${fullTermData.paybackAnio}` : `>${fullTermData.totalYears}`} />
+              </div>
+              <Card title="Ventas vs EBITDA" sub={`MM CLP por año — ${fullTermData.totalYears} años`}>
+                <div style={{ height: 260 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={fullTermData.years.map((y) => ({ name: `A${y.year}`, Ventas: y.ingresos, EBITDA: y.ebitda }))}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" fontSize={10} /><YAxis fontSize={11} />
+                      <RTooltip /><Legend />
+                      <Bar dataKey="Ventas" fill="#3b82f6" /><Bar dataKey="EBITDA" fill="#10b981" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+              <Card title="EBITDA % vs Arriendo/Vta %" sub="Sobre ventas, por año">
+                <div style={{ height: 240 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={fullTermData.years.map((y) => ({ name: `A${y.year}`, "EBITDA %": +(y.ebitdaPct * 100).toFixed(1), "Arriendo %": +(y.arriendoPct * 100).toFixed(1) }))}>
+                      <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" fontSize={10} /><YAxis fontSize={11} unit="%" />
+                      <RTooltip /><Legend />
+                      <Line type="monotone" dataKey="EBITDA %" stroke="#10b981" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Arriendo %" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+              <Card title="Detalle por año" sub="MM CLP">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs whitespace-nowrap">
+                    <thead><tr className="text-right text-muted-foreground border-b">
+                      <th className="text-left py-1">Línea</th>
+                      {fullTermData.years.map((y) => <th key={y.year} className="px-2">Año {y.year}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      <tr className="border-b border-gray-50 text-[10px] text-muted-foreground italic"><td className="text-left py-0.5">Venta mensual promedio</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2 py-0.5">{fmtMM(y.ventaMensualPromedio, 1)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 text-[10px] text-muted-foreground italic"><td className="text-left py-0.5">% incremental</td>{fullTermData.years.map((y, i) => {
+                        const prev = i > 0 ? fullTermData.years[i - 1].ingresos : 0;
+                        const pct = prev > 0 ? y.ingresos / prev - 1 : 0;
+                        return <td key={y.year} className="text-right px-2 py-0.5">{i === 0 ? "—" : fmtPct(pct)}</td>;
+                      })}</tr>
+                      <tr className="border-b border-gray-50 font-semibold"><td className="text-left py-1">Ventas</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ingresos)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">Margen Contribución</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.margenCtrib)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">Canon Arriendo</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.canonArr)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 font-semibold"><td className="text-left py-1">EBITDA</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ebitda)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 text-[10px] text-muted-foreground italic"><td className="text-left py-0.5">% EBITDA / Ventas</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2 py-0.5">{fmtPct(y.ebitdaPct)}</td>)}</tr>
+                      <tr className="border-b border-gray-50 text-[10px] text-amber-600 font-medium"><td className="text-left py-0.5">Arriendo / Vta %</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2 py-0.5">{fmtPct(y.arriendoPct)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">EBIT</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.ebit)}</td>)}</tr>
+                      <tr className="border-b border-gray-50"><td className="text-left py-1">UDI</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.udi)}</td>)}</tr>
+                      <tr><td className="text-left py-1">Flujo acumulado</td>{fullTermData.years.map((y) => <td key={y.year} className="text-right px-2">{fmtMM(y.flujoAcumulado)}</td>)}</tr>
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFullTermData(null)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
         <AlertDialogContent>
@@ -394,21 +928,24 @@ function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: 
     </div>
   );
 }
-function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+function Card({ title, sub, action, children }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
-      <div className="mb-2"><h3 className="text-sm font-semibold">{title}</h3>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</div>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div><h3 className="text-sm font-semibold">{title}</h3>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</div>
+        {action}
+      </div>
       {children}
     </div>
   );
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><Label className="text-xs">{label}</Label><div className="mt-0.5">{children}</div></div>;
+  return <div><Label className="text-xs block min-h-[2rem]">{label}</Label><div className="mt-0.5">{children}</div></div>;
 }
 function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
   return (
-    <div>
-      <Label className="text-xs">{label}</Label>
+    <div className="flex flex-col">
+      <Label className="text-xs block min-h-[2rem]">{label}</Label>
       <div className="mt-0.5">{children}</div>
       <div className="text-[10px] text-muted-foreground mt-0.5">{conv}</div>
     </div>
@@ -417,11 +954,62 @@ function FieldConv({ label, conv, children }: { label: string; conv: string; chi
 function Stat({ label, value }: { label: string; value: string }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
 }
-function PnlRow({ label, vals, bold }: { label: string; vals: number[]; bold?: boolean }) {
+function PnlRow({
+  label, vals, bold, detail,
+}: {
+  label: string; vals: number[]; bold?: boolean;
+  /** Detalle de cálculo por año (índice 0..5). Devolver null para años sin desglose (ej. Año 0). */
+  detail?: (i: number) => React.ReactNode | null;
+}) {
   return (
     <tr className={`border-b border-gray-50 ${bold ? "font-semibold" : ""}`}>
       <td className="text-left py-1">{label}</td>
-      {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>)}
+      {yearCols.map((i) => {
+        const content = detail?.(i);
+        if (!content) return <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>;
+        return (
+          <td key={i} className="text-right px-2">
+            <Popover>
+              <PopoverTrigger className="underline decoration-dotted decoration-muted-foreground underline-offset-2 hover:text-primary">
+                {fmtMM(vals[i] ?? 0)}
+              </PopoverTrigger>
+              <PopoverContent className="w-72 text-xs" align="end">{content}</PopoverContent>
+            </Popover>
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+// Agrupa el Estado de Resultados por a qué subtotal alimenta cada tramo
+// (Margen Contribución / EBITDA / resultado final), sin tocar el alto ni el
+// padding de las filas normales (PnlRow) — solo separa visualmente.
+const SECTION_COLORS: Record<string, string> = {
+  teal: "text-teal-700",
+  orange: "text-primary",
+  purple: "text-purple-700",
+};
+function SectionRow({ label, color }: { label: string; color: "teal" | "orange" | "purple" }) {
+  return (
+    <tr>
+      <td colSpan={7} className="pt-3 pb-1">
+        <div className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide ${SECTION_COLORS[color]}`}>
+          {label}
+          <span className="h-px flex-1 bg-current opacity-20" />
+        </div>
+      </td>
+    </tr>
+  );
+}
+function MarginRow({ label, vals }: { label: string; vals: number[] }) {
+  return (
+    <tr>
+      <td className="text-left py-0.5 pb-2 text-[10px] italic text-muted-foreground">{label}</td>
+      {yearCols.map((i) => (
+        <td key={i} className="text-right px-2 py-0.5 pb-2 text-[10px] font-medium text-green-700">
+          {i === 0 ? "—" : fmtPct(vals[i] ?? 0)}
+        </td>
+      ))}
     </tr>
   );
 }

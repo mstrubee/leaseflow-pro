@@ -3,33 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppLogos } from "@/hooks/useAppLogos";
-import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
-
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  rectSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { ServiceContractApprovalBanner } from "@/components/serviceContracts/ServiceContractApprovalBanner";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
-  BarChart3, Wrench, Shield, Users, LayoutDashboard,
-  LogOut, GripVertical, AlertTriangle, KeyRound, MapPin, ScanSearch,
+  BarChart3, Wrench, Shield, Users, UserCog, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle, CalendarDays,
+  Archive,
 } from "lucide-react";
-import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import type { LucideIcon } from "lucide-react";
 
 interface ModuleItem {
@@ -38,92 +21,39 @@ interface ModuleItem {
   desc: string;
   icon: LucideIcon;
   path: string;
-  resource: string | null;
+  resource: string | string[] | null;
   color: string;
-  external?: boolean; // si true, `path` es una URL externa (abre en pestaña nueva)
-}
-
-// ⬇️ URL pública del Contract Risk Reviewer. Reemplázala por la real cuando
-// despliegues su backend+frontend (Render/Railway/Fly). Mientras esté vacía,
-// la card avisa que falta configurarla.
-const CONTRACT_REVIEWER_URL = "";
-
-function SortableModuleCard({ module, onClick }: { module: ModuleItem; onClick: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: module.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 50 : undefined,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="h-full">
-      <SelectableElement elementId={module.id} label={module.label}>
-        <Card className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 group h-full">
-          <CardContent className="p-5 flex items-start gap-4 h-full" onClick={onClick}>
-            <div className={`rounded-lg p-2.5 ${module.color}`}>
-              <module.icon className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-foreground">{module.label}</p>
-              <p className="text-sm text-muted-foreground">{module.desc}</p>
-            </div>
-            <div
-              {...attributes}
-              {...listeners}
-              className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <GripVertical className="h-4 w-4" />
-            </div>
-          </CardContent>
-        </Card>
-      </SelectableElement>
-    </div>
-  );
+  external?: boolean;
 }
 
 const ALL_MODULES: ModuleItem[] = [
-  { id: "contracts", label: "Contratos", desc: "Gestión de contratos inmobiliarios", icon: FileText, path: "/contracts", resource: "contracts", color: "text-blue-600 bg-blue-100" },
-  { id: "patents", label: "Patentes", desc: "Gestión de patentes municipales", icon: Shield, path: "/patents", resource: null, color: "text-purple-600 bg-purple-100" },
-  { id: "purchase_orders", label: "Órdenes de Compra", desc: "Control de órdenes y presupuestos", icon: ShoppingCart, path: "/purchase-orders", resource: "purchase_orders", color: "text-orange-600 bg-orange-100" },
-  { id: "opex", label: "OPEX", desc: "Gastos operacionales", icon: Wallet, path: "/opex", resource: "opex", color: "text-emerald-600 bg-emerald-100" },
-  { id: "capex", label: "CAPEX", desc: "Inversiones de capital", icon: HardHat, path: "/capex", resource: "capex", color: "text-amber-600 bg-amber-100" },
-  { id: "alerts", label: "Alertas", desc: "Notificaciones y vencimientos", icon: Bell, path: "/alerts", resource: "alerts", color: "text-red-600 bg-red-100" },
-  { id: "reports", label: "Informes", desc: "Reportes y análisis", icon: BarChart3, path: "/reports", resource: "reports", color: "text-cyan-600 bg-cyan-100" },
-  { id: "kpi", label: "KPI", desc: "Indicadores de gestión", icon: BarChart3, path: "/kpi", resource: "kpi", color: "text-indigo-600 bg-indigo-100" },
-  { id: "suppliers", label: "Proveedores", desc: "Gestión de proveedores", icon: Users, path: "/suppliers", resource: "suppliers", color: "text-teal-600 bg-teal-100" },
-  { id: "maintenance", label: "Mantenciones", desc: "Mantenciones preventivas y correctivas", icon: Wrench, path: "/maintenance", resource: "maintenance", color: "text-rose-600 bg-rose-100" },
-  { id: "geoloc", label: "GEOLOC", desc: "Sistema de información geográfica territorial", icon: MapPin, path: "/geoloc", resource: "geoloc", color: "text-green-600 bg-green-100" },
-  { id: "contract_review", label: "Revisor de Contratos (IA)", desc: "Analiza riesgos de un contrato Word con IA", icon: ScanSearch, path: CONTRACT_REVIEWER_URL, resource: null, color: "text-fuchsia-600 bg-fuchsia-100", external: true },
+  { id: "contracts",      label: "Contratos",                desc: "Gestión de contratos inmobiliarios",           icon: FileText,    path: "/contracts",       resource: "contracts",       color: "text-blue-600 bg-blue-100" },
+  { id: "patents",        label: "Patentes",                 desc: "Gestión de patentes municipales",              icon: Shield,      path: "/patents",          resource: "patents",         color: "text-purple-600 bg-purple-100" },
+  { id: "purchase_orders",label: "Órdenes de Compra",        desc: "Control de órdenes y presupuestos",            icon: ShoppingCart,path: "/purchase-orders",  resource: "purchase_orders", color: "text-orange-600 bg-orange-100" },
+  { id: "opex",           label: "OPEX",                     desc: "Gastos operacionales",                         icon: Wallet,      path: "/opex",             resource: "opex",            color: "text-emerald-600 bg-emerald-100" },
+  { id: "capex",          label: "CAPEX",                    desc: "Inversiones de capital",                       icon: HardHat,     path: "/capex",            resource: "capex",           color: "text-amber-600 bg-amber-100" },
+  { id: "alerts",         label: "Alertas",                  desc: "Notificaciones y vencimientos",                icon: Bell,        path: "/alerts",           resource: "alerts",          color: "text-red-600 bg-red-100" },
+  { id: "reports",        label: "Informes",                  desc: "Reportes y análisis",                          icon: BarChart3,   path: "/reports",          resource: ["reports", "patents", "suppliers", "capex", "maintenance", "gantt_reports"], color: "text-cyan-600 bg-cyan-100" },
+  { id: "kpi",            label: "KPI",                      desc: "Indicadores de gestión",                       icon: BarChart3,   path: "/kpi",              resource: "kpi",             color: "text-indigo-600 bg-indigo-100" },
+  { id: "suppliers",      label: "Proveedores",              desc: "Gestión de proveedores",                       icon: Users,       path: "/suppliers",        resource: "suppliers",       color: "text-teal-600 bg-teal-100" },
+  { id: "maintenance",    label: "Mantenciones",             desc: "Mantenciones preventivas y correctivas",       icon: Wrench,      path: "/maintenance",      resource: "maintenance",     color: "text-rose-600 bg-rose-100" },
+  { id: "fixed_assets",   label: "Activos Fijos",            desc: "Inventario de activos fijos",                  icon: Archive,     path: "/fixed-assets",     resource: "fixed_assets",    color: "text-slate-600 bg-slate-100" },
+  { id: "geoloc",         label: "GEOLOC",                   desc: "Sistema de información geográfica",            icon: MapPin,      path: "/geoloc",           resource: "geoloc",          color: "text-green-600 bg-green-100" },
+  { id: "service_contracts", label: "Contratos de Servicio", desc: "Contratos recurrentes con proveedores",         icon: Handshake,   path: "/service-contracts", resource: "service_contracts", color: "text-violet-600 bg-violet-100" },
+  { id: "special_attention", label: "Atención Especial",     desc: "Seguimiento de contratos con atención especial", icon: AlertTriangle, path: "/special-attention", resource: "special_attention", color: "text-amber-600 bg-amber-100" },
+  { id: "contract_review",label: "Revisor de Contratos (IA)",desc: "Analiza riesgos de un contrato Word con IA",   icon: ScanSearch,  path: "",                  resource: null,              color: "text-fuchsia-600 bg-fuchsia-100", external: true },
 ];
 
 const Welcome = () => {
   const navigate = useNavigate();
-  const { user, loading, isAdmin, isOperador, roleLoaded, hasPermission, signOut } = useAuth();
+  const { user, loading, isAdmin, isOperador, isGerente, isEquipoGerencia, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
   const [pwdOpen, setPwdOpen] = useState(false);
 
-  const { value: savedOrder, setValue: setSavedOrder, initialized: orderInitialized } = useUserPreferences<string[]>({
-    preferenceKey: "welcome_module_order",
-    defaultValue: [],
-  });
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  );
-
   useEffect(() => {
     if (!loading && !user) navigate("/auth");
   }, [loading, user, navigate]);
-
-  // El operador de terreno solo gestiona rutas: aterriza directo en el calendario
-  useEffect(() => {
-    if (roleLoaded && isOperador) navigate("/maintenance/routes", { replace: true });
-  }, [roleLoaded, isOperador, navigate]);
 
   useEffect(() => {
     if (user) {
@@ -135,35 +65,17 @@ const Welcome = () => {
   const hours = new Date().getHours();
   const greeting = hours < 12 ? "Buenos días" : hours < 20 ? "Buenas tardes" : "Buenas noches";
 
-  const visibleModules = useMemo(() =>
-    ALL_MODULES.filter((m) => m.resource === null || hasPermission(m.resource, "view")),
-    [hasPermission]
+  const visibleModules = useMemo(
+    () => ALL_MODULES.filter(m => {
+      // "Revisor de Contratos (IA)" (resource: null) es visible para cualquier
+      // autenticado por diseño -- pero equipo_gerencia solo debe ver Contratos
+      // e Informes, nada más, así que se excluye explícitamente acá.
+      if (m.resource === null) return !isEquipoGerencia;
+      const resources = Array.isArray(m.resource) ? m.resource : [m.resource];
+      return resources.some(r => hasPermission(r, "view"));
+    }),
+    [hasPermission, isEquipoGerencia],
   );
-
-  const sortedModules = useMemo(() => {
-    if (!orderInitialized || !savedOrder || savedOrder.length === 0) return visibleModules;
-    const ordered: ModuleItem[] = [];
-    const visibleIds = new Set(visibleModules.map(m => m.id));
-    // Add modules in saved order if visible
-    for (const id of savedOrder) {
-      const mod = visibleModules.find(m => m.id === id);
-      if (mod) ordered.push(mod);
-    }
-    // Append any new modules not in saved order
-    for (const mod of visibleModules) {
-      if (!savedOrder.includes(mod.id)) ordered.push(mod);
-    }
-    return ordered;
-  }, [visibleModules, savedOrder, orderInitialized]);
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = sortedModules.findIndex(m => m.id === active.id);
-    const newIndex = sortedModules.findIndex(m => m.id === over.id);
-    const reordered = arrayMove(sortedModules, oldIndex, newIndex);
-    setSavedOrder(reordered.map(m => m.id));
-  };
 
   if (loading || !roleLoaded) {
     return (
@@ -174,101 +86,147 @@ const Welcome = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col pb-14">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img src={logos.dashboard_header} alt="Logo" className="h-[50px] object-contain" />
+            <img
+              src={logos.dashboard_header}
+              alt="Logo"
+              className="h-[50px] object-contain"
+            />
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setPwdOpen(true)} className="gap-2">
-              <KeyRound className="h-4 w-4" />
-              Cambiar contraseña
+            <Button variant="ghost" size="sm" onClick={() => setPwdOpen(true)}>
+              <KeyRound className="h-4 w-4 mr-1.5" />
+              Contraseña
             </Button>
-            <Button variant="ghost" size="sm" onClick={async () => { await signOut(); navigate("/auth"); }} className="gap-2">
-              <LogOut className="h-4 w-4" />
+            <Button variant="ghost" size="sm" onClick={signOut}>
+              <LogOut className="h-4 w-4 mr-1.5" />
               Salir
             </Button>
           </div>
         </div>
       </header>
-      <ChangePasswordDialog open={pwdOpen} onOpenChange={setPwdOpen} />
 
-      {/* Main content */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+        {/* Greeting */}
         <div>
           <h1 className="text-3xl font-bold text-foreground">
-            {greeting}, {fullName || "…"}
+            {greeting}{fullName ? `, ${fullName}` : ""}.
           </h1>
           <p className="text-muted-foreground mt-1">¿En qué te gustaría trabajar hoy?</p>
         </div>
 
-        <SelectableElement elementId="dashboard" label="Dashboard">
-          <Button size="lg" onClick={() => navigate("/dashboard")} className="gap-2">
-            <LayoutDashboard className="h-5 w-5" />
-            Ir al Dashboard
-          </Button>
-        </SelectableElement>
+        {/* Aprobaciones de contratos de servicio pendientes */}
+        <ServiceContractApprovalBanner />
 
-        
+        {/* Alerts */}
+        <WelcomeAlertsBar />
 
-        {/* Sortable module grid */}
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={sortedModules.map(m => m.id)} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sortedModules.map((m) => (
-                <SortableModuleCard key={m.id} module={m} onClick={() => {
-                  if (m.external) {
-                    if (m.path) window.open(m.path, "_blank", "noopener,noreferrer");
-                    else alert("Esta herramienta aún no está configurada. Define su URL en CONTRACT_REVIEWER_URL.");
-                  } else {
-                    navigate(m.path);
-                  }
-                }} />
-              ))}
+        {/* Homepage del operador de terreno: solo sus 2 accesos, no la grilla general */}
+        {isOperador ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+            {hasPermission("maintenance", "view") && (
+              <Card
+                className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+                onClick={() => navigate("/maintenance/routes")}
+              >
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className="rounded-lg p-2.5 text-rose-600 bg-rose-100">
+                    <CalendarDays className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Calendario de Ruta</p>
+                    <p className="text-sm text-muted-foreground">Revisa y ejecuta tus rutas de mantención</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {hasPermission("expense_reports", "view") && (
+              <Card
+                className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+                onClick={() => navigate("/expense-reports")}
+              >
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className="rounded-lg p-2.5 text-orange-600 bg-orange-100">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Rendición de Gastos</p>
+                    <p className="text-sm text-muted-foreground">Registra y envía tus gastos del Fondo por rendir</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {visibleModules.map(mod => {
+            const Icon = mod.icon;
+            const isUnconfigured = mod.external && !mod.path;
+            return (
+              <Card
+                key={mod.id}
+                className={`transition-shadow ${isUnconfigured ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:shadow-md hover:border-primary/40"}`}
+                onClick={() => {
+                  if (isUnconfigured) return;
+                  if (mod.external) window.open(mod.path, "_blank", "noopener,noreferrer");
+                  else navigate(mod.path);
+                }}
+              >
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className={`rounded-lg p-2.5 ${mod.color}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">{mod.label}</p>
+                    <p className="text-sm text-muted-foreground">{mod.desc}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
 
-              {isAdmin && (
-                <SelectableElement elementId="admin" label="Admin">
-                  <Card
-                    className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
-                    onClick={() => navigate("/admin")}
-                  >
-                    <CardContent className="p-5 flex items-start gap-4">
-                      <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
-                        <Shield className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Admin</p>
-                        <p className="text-sm text-muted-foreground">Panel de administración</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </SelectableElement>
-              )}
+          {isAdmin && (
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+              onClick={() => navigate("/admin")}
+            >
+              <CardContent className="p-5 flex items-start gap-4">
+                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Admin</p>
+                  <p className="text-sm text-muted-foreground">Panel de administración</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-              <SelectableElement elementId="special_attention" label="Atención Especial">
-                <Card
-                  className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
-                  onClick={() => navigate("/special-attention")}
-                >
-                  <CardContent className="p-5 flex items-start gap-4">
-                    <div className="rounded-lg p-2.5 text-amber-600 bg-amber-100">
-                      <AlertTriangle className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">Atención Especial</p>
-                      <p className="text-sm text-muted-foreground">Contratos que requieren atención</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </SelectableElement>
-            </div>
-          </SortableContext>
-        </DndContext>
+          {isGerente && (
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+              onClick={() => navigate("/usuarios")}
+            >
+              <CardContent className="p-5 flex items-start gap-4">
+                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                  <UserCog className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Usuarios</p>
+                  <p className="text-sm text-muted-foreground">Gestiona el acceso de tu equipo</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        )}
       </main>
 
-      <WelcomeAlertsBar />
+      <ChangePasswordDialog open={pwdOpen} onOpenChange={setPwdOpen} />
     </div>
   );
 };

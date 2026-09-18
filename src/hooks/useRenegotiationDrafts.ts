@@ -44,6 +44,7 @@ export interface RenegotiationDraft {
   // Other fields
   fondo_promocion_percentage: number | null;
   grace_months: number | null;
+  grace_ggcc_applies?: boolean | null;
   notice_bilaterality: string;
   otros_egresos_amount: number | null;
   otros_egresos_description: string | null;
@@ -151,6 +152,7 @@ export function useRenegotiationDrafts(contractId: string) {
           adicional_administracion_percentage: currentVersion.adicional_administracion_percentage,
           fondo_promocion_percentage: currentVersion.fondo_promocion_percentage,
           grace_months: currentVersion.grace_months,
+          grace_ggcc_applies: currentVersion.grace_ggcc_applies ?? true,
           notice_bilaterality: currentVersion.notice_bilaterality || "unilateral",
           otros_egresos_amount: currentVersion.otros_egresos_amount,
           otros_egresos_description: currentVersion.otros_egresos_description,
@@ -188,6 +190,7 @@ export function useRenegotiationDrafts(contractId: string) {
             adicional_administracion_percentage: sourceDraft.adicional_administracion_percentage,
             fondo_promocion_percentage: sourceDraft.fondo_promocion_percentage,
             grace_months: sourceDraft.grace_months,
+            grace_ggcc_applies: sourceDraft.grace_ggcc_applies ?? true,
             notice_bilaterality: sourceDraft.notice_bilaterality,
             otros_egresos_amount: sourceDraft.otros_egresos_amount,
             otros_egresos_description: sourceDraft.otros_egresos_description,
@@ -411,6 +414,7 @@ export function useRenegotiationDrafts(contractId: string) {
         adicional_administracion_percentage: draft.adicional_administracion_percentage,
         fondo_promocion_percentage: draft.fondo_promocion_percentage,
         grace_months: draft.grace_months,
+        grace_ggcc_applies: draft.grace_ggcc_applies ?? true,
         notice_bilaterality: draft.notice_bilaterality,
         otros_egresos_amount: draft.otros_egresos_amount,
         otros_egresos_description: draft.otros_egresos_description,

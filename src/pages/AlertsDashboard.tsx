@@ -8,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2, Filter, Tag, Search, ArrowUpDown } from "lucide-react";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useAlertCategories } from "@/hooks/useAlertCategories";
@@ -17,6 +16,7 @@ import { AlertsList } from "@/components/alerts/AlertsList";
 import { FinalizedAlertsList } from "@/components/alerts/FinalizedAlertsList";
 import { UpcomingAlertsPanel } from "@/components/alerts/UpcomingAlertsPanel";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import {
@@ -185,9 +185,10 @@ export default function AlertsDashboard() {
 
       setRefreshKey((k) => k + 1);
     } catch (error: any) {
+      const message = await getFunctionErrorMessage(error, "No se pudieron procesar las alertas");
       toast({
         title: "Error",
-        description: error.message || "No se pudieron procesar las alertas",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -256,7 +257,6 @@ export default function AlertsDashboard() {
   }
 
   return (
-    <SelectableElement elementId="alerts" label="Alertas">
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -579,6 +579,5 @@ export default function AlertsDashboard() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-    </SelectableElement>
   );
 }

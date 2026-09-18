@@ -5,6 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   ChevronDown,
   ChevronRight,
@@ -21,24 +30,35 @@ import {
   ArrowUpDown,
   CheckSquare,
   Square,
+  Building2,
+  Plus,
+  Check,
+  X,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
+import { useAppLogos } from "@/hooks/useAppLogos";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday } from "@/hooks/useGantt";
-import { getGanttDateRange } from "@/lib/ganttDateUtils";
+import { getGanttDateRange, computeEffectiveDatesMap } from "@/lib/ganttDateUtils";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getLogoUrls } from "@/hooks/useAppLogos";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+import { GanttOverviewTimeline, GanttOverviewBudgetItem } from "@/components/gantt/GanttOverviewTimeline";
+import { useGanttOverviewStatuses } from "@/hooks/useGanttOverviewStatuses";
+import { getProgressColorClass } from "@/hooks/useBudgetProgressStatuses";
+import { cn } from "@/lib/utils";
 
 type FilterGantt = "all" | "con" | "sin";
 type SortBy = "name" | "capex_desc" | "gantt_first" | "no_gantt_first";
+type SortBy2 = "none" | "empresa" | "name" | "capex_desc";
 
 interface Disbursement {
   startDate: string;   // start_date of "Obras Civiles"
@@ -52,7 +72,11 @@ interface Disbursement {
 interface GanttContractData {
   contractId: string;
   contractName: string;
+  companyNames: string[];
+  timelineId: string | null;
   timelineName: string;
+  /** Id del estado en gantt_overview_statuses -- null = "Activo" (el de menor display_order). */
+  overviewStatusId: string | null;
   tasks: GanttTask[];
   taskTree: GanttTask[];
   endDate: string | null;
@@ -60,6 +84,11 @@ interface GanttContractData {
   capexCLP: number;
   surfaceM2: number; // superficie_edificada_local for UF/m² metric
   disbursement: Disbursement | null;
+  address: string | null; // calle + número, de contract_addresses
+  commune: string | null;
+  cebe: string | null; // custom field "CEBE" / "Código"
+  /** contracts.clasificacion -- mismo campo/tabla que Contratos > En Negociación y /capex (capex_clasificacion_types). */
+  clasificacion: string | null;
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
@@ -79,48 +108,6 @@ const buildTree = (flat: GanttTask[]): GanttTask[] => {
   };
   sortRec(roots);
   return roots;
-};
-
-/**
- * Calcula las fechas EFECTIVAS de cada tarea: una hoja usa sus propias fechas;
- * una tarea madre refleja el mínimo inicio y máximo término de sus descendientes
- * (recursivo). Igual que el Gantt editable (getEffectiveDates), garantiza que la
- * madre siempre refleje a sus hijas aunque el valor guardado esté desactualizado.
- */
-const computeEffectiveDatesMap = (
-  tasks: GanttTask[]
-): Map<string, { start: string | null; end: string | null }> => {
-  const childrenByParent = new Map<string, GanttTask[]>();
-  tasks.forEach((t) => {
-    if (t.parent_id) {
-      const arr = childrenByParent.get(t.parent_id) || [];
-      arr.push(t);
-      childrenByParent.set(t.parent_id, arr);
-    }
-  });
-  const memo = new Map<string, { start: string | null; end: string | null }>();
-  const compute = (task: GanttTask): { start: string | null; end: string | null } => {
-    const cached = memo.get(task.id);
-    if (cached) return cached;
-    const kids = childrenByParent.get(task.id) || [];
-    if (kids.length === 0) {
-      const r = { start: task.start_date, end: task.end_date };
-      memo.set(task.id, r);
-      return r;
-    }
-    let minStart: string | null = null;
-    let maxEnd: string | null = null;
-    for (const c of kids) {
-      const { start, end } = compute(c);
-      if (start && (!minStart || start < minStart)) minStart = start;
-      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
-    }
-    const r = { start: minStart, end: maxEnd };
-    memo.set(task.id, r);
-    return r;
-  };
-  tasks.forEach((t) => compute(t));
-  return memo;
 };
 
 const flattenTree = (
@@ -157,13 +144,16 @@ function MiniGantt({
   selectionMode = false,
   hiddenIds,
   onToggleHidden,
+  companyNames,
 }: {
   taskTree: GanttTask[];
   holidays: Holiday[];
   selectionMode?: boolean;
   hiddenIds?: Set<string>;
   onToggleHidden?: (id: string) => void;
+  companyNames?: string[];
 }) {
+  const { logos } = useAppLogos();
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
   // Fechas efectivas (madres reflejan a sus hijas), consistentes con el Gantt editable.
   const effDates = useMemo(
@@ -172,6 +162,15 @@ function MiniGantt({
   );
   const datesOf = (t: GanttTask) =>
     effDates.get(t.id) ?? { start: t.start_date, end: t.end_date };
+
+  const companyLogoSrc = useMemo(() => {
+    if (!companyNames || companyNames.length === 0) return null;
+    const lower = companyNames.map((n) => n.toLowerCase());
+    if (lower.some((n) => /grupo\s*planet/.test(n))) return logos.grupoPlanet;
+    if (lower.some((n) => n.includes("autoplanet"))) return logos.autoplanet;
+    if (lower.some((n) => n.includes("agroplanet"))) return logos.agroplanet;
+    return null;
+  }, [companyNames, logos]);
   const tasksWithDates = flat.filter((f) => {
     const d = datesOf(f.task);
     return d.start && d.end;
@@ -383,10 +382,10 @@ function MiniGantt({
                     }}
                   />
                 )}
-                {/* Bar */}
+                {/* Bar – contains logo thumbnail so it stays inside the bar */}
                 {hasDates && (
                   <div
-                    className="absolute rounded-sm"
+                    className="absolute rounded-sm overflow-hidden"
                     style={{
                       left: barLeft,
                       width: barWidth,
@@ -398,7 +397,25 @@ function MiniGantt({
                       parseISO(startStr!),
                       "dd/MM/yyyy"
                     )} - ${format(parseISO(endStr!), "dd/MM/yyyy")}`}
-                  />
+                  >
+                    {companyLogoSrc && (
+                      <img
+                        src={companyLogoSrc}
+                        alt="empresa"
+                        style={{
+                          position: "absolute",
+                          bottom: 1,
+                          right: 2,
+                          width: 14,
+                          height: 14,
+                          objectFit: "contain",
+                          opacity: 0.65,
+                          borderRadius: 2,
+                          pointerEvents: "none",
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -412,8 +429,27 @@ function MiniGantt({
 export function GanttReportsSection() {
   const { ufValue } = useEconomicIndicators();
   const { navigateToContractFromReports } = useReportsNavigation();
+  const { statuses: overviewStatuses } = useGanttOverviewStatuses();
+  const overviewStatusesById = useMemo(() => {
+    const map = new Map<string, (typeof overviewStatuses)[number]>();
+    overviewStatuses.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [overviewStatuses]);
+  /** Estado "Activo" por defecto para cronogramas sin overview_status_id -- el de menor display_order. */
+  const defaultOverviewStatus = overviewStatuses[0] ?? null;
+  const resolveOverviewStatus = (statusId: string | null) =>
+    (statusId ? overviewStatusesById.get(statusId) : null) ?? defaultOverviewStatus;
+
   const [data, setData] = useState<GanttContractData[]>([]);
   const [loading, setLoading] = useState(true);
+  // "Tipos de CAPEX" / Clasificación, administrables desde Admin > Estados y
+  // Categorías -- mismo campo (contracts.clasificacion) que edita Contratos >
+  // En Negociación y /capex; lo que se cambia acá se refleja allá y viceversa.
+  const [clasificacionTypes, setClasificacionTypes] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  // Ítems de "Presupuesto" agregados a mano sobre la línea de tiempo general
+  // -- puramente informativos, NO son contratos: no cuentan para ningún
+  // listado ni filtro de contratos (vigentes/en negociación/rechazados/etc.).
+  const [budgetItems, setBudgetItems] = useState<GanttOverviewBudgetItem[]>([]);
   const [exporting, setExporting] = useState(false);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
   const [selectionModeCards, setSelectionModeCards] = useState<Set<string>>(new Set());
@@ -422,30 +458,78 @@ export function GanttReportsSection() {
   // Filtro, orden y selección para exportar
   const [filterGantt, setFilterGantt] = useState<FilterGantt>("all");
   const [sortBy, setSortBy] = useState<SortBy>("name");
+  const [sortBy2, setSortBy2] = useState<SortBy2>("none");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  /** Datos visibles tras aplicar filtro y orden */
+  // Filtro por empresa
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+
+  // Contratos No Firmados (en_negociacion)
+  const [negotiationContracts, setNegotiationContracts] = useState<{ id: string; name: string; companyNames: string[] }[]>([]);
+  const [loadingNegotiation, setLoadingNegotiation] = useState(false);
+  const [negotiationSearchOpen, setNegotiationSearchOpen] = useState(false);
+  const [extraData, setExtraData] = useState<GanttContractData[]>([]);
+  const [addedNegotiationIds, setAddedNegotiationIds] = useState<Set<string>>(new Set());
+
+  // All data combined (regular + added negotiation contracts)
+  const allData = useMemo(() => {
+    const regularIds = new Set(data.map((d) => d.contractId));
+    const extras = extraData.filter((e) => !regularIds.has(e.contractId));
+    return [...data, ...extras];
+  }, [data, extraData]);
+
+  // Unique company names for filter dropdown
+  const allCompanies = useMemo(() => {
+    const names = new Set<string>();
+    allData.forEach((d) => d.companyNames.forEach((n) => names.add(n)));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [allData]);
+
+  /** Datos visibles tras aplicar filtro y orden (primario + secundario) */
   const displayData = useMemo(() => {
-    let filtered = data;
-    if (filterGantt === "con") filtered = data.filter((d) => d.tasks.length > 0);
-    if (filterGantt === "sin") filtered = data.filter((d) => d.tasks.length === 0);
+    let filtered = allData;
+    if (filterGantt === "con") filtered = allData.filter((d) => d.tasks.length > 0);
+    if (filterGantt === "sin") filtered = allData.filter((d) => d.tasks.length === 0);
+    if (companyFilter !== "all") {
+      filtered = filtered.filter((d) => d.companyNames.includes(companyFilter));
+    }
+
+    // Clave de empresa: nombres ordenados y unidos; vacío se ordena al final.
+    const companyKey = (d: GanttContractData) =>
+      d.companyNames.length > 0
+        ? d.companyNames.slice().sort().join(" · ").toLowerCase()
+        : "￿";
+
+    // Comparador por un criterio; 0 = empate (sin desempate por nombre).
+    const compareBy = (a: GanttContractData, b: GanttContractData, crit: SortBy | SortBy2) => {
+      switch (crit) {
+        case "capex_desc":
+          return b.capexUF - a.capexUF;
+        case "gantt_first": {
+          const aHas = a.tasks.length > 0, bHas = b.tasks.length > 0;
+          return aHas === bHas ? 0 : aHas ? -1 : 1;
+        }
+        case "no_gantt_first": {
+          const aNo = a.tasks.length === 0, bNo = b.tasks.length === 0;
+          return aNo === bNo ? 0 : aNo ? -1 : 1;
+        }
+        case "empresa":
+          return companyKey(a).localeCompare(companyKey(b));
+        case "name":
+          return a.contractName.localeCompare(b.contractName);
+        default:
+          return 0;
+      }
+    };
+
     return [...filtered].sort((a, b) => {
-      if (sortBy === "capex_desc") return b.capexUF - a.capexUF;
-      if (sortBy === "gantt_first") {
-        const aHas = a.tasks.length > 0;
-        const bHas = b.tasks.length > 0;
-        if (aHas !== bHas) return aHas ? -1 : 1;
-        return a.contractName.localeCompare(b.contractName);
-      }
-      if (sortBy === "no_gantt_first") {
-        const aNo = a.tasks.length === 0;
-        const bNo = b.tasks.length === 0;
-        if (aNo !== bNo) return aNo ? -1 : 1;
-        return a.contractName.localeCompare(b.contractName);
-      }
+      const primary = compareBy(a, b, sortBy);
+      if (primary !== 0) return primary;
+      const secondary = compareBy(a, b, sortBy2);
+      if (secondary !== 0) return secondary;
       return a.contractName.localeCompare(b.contractName);
     });
-  }, [data, filterGantt, sortBy]);
+  }, [allData, filterGantt, sortBy, sortBy2, companyFilter]);
 
   // Helpers de selección para exportar
   const toggleSelected = (id: string) =>
@@ -457,9 +541,12 @@ export function GanttReportsSection() {
     });
 
   const selectGroup = (group: FilterGantt) => {
-    const pool = group === "all" ? displayData : group === "con"
-      ? displayData.filter((d) => d.tasks.length > 0)
-      : displayData.filter((d) => d.tasks.length === 0);
+    const pool =
+      group === "all"
+        ? displayData
+        : group === "con"
+        ? displayData.filter((d) => d.tasks.length > 0)
+        : displayData.filter((d) => d.tasks.length === 0);
     setSelectedIds(new Set(pool.map((d) => d.contractId)));
   };
 
@@ -473,6 +560,10 @@ export function GanttReportsSection() {
         : displayData,
     [displayData, selectedIds]
   );
+
+  /** Counts for filter badges */
+  const countCon = allData.filter((d) => d.tasks.length > 0).length;
+  const countSin = allData.filter((d) => d.tasks.length === 0).length;
 
   const toggleSelectionMode = (id: string) => {
     setSelectionModeCards((prev) => {
@@ -492,6 +583,26 @@ export function GanttReportsSection() {
     });
   };
 
+  /** Cambia el estado (Activo/En Pausa/Terminado/etc.) del cronograma principal — solo afecta esta vista. */
+  const updateOverviewStatus = async (
+    contractId: string,
+    timelineId: string,
+    statusId: string
+  ) => {
+    const prev = data;
+    setData((cur) =>
+      cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatusId: statusId } : d))
+    );
+    const { error } = await supabase
+      .from("gantt_timelines")
+      .update({ overview_status_id: statusId } as any)
+      .eq("id", timelineId);
+    if (error) {
+      setData(prev);
+      toast.error("No se pudo actualizar el estado del proyecto");
+    }
+  };
+
   const { isOpen: isSectionOpen, setIsOpen: setSectionOpen } = useSingleCollapsible(
     "reports-gantt-section",
     false
@@ -499,8 +610,38 @@ export function GanttReportsSection() {
 
   useEffect(() => {
     loadData();
+    loadBudgetItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ufValue]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("capex_clasificacion_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      setClasificacionTypes(data || []);
+    })();
+  }, []);
+
+  const updateClasificacion = async (contractId: string, value: string) => {
+    const prev = data;
+    setData((cur) => cur.map((d) => (d.contractId === contractId ? { ...d, clasificacion: value } : d)));
+    const { error } = await supabase.from("contracts").update({ clasificacion: value }).eq("id", contractId);
+    if (error) {
+      setData(prev);
+      toast.error("No se pudo actualizar la clasificación");
+    }
+  };
+
+  const loadBudgetItems = async () => {
+    const { data, error } = await (supabase as any)
+      .from("gantt_overview_budget_items")
+      .select("id, name, date")
+      .order("date");
+    if (!error) setBudgetItems(data || []);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -516,44 +657,123 @@ export function GanttReportsSection() {
         .eq("year", currentYear);
       if (bErr) throw bErr;
 
-      if (!budgets || budgets.length === 0) {
-        setData([]);
-        return;
-      }
-
       // Un presupuesto por contrato (primero encontrado)
       const budgetByContract = new Map<string, { id: string; amount_uf: number | null }>();
       (budgets || []).forEach((b) => {
         if (!budgetByContract.has(b.contract_id))
           budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
       });
-      const contractIds = Array.from(budgetByContract.keys());
+
+      // 1b) Contratos "En negociación" con Comité GP "Aceptada"/"Aceptado" (o
+      // cualquier variante que contenga esa raíz, ej. "Aceptada 2027") se
+      // incluyen también, aunque todavía no tengan un presupuesto CAPEX del
+      // año en curso -- para poder cargarles su carta Gantt desde ya.
+      const { data: acceptedNegotiationContracts, error: negErr } = await supabase
+        .from("contracts")
+        .select("id")
+        .eq("status", "en_negociacion")
+        .is("deleted_at", null)
+        .ilike("comite_gp_status", "%acepta%");
+      if (negErr) throw negErr;
+      const negotiationAcceptedIds = new Set(
+        (acceptedNegotiationContracts || []).map((c: any) => c.id as string)
+      );
+
+      const contractIds = Array.from(
+        new Set([...budgetByContract.keys(), ...negotiationAcceptedIds])
+      );
+
+      if (contractIds.length === 0) {
+        setData([]);
+        return;
+      }
 
       // 2) Datos del contrato (nombre, superficie, verificar no eliminado)
       const { data: contractRows, error: cErr } = await supabase
         .from("contracts")
-        .select("id, name, deleted_at, superficie_edificada_local")
+        .select("id, name, deleted_at, comite_gp_status, superficie_edificada_local, clasificacion")
         .in("id", contractIds);
       if (cErr) throw cErr;
 
       const contractMap = new Map<string, any>();
       (contractRows || [])
-        .filter((c: any) => !c.deleted_at)
+        // Excluir eliminados y contratos rechazados en Comité GP
+        .filter((c: any) => !c.deleted_at && c.comite_gp_status !== "Rechazada")
         .forEach((c: any) => contractMap.set(c.id, c));
 
-      // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos)
+      // 2b) Empresas asociadas a cada contrato (para mostrar su logo/logos)
+      const { data: companyRows } = await supabase
+        .from("contract_companies")
+        .select("contract_id, companies (name)")
+        .in("contract_id", contractIds);
+      const companiesByContract = new Map<string, string[]>();
+      (companyRows || []).forEach((cc: any) => {
+        const name = cc.companies?.name;
+        if (!name) return;
+        const list = companiesByContract.get(cc.contract_id) || [];
+        list.push(name);
+        companiesByContract.set(cc.contract_id, list);
+      });
+
+      // 2c) Dirección/comuna (contract_addresses) y CEBE (custom field) de cada
+      //     contrato, para mostrarlos junto al nombre en la lista.
+      const { data: addressRows } = await supabase
+        .from("contract_addresses")
+        .select("contract_id, street, number, commune")
+        .in("contract_id", contractIds);
+      const addressByContract = new Map<string, { address: string | null; commune: string | null }>();
+      (addressRows || []).forEach((a: any) => {
+        if (addressByContract.has(a.contract_id)) return; // primera dirección encontrada
+        const streetPart = [a.street, a.number].filter(Boolean).join(" ");
+        addressByContract.set(a.contract_id, {
+          address: streetPart || null,
+          commune: a.commune || null,
+        });
+      });
+
+      const { data: cebeFields } = await supabase
+        .from("contract_custom_fields")
+        .select("id, field_name")
+        .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
+        .eq("is_active", true);
+      const cebeField = cebeFields?.find((f: any) => f.field_name.toLowerCase() === "cebe");
+      const cebeByContract = new Map<string, string>();
+      if (cebeField) {
+        const { data: cebeVals } = await supabase
+          .from("contract_custom_field_values")
+          .select("contract_id, field_id, field_value")
+          .in("contract_id", contractIds)
+          .eq("field_id", cebeField.id);
+        (cebeVals || []).forEach((v: any) => {
+          if (v.field_value) cebeByContract.set(v.contract_id, v.field_value);
+        });
+      }
+
+      // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos).
+      //    Solo el cronograma PRINCIPAL (category = 'general') — el de
+      //    mantenciones (category = 'maintenance', creado desde /maintenance)
+      //    vive en la misma tabla pero no corresponde a esta vista.
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .select("id, name, contract_id")
+        .select("id, name, contract_id, is_priority, overview_status_id")
         .in("contract_id", contractIds)
+        .eq("category", "general")
+        .order("is_priority", { ascending: false })
         .order("created_at", { ascending: false });
       if (tlErr) throw tlErr;
 
-      // La timeline más reciente por contrato
-      const timelineByContract = new Map<string, { id: string; name: string }>();
+      // El cronograma PRINCIPAL de cada contrato (o el más reciente si no lo hay)
+      const timelineByContract = new Map<
+        string,
+        { id: string; name: string; overviewStatusId: string | null }
+      >();
       (timelines || []).forEach((t: any) => {
         if (!timelineByContract.has(t.contract_id))
-          timelineByContract.set(t.contract_id, { id: t.id, name: t.name });
+          timelineByContract.set(t.contract_id, {
+            id: t.id,
+            name: t.name,
+            overviewStatusId: t.overview_status_id ?? null,
+          });
       });
       const timelineIds = Array.from(timelineByContract.values()).map((t) => t.id);
 
@@ -589,15 +809,16 @@ export function GanttReportsSection() {
         capexByContract.set(contractId, fromTree > 0 ? fromTree : budget.amount_uf || 0);
       });
 
-      // 6) Ensamblar resultado — incluye TODOS los contratos con capex,
-      //    con o sin Gantt, con o sin tareas.
+      // 6) Ensamblar resultado — incluye TODOS los contratos con capex, con o
+      //    sin Gantt, con o sin tareas, más los "En negociación" ya aceptados
+      //    en Comité GP (esos se dejan pasar sin CAPEX real, ver 1b).
       const result: GanttContractData[] = [];
       for (const contractId of contractIds) {
         const contract = contractMap.get(contractId);
         if (!contract) continue; // contrato eliminado o no encontrado
 
         const capexUF = capexByContract.get(contractId) || 0;
-        if (capexUF <= 0) continue; // sin monto de capex real, omitir
+        if (capexUF <= 0 && !negotiationAcceptedIds.has(contractId)) continue; // sin monto de capex real, omitir
 
         const timeline = timelineByContract.get(contractId);
         const tasks = timeline
@@ -613,10 +834,18 @@ export function GanttReportsSection() {
         const endDates = tasks
           .map((t) => effOf(t).end)
           .filter(Boolean) as string[];
-        const endDate =
+        const maxEndDate =
           endDates.length > 0
             ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
             : null;
+
+        // "Fecha término" que se muestra en el listado y en la línea de
+        // tiempo: si el cronograma tiene una tarea "Apertura", esa es la
+        // fecha real de término (apertura al público) — no el máximo de
+        // todas las tareas, que puede incluir trabajos posteriores a la
+        // apertura. Si no existe esa tarea, se mantiene el cálculo anterior.
+        const aperturaTask = tasks.find((t) => t.name.trim().toLowerCase() === "apertura");
+        const endDate = aperturaTask ? effOf(aperturaTask).end : maxEndDate;
 
         const capexCLP = capexUF * currentUF;
 
@@ -647,7 +876,10 @@ export function GanttReportsSection() {
         result.push({
           contractId,
           contractName: contract.name,
+          companyNames: companiesByContract.get(contractId) || [],
+          timelineId: timeline?.id ?? null,
           timelineName: timeline?.name ?? "",
+          overviewStatusId: timeline?.overviewStatusId ?? null,
           tasks,
           taskTree,
           endDate,
@@ -655,6 +887,10 @@ export function GanttReportsSection() {
           capexCLP,
           surfaceM2: Number(contract.superficie_edificada_local) || 0,
           disbursement,
+          address: addressByContract.get(contractId)?.address ?? null,
+          commune: addressByContract.get(contractId)?.commune ?? null,
+          cebe: cebeByContract.get(contractId) ?? null,
+          clasificacion: contract.clasificacion ?? null,
         });
       }
 
@@ -666,6 +902,98 @@ export function GanttReportsSection() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadNegotiationContracts = async () => {
+    if (negotiationContracts.length > 0 || loadingNegotiation) return;
+    setLoadingNegotiation(true);
+    try {
+      const { data: contracts } = await supabase
+        .from("contracts")
+        .select("id, name, contract_companies(companies(name))")
+        .eq("status", "en_negociacion")
+        .is("deleted_at", null)
+        .order("name");
+      setNegotiationContracts(
+        (contracts || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          companyNames: (c.contract_companies || [])
+            .map((cc: any) => cc.companies?.name)
+            .filter(Boolean) as string[],
+        }))
+      );
+    } finally {
+      setLoadingNegotiation(false);
+    }
+  };
+
+  const addNegotiationContract = async (contractId: string, contractName: string) => {
+    if (extraData.some((e) => e.contractId === contractId)) {
+      // Remove it
+      setExtraData((prev) => prev.filter((e) => e.contractId !== contractId));
+      setAddedNegotiationIds((prev) => {
+        const next = new Set(prev);
+        next.delete(contractId);
+        return next;
+      });
+      return;
+    }
+
+    // Fetch timeline and tasks
+    const { data: timelines } = await supabase
+      .from("gantt_timelines")
+      .select("id, name, contract_id")
+      .eq("contract_id", contractId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const timeline = timelines?.[0] ?? null;
+    let tasks: GanttTask[] = [];
+    if (timeline) {
+      const { data: taskRows } = await supabase
+        .from("gantt_tasks")
+        .select("*")
+        .eq("timeline_id", timeline.id)
+        .order("display_order");
+      tasks = (taskRows as GanttTask[]) || [];
+    }
+
+    const taskTree = tasks.length > 0 ? buildTree(tasks) : [];
+    const effMap = computeEffectiveDatesMap(tasks);
+    const effOf = (t: GanttTask) =>
+      effMap.get(t.id) ?? { start: t.start_date, end: t.end_date };
+    const endDates = tasks.map((t) => effOf(t).end).filter(Boolean) as string[];
+    const endDate =
+      endDates.length > 0
+        ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
+        : null;
+
+    // Fetch companies
+    const { data: ccRows } = await supabase
+      .from("contract_companies")
+      .select("contract_id, companies(name)")
+      .eq("contract_id", contractId);
+    const companyNames = (ccRows || [])
+      .map((r: any) => r.companies?.name)
+      .filter(Boolean) as string[];
+
+    const newItem: GanttContractData = {
+      contractId,
+      contractName,
+      timelineName: timeline?.name ?? "",
+      tasks,
+      taskTree,
+      endDate,
+      capexUF: 0,
+      capexCLP: 0,
+      surfaceM2: 0,
+      disbursement: null,
+      companyNames,
+    };
+
+    setExtraData((prev) => [...prev, newItem]);
+    setAddedNegotiationIds((prev) => new Set([...prev, contractId]));
   };
 
   const toggleCard = (id: string) => {
@@ -690,6 +1018,21 @@ export function GanttReportsSection() {
     );
   const formatUFm2 = (n: number) =>
     new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+  const CLASIFICACION_COLOR_MAP: Record<string, string> = {
+    green: "bg-green-100 text-green-800 border-green-300 hover:bg-green-200",
+    red: "bg-red-100 text-red-800 border-red-300 hover:bg-red-200",
+    blue: "bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200",
+    yellow: "bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200",
+    purple: "bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200",
+    orange: "bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200",
+    gray: "bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200",
+  };
+  const getClasificacionColor = (name: string | null) => {
+    if (!name) return "";
+    const type = clasificacionTypes.find((t) => t.name === name);
+    return CLASIFICACION_COLOR_MAP[type?.color || "gray"] || "";
+  };
 
   const exportPDF = async () => {
     if (exportTarget.length === 0) {
@@ -995,9 +1338,32 @@ export function GanttReportsSection() {
     }
   };
 
-  // ── Derived counts para badges ─────────────────────────────────────────────
-  const countCon = data.filter((d) => d.tasks.length > 0).length;
-  const countSin = data.filter((d) => d.tasks.length === 0).length;
+  /**
+   * Proyectos con Gantt y fecha de término, para la línea de tiempo general.
+   * Los estados marcados "Excluir de la línea de tiempo" (configurable en
+   * Admin, ej. "En Pausa") se excluyen — siguen en el listado de abajo, pero
+   * no ocupan espacio en la línea de tiempo.
+   */
+  const timelineProjects = useMemo(
+    () =>
+      allData
+        .filter((d) => d.tasks.length > 0 && d.endDate && !resolveOverviewStatus(d.overviewStatusId)?.excludes_from_timeline)
+        .map((d) => ({
+          contractId: d.contractId,
+          contractName: d.contractName,
+          companyNames: d.companyNames,
+          endDate: d.endDate as string,
+          capexUF: d.capexUF,
+          capexCLP: d.capexCLP,
+          surfaceM2: d.surfaceM2,
+          address: d.address,
+          commune: d.commune,
+          clasificacion: d.clasificacion,
+          overviewStatusColor: resolveOverviewStatus(d.overviewStatusId)?.color ?? null,
+          isTerminado: resolveOverviewStatus(d.overviewStatusId)?.name === "Terminado",
+        })),
+    [allData, overviewStatusesById]
+  );
   const allVisibleOpen =
     displayData.length > 0 && displayData.every((d) => openCards.has(d.contractId));
 
@@ -1017,7 +1383,7 @@ export function GanttReportsSection() {
                 <CardTitle>Cartas Gantt - Vista General</CardTitle>
                 {!loading && (
                   <span className="text-sm text-muted-foreground ml-2">
-                    ({data.length} contrato{data.length !== 1 ? "s" : ""})
+                    ({allData.length} contrato{allData.length !== 1 ? "s" : ""})
                   </span>
                 )}
               </div>
@@ -1068,16 +1434,45 @@ export function GanttReportsSection() {
             ) : (
               <div className="space-y-3">
 
+                <GanttOverviewTimeline
+                  projects={timelineProjects}
+                  onSelect={(contractId) => navigateToContractFromReports(contractId, "gantt")}
+                  budgetItems={budgetItems}
+                  onBudgetItemsChange={loadBudgetItems}
+                />
+
+                {/* Ítems de Presupuesto -- informativo, no son contratos: no
+                    afectan ningún listado ni filtro de contratos de acá abajo. */}
+                {budgetItems.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Ítems de Presupuesto (informativo, no son contratos)
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {budgetItems.map((it) => (
+                        <div
+                          key={it.id}
+                          className="text-xs border border-red-200 bg-red-50 text-red-700 rounded px-2 py-1"
+                        >
+                          <span className="font-semibold">{format(parseISO(it.date), "dd/MM/yyyy")}</span>
+                          {" · "}
+                          {it.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Barra de filtro / orden / selección ──────────────────── */}
                 <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
 
-                  {/* Filtro */}
+                  {/* Filtro Gantt */}
                   <div className="flex items-center gap-1.5">
                     <ListFilter className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground font-medium">Filtrar:</span>
                     {(
                       [
-                        { key: "all", label: `Todos (${data.length})` },
+                        { key: "all", label: `Todos (${allData.length})` },
                         { key: "con", label: `Con Gantt (${countCon})` },
                         { key: "sin", label: `Sin Gantt (${countSin})` },
                       ] as { key: FilterGantt; label: string }[]
@@ -1092,6 +1487,38 @@ export function GanttReportsSection() {
                         {label}
                       </Button>
                     ))}
+                  </div>
+
+                  <div className="w-px h-5 bg-border mx-1" />
+
+                  {/* Filtro por Empresa */}
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground font-medium">Empresa:</span>
+                    <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                      <SelectTrigger className="h-7 w-44 text-xs">
+                        <SelectValue placeholder="Todas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas ({allData.length})</SelectItem>
+                        {allCompanies.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name} ({allData.filter((d) => d.companyNames.includes(name)).length})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {companyFilter !== "all" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => setCompanyFilter("all")}
+                        title="Limpiar filtro de empresa"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
 
                   <div className="w-px h-5 bg-border mx-1" />
@@ -1112,6 +1539,109 @@ export function GanttReportsSection() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Orden secundario (acumulativo) */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground font-medium">luego:</span>
+                    <Select value={sortBy2} onValueChange={(v) => setSortBy2(v as SortBy2)}>
+                      <SelectTrigger className="h-7 w-40 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin orden secundario</SelectItem>
+                        <SelectItem value="empresa">Empresa (A→Z)</SelectItem>
+                        <SelectItem value="name">Nombre (A→Z)</SelectItem>
+                        <SelectItem value="capex_desc">CAPEX (mayor a menor)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="w-px h-5 bg-border mx-1" />
+
+                  {/* Contratos No Firmados */}
+                  <Popover
+                    open={negotiationSearchOpen}
+                    onOpenChange={(open) => {
+                      setNegotiationSearchOpen(open);
+                      if (open) loadNegotiationContracts();
+                    }}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs gap-1">
+                        <Plus className="h-3 w-3" />
+                        Contratos No Firmados
+                        {addedNegotiationIds.size > 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="ml-1 px-1.5 py-0 text-[10px] h-4"
+                          >
+                            {addedNegotiationIds.size}
+                          </Badge>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar contrato en negociación..." />
+                        <CommandList>
+                          {loadingNegotiation ? (
+                            <div className="flex items-center justify-center py-6">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            <>
+                              <CommandEmpty>No se encontraron contratos</CommandEmpty>
+                              <CommandGroup heading="En negociación">
+                                {negotiationContracts.map((c) => {
+                                  const alreadyInData = data.some((d) => d.contractId === c.id);
+                                  const isAdded = addedNegotiationIds.has(c.id);
+                                  return (
+                                    <CommandItem
+                                      key={c.id}
+                                      value={c.name}
+                                      disabled={alreadyInData}
+                                      onSelect={() => {
+                                        if (!alreadyInData) addNegotiationContract(c.id, c.name);
+                                      }}
+                                      className="flex items-center gap-2"
+                                    >
+                                      <Check
+                                        className={`h-3.5 w-3.5 flex-shrink-0 ${
+                                          isAdded || alreadyInData
+                                            ? "opacity-100 text-primary"
+                                            : "opacity-0"
+                                        }`}
+                                      />
+                                      {c.companyNames.length > 0 && (
+                                        <CompanyLogo
+                                          companyNames={c.companyNames}
+                                          size="sm"
+                                          className="flex-shrink-0"
+                                        />
+                                      )}
+                                      <span className="truncate text-xs">{c.name}</span>
+                                      {alreadyInData && (
+                                        <span className="ml-auto text-[10px] text-muted-foreground">
+                                          ya incluido
+                                        </span>
+                                      )}
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                              {addedNegotiationIds.size > 0 && (
+                                <div className="p-2 border-t">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    {addedNegotiationIds.size} contrato{addedNegotiationIds.size !== 1 ? "s" : ""} añadido{addedNegotiationIds.size !== 1 ? "s" : ""} al listado. Haz clic para quitar.
+                                  </p>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
 
                   <div className="w-px h-5 bg-border mx-1" />
 
@@ -1180,8 +1710,8 @@ export function GanttReportsSection() {
                           className="py-3 px-4 cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => toggleCard(item.contractId)}
                         >
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className="grid grid-cols-[minmax(0,1fr)_340px_140px_130px_140px_32px_auto] items-center gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
                               {/* Checkbox de selección para PDF */}
                               <div
                                 onClick={(e) => {
@@ -1201,10 +1731,23 @@ export function GanttReportsSection() {
                               ) : (
                                 <ChevronDown className="h-4 w-4 flex-shrink-0 rotate-[-90deg]" />
                               )}
+                              {item.companyNames.length > 0 && (
+                                <CompanyLogo
+                                  companyNames={item.companyNames}
+                                  size="sm"
+                                  className="flex-shrink-0"
+                                />
+                              )}
                               <div className="min-w-0">
                                 <div className="font-semibold text-sm truncate">
                                   {item.contractName}
                                 </div>
+                                {(item.address || item.commune || item.cebe) && (
+                                  <div className="text-[11px] text-muted-foreground truncate">
+                                    {[item.address, item.commune].filter(Boolean).join(", ")}
+                                    {item.cebe && <> {item.address || item.commune ? "· " : ""}CEBE: {item.cebe}</>}
+                                  </div>
+                                )}
                                 <div className="text-xs text-muted-foreground">
                                   {item.tasks.length === 0 ? (
                                     <span className="italic text-amber-600">Sin carta Gantt cargada</span>
@@ -1223,77 +1766,120 @@ export function GanttReportsSection() {
                                 </div>
                               </div>
                             </div>
-                            {item.disbursement && (
-                              <div className="hidden lg:flex items-center gap-4 text-xs border-l pl-4 mr-2">
-                                <div className="text-center">
-                                  <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
-                                  <div className="font-medium">${formatCLP(item.disbursement.anticipo)} + IVA</div>
-                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.startDate), "dd/MM/yyyy")}</div>
-                                </div>
-                                <div className="text-center">
-                                  <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
-                                  <div className="font-medium">${formatCLP(item.disbursement.pago1)}</div>
-                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.midDate), "dd/MM/yyyy")}</div>
-                                </div>
-                                <div className="text-center">
-                                  <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
-                                  <div className="font-medium">${formatCLP(item.disbursement.pago2)} + IVA</div>
-                                  <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.endDate), "dd/MM/yyyy")}</div>
-                                </div>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-3">
-                              <div className="text-right text-xs">
-                                <div className="text-muted-foreground">CAPEX Total</div>
-                                <div className="font-semibold text-sm">
-                                  {item.capexUF > 0 ? (
-                                    <>
-                                      UF {formatUF(item.capexUF)}
-                                      <span className="text-muted-foreground font-normal ml-1">
-                                        / ${formatCLP(item.capexCLP)}
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <span className="text-muted-foreground">Sin CAPEX</span>
-                                  )}
-                                </div>
-                                {item.capexUF > 0 && item.surfaceM2 > 0 && (
-                                  <div className="text-[11px] text-muted-foreground font-normal">
-                                    {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
+                            <div className="hidden lg:flex items-center gap-4 text-xs border-l pl-4 min-w-0">
+                              {item.disbursement && (
+                                <>
+                                  <div className="text-center">
+                                    <div className="text-muted-foreground mb-0.5">Anticipo (30%)</div>
+                                    <div className="font-medium">${formatCLP(item.disbursement.anticipo)} + IVA</div>
+                                    <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.startDate), "dd/MM/yyyy")}</div>
                                   </div>
+                                  <div className="text-center">
+                                    <div className="text-muted-foreground mb-0.5">Estado Pago 1 (50%)</div>
+                                    <div className="font-medium">${formatCLP(item.disbursement.pago1)}</div>
+                                    <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.midDate), "dd/MM/yyyy")}</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-muted-foreground mb-0.5">Estado Pago 2 (20%)</div>
+                                    <div className="font-medium">${formatCLP(item.disbursement.pago2)} + IVA</div>
+                                    <div className="text-[10px] text-muted-foreground">{format(parseISO(item.disbursement.endDate), "dd/MM/yyyy")}</div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            <Select
+                              value={item.clasificacion || ""}
+                              onValueChange={(v) => updateClasificacion(item.contractId, v)}
+                            >
+                              <SelectTrigger
+                                onClick={(e) => e.stopPropagation()}
+                                className={cn("h-7 w-full text-xs gap-1", getClasificacionColor(item.clasificacion))}
+                                title="Clasificación (mismo campo que Contratos > En Negociación)"
+                              >
+                                <SelectValue placeholder="Clasificar..." />
+                              </SelectTrigger>
+                              <SelectContent onClick={(e) => e.stopPropagation()}>
+                                {clasificacionTypes.map((t) => (
+                                  <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <div>
+                              {item.timelineId ? (() => {
+                                const currentStatus = resolveOverviewStatus(item.overviewStatusId);
+                                return (
+                                  <Select
+                                    value={currentStatus?.id ?? ""}
+                                    onValueChange={(v) =>
+                                      updateOverviewStatus(item.contractId, item.timelineId!, v)
+                                    }
+                                  >
+                                    <SelectTrigger
+                                      onClick={(e) => e.stopPropagation()}
+                                      className={cn("h-7 w-full text-xs gap-1", getProgressColorClass(currentStatus?.color))}
+                                      title="Estado del proyecto en esta vista"
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent onClick={(e) => e.stopPropagation()}>
+                                      {overviewStatuses.map((s) => (
+                                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                );
+                              })() : null}
+                            </div>
+                            <div className="text-right text-xs">
+                              <div className="text-muted-foreground">CAPEX Total</div>
+                              <div className="font-semibold text-sm">
+                                {item.capexUF > 0 ? (
+                                  <>
+                                    UF {formatUF(item.capexUF)}
+                                    <span className="text-muted-foreground font-normal ml-1">
+                                      / ${formatCLP(item.capexCLP)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-muted-foreground">Sin CAPEX</span>
                                 )}
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleSelectionMode(item.contractId);
-                                }}
-                                title="Seleccionar líneas a ocultar en la vista"
-                              >
-                                {selectionModeCards.has(item.contractId) ? (
-                                  <EyeOff className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Eye className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                {...prefetchOn("ContractDetail")}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigateToContractFromReports(item.contractId, "gantt");
-                                }}
-                                title="Ir al proyecto"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                Ir al proyecto
-                              </Button>
+                              {item.capexUF > 0 && item.surfaceM2 > 0 && (
+                                <div className="text-[11px] text-muted-foreground font-normal">
+                                  {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
+                                </div>
+                              )}
                             </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelectionMode(item.contractId);
+                              }}
+                              title="Seleccionar líneas a ocultar en la vista"
+                            >
+                              {selectionModeCards.has(item.contractId) ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              {...prefetchOn("ContractDetail")}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToContractFromReports(item.contractId, "gantt");
+                              }}
+                              title="Ir al proyecto"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Ir al proyecto
+                            </Button>
                           </div>
                         </CardHeader>
                         {isOpen && (
@@ -1310,6 +1896,7 @@ export function GanttReportsSection() {
                                 selectionMode={selectionModeCards.has(item.contractId)}
                                 hiddenIds={hiddenByCard[item.contractId]}
                                 onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
+                                companyNames={item.companyNames}
                               />
                             )}
                           </CardContent>

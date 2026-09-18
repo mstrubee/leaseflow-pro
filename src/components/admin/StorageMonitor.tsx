@@ -19,8 +19,9 @@ import {
   Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
-// Storage limits for Lovable Cloud
+// Storage limits for Supabase Free tier
 const DATABASE_LIMIT_MB = 500;
 const FILE_STORAGE_LIMIT_GB = 1;
 const FILE_STORAGE_LIMIT_BYTES = FILE_STORAGE_LIMIT_GB * 1024 * 1024 * 1024;
@@ -243,7 +244,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
   return (
     <CollapsibleCard
       title="Monitoreo de Almacenamiento"
-      description="Uso de base de datos y archivos en Lovable Cloud"
+      description="Uso de base de datos y archivos en Supabase"
       icon={<Database className="h-5 w-5 text-cyan-600" />}
       defaultOpen={!defaultCollapsed}
       onToggle={handleToggle}
@@ -406,7 +407,8 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
                   }
                   alert(msg);
                 } catch (err: any) {
-                  alert(`Error: ${err.message}`);
+                  const message = await getFunctionErrorMessage(err, "No se pudieron sincronizar los archivos de patentes pendientes.");
+                  alert(`Error: ${message}`);
                 } finally {
                   setSyncingPatents(false);
                 }
