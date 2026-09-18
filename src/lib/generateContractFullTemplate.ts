@@ -162,8 +162,16 @@ export const generateContractFullTemplate = async (contractId: string): Promise<
     ...activeCustomFields.map((f: any) => customFieldValueByFieldId.get(f.id) || ''),
   ];
 
-  const mainSheet = XLSX.utils.aoa_to_sheet([mainHeaders, mainRow]);
-  mainSheet['!cols'] = mainHeaders.map(() => ({ wch: 26 }));
+  // Se transpone a dos columnas (Campo / Valor), una fila por campo -- con
+  // ~60 columnas en una sola fila era muy difícil de visualizar/completar
+  // (pedido explícito de Matias). El resto de las hojas ya son "una fila
+  // por ítem" y no necesitan este tratamiento.
+  const mainSheetRows = [
+    ['Campo', 'Valor'],
+    ...mainHeaders.map((header, i) => [header, mainRow[i]]),
+  ];
+  const mainSheet = XLSX.utils.aoa_to_sheet(mainSheetRows);
+  mainSheet['!cols'] = [{ wch: 40 }, { wch: 40 }];
   XLSX.utils.book_append_sheet(workbook, mainSheet, 'Datos del Contrato');
 
   // ---- Sheet 2: Escalonados ----
@@ -219,7 +227,7 @@ export const generateContractFullTemplate = async (contractId: string): Promise<
     ['Este archivo contiene los datos actuales del contrato. Complete o corrija los campos vacíos y vuelva a subir el archivo con el botón "Subir Plantilla" en la página de edición del contrato.'],
     [''],
     ['HOJA "Datos del Contrato"'],
-    ['Una sola fila con los datos generales, de dirección, contacto y condiciones comerciales de la versión vigente.'],
+    ['Dos columnas (Campo / Valor): cada fila es un campo distinto, con los datos generales, de dirección, contacto y condiciones comerciales de la versión vigente. No agregue ni elimine filas de esta hoja, ni cambie el texto de la columna "Campo".'],
     ['Los campos que empiezan con "custom__" corresponden a campos personalizados definidos por el administrador.'],
     [''],
     ['HOJAS DE GRUPOS REPETIDOS ("Escalonados", "Gastos de Entrada", "Terminos Anticipados", "Avisos Multiples")'],
