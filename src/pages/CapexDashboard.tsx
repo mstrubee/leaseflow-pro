@@ -167,30 +167,39 @@ const getCompanyGroupKey = (names: string[]): CompanyGroupKey => {
 const fmtYearChip = (clp: number, year: number) =>
   `mm$ ${Math.round(clp / 1_000_000).toLocaleString("es-CL")} año ${year}`;
 
-/** Chip/badge con el desglose por año de una card CAPEX -- esquina superior
- * derecha, sin romper el layout existente (la card sigue con fondo blanco).
- * Si hay un año puntual seleccionado en el filtro "Año" (activeYear), el
- * chip deja de ser "estático" ante ese filtro: solo muestra ese año (o
+/** Indicador del desglose por año de una card CAPEX -- un pequeño triángulo
+ * naranjo en la esquina superior derecha (en vez de los chips de texto
+ * superpuestos a la card) que, al presionarlo, abre el detalle por año en un
+ * popover. Si hay un año puntual seleccionado en el filtro "Año" (activeYear),
+ * el detalle deja de ser "estático" ante ese filtro: solo muestra ese año (o
  * nada, si esa card no tiene CAPEX en él) en vez de siempre todos los años. */
 function YearBreakdownChips({ breakdown, activeYear }: { breakdown: Record<number, number> | undefined; activeYear?: number }) {
   // Solo años con CAPEX real (> 0) -- una fila de presupuesto en $0 no debe
-  // aparecer como si existiera CAPEX en ese año. Más antiguo arriba, más
-  // reciente abajo (uno sobre otro, no en fila).
+  // aparecer como si existiera CAPEX en ese año.
   const years = breakdown
     ? Object.keys(breakdown).map(Number).filter((y) => breakdown[y] > 0 && (activeYear === undefined || y === activeYear)).sort((a, b) => a - b)
     : [];
   if (years.length === 0) return null;
   return (
-    <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-0.5 max-w-[62%] z-10">
-      {years.map((y) => (
-        <span
-          key={y}
-          className="text-[9px] leading-none font-medium text-muted-foreground whitespace-nowrap"
-        >
-          {fmtYearChip(breakdown![y], y)}
-        </span>
-      ))}
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          title="Ver desglose por año"
+          className="absolute top-0 right-0 h-0 w-0 border-t-[22px] border-l-[22px] border-t-orange-500 border-l-transparent z-10 cursor-pointer hover:border-t-orange-600"
+        />
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="end" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-col gap-1">
+          {years.map((y) => (
+            <span key={y} className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+              {fmtYearChip(breakdown![y], y)}
+            </span>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
