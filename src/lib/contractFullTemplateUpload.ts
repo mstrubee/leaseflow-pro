@@ -177,6 +177,18 @@ export const uploadContractFullTemplate = async (
   }
 
   try {
+    await withParseTimeout(applyTemplate(), 60000);
+    return { success: true, errors: [], warnings };
+  } catch (error: any) {
+    errors.push(error.message || 'Error desconocido al actualizar el contrato');
+    return { success: false, errors, warnings };
+  }
+
+  // Toda la escritura queda en una función aparte para poder envolverla en
+  // un timeout general (withParseTimeout): sin esto, un solo llamado a
+  // Supabase que se cuelgue por red deja la subida "girando" para siempre,
+  // sin ningún mensaje de error para el usuario.
+  async function applyTemplate(): Promise<void> {
     // ---- contracts ----
     const { error: contractError } = await supabase
       .from('contracts')
@@ -342,15 +354,22 @@ export const uploadContractFullTemplate = async (
 
     if (!currentVersionId) throw new Error('No se pudo determinar la versión del contrato');
 
-    // ---- custom fields (upsert per field) ----
+    // ---- custom fields (una sola consulta de lectura + un solo upsert,
+    // en vez de un select+insert/update por cada campo -- eso era la causa
+    // principal de que la subida se sintiera "colgada": con N campos
+    // personalizados hacía hasta 2N + 1 llamadas a la base de datos, una
+    // por una, cada una con la latencia de red del entorno) ----
     const customFieldColumns = Object.keys(mainRow).filter((k) => k.startsWith('custom__'));
     if (customFieldColumns.length > 0) {
-      const { data: customFields } = await supabase
-        .from('contract_custom_fields')
-        .select('id, field_name')
-        .eq('is_active', true);
+      const [{ data: customFields }, { data: existingValues }] = await Promise.all([
+        supabase.from('contract_custom_fields').select('id, field_name').eq('is_active', true),
+        supabase.from('contract_custom_field_values').select('id, field_id').eq('contract_id', contractId),
+      ]);
       const fieldByName = new Map((customFields || []).map((f: any) => [f.field_name, f.id]));
+      const existingIdByFieldId = new Map((existingValues || []).map((v: any) => [v.field_id, v.id]));
 
+      const toUpdate: Array<{ id: string; field_value: string | null }> = [];
+      const toInsert: Array<{ contract_id: string; field_id: string; field_value: string }> = [];
       for (const column of customFieldColumns) {
         const fieldName = column.replace('custom__', '');
         const fieldId = fieldByName.get(fieldName);
@@ -359,24 +378,22 @@ export const uploadContractFullTemplate = async (
           continue;
         }
         const value = toStringOrNull(mainRow[column]);
-        const { data: existingValue } = await supabase
-          .from('contract_custom_field_values')
-          .select('id')
-          .eq('contract_id', contractId)
-          .eq('field_id', fieldId)
-          .maybeSingle();
-
-        if (existingValue) {
-          await supabase
-            .from('contract_custom_field_values')
-            .update({ field_value: value })
-            .eq('id', existingValue.id);
+        const existingId = existingIdByFieldId.get(fieldId);
+        if (existingId) {
+          toUpdate.push({ id: existingId, field_value: value });
         } else if (value !== null) {
-          await supabase
-            .from('contract_custom_field_values')
-            .insert({ contract_id: contractId, field_id: fieldId, field_value: value });
+          toInsert.push({ contract_id: contractId, field_id: fieldId, field_value: value });
         }
       }
+
+      await Promise.all([
+        ...toUpdate.map(({ id, field_value }) =>
+          supabase.from('contract_custom_field_values').update({ field_value }).eq('id', id)
+        ),
+        toInsert.length > 0
+          ? supabase.from('contract_custom_field_values').insert(toInsert)
+          : Promise.resolve({ error: null }),
+      ]);
     }
 
     // ---- rent_escalations (replace-all) ----
@@ -464,10 +481,5 @@ export const uploadContractFullTemplate = async (
         if (error) throw new Error(`version_notices: ${error.message}`);
       }
     }
-
-    return { success: true, errors: [], warnings };
-  } catch (error: any) {
-    errors.push(error.message || 'Error desconocido al actualizar el contrato');
-    return { success: false, errors, warnings };
   }
 };
