@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Plus, X, ChevronsUpDown, Download, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X, ChevronsUpDown, Download, Upload, ChevronRight, ChevronDown } from "lucide-react";
 import { generateContractFullTemplate } from "@/lib/generateContractFullTemplate";
 import { uploadContractFullTemplate } from "@/lib/contractFullTemplateUpload";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
@@ -63,6 +63,9 @@ const EditContract = () => {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
+  // Colapsada por defecto al abrir la edición -- pedido explícito, para no
+  // saturar la pantalla con datos que se completan una sola vez.
+  const [generalInfoCollapsed, setGeneralInfoCollapsed] = useState(true);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -1053,31 +1056,43 @@ const EditContract = () => {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={handleSubmit} className="space-y-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Información General</CardTitle>
+            <CardHeader
+              className="cursor-pointer select-none"
+              onClick={() => setGeneralInfoCollapsed((prev) => !prev)}
+            >
+              <CardTitle className="flex items-center gap-2">
+                {generalInfoCollapsed ? (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                )}
+                Información General
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <CompanySelect 
-                value={companyIds} 
-                onChange={(val) => { setCompanyIds(val); setHasUnsavedChanges(true); }} 
-              />
-              <div className="space-y-2">
-                <Label htmlFor="name">Nombre del Contrato *</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
+            {!generalInfoCollapsed && (
+              <CardContent className="space-y-4">
+                <CompanySelect
+                  value={companyIds}
+                  onChange={(val) => { setCompanyIds(val); setHasUnsavedChanges(true); }}
                 />
-              </div>
-              <CustomFieldsManager
-                contractId={id}
-                values={customFieldValues}
-                onChange={(fieldId, value) => {
-                  updateCustomFieldValue(fieldId, value);
-                  setHasUnsavedChanges(true);
-                }}
-              />
-            </CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Nombre del Contrato *</Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
+                  />
+                </div>
+                <CustomFieldsManager
+                  contractId={id}
+                  values={customFieldValues}
+                  onChange={(fieldId, value) => {
+                    updateCustomFieldValue(fieldId, value);
+                    setHasUnsavedChanges(true);
+                  }}
+                />
+              </CardContent>
+            )}
           </Card>
 
           <Card>
