@@ -856,15 +856,17 @@ const ContractDetail = () => {
                 // personalizados que existan pero no estén en ninguna de las
                 // dos listas se agregan al final de la columna 2 (no se
                 // ocultan, por si se crea uno nuevo desde Admin).
-                const column1FieldNames = [
-                  "CEBE", "Código", "Horario Funcionamiento", "Atiende Público", "Tenencia", "Estado Red", "Tipología",
-                ];
+                const column1FieldNames = ["CEBE", "Código"];
                 const column2FieldNames = ["Restricción de Uso", "Detalle Restricción"];
+                // Sin uso por ahora -- no se muestran en el header (pedido
+                // explícito), pero el campo y sus datos siguen existiendo.
+                const hiddenFieldNames = ["Horario Funcionamiento", "Atiende Público", "Tenencia", "Estado Red", "Tipología"];
                 const fieldByName = new Map(customFields.map((f) => [f.field_name, f]));
                 const column1Fields = column1FieldNames.map((n) => fieldByName.get(n)).filter((f): f is CustomField => !!f);
                 const column2Fields = column2FieldNames.map((n) => fieldByName.get(n)).filter((f): f is CustomField => !!f);
                 const placedIds = new Set([...column1Fields, ...column2Fields].map((f) => f.id));
-                const otherFields = customFields.filter((f) => !placedIds.has(f.id));
+                const hiddenIds = new Set(hiddenFieldNames.map((n) => fieldByName.get(n)?.id).filter(Boolean));
+                const otherFields = customFields.filter((f) => !placedIds.has(f.id) && !hiddenIds.has(f.id));
 
                 const renderField = (field: CustomField) => {
                   const value = customFieldValues[field.id];
