@@ -834,7 +834,7 @@ const ContractDetail = () => {
         </Button>
       )}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Button variant="ghost" onClick={() => navigate(resolvedBackTo)} className="gap-2 mb-2">
             <ArrowLeft className="h-4 w-4" />
             Volver
