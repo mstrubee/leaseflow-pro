@@ -7,7 +7,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { SupplierReports } from "@/components/suppliers/SupplierReports";
+import { InformeDirectorioReport } from "@/components/reports/InformeDirectorioReport";
 import { GanttReportsSection } from "@/components/gantt/GanttReportsSection";
+import { EquipoGerenciaGanttSummary } from "@/components/gantt/EquipoGerenciaGanttSummary";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -24,6 +26,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { PRIORITY_CONFIG, PatentPriority } from "@/components/patents/types";
+import { PatentPriorityBadge } from "@/components/patents/PatentPriorityBadge";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import jsPDF from "jspdf";
@@ -81,7 +84,7 @@ interface ChartFilter {
 const ReportsDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin, hasPermission } = useAuth();
   const [contracts, setContracts] = useState<ContractPatentData[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [patentStatuses, setPatentStatuses] = useState<PatentStatus[]>([]);
@@ -107,15 +110,24 @@ const ReportsDashboard = () => {
     true
   );
 
+  // Collapsible state for Informe Directorio section
+  const { isOpen: isDirectorioSectionOpen, setIsOpen: setDirectorioSectionOpen } = useSingleCollapsible(
+    "reports-directorio-section",
+    true
+  );
+
   // Collapsible state for "Sin Patente" sub-section
   const { isOpen: isSinPatenteSectionOpen, setIsOpen: setSinPatenteSectionOpen } = useSingleCollapsible(
     "reports-sin-patente-section",
     false
   );
   
-  // Filter for "Sin Patente" section
+  // Filter for "Sin Patente" section (por prioridad)
   const [sinPatenteStatusFilter, setSinPatenteStatusFilter] = useState<string>("all");
-  
+
+  // Filtro por estado de patente dentro de la sección (todas / sin patente / provisoria)
+  const [sinPatentePatenteStatusFilter, setSinPatentePatenteStatusFilter] = useState<"all" | "sin_patente" | "provisoria">("all");
+
   // Sorting for "Sin Patente" section
   const [sinPatenteSortField, setSinPatenteSortField] = useState<"empresa" | "prioridad" | null>(null);
   const [sinPatenteSortOrder, setSinPatenteSortOrder] = useState<"asc" | "desc">("asc");
@@ -123,16 +135,28 @@ const ReportsDashboard = () => {
   // Column selection for PDF export
   const [showPdfColumnSelector, setShowPdfColumnSelector] = useState(false);
   const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
-    "local", "empresa", "direccion", "prioridad", "comentarios", "proximas_acciones"
+    "local", "empresa", "direccion", "estado_patente", "prioridad", "comentarios", "proximas_acciones"
   ]);
   
-  // Row selection for PDF export (excluded contract IDs)
-  const [excludedPdfContractIds, setExcludedPdfContractIds] = useState<string[]>([]);
+  // Row selection for PDF export. null = todos, en el orden de la tabla.
+  // Array = ids en el orden en que se fueron marcando (orden de exportación).
+  const [selectedPdfContractIds, setSelectedPdfContractIds] = useState<string[] | null>(null);
+
+  // Aplica la selección/orden elegido en ContractRowSelector sobre una lista.
+  // Ids que ya no están en la lista (cambió el filtro) se ignoran.
+  const orderContractsForExport = <T extends { id: string }>(list: T[]): T[] => {
+    if (selectedPdfContractIds === null) return list;
+    const byId = new Map(list.map((c) => [c.id, c]));
+    return selectedPdfContractIds
+      .map((id) => byId.get(id))
+      .filter((c): c is T => !!c);
+  };
 
   const availablePdfColumns = [
     { key: "local", label: "Local" },
     { key: "empresa", label: "Empresa" },
     { key: "direccion", label: "Dirección" },
+    { key: "estado_patente", label: "Estado Patente" },
     { key: "prioridad", label: "Prioridad" },
     { key: "comentarios", label: "Comentarios" },
     { key: "proximas_acciones", label: "Próximas Acciones" },
@@ -435,12 +459,22 @@ const ReportsDashboard = () => {
     setChartFilter(null);
   };
 
-  // Get "Sin Patente" contracts with optional priority filter and sorting
+  // Get "Sin Patente" y "Provisoria" contracts with optional priority filter and sorting
   const sinPatenteContracts = useMemo(() => {
-    let sinPatente = contracts.filter(c => 
-      !c.patente_status || c.patente_status === "sin_patente"
+    let sinPatente = contracts.filter(c =>
+      !c.patente_status || c.patente_status === "sin_patente" || c.patente_status === "provisoria"
     );
-    
+
+    // Apply patente status filter (sin patente / provisoria)
+    if (sinPatentePatenteStatusFilter !== "all") {
+      sinPatente = sinPatente.filter(c => {
+        if (sinPatentePatenteStatusFilter === "sin_patente") {
+          return !c.patente_status || c.patente_status === "sin_patente";
+        }
+        return c.patente_status === "provisoria";
+      });
+    }
+
     // Apply priority filter
     if (sinPatenteStatusFilter !== "all") {
       sinPatente = sinPatente.filter(c => {
@@ -480,7 +514,7 @@ const ReportsDashboard = () => {
     }
     
     return sinPatente;
-  }, [contracts, sinPatenteStatusFilter, sinPatenteSortField, sinPatenteSortOrder]);
+  }, [contracts, sinPatenteStatusFilter, sinPatentePatenteStatusFilter, sinPatenteSortField, sinPatenteSortOrder]);
 
   // Toggle sort for sin patente table
   const handleSinPatenteSort = (field: "empresa" | "prioridad") => {
@@ -494,10 +528,9 @@ const ReportsDashboard = () => {
 
   // Export PDF function for Sin Patente section (respects current filter, sort, and column selection)
   const exportSinPatentePDF = async () => {
-    // Filter out excluded contracts
-    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
-    
-    console.log(`[PDF Export Sin Patente] Generando PDF con ${pdfContracts.length} de ${sinPatenteContracts.length} contratos (${excludedPdfContractIds.length} excluidos)`);
+    const pdfContracts = orderContractsForExport(sinPatenteContracts);
+
+    console.log(`[PDF Export Sin Patente] Generando PDF con ${pdfContracts.length} de ${sinPatenteContracts.length} contratos`);
     
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
@@ -517,16 +550,19 @@ const ReportsDashboard = () => {
     
     // Title
     doc.setFontSize(18);
-    doc.text('Detalle: Locales Sin Patente', 70, 20);
+    doc.text('Detalle: Locales Sin Patente y Provisorias', 70, 20);
     doc.setFontSize(10);
     doc.setTextColor(100);
     
     // Show current filter and sort in PDF - using plain text
     let subtitleParts: string[] = [];
     subtitleParts.push('Generado: ' + today);
+    if (sinPatentePatenteStatusFilter !== "all") {
+      subtitleParts.push('Estado: ' + (sinPatentePatenteStatusFilter === "sin_patente" ? "Sin Patente" : "Provisoria"));
+    }
     if (sinPatenteStatusFilter !== "all") {
-      const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
-        ? "Sin Asignar" 
+      const filterLabel = sinPatenteStatusFilter === "sin_asignar"
+        ? "Sin Asignar"
         : PRIORITY_CONFIG[sinPatenteStatusFilter as PatentPriority]?.label || sinPatenteStatusFilter;
       subtitleParts.push('Filtro: ' + filterLabel);
     }
@@ -541,46 +577,51 @@ const ReportsDashboard = () => {
     if (pdfContracts.length === 0) {
       doc.setFontSize(12);
       doc.setTextColor(0);
-      doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 55);
+      doc.text('No hay locales sin patente o provisoria con los filtros seleccionados.', 14, 55);
     } else {
       // Build headers and data based on selected columns
       const columnMapping: Record<string, { header: string; getValue: (c: ContractPatentData) => string; width: number | 'auto' }> = {
         local: {
           header: 'Local',
           getValue: (c) => c.name,
-          width: 35,
+          width: 25,
         },
         empresa: {
           header: 'Empresa',
           getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa',
-          width: 35,
+          width: 25,
         },
         direccion: {
           header: 'Direccion',
           getValue: (c) => {
             const address = c.contract_addresses?.[0];
-            return address 
+            return address
               ? ((address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')).trim()
               : 'Sin direccion';
           },
-          width: 40,
+          width: 30,
+        },
+        estado_patente: {
+          header: 'Estado Patente',
+          getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'),
+          width: 18,
         },
         prioridad: {
           header: 'Prioridad',
-          getValue: (c) => c.contract_patents?.priority 
+          getValue: (c) => c.contract_patents?.priority
             ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
             : 'Sin Asignar',
-          width: 25,
+          width: 18,
         },
         comentarios: {
           header: 'Comentarios',
           getValue: (c) => c.contract_patents?.comments || '-',
-          width: 65,
+          width: 76,
         },
         proximas_acciones: {
           header: 'Proximas Acciones',
           getValue: (c) => c.contract_patents?.next_actions || '-',
-          width: 65,
+          width: 77,
         },
       };
       
@@ -640,12 +681,13 @@ const ReportsDashboard = () => {
     doc.setTextColor(0);
 
     const columnMapping: Record<string, { header: string; getValue: (c: ContractPatentData) => string; width: number | 'auto' }> = {
-      local: { header: 'Local', getValue: (c) => c.name, width: 35 },
-      empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 35 },
-      direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 40 },
-      prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 25 },
-      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 65 },
-      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 65 },
+      local: { header: 'Local', getValue: (c) => c.name, width: 25 },
+      empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 25 },
+      direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 30 },
+      estado_patente: { header: 'Estado Patente', getValue: (c) => getPatenteStatusLabel(c.patente_status || 'sin_patente'), width: 18 },
+      prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 18 },
+      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 76 },
+      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 77 },
     };
 
     const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
@@ -766,12 +808,15 @@ const ReportsDashboard = () => {
       }
       
       doc.setFontSize(14);
-      doc.text('Detalle: Locales Sin Patente', 70, 20);
+      doc.text('Detalle: Locales Sin Patente y Provisorias', 70, 20);
       
       doc.setFontSize(10);
       doc.setTextColor(100);
       let detailSubtitleParts: string[] = [];
       detailSubtitleParts.push('Total: ' + sinPatenteContracts.length + ' locales');
+      if (sinPatentePatenteStatusFilter !== "all") {
+        detailSubtitleParts.push('Estado: ' + (sinPatentePatenteStatusFilter === "sin_patente" ? "Sin Patente" : "Provisoria"));
+      }
       if (sinPatenteStatusFilter !== "all") {
         const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
           ? "Sin Asignar" 
@@ -792,29 +837,31 @@ const ReportsDashboard = () => {
         const fullAddress = address 
           ? (address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')
           : 'Sin direccion';
-        const priority = c.contract_patents?.priority 
+        const estadoPatente = getPatenteStatusLabel(c.patente_status || 'sin_patente');
+        const priority = c.contract_patents?.priority
           ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
           : 'Sin Asignar';
         const comments = c.contract_patents?.comments || '-';
         const nextActions = c.contract_patents?.next_actions || '-';
-        
-        return [c.name, companies, fullAddress.trim(), priority, comments, nextActions];
+
+        return [c.name, companies, fullAddress.trim(), estadoPatente, priority, comments, nextActions];
       });
-      
+
       autoTable(doc, {
         startY: 35,
-        head: [['Local', 'Empresa', 'Direccion', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
+        head: [['Local', 'Empresa', 'Direccion', 'Estado Patente', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
         body: sinPatenteData,
         theme: 'grid',
         headStyles: { fillColor: [220, 38, 38] },
         margin: { left: 14, right: 14 },
         columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 65 },
-          5: { cellWidth: 65 },
+          0: { cellWidth: 25 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 76 },
+          6: { cellWidth: 77 },
         },
         styles: { 
           fontSize: 6.4,
@@ -862,6 +909,7 @@ const ReportsDashboard = () => {
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Reporte de Estado de Patentes - Collapsible */}
+        {(isAdmin || hasPermission("patents", "view")) && (
         <Collapsible open={isPatentSectionOpen} onOpenChange={setPatentSectionOpen}>
           <Card>
             <CardHeader className="pb-4">
@@ -1149,15 +1197,7 @@ const ReportsDashboard = () => {
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {priority ? (
-                                      <span 
-                                        className="px-2 py-1 rounded text-xs font-medium"
-                                        style={{ 
-                                          backgroundColor: PRIORITY_CONFIG[priority]?.color + "20",
-                                          color: PRIORITY_CONFIG[priority]?.color
-                                        }}
-                                      >
-                                        {PRIORITY_CONFIG[priority]?.label}
-                                      </span>
+                                      <PatentPriorityBadge priority={priority} size="sm" />
                                     ) : (
                                       <span className="text-muted-foreground text-xs">Sin asignar</span>
                                     )}
@@ -1314,7 +1354,7 @@ const ReportsDashboard = () => {
                         >
                           <CardTitle className="text-base flex items-center gap-2 text-red-700 dark:text-red-400">
                             <XCircle className="h-4 w-4" />
-                            Detalle: Locales Sin Patente
+                            Detalle: Locales Sin Patente y Provisorias
                             <span className="text-muted-foreground font-normal text-sm">
                               ({sinPatenteContracts.length} {sinPatenteContracts.length === 1 ? 'local' : 'locales'})
                             </span>
@@ -1372,16 +1412,16 @@ const ReportsDashboard = () => {
                             </Popover>
                             <ContractRowSelector
                               contracts={sinPatenteContracts.map(c => ({ id: c.id, name: c.name }))}
-                              excludedContractIds={excludedPdfContractIds}
-                              onExclusionChange={setExcludedPdfContractIds}
+                              selectedContractIds={selectedPdfContractIds}
+                              onSelectionChange={setSelectedPdfContractIds}
                             />
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
+                                <Button
+                                  variant="ghost"
                                   size="sm"
                                   className="rounded-none"
-                                  disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
+                                  disabled={selectedPdfColumns.length === 0 || orderContractsForExport(sinPatenteContracts).length === 0}
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <Download className="h-3 w-3 mr-1" />
@@ -1394,9 +1434,9 @@ const ReportsDashboard = () => {
                                   <Files className="h-4 w-4 mr-2" />
                                   PDF Consolidado
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   onClick={() => {
-                                    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
+                                    const pdfContracts = orderContractsForExport(sinPatenteContracts);
                                     pdfContracts.forEach(c => exportSinPatenteIndividualPDF(c));
                                   }}
                                 >
@@ -1406,6 +1446,17 @@ const ReportsDashboard = () => {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
+                          <Select value={sinPatentePatenteStatusFilter} onValueChange={(v) => setSinPatentePatenteStatusFilter(v as typeof sinPatentePatenteStatusFilter)}>
+                            <SelectTrigger className="w-[160px] h-8">
+                              <Filter className="h-3 w-3 mr-2" />
+                              <SelectValue placeholder="Filtrar por estado" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Sin Patente y Provisoria</SelectItem>
+                              <SelectItem value="sin_patente">Solo Sin Patente</SelectItem>
+                              <SelectItem value="provisoria">Solo Provisoria</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <Select value={sinPatenteStatusFilter} onValueChange={setSinPatenteStatusFilter}>
                             <SelectTrigger className="w-[180px] h-8">
                               <Filter className="h-3 w-3 mr-2" />
@@ -1444,7 +1495,7 @@ const ReportsDashboard = () => {
                       <CardContent>
                         {sinPatenteContracts.length === 0 ? (
                           <div className="text-center py-8 text-muted-foreground">
-                            No hay locales sin patente{sinPatenteStatusFilter !== "all" ? " con el filtro seleccionado" : ""}
+                            No hay locales sin patente o provisoria{(sinPatenteStatusFilter !== "all" || sinPatentePatenteStatusFilter !== "all") ? " con el filtro seleccionado" : ""}
                           </div>
                         ) : (
                           <div className="max-h-[500px] overflow-y-auto">
@@ -1464,6 +1515,7 @@ const ReportsDashboard = () => {
                                     </Button>
                                   </TableHead>
                                   <TableHead className="w-[180px]">Dirección</TableHead>
+                                  <TableHead className="text-center w-[110px]">Estado Patente</TableHead>
                                   <TableHead className="text-center w-[100px]">
                                     <Button
                                       variant="ghost"
@@ -1500,16 +1552,17 @@ const ReportsDashboard = () => {
                                       <TableCell className="text-muted-foreground text-sm">{companyDisplay}</TableCell>
                                       <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
                                       <TableCell className="text-center">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                          contract.patente_status === "provisoria"
+                                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300"
+                                            : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+                                        }`}>
+                                          {getPatenteStatusLabel(contract.patente_status || "sin_patente")}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-center">
                                         {priority ? (
-                                          <span 
-                                            className="px-2 py-1 rounded text-xs font-medium"
-                                            style={{ 
-                                              backgroundColor: PRIORITY_CONFIG[priority]?.color + "20",
-                                              color: PRIORITY_CONFIG[priority]?.color
-                                            }}
-                                          >
-                                            {PRIORITY_CONFIG[priority]?.label}
-                                          </span>
+                                          <PatentPriorityBadge priority={priority} size="sm" />
                                         ) : (
                                           <span className="text-muted-foreground text-xs">Sin asignar</span>
                                         )}
@@ -1567,47 +1620,80 @@ const ReportsDashboard = () => {
             </CollapsibleContent>
           </Card>
         </Collapsible>
+        )}
 
         {/* Supplier Reports Section */}
-        <Collapsible open={isSupplierSectionOpen} onOpenChange={setSupplierSectionOpen}>
-          <Card className="mt-6">
-            <CollapsibleTrigger asChild>
-              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-2">
-                  {isSupplierSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  <CardTitle>Informe de Proveedores</CardTitle>
-                </div>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent>
-                <SupplierReports />
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
+        {(isAdmin || hasPermission("suppliers", "view")) && (
+          <Collapsible open={isSupplierSectionOpen} onOpenChange={setSupplierSectionOpen}>
+            <Card className="mt-6">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {isSupplierSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <CardTitle>Informe de Proveedores</CardTitle>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <SupplierReports />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
 
         {/* Gantt Charts General View */}
-        <GanttReportsSection />
+        {/* GanttReportsSection arranca desde contract_budgets (bloqueado por
+            RLS para equipo_gerencia) -- para ese rol se usa una vista
+            simplificada que solo lee contracts/gantt_timelines/gantt_tasks. */}
+        {(isAdmin || hasPermission("capex", "view"))
+          ? <GanttReportsSection />
+          : hasPermission("gantt_reports", "view")
+            ? <EquipoGerenciaGanttSummary />
+            : null}
 
         {/* Maintenance Reports Section */}
-        <Collapsible open={isMaintenanceSectionOpen} onOpenChange={setMaintenanceSectionOpen}>
-          <Card className="mt-6">
-            <CollapsibleTrigger asChild>
-              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-2">
-                  {isMaintenanceSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  <CardTitle>Informe de Mantenciones</CardTitle>
-                </div>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent>
-                <MaintenanceReports />
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
+        {(isAdmin || hasPermission("maintenance", "view")) && (
+          <Collapsible open={isMaintenanceSectionOpen} onOpenChange={setMaintenanceSectionOpen}>
+            <Card className="mt-6">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {isMaintenanceSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <CardTitle>Informe de Mantenciones</CardTitle>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <MaintenanceReports />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
+
+        {/* Informe Directorio Section */}
+        {(isAdmin || hasPermission("capex", "view")) && (
+          <Collapsible open={isDirectorioSectionOpen} onOpenChange={setDirectorioSectionOpen}>
+            <Card className="mt-6">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {isDirectorioSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <CardTitle>Informe Directorio</CardTitle>
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <InformeDirectorioReport />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
       </main>
     </div>
   );

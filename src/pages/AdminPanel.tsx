@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { usePermissionSelection } from "@/contexts/PermissionSelectionContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +12,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Eye, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight, ExternalLink, ShieldCheck, UserCog, Link2 } from "lucide-react";
+import { RoleManager } from "@/components/admin/RoleManager";
+import { UserFormDialog, UserFormData } from "@/components/admin/UserFormDialog";
+import { PermissionTreeEditor, PermissionsMap, getAllResources } from "@/components/admin/PermissionTreeEditor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
 import { CompanyManager } from "@/components/admin/CompanyManager";
@@ -24,22 +27,31 @@ import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateMa
 import { LogoManager } from "@/components/admin/LogoManager";
 import { BusinessCaseAdminConfig } from "@/components/admin/BusinessCaseAdminConfig";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
+import { GeneralInfoManager } from "@/components/admin/GeneralInfoManager";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
+import { CapexClasificacionTypeManager } from "@/components/admin/CapexClasificacionTypeManager";
+import { CapexAvanceStatusManager } from "@/components/admin/CapexAvanceStatusManager";
 import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
+import { GanttOverviewStatusManager } from "@/components/admin/GanttOverviewStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
+import { ServiceContractApproversManager } from "@/components/admin/ServiceContractApproversManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
 import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
 import { DataExportDialog } from "@/components/admin/DataExportDialog";
+import { TeamUsersAdminManager } from "@/components/admin/TeamUsersAdminManager";
+import { GeochileIntegrationManager } from "@/components/admin/GeochileIntegrationManager";
 interface Profile {
   id: string;
   email: string;
   full_name: string | null;
+  cargo: string | null;
   created_at: string;
   last_seen_at: string | null;
   activity_status: string | null;
   current_section: string | null;
+  org_member_id?: string | null;
 }
 
 interface UserRole {
@@ -173,29 +185,6 @@ const FolderTemplateItem = ({
   );
 };
 
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string | null;
-  cargo: string | null;
-  created_at: string;
-  last_seen_at: string | null;
-  activity_status: string | null;
-  current_section: string | null;
-}
-
-interface UserRole {
-  user_id: string;
-  role: "admin" | "user" | "operador_terreno";
-}
-
-interface UserPermission {
-  id: string;
-  user_id: string;
-  resource: string;
-  permission: "view" | "edit" | "all"; // 'all' kept for backwards compatibility with DB enum
-}
-
 // Recursos principales
 const MAIN_RESOURCES = [
   { id: "contracts", label: "Contratos", category: "principal" },
@@ -212,6 +201,7 @@ const MAIN_RESOURCES = [
   { id: "patents", label: "Patentes", category: "principal" },
   { id: "special_attention", label: "Atención Especial", category: "principal" },
   { id: "geoloc", label: "GEOLOC", category: "principal" },
+  { id: "fixed_assets", label: "Activos Fijos", category: "principal" },
 ];
 
 // Secciones del Dashboard
@@ -234,6 +224,7 @@ const CONTRACT_SECTIONS = [
   { id: "contract_gantt", label: "Línea de Tiempo / Gantt", category: "contrato" },
   { id: "contract_alerts", label: "Alertas y Recordatorios", category: "contrato" },
   { id: "contract_patents", label: "Patentes (Contrato)", category: "contrato" },
+  { id: "contract_fixed_assets", label: "Activos Fijos Asignados", category: "contrato" },
 ];
 
 // Todos los recursos combinados
@@ -244,36 +235,26 @@ const RESOURCES = MAIN_RESOURCES;
 
 const AdminPanel = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { user, isAdmin, loading: authLoading, roleLoaded } = useAuth();
   const { toast } = useToast();
-  const { isSelecting, selectedElements, pendingUserData, startSelection, isEditMode } = usePermissionSelection();
   
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // New user form
-  const [newUserEmail, setNewUserEmail] = useState("");
-  const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserName, setNewUserName] = useState("");
-  const [newUserCargo, setNewUserCargo] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"admin" | "user" | "operador_terreno">("user");
-  const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
-  const [newUserSupplierIds, setNewUserSupplierIds] = useState<string[]>([]);
-  const [newSupplierSearch, setNewSupplierSearch] = useState("");
-  const [editSupplierSearch, setEditSupplierSearch] = useState("");
   const [allSuppliers, setAllSuppliers] = useState<{ id: string; name: string }[]>([]);
-  const [creating, setCreating] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Check if returning from permission selection
-  const completeUser = searchParams.get("completeUser") === "true";
+  // UserFormDialog state (create + edit unified)
+  const [userFormOpen, setUserFormOpen] = useState(false);
+  const [userFormInitialData, setUserFormInitialData] = useState<Partial<UserFormData> | undefined>(undefined);
 
-  // Permission edit
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editPermissions, setEditPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
+  // Role manager refresh key — increments after each user save to force reload
+  const [roleManagerKey, setRoleManagerKey] = useState(0);
+
+  // "Ver credenciales" modal
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [credentialsUser, setCredentialsUser] = useState<{ name: string; perms: PermissionsMap } | null>(null);
 
   // Folder templates
   const [folderTemplates, setFolderTemplates] = useState<FolderTemplate[]>([]);
@@ -284,19 +265,6 @@ const AdminPanel = () => {
   const [selectedParentTemplate, setSelectedParentTemplate] = useState<string | null>(null);
   const [subfolderDialogOpen, setSubfolderDialogOpen] = useState(false);
   const [newSubfolderName, setNewSubfolderName] = useState("");
-
-  // Edit user
-  const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
-  const [editingUserProfile, setEditingUserProfile] = useState<Profile | null>(null);
-  const [editUserEmail, setEditUserEmail] = useState("");
-  const [editUserName, setEditUserName] = useState("");
-  const [editUserCargo, setEditUserCargo] = useState("");
-  const [editUserPassword, setEditUserPassword] = useState("");
-  const [editUserRole, setEditUserRole] = useState<"admin" | "user" | "operador_terreno">("user");
-  const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
-  const [editUserSupplierIds, setEditUserSupplierIds] = useState<string[]>([]);
-  const [updatingUser, setUpdatingUser] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   // Activity thresholds
   interface ActivityThreshold { user_id: string; idle_minutes: number; inactive_minutes: number; }
@@ -335,59 +303,90 @@ const AdminPanel = () => {
     }
   }, [authLoading, isAdmin, roleLoaded, navigate]);
 
-  // Handle return from permission selection mode
-  useEffect(() => {
-    if (completeUser && pendingUserData && Object.keys(selectedElements).length >= 0) {
-      // Convert selectedElements to permissions format
-      const perms: Record<string, "view" | "edit" | "none"> = {};
-      Object.values(selectedElements).forEach(el => {
-        perms[el.elementId] = el.permission;
+  function initAllNone(): PermissionsMap {
+    const m: PermissionsMap = {};
+    getAllResources().forEach(r => { m[r] = "none"; });
+    return m;
+  }
+
+  function openCreateUser() {
+    setUserFormInitialData(undefined);
+    setUserFormOpen(true);
+  }
+
+  function openEditUser(profile: Profile) {
+    const parts = (profile.full_name || "").split(" ");
+    const firstName = parts[0] ?? "";
+    const lastName = parts.slice(1).join(" ");
+    const userPerms: PermissionsMap = initAllNone();
+    getUserPermissions(profile.id).forEach(p => {
+      userPerms[p.resource] = p.permission === "all" ? "edit" : p.permission;
+    });
+
+    setUserFormInitialData({
+      userId: profile.id,
+      firstName,
+      lastName,
+      email: profile.email,
+      role: getUserRole(profile.id) as any,
+      isActive: (profile as any).is_active ?? true,
+      profileTemplateId: (profile as any).profile_template_id ?? null,
+      permissions: userPerms,
+      supplierIds: [],
+      orgMemberId: profile.org_member_id ?? null,
+    });
+
+    // Async: load supplier IDs
+    supabase.from("operator_suppliers").select("supplier_id").eq("user_id", profile.id)
+      .then(({ data }) => {
+        if (data) {
+          setUserFormInitialData(prev => prev ? { ...prev, supplierIds: data.map((r: any) => r.supplier_id) } : prev);
+        }
       });
 
-      if (isEditMode && pendingUserData.userId) {
-        // Editing existing user
-        const profile = profiles.find(p => p.id === pendingUserData.userId);
-        if (profile) {
-          setEditingUserProfile(profile);
-          setEditUserEmail(pendingUserData.email);
-          setEditUserName(pendingUserData.name);
-          setEditUserPassword(pendingUserData.password);
-          setEditUserRole(pendingUserData.role);
-          setEditUserPermissions(perms);
-          setEditUserDialogOpen(true);
-        }
-      } else {
-        // Creating new user
-        setNewUserEmail(pendingUserData.email);
-        setNewUserPassword(pendingUserData.password);
-        setNewUserName(pendingUserData.name);
-        setNewUserRole(pendingUserData.role);
-        setNewUserPermissions(perms);
-        setDialogOpen(true);
-      }
-      // Clear URL params
-      navigate("/admin", { replace: true });
-    }
-  }, [completeUser, pendingUserData, selectedElements, navigate, isEditMode, profiles]);
+    setUserFormOpen(true);
+  }
+
+  async function openCredentials(profile: Profile) {
+    const userPerms: PermissionsMap = initAllNone();
+    getUserPermissions(profile.id).forEach(p => {
+      userPerms[p.resource] = p.permission === "all" ? "edit" : p.permission;
+    });
+    setCredentialsUser({ name: profile.full_name || profile.email, perms: userPerms });
+    setCredentialsOpen(true);
+  }
+
+  const [roleTemplates, setRoleTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [orgMembers, setOrgMembers] = useState<{ id: string; name: string; position: string | null }[]>([]);
 
   const loadData = async () => {
     setLoading(true);
-    
-    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes] = await Promise.all([
+
+    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes, suppliersRes, roleTemplatesRes, orgMembersRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
       supabase.from("user_permissions").select("*"),
       supabase.from("folder_templates").select("*").order("display_order", { ascending: true }),
       supabase.from("user_activity_thresholds").select("*" as any),
       supabase.from("suppliers").select("id,name").order("name"),
+      supabase.from("user_profile_templates" as any).select("id, name").order("name"),
+      supabase.rpc("get_org_members_admin"),
     ]);
 
-    setProfiles(profilesRes.data || []);
+    // Equipo Gerencia se administra desde su propia sección (agrupada por
+    // gerente, más abajo), no en el listado genérico de Usuarios -- ese
+    // diálogo (UserFormDialog) no sabe manejar invitaciones con token.
+    const equipoGerenciaIds = new Set(
+      (rolesRes.data || []).filter((r: any) => r.role === "equipo_gerencia").map((r: any) => r.user_id)
+    );
+    setProfiles((profilesRes.data || []).filter((p: any) => !equipoGerenciaIds.has(p.id)));
     setUserRoles(rolesRes.data || []);
     setUserPermissions(permissionsRes.data || []);
     setFolderTemplates(templatesRes.data || []);
     setActivityThresholds((thresholdsRes.data as any) || []);
     setAllSuppliers(suppliersRes.data || []);
+    setRoleTemplates((roleTemplatesRes.data as any) || []);
+    setOrgMembers(((orgMembersRes.data as any[]) || []).map((m) => ({ id: m.id, name: m.name, position: m.position })));
     setLoading(false);
   };
 
@@ -453,68 +452,6 @@ const AdminPanel = () => {
     return userPermissions.filter(p => p.user_id === userId);
   };
 
-  const handleCreateUser = async () => {
-    if (!newUserName.trim()) {
-      toast({ variant: "destructive", title: "Error", description: "El nombre completo es requerido" });
-      return;
-    }
-    if (!newUserEmail || !newUserPassword) {
-      toast({ variant: "destructive", title: "Error", description: "Email y contraseña son requeridos" });
-      return;
-    }
-
-    setCreating(true);
-    try {
-      // Create user via edge function with admin privileges
-      const { data: sessionData } = await supabase.auth.getSession();
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sessionData.session?.access_token}`,
-          },
-          body: JSON.stringify({
-            email: newUserEmail,
-            password: newUserPassword,
-            fullName: newUserName,
-            cargo: newUserCargo || null,
-            role: newUserRole,
-            // Operador: por defecto solo acceso a mantención (rutas), salvo que
-            // el admin haya agregado más permisos manualmente.
-            permissions: newUserRole === "operador_terreno"
-              ? { maintenance: "edit", ...newUserPermissions }
-              : newUserPermissions,
-            supplierIds: newUserRole === "operador_terreno" ? newUserSupplierIds : [],
-          })
-        }
-      );
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Error al crear usuario');
-      }
-
-      toast({ title: "Usuario creado", description: `${newUserEmail} ha sido creado exitosamente` });
-      setDialogOpen(false);
-      setNewUserEmail("");
-      setNewUserPassword("");
-      setNewUserName("");
-      setNewUserCargo("");
-      setNewUserRole("user");
-      setNewUserPermissions({});
-      setNewUserSupplierIds([]);
-      loadData();
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setCreating(false);
-    }
-  };
-
   const handleDeleteUser = async (userId: string) => {
     if (userId === user?.id) {
       toast({ variant: "destructive", title: "Error", description: "No puedes eliminar tu propia cuenta" });
@@ -532,129 +469,8 @@ const AdminPanel = () => {
       toast({ title: "Usuario eliminado completamente" });
       loadData();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
-  };
-
-  const handleUpdatePermissions = async (userId: string) => {
-    try {
-      // Delete existing permissions
-      await supabase.from("user_permissions").delete().eq("user_id", userId);
-
-      // Insert new permissions
-      const permissionsToInsert = Object.entries(editPermissions)
-        .filter(([_, perm]) => perm !== "none")
-        .map(([resource, permission]) => ({
-          user_id: userId,
-          resource,
-          permission: permission as "view" | "edit"
-        }));
-
-      if (permissionsToInsert.length > 0) {
-        await supabase.from("user_permissions").insert(permissionsToInsert);
-      }
-
-      toast({ title: "Permisos actualizados" });
-      setEditingUserId(null);
-      loadData();
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
-  };
-
-  const openEditPermissions = (userId: string) => {
-    const userPerms = getUserPermissions(userId);
-    const permsMap: Record<string, "view" | "edit" | "none"> = {};
-    RESOURCES.forEach(r => {
-      const perm = userPerms.find(p => p.resource === r.id);
-      // Map legacy 'all' to 'edit'
-      const permValue = perm?.permission === "all" ? "edit" : perm?.permission;
-      permsMap[r.id] = permValue || "none";
-    });
-    setEditPermissions(permsMap);
-    setEditingUserId(userId);
-  };
-
-  const openEditUser = (profile: Profile) => {
-    setEditingUserProfile(profile);
-    setEditUserEmail(profile.email);
-    setEditUserName(profile.full_name || "");
-    setEditUserCargo(profile.cargo || "");
-    setEditUserPassword("");
-    setEditUserRole(getUserRole(profile.id) as "admin" | "user" | "operador_terreno");
-    // Load existing permissions
-    const userPerms = getUserPermissions(profile.id);
-    const permsMap: Record<string, "view" | "edit" | "none"> = {};
-    userPerms.forEach(p => {
-      // Map legacy 'all' to 'edit'
-      permsMap[p.resource] = p.permission === "all" ? "edit" : p.permission;
-    });
-    setEditUserPermissions(permsMap);
-    // Load operator → supplier links
-    setEditUserSupplierIds([]);
-    supabase.from("operator_suppliers").select("supplier_id").eq("user_id", profile.id)
-      .then(({ data }) => {
-        if (data) setEditUserSupplierIds(data.map((r: { supplier_id: string }) => r.supplier_id));
-      });
-    setEditUserDialogOpen(true);
-  };
-
-  const handleUpdateUser = async () => {
-    if (!editingUserProfile) return;
-
-    setUpdatingUser(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sessionData.session?.access_token}`,
-          },
-          body: JSON.stringify({
-            userId: editingUserProfile.id,
-            email: editUserEmail !== editingUserProfile.email ? editUserEmail : undefined,
-            fullName: editUserName !== editingUserProfile.full_name ? editUserName : undefined,
-            cargo: editUserCargo !== (editingUserProfile.cargo || "") ? editUserCargo || null : undefined,
-            password: editUserPassword || undefined,
-            role: editUserRole !== getUserRole(editingUserProfile.id) ? editUserRole : undefined,
-            permissions: editUserRole === "operador_terreno"
-              ? { maintenance: editUserPermissions.maintenance ?? "edit", ...editUserPermissions }
-              : editUserPermissions,
-          })
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Error al actualizar usuario');
-      }
-
-      // Sync operator → supplier links (replace set). Chequear errores para no
-      // reportar "guardado" en falso (ej. si la tabla operator_suppliers falta).
-      const { error: delErr } = await supabase.from("operator_suppliers").delete().eq("user_id", editingUserProfile.id);
-      if (delErr) throw new Error(`No se pudo actualizar el proveedor asignado: ${delErr.message}`);
-      if (editUserRole === "operador_terreno" && editUserSupplierIds.length > 0) {
-        const { error: insErr } = await supabase.from("operator_suppliers").insert(
-          editUserSupplierIds.map((supplier_id) => ({ user_id: editingUserProfile.id, supplier_id })),
-        );
-        if (insErr) throw new Error(`No se pudo asignar el proveedor: ${insErr.message}`);
-      }
-
-      toast({ title: "Usuario actualizado", description: "Los cambios se guardaron exitosamente" });
-      setEditUserDialogOpen(false);
-      setEditingUserProfile(null);
-      setEditUserPermissions({});
-      setEditUserSupplierIds([]);
-      loadData();
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setUpdatingUser(false);
+      const message = await getFunctionErrorMessage(error, error.message || "No se pudo eliminar el usuario.");
+      toast({ variant: "destructive", title: "Error", description: message });
     }
   };
 
@@ -879,225 +695,66 @@ const AdminPanel = () => {
               <Trash2 className="h-4 w-4" />
               Eliminados
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.open("https://supabase.com/dashboard/project/tgxiqvfpirwvhktgqqfa", "_blank", "noopener,noreferrer")}
-              className="gap-2"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Ver Backend
-            </Button>
             <DataExportDialog />
           </div>
         </div>
 
+        {/* ── Roles ── */}
+        <CollapsibleCard
+          title="Información General Grupo Planet"
+          description="Tipificación de todos los locales (empresa, dirección, coordenadas, tenencia, tipología, superficies, etc.)"
+          icon={<Building2 className="h-5 w-5 text-emerald-600" />}
+        >
+          <GeneralInfoManager />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Roles"
+          description="Define conjuntos de permisos reutilizables para asignar a usuarios"
+          icon={<ShieldCheck className="h-5 w-5 text-violet-600" />}
+        >
+          <RoleManager
+            refreshKey={roleManagerKey}
+            onSaved={() => { loadData(); setRoleManagerKey(k => k + 1); }}
+          />
+        </CollapsibleCard>
+
+        {/* ── Usuarios ── */}
         <CollapsibleCard
           title="Usuarios"
           description="Lista de todos los usuarios registrados"
           icon={<Shield className="h-5 w-5 text-indigo-600" />}
           headerActions={
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Usuario
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Crear Nuevo Usuario</DialogTitle>
-                  <DialogDescription>
-                    Ingresa los datos del nuevo usuario y asigna permisos
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="new-name">Nombre Completo <span className="text-destructive">*</span></Label>
-                    <Input
-                      id="new-name"
-                      value={newUserName}
-                      onChange={(e) => setNewUserName(e.target.value)}
-                      placeholder="Nombre y apellido"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-cargo">Cargo</Label>
-                    <Input
-                      id="new-cargo"
-                      value={newUserCargo}
-                      onChange={(e) => setNewUserCargo(e.target.value)}
-                      placeholder="Ej: Gerente de Operaciones"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-email">Email</Label>
-                    <Input
-                      id="new-email"
-                      type="email"
-                      value={newUserEmail}
-                      onChange={(e) => setNewUserEmail(e.target.value)}
-                      placeholder="usuario@email.com"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-password">Contraseña</Label>
-                    <Input
-                      id="new-password"
-                      type="password"
-                      value={newUserPassword}
-                      onChange={(e) => setNewUserPassword(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Rol</Label>
-                    <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "user" | "operador_terreno")}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="user">Usuario</SelectItem>
-                        <SelectItem value="operador_terreno">Operador de Terreno</SelectItem>
-                        <SelectItem value="admin">Administrador</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Operador de Terreno: vincular proveedores */}
-                  {newUserRole === "operador_terreno" && (
-                    <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
-                      <div className="flex items-center gap-2">
-                        <Label className="text-sm">Proveedores asignados</Label>
-                        <span className="text-[11px] text-muted-foreground">(verá solo las rutas de estos proveedores)</span>
-                      </div>
-                      {allSuppliers.length === 0 ? (
-                        <p className="text-xs text-muted-foreground italic">No hay proveedores creados</p>
-                      ) : (
-                        <>
-                          <Input
-                            value={newSupplierSearch}
-                            onChange={(e) => setNewSupplierSearch(e.target.value)}
-                            placeholder="Buscar proveedor…"
-                            className="h-8 text-sm"
-                          />
-                          <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                            {allSuppliers
-                              .filter((s) => s.name.toLowerCase().includes(newSupplierSearch.toLowerCase()))
-                              .map((s) => {
-                                const checked = newUserSupplierIds.includes(s.id);
-                                return (
-                                  <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => setNewUserSupplierIds((prev) =>
-                                        prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
-                                      )}
-                                      className="rounded border-gray-300"
-                                    />
-                                    <span className="truncate">{s.name}</span>
-                                  </label>
-                                );
-                              })}
-                          </div>
-                        </>
-                      )}
-                      <p className="text-[11px] text-muted-foreground border-t border-blue-100 pt-1.5">
-                        Acceso por defecto: solo <strong>Mantenciones</strong> (rutas). Puedes agregar más accesos abajo.
-                      </p>
-                    </div>
-                  )}
-
-                  {(newUserRole === "user" || newUserRole === "operador_terreno") && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label>Permisos por Sección</Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            startSelection({
-                              email: newUserEmail,
-                              password: newUserPassword,
-                              name: newUserName,
-                              role: newUserRole,
-                            });
-                            setDialogOpen(false);
-                            navigate("/");
-                          }}
-                          className="gap-1"
-                        >
-                          <Navigation className="h-3 w-3" />
-                          Navegar y Seleccionar
-                        </Button>
-                      </div>
-                      {RESOURCES.map(resource => (
-                        <div key={resource.id} className="flex items-center justify-between">
-                          <span className="text-sm">{resource.label}</span>
-                          <Select
-                            value={newUserPermissions[resource.id] || "none"}
-                            onValueChange={(v) => setNewUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Sin acceso</SelectItem>
-                              <SelectItem value="view">Ver</SelectItem>
-                              <SelectItem value="edit">Editar</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                      {Object.keys(newUserPermissions).filter(k => !RESOURCES.find(r => r.id === k) && newUserPermissions[k] !== "none").length > 0 && (
-                        <div className="pt-2 border-t">
-                          <p className="text-xs text-muted-foreground mb-2">Permisos adicionales seleccionados:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {Object.entries(newUserPermissions)
-                              .filter(([k, v]) => !RESOURCES.find(r => r.id === k) && v !== "none")
-                              .map(([key, value]) => (
-                                <span key={key} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
-                                  {key}: {value}
-                                </span>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                  <Button onClick={handleCreateUser} disabled={creating}>
-                    {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Crear Usuario
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button size="sm" onClick={openCreateUser}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Usuario
+            </Button>
           }
         >
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Nombre y Cargo</TableHead>
+                  <TableHead>Usuario</TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead>Actividad</TableHead>
                   <TableHead>Rol</TableHead>
-                  <TableHead>Permisos</TableHead>
-                  <TableHead>Fecha Creación</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {profiles.map((profile) => (
                   <TableRow key={profile.id}>
-                    <TableCell>{profile.email}</TableCell>
                     <TableCell>
-                      <div>{profile.full_name || "-"}</div>
-                      {profile.cargo && <div className="text-xs text-muted-foreground">{profile.cargo}</div>}
+                      <div className="font-medium">{profile.full_name || "—"}</div>
+                      <div className="text-xs text-muted-foreground">{profile.email}</div>
+                      {(profile as any).cargo && <div className="text-xs text-muted-foreground">{(profile as any).cargo}</div>}
+                    </TableCell>
+                    <TableCell>
+                      {(profile as any).is_active === false ? (
+                        <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-500 border border-gray-200">Inactivo</span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full text-xs bg-green-50 text-green-700 border border-green-200">Activo</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {(() => {
@@ -1108,22 +765,13 @@ const AdminPanel = () => {
                             <div className="flex flex-col gap-0.5 min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${status.color} ${status.pulse ? "animate-pulse" : ""}`} />
-                                <span className={`text-xs font-medium ${status.textColor}`}>
-                                  {status.label}
-                                </span>
+                                <span className={`text-xs font-medium ${status.textColor}`}>{status.label}</span>
                               </div>
-                              <span className="text-[10px] text-muted-foreground ml-4">
-                                {status.detail}
-                              </span>
+                              <span className="text-[10px] text-muted-foreground ml-4">{status.detail}</span>
                             </div>
                             <Popover open={editingThresholdUserId === profile.id} onOpenChange={(open) => {
-                              if (open) {
-                                setEditingThresholdUserId(profile.id);
-                                setThresholdIdle(idle);
-                                setThresholdInactive(inactive);
-                              } else {
-                                setEditingThresholdUserId(null);
-                              }
+                              if (open) { setEditingThresholdUserId(profile.id); setThresholdIdle(idle); setThresholdInactive(inactive); }
+                              else setEditingThresholdUserId(null);
                             }}>
                               <PopoverTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0 mt-0.5">
@@ -1141,9 +789,7 @@ const AdminPanel = () => {
                                     <Label className="text-[11px]">Desconectado (gris) — min</Label>
                                     <Input type="number" min={1} value={thresholdInactive} onChange={e => setThresholdInactive(Number(e.target.value))} className="h-7 text-xs" />
                                   </div>
-                                  <Button size="sm" className="w-full h-7 text-xs" onClick={() => handleSaveThreshold(profile.id)}>
-                                    Guardar
-                                  </Button>
+                                  <Button size="sm" className="w-full h-7 text-xs" onClick={() => handleSaveThreshold(profile.id)}>Guardar</Button>
                                 </div>
                               </PopoverContent>
                             </Popover>
@@ -1153,78 +799,25 @@ const AdminPanel = () => {
                     </TableCell>
                     <TableCell>
                       {(() => {
-                        const role = getUserRole(profile.id);
-                        const roleStyles: Record<string, { bg: string; label: string }> = {
-                          admin: { bg: "bg-primary/20 text-primary", label: "Administrador" },
-                          operador_terreno: { bg: "bg-orange-100 text-orange-700", label: "Operador de Terreno" },
-                          user: { bg: "bg-muted text-muted-foreground", label: "Usuario" },
-                        };
-                        const { bg, label } = roleStyles[role] ?? roleStyles.user;
-                        return (
-                          <span className={`px-2 py-1 rounded text-xs ${bg}`}>
-                            {label}
-                          </span>
-                        );
+                        const templateId = (profile as any).profile_template_id;
+                        const templateName = templateId
+                          ? roleTemplates.find(t => t.id === templateId)?.name
+                          : null;
+                        return templateName
+                          ? <span className="px-2 py-1 rounded text-xs bg-violet-100 text-violet-700">{templateName}</span>
+                          : <span className="text-xs text-muted-foreground">—</span>;
                       })()}
                     </TableCell>
                     <TableCell>
-                      {getUserRole(profile.id) === "admin" ? (
-                        <span className="text-sm text-muted-foreground">Acceso completo</span>
-                      ) : getUserRole(profile.id) === "operador_terreno" ? (
-                        <span className="text-sm text-muted-foreground">Acceso a rutas de mantención</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {getUserPermissions(profile.id).map(p => (
-                            <span key={p.id} className="px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded text-xs">
-                              {RESOURCES.find(r => r.id === p.resource)?.label}: {p.permission}
-                            </span>
-                          ))}
-                          {getUserPermissions(profile.id).length === 0 && (
-                            <span className="text-sm text-muted-foreground">Sin permisos asignados</span>
-                          )}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {new Date(profile.created_at).toLocaleDateString("es-CL")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const userPerms = getUserPermissions(profile.id);
-                            const permsMap: Record<string, "view" | "edit" | "none"> = {};
-                            userPerms.forEach(p => {
-                              permsMap[p.resource] = p.permission === "all" ? "edit" : p.permission;
-                            });
-                            setNewUserEmail("");
-                            setNewUserPassword("");
-                            setNewUserName("");
-                            setNewUserRole(getUserRole(profile.id) as "admin" | "user");
-                            setNewUserPermissions(permsMap);
-                            setDialogOpen(true);
-                          }}
-                          title="Crear usuario con mismos permisos"
-                        >
-                          <Copy className="h-4 w-4" />
+                      <div className="flex gap-1">
+                        <Button variant="outline" size="sm" onClick={() => openCredentials(profile)} title="Ver credenciales">
+                          <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEditUser(profile)}
-                          title="Editar usuario"
-                        >
+                        <Button variant="outline" size="sm" onClick={() => openEditUser(profile)} title="Editar usuario">
                           <Pencil className="h-4 w-4" />
                         </Button>
                         {profile.id !== user?.id && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDeleteUser(profile.id)}
-                            title="Eliminar usuario"
-                          >
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(profile.id)} title="Eliminar usuario">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
@@ -1234,6 +827,46 @@ const AdminPanel = () => {
                 ))}
               </TableBody>
             </Table>
+
+            {/* UserFormDialog (create + edit) */}
+            <UserFormDialog
+              open={userFormOpen}
+              onOpenChange={setUserFormOpen}
+              initialData={userFormInitialData}
+              onSaved={() => { loadData(); setRoleManagerKey(k => k + 1); }}
+              suppliers={allSuppliers}
+              orgMembers={orgMembers}
+            />
+
+            {/* "Ver Credenciales" modal */}
+            <Dialog open={credentialsOpen} onOpenChange={setCredentialsOpen}>
+              <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
+                <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+                  <DialogTitle className="flex items-center gap-2">
+                    <UserCog className="h-5 w-5 text-primary" />
+                    Credenciales de {credentialsUser?.name}
+                  </DialogTitle>
+                  <DialogDescription>Vista de solo lectura de los permisos asignados a este usuario.</DialogDescription>
+                </DialogHeader>
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                  {credentialsUser && (
+                    <PermissionTreeEditor permissions={credentialsUser.perms} readOnly />
+                  )}
+                </div>
+                <div className="px-6 py-4 border-t shrink-0 flex justify-end">
+                  <Button variant="outline" onClick={() => setCredentialsOpen(false)}>Cerrar</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Usuarios (Equipo Gerencia)"
+          description="Agrupados por el gerente que los invitó"
+          icon={<UserCog className="h-5 w-5 text-indigo-600" />}
+        >
+          <TeamUsersAdminManager />
         </CollapsibleCard>
 
         {/* ── Grupo: Empresas ── */}
@@ -1245,6 +878,7 @@ const AdminPanel = () => {
           <div className="space-y-4">
             <CompanyManager defaultCollapsed />
             <OrgChartManager defaultCollapsed />
+            <ServiceContractApproversManager />
             <CollapsibleCard
               title="Logos de la Aplicación"
               description="Administra los logos que se muestran en la aplicación"
@@ -1275,6 +909,22 @@ const AdminPanel = () => {
           icon={<Columns3 className="h-5 w-5 text-blue-600" />}
         >
           <BusinessCaseAdminConfig />
+        </CollapsibleCard>
+
+        {/* ── Grupo: Integraciones ── */}
+        <CollapsibleCard
+          title="Integraciones"
+          description="Conexión con sistemas externos"
+          icon={<Link2 className="h-5 w-5 text-cyan-600" />}
+        >
+          <CollapsibleCard
+            title="Geochile Compass"
+            description="Isócronas y proyecciones de venta para el Informe Directorio"
+            icon={<Link2 className="h-5 w-5 text-cyan-500" />}
+            defaultOpen={false}
+          >
+            <GeochileIntegrationManager />
+          </CollapsibleCard>
         </CollapsibleCard>
 
         {/* ── Grupo: Estados y Categorías ── */}
@@ -1318,6 +968,33 @@ const AdminPanel = () => {
               defaultOpen={false}
             >
               <BudgetProgressStatusManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Estados de Gantt General"
+              description="Estados para las líneas de Cartas Gantt - Vista General en Reportes, y su color de badge"
+              icon={<ListChecks className="h-5 w-5 text-indigo-500" />}
+              defaultOpen={false}
+            >
+              <GanttOverviewStatusManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Tipos de CAPEX"
+              description="Define los tipos para clasificar contratos en CAPEX (Nuevo, Reemplazo, Regularización, etc.) y su color de badge"
+              icon={<Building2 className="h-5 w-5 text-blue-600" />}
+              defaultOpen={false}
+            >
+              <CapexClasificacionTypeManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Estado Avance CAPEX"
+              description="Define los estados de avance del CAPEX de cada contrato (En Curso, Terminado, Programado, etc.) y su color de badge"
+              icon={<ListChecks className="h-5 w-5 text-cyan-600" />}
+              defaultOpen={false}
+            >
+              <CapexAvanceStatusManager />
             </CollapsibleCard>
           </div>
         </CollapsibleCard>
@@ -1418,44 +1095,6 @@ const AdminPanel = () => {
         {/* Storage Monitor - Admin only */}
         <StorageMonitor defaultCollapsed />
 
-        {/* Edit Permissions Dialog */}
-        <Dialog open={!!editingUserId} onOpenChange={(open) => !open && setEditingUserId(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Editar Permisos</DialogTitle>
-              <DialogDescription>
-                Configura los permisos para este usuario
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              {RESOURCES.map(resource => (
-                <div key={resource.id} className="flex items-center justify-between">
-                  <span>{resource.label}</span>
-                  <Select
-                    value={editPermissions[resource.id] || "none"}
-                    onValueChange={(v) => setEditPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin acceso</SelectItem>
-                      <SelectItem value="view">Ver</SelectItem>
-                      <SelectItem value="edit">Editar</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditingUserId(null)}>Cancelar</Button>
-              <Button onClick={() => editingUserId && handleUpdatePermissions(editingUserId)}>
-                Guardar Permisos
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         {/* Subfolder Dialog */}
         <Dialog open={subfolderDialogOpen} onOpenChange={setSubfolderDialogOpen}>
           <DialogContent>
@@ -1484,241 +1123,6 @@ const AdminPanel = () => {
               <Button onClick={handleCreateSubfolder} disabled={creatingTemplate}>
                 {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Crear Subcarpeta
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit User Dialog */}
-        <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
-          <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
-            <DialogHeader>
-              <DialogTitle>Editar Usuario</DialogTitle>
-              <DialogDescription>
-                Modifica los datos del usuario. Deja la contraseña vacía para no cambiarla.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">Nombre Completo</Label>
-                <Input
-                  id="edit-name"
-                  value={editUserName}
-                  onChange={(e) => setEditUserName(e.target.value)}
-                  placeholder="Juan Pérez"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-cargo">Cargo</Label>
-                <Input
-                  id="edit-cargo"
-                  value={editUserCargo}
-                  onChange={(e) => setEditUserCargo(e.target.value)}
-                  placeholder="Ej: Gerente de Operaciones"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-email">Email</Label>
-                <Input
-                  id="edit-email"
-                  type="email"
-                  value={editUserEmail}
-                  onChange={(e) => setEditUserEmail(e.target.value)}
-                  placeholder="usuario@email.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-password">Nueva Contraseña (opcional)</Label>
-                <div className="relative">
-                  <Input
-                    id="edit-password"
-                    type={showPassword ? "text" : "password"}
-                    value={editUserPassword}
-                    onChange={(e) => setEditUserPassword(e.target.value)}
-                    placeholder="Dejar vacío para no cambiar"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              {editingUserProfile?.id !== user?.id && (
-                <div className="space-y-2">
-                  <Label>Rol</Label>
-                  <Select value={editUserRole} onValueChange={(v) => setEditUserRole(v as "admin" | "user" | "operador_terreno")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="user">Usuario</SelectItem>
-                      <SelectItem value="operador_terreno">Operador de Terreno</SelectItem>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Operador de Terreno: proveedores asignados (edición) */}
-              {editUserRole === "operador_terreno" && editingUserProfile && (
-                <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-sm">Proveedores asignados</Label>
-                    <span className="text-[11px] text-muted-foreground">(verá solo las rutas de estos proveedores)</span>
-                  </div>
-                  {allSuppliers.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">No hay proveedores creados</p>
-                  ) : (
-                    <>
-                      <Input
-                        value={editSupplierSearch}
-                        onChange={(e) => setEditSupplierSearch(e.target.value)}
-                        placeholder="Buscar proveedor…"
-                        className="h-8 text-sm"
-                      />
-                      <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                        {allSuppliers
-                          .filter((s) => s.name.toLowerCase().includes(editSupplierSearch.toLowerCase()))
-                          .map((s) => {
-                            const checked = editUserSupplierIds.includes(s.id);
-                            return (
-                              <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/60 rounded px-1.5 py-1">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => setEditUserSupplierIds((prev) =>
-                                    prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id],
-                                  )}
-                                  className="rounded border-gray-300"
-                                />
-                                <span className="truncate">{s.name}</span>
-                              </label>
-                            );
-                          })}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {(editUserRole === "user" || editUserRole === "operador_terreno") && editingUserProfile && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Permisos por Sección</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        // Convert current permissions to ElementPermission format
-                        const existingPerms: Record<string, { elementId: string; label: string; permission: "none" | "view" | "edit" }> = {};
-                        Object.entries(editUserPermissions).forEach(([key, value]) => {
-                          if (value !== "none") {
-                            existingPerms[key] = {
-                              elementId: key,
-                              label: ALL_RESOURCES.find(r => r.id === key)?.label || key,
-                              permission: value,
-                            };
-                          }
-                        });
-                        startSelection({
-                          email: editUserEmail,
-                          password: editUserPassword,
-                          name: editUserName,
-                          role: editUserRole,
-                          userId: editingUserProfile.id,
-                        }, existingPerms);
-                        setEditUserDialogOpen(false);
-                        navigate("/");
-                      }}
-                      className="gap-1"
-                    >
-                      <Navigation className="h-3 w-3" />
-                      Navegar y Seleccionar
-                    </Button>
-                  </div>
-                  
-                  {/* Secciones Principales */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase">Secciones Principales</p>
-                    {MAIN_RESOURCES.map(resource => (
-                      <div key={resource.id} className="flex items-center justify-between">
-                        <span className="text-sm">{resource.label}</span>
-                        <Select
-                          value={editUserPermissions[resource.id] || "none"}
-                          onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sin acceso</SelectItem>
-                            <SelectItem value="view">Ver</SelectItem>
-                            <SelectItem value="edit">Editar</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Dashboard Cards */}
-                  <div className="space-y-2 pt-2 border-t">
-                    <p className="text-xs font-medium text-muted-foreground uppercase">Cards del Dashboard</p>
-                    {DASHBOARD_SECTIONS.map(resource => (
-                      <div key={resource.id} className="flex items-center justify-between">
-                        <span className="text-sm">{resource.label}</span>
-                        <Select
-                          value={editUserPermissions[resource.id] || "none"}
-                          onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sin acceso</SelectItem>
-                            <SelectItem value="view">Ver</SelectItem>
-                            <SelectItem value="edit">Editar</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Contract Sections */}
-                  <div className="space-y-2 pt-2 border-t">
-                    <p className="text-xs font-medium text-muted-foreground uppercase">Secciones de Contrato</p>
-                    {CONTRACT_SECTIONS.map(resource => (
-                      <div key={resource.id} className="flex items-center justify-between">
-                        <span className="text-sm">{resource.label}</span>
-                        <Select
-                          value={editUserPermissions[resource.id] || "none"}
-                          onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sin acceso</SelectItem>
-                            <SelectItem value="view">Ver</SelectItem>
-                            <SelectItem value="edit">Editar</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditUserDialogOpen(false)}>Cancelar</Button>
-              <Button onClick={handleUpdateUser} disabled={updatingUser}>
-                {updatingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Guardar Cambios
               </Button>
             </DialogFooter>
           </DialogContent>

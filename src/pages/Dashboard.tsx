@@ -6,8 +6,6 @@ import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { useAuth } from "@/hooks/useAuth";
 import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
 import { useAppLogos } from "@/hooks/useAppLogos";
-import { SelectableElement } from "@/components/admin/SelectableElement";
-
 const Dashboard = () => {
   const navigate = useNavigate();
   const {
@@ -109,9 +107,7 @@ const Dashboard = () => {
       </header>
 
       <main className="max-w-12xl mx-auto px-0.5 sm:px-6 lg:px-8 py-8 space-y-6">
-        <SelectableElement elementId="dashboard.stats" label="Dashboard - Estadísticas">
-          <DashboardStats />
-        </SelectableElement>
+        <DashboardStats />
       </main>
 
       {/* Floating return button when coming from Reports */}

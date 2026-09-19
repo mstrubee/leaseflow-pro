@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock, User } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock, User, CalendarClock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveFileUrl } from "@/lib/storageUtils";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm } from "./types";
 import { ResolutionDialog } from "./ResolutionDialog";
+import { ScheduleMaintenanceDialog } from "./ScheduleMaintenanceDialog";
 import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -32,10 +35,14 @@ interface Props {
 
 export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: Props) {
   const navigate = useNavigate();
+  const { isAdmin, hasPermission } = useAuth();
+  const canEditSchedule = isAdmin || hasPermission("maintenance", "edit");
   const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, getNextSubStatus } = useMaintenanceSubStatuses();
   const [saving, setSaving] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [pendingAdvance, setPendingAdvance] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [linkedTask, setLinkedTask] = useState<{ name: string; start_date: string | null; end_date: string | null; duration_days: number } | null>(null);
   const [formData, setFormData] = useState({
     form_number: "",
     status: "proceso",
@@ -49,9 +56,33 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     fixed_assets_description: "",
     additional_comments: "",
     resolution_observations: "",
+    supplier_id: null as string | null,
   });
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || suppliers.length > 0) return;
+    supabase.from("suppliers").select("id, name").order("name").then(({ data }) => {
+      if (data) setSuppliers(data);
+    });
+  }, [open, suppliers.length]);
+
+  const saveSupplier = async (supplierId: string | null) => {
+    if (!form) return;
+    const supplierName = supplierId ? suppliers.find(s => s.id === supplierId)?.name ?? null : null;
+    setFormData(p => ({ ...p, supplier_id: supplierId }));
+    const { error } = await supabase
+      .from("maintenance_forms")
+      .update({ supplier_id: supplierId, supplier_name: supplierName, updated_at: new Date().toISOString() })
+      .eq("id", form.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo guardar el proveedor" });
+    } else {
+      onSuccess();
+    }
+  };
 
   useEffect(() => {
     if (form) {
@@ -68,9 +99,27 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         fixed_assets_description: form.fixed_assets_description || "",
         additional_comments: form.additional_comments || "",
         resolution_observations: form.resolution_observations || "",
+        supplier_id: form.supplier_id || null,
       });
     }
   }, [form]);
+
+  // Carga los datos de la tarea del cronograma de mantenciones vinculada a
+  // este form (si ya fue programado antes), para mostrar el resumen y
+  // precargar el diálogo de programación.
+  useEffect(() => {
+    if (!form?.gantt_task_id || !open) { setLinkedTask(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("gantt_tasks")
+        .select("name, start_date, end_date, duration_days")
+        .eq("id", form.gantt_task_id!)
+        .maybeSingle();
+      if (!cancelled) setLinkedTask(data ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [form?.gantt_task_id, open]);
 
   // Fetch real history from maintenance_status_history + profiles
   useEffect(() => {
@@ -277,7 +326,19 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
           {/* Proveedor y OC asignados */}
           <div className="space-y-1.5">
             <Label>Proveedor</Label>
-            {form?.supplier_name ? (
+            {canEditSchedule ? (
+              <SearchableSelect
+                value={formData.supplier_id ?? "__none__"}
+                onValueChange={(v) => saveSupplier(v === "__none__" ? null : v)}
+                options={[
+                  { value: "__none__", label: "Sin asignar" },
+                  ...suppliers.map(s => ({ value: s.id, label: s.name })),
+                ]}
+                placeholder="Sin asignar"
+                searchPlaceholder="Buscar proveedor..."
+                emptyMessage="No hay proveedores."
+              />
+            ) : form?.supplier_name ? (
               <Button
                 variant="outline"
                 className="w-full justify-start gap-2 font-normal"
@@ -348,6 +409,46 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             <Label>Resuelto con Observaciones - Control de Gestión</Label>
             <Textarea value={formData.resolution_observations} onChange={e => set("resolution_observations", e.target.value)} rows={2} placeholder="Observaciones de Control de Gestión..." />
           </div>
+
+          <div className="space-y-1.5">
+            <Label>Programación (Cronograma de Mantenciones)</Label>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start gap-2 font-normal"
+              onClick={() => setScheduleOpen(true)}
+              disabled={!canEditSchedule}
+            >
+              <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              {linkedTask?.start_date ? (
+                <span className="truncate">
+                  {linkedTask.name} — {format(new Date(linkedTask.start_date + "T00:00:00"), "dd/MM")}
+                  {linkedTask.end_date && linkedTask.end_date !== linkedTask.start_date && ` → ${format(new Date(linkedTask.end_date + "T00:00:00"), "dd/MM")}`}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Sin programar — click para agregar al cronograma</span>
+              )}
+            </Button>
+          </div>
+
+          {form?.ot_file_url && (
+            <div className="space-y-1.5">
+              <Label>Orden de Trabajo (OT) Firmada</Label>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start gap-2 font-normal"
+                onClick={async () => {
+                  const url = await resolveFileUrl(form.ot_file_url);
+                  if (url) window.open(url, "_blank", "noopener,noreferrer");
+                }}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">Ver OT firmada</span>
+                <ExternalLink className="h-3 w-3 ml-auto shrink-0 text-muted-foreground" />
+              </Button>
+            </div>
+          )}
 
           {form?.evidence_links && form.evidence_links.length > 0 && (
             <div className="space-y-1.5">
@@ -440,6 +541,18 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
       formId={form?.id || null}
       formNumber={form?.form_number || ""}
       onOTUploaded={onSuccess}
+    />
+    <ScheduleMaintenanceDialog
+      open={scheduleOpen}
+      onOpenChange={setScheduleOpen}
+      contractId={form?.contract_id ?? null}
+      formId={form?.id ?? ""}
+      formNumber={form?.form_number ?? ""}
+      existingTaskId={form?.gantt_task_id ?? null}
+      existingName={linkedTask?.name}
+      existingStartDate={linkedTask?.start_date}
+      existingDurationDays={linkedTask?.duration_days}
+      onScheduled={() => { onSuccess(); }}
     />
     </>
   );

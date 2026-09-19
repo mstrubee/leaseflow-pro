@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Plus, Trash2, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
 import {
   LineChart,
   Line,
@@ -40,10 +42,18 @@ export const GraceMonthsInput = ({
   value,
   onChange,
   maxMonths,
+  ggccAppliesInGrace,
+  onGgccAppliesInGraceChange,
 }: {
   value: number;
   onChange: (months: number) => void;
   maxMonths: number;
+  // Si hay meses de gracia: ¿los gastos comunes se siguen cobrando igual
+  // (true, default -- solo el canon queda exento) o también quedan
+  // eximidos durante la gracia (false)? Opcional -- si no se pasa
+  // onGgccAppliesInGraceChange, el control no se muestra.
+  ggccAppliesInGrace?: boolean;
+  onGgccAppliesInGraceChange?: (applies: boolean) => void;
 }) => {
   const [unit, setUnit] = useState<DurationUnit>("months");
   
@@ -101,6 +111,18 @@ export const GraceMonthsInput = ({
       {equivalentText && (
         <p className="text-xs text-primary font-medium">{equivalentText}</p>
       )}
+      {value > 0 && onGgccAppliesInGraceChange && (
+        <div className="flex items-center gap-2 pt-1">
+          <Switch
+            id="ggcc-applies-in-grace"
+            checked={ggccAppliesInGrace ?? true}
+            onCheckedChange={onGgccAppliesInGraceChange}
+          />
+          <Label htmlFor="ggcc-applies-in-grace" className="text-xs font-normal text-muted-foreground cursor-pointer">
+            Gastos comunes se pagan durante la gracia (si aplica)
+          </Label>
+        </div>
+      )}
     </div>
   );
 };
@@ -116,6 +138,7 @@ const EscalationMonthInput = ({
   onAdd,
   graceMonths,
   durationMonths,
+  durationSet,
   currency,
   isUfM2,
   onUfM2Change,
@@ -131,6 +154,7 @@ const EscalationMonthInput = ({
   onAdd: () => void;
   graceMonths: number;
   durationMonths: number;
+  durationSet: boolean;
   currency: "UF" | "CLP";
   isUfM2: boolean;
   onUfM2Change: (value: boolean) => void;
@@ -140,14 +164,33 @@ const EscalationMonthInput = ({
   const [startUnit, setStartUnit] = useState<DurationUnit>("months");
   const [endUnit, setEndUnit] = useState<DurationUnit>("months");
 
+  // Un input vacío debe propagarse como "" y NO como "0": el string "0" es
+  // truthy, así que dejaba el botón "+" habilitado mientras handleAdd rechazaba
+  // el mes 0 en silencio — el botón parecía roto.
   const handleStartChange = (value: string) => {
-    const numValue = parseFloat(value) || 0;
+    if (value.trim() === "") {
+      onStartMonthChange("");
+      return;
+    }
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) {
+      onStartMonthChange("");
+      return;
+    }
     const months = startUnit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
     onStartMonthChange(months.toString());
   };
 
   const handleEndChange = (value: string) => {
-    const numValue = parseFloat(value) || 0;
+    if (value.trim() === "") {
+      onEndMonthChange("");
+      return;
+    }
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) {
+      onEndMonthChange("");
+      return;
+    }
     const months = endUnit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
     onEndMonthChange(months.toString());
   };
@@ -252,7 +295,7 @@ const EscalationMonthInput = ({
         <Button
           type="button"
           onClick={onAdd}
-          disabled={!startMonth || !amount}
+          disabled={!durationSet || !startMonth || !amount}
           size="icon"
         >
           <Plus className="h-4 w-4" />
@@ -276,10 +319,20 @@ interface RentEscalationsProps {
   initialRent: number;
   regimeRent: number;
   durationMonths: number;
+  /**
+   * Si la duración del contrato está realmente cargada. Los llamadores usan
+   * `parseInt(duration) || 12` como fallback para la lógica interna y el
+   * gráfico, así que `durationMonths` no distingue "12 meses" de "sin definir".
+   * Sin este flag, el formulario anunciaba un rango válido de 12 meses que el
+   * usuario nunca cargó. Default true para no cambiar los llamadores existentes.
+   */
+  durationSet?: boolean;
   readOnly?: boolean;
   currency?: "UF" | "CLP";
   graceMonths?: number;
   onGraceMonthsChange?: (months: number) => void;
+  ggccAppliesInGrace?: boolean;
+  onGgccAppliesInGraceChange?: (applies: boolean) => void;
   effectiveDate?: string;
   hasPeriodicAdjustments?: boolean;
   adjustmentType?: "percentage" | "fixed";
@@ -324,10 +377,13 @@ export const RentEscalations = ({
   initialRent,
   regimeRent,
   durationMonths,
+  durationSet = true,
   readOnly = false,
   currency = "UF",
   graceMonths = 0,
   onGraceMonthsChange,
+  ggccAppliesInGrace,
+  onGgccAppliesInGraceChange,
   effectiveDate,
   hasPeriodicAdjustments = false,
   adjustmentType = "percentage",
@@ -386,18 +442,49 @@ export const RentEscalations = ({
     const endMonth = parseInt(newEndMonth) || startMonth;
     const amount = parseFloat(newAmount);
 
-    // Validate months are greater than grace months
-    if (isNaN(startMonth) || isNaN(amount) || startMonth <= graceMonths || startMonth > durationMonths) {
+    // Cada rechazo avisa por qué. Antes eran `return` silenciosos: el botón "+"
+    // no hacía nada y no había forma de saber qué estaba mal.
+    if (!durationSet) {
+      toast.error("Primero indica la duración del contrato");
       return;
     }
 
-    // Validate end month is >= start month
-    if (endMonth < startMonth || endMonth > durationMonths) {
+    if (isNaN(startMonth)) {
+      toast.error("Indica el mes de inicio del escalonado");
       return;
     }
 
-    // Check if start month already exists
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Indica un monto mayor a 0");
+      return;
+    }
+
+    if (startMonth <= graceMonths) {
+      toast.error(
+        graceMonths > 0
+          ? `El mes de inicio debe ser posterior a los ${graceMonths} mes(es) de gracia: usa el mes ${graceMonths + 1} o siguiente`
+          : "El mes de inicio debe ser 1 o mayor"
+      );
+      return;
+    }
+
+    if (startMonth > durationMonths) {
+      toast.error(`El mes de inicio no puede exceder la duración del contrato (${durationMonths} meses)`);
+      return;
+    }
+
+    if (endMonth < startMonth) {
+      toast.error("El mes de fin no puede ser anterior al mes de inicio");
+      return;
+    }
+
+    if (endMonth > durationMonths) {
+      toast.error(`El mes de fin no puede exceder la duración del contrato (${durationMonths} meses)`);
+      return;
+    }
+
     if (escalations.some((e) => e.month_number === startMonth)) {
+      toast.error(`Ya existe un escalonado que comienza en el mes ${startMonth}`);
       return;
     }
 
@@ -584,14 +671,25 @@ export const RentEscalations = ({
         <div className="space-y-2">
           <Label className="text-sm font-medium">Escalones definidos</Label>
           <div className="space-y-2">
-            {sortedEscalations.map((escalation, idx) => (
+            {sortedEscalations.map((escalation, idx) => {
+              // El mes de término real casi nunca se guarda (rent_escalations
+              // no tiene esa columna): se infiere como el mes anterior al
+              // inicio del siguiente tramo, o la duración del contrato para
+              // el último. Sin esto, un tramo importado (que solo trae su
+              // mes de inicio) se mostraba como "Mes 1" a secas -- dando a
+              // entender, incorrectamente, que terminaba en el mismo mes en
+              // que empezaba.
+              const nextEscalation = sortedEscalations[idx + 1];
+              const impliedEndMonth = escalation.end_month
+                ?? (nextEscalation ? nextEscalation.month_number - 1 : durationMonths);
+              return (
               <div
                 key={escalation.month_number}
                 className={`flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border ${!readOnly ? "cursor-pointer hover:bg-muted/80 transition-colors" : ""}`}
                 onClick={() => {
                   if (readOnly) return;
                   setEditStartMonth(escalation.month_number);
-                  setEditEndMonth(escalation.end_month || escalation.month_number);
+                  setEditEndMonth(impliedEndMonth);
                   setEditAmount(escalation.amount.toString());
                   setEditDialogOpen(true);
                 }}
@@ -604,8 +702,8 @@ export const RentEscalations = ({
                     <span className="text-muted-foreground">Mes </span>
                     <span className="font-semibold">
                       {escalation.month_number}
-                      {escalation.end_month && escalation.end_month !== escalation.month_number && 
-                        ` - ${escalation.end_month}`
+                      {impliedEndMonth !== escalation.month_number &&
+                        ` - ${impliedEndMonth}`
                       }
                     </span>
                   </div>
@@ -634,7 +732,8 @@ export const RentEscalations = ({
                   </Button>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -647,6 +746,8 @@ export const RentEscalations = ({
             value={graceMonths}
             onChange={onGraceMonthsChange}
             maxMonths={durationMonths - 1}
+            ggccAppliesInGrace={ggccAppliesInGrace}
+            onGgccAppliesInGraceChange={onGgccAppliesInGraceChange}
           />
         </div>
       )}
@@ -669,6 +770,7 @@ export const RentEscalations = ({
               onAdd={handleAdd}
               graceMonths={graceMonths}
               durationMonths={durationMonths}
+              durationSet={durationSet}
               currency={currency}
               isUfM2={newIsUfM2}
               onUfM2Change={setNewIsUfM2}
@@ -676,10 +778,28 @@ export const RentEscalations = ({
               showUfM2Toggle={currency === "UF"}
             />
             <p className="text-xs text-muted-foreground">
-              {graceMonths > 0 
+              {graceMonths > 0
                 ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
                 : "Indica el mes inicial, mes final y el canon para ese período."
               }
+            </p>
+            {/* El rango válido depende de la duración del contrato. Mostrarlo evita
+                el caso en que se carga un mes fuera de rango y el "+" lo rechaza:
+                si la duración está mal cargada, se detecta acá y no probando. */}
+            <p className="text-xs text-muted-foreground">
+              {durationSet ? (
+                <>
+                  Rango válido según la duración del contrato:{" "}
+                  <span className="font-medium text-foreground">
+                    mes {graceMonths + 1} a {durationMonths}
+                  </span>
+                  .
+                </>
+              ) : (
+                <span className="font-medium text-destructive">
+                  Primero indica la duración del contrato.
+                </span>
+              )}
             </p>
           </CollapsibleContent>
         </Collapsible>

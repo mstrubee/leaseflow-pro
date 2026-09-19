@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
+import { BEATRIZ_CFG_DB_KEY, BEATRIZ_DEFAULTS, mergeBeatrizCfg, type BeatrizCfg, type CatCfg } from "@/lib/beatrizRubroConfig";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown, Search, X } from "lucide-react";
+import { Loader2, Users, Wrench, FileText, TrendingUp, Settings, ChevronDown } from "lucide-react";
 import { format, parseISO, differenceInBusinessDays } from "date-fns";
+import { toast } from "sonner";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -89,6 +93,7 @@ function WeightRow({ label, value, onChange }: { label: string; value: number; o
   );
 }
 
+
 function loadLS<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
 }
@@ -125,89 +130,198 @@ interface EvelynData {
   semestreLabel: string;
 }
 
-interface BeatrizData {
-  categories: Array<{ id: string; name: string }>;
-  zones: string[];
+// Cobertura de una categoría de servicio: conteo de proveedores por
+// "<rubroId>||<zona>" y el detalle de proveedores por celda.
+interface CatCoverage {
   matrix: Record<string, number>;
   suppliersMap: Record<string, Array<{ id: string; name: string }>>;
+}
+interface BeatrizData {
+  rubros: Array<{ id: string; name: string }>; // rubros activos (para nombres)
+  zones: string[];
+  compras: CatCoverage;
+  mantenciones: CatCoverage;
 }
 
 // ─── Beatriz card ─────────────────────────────────────────────────────────────
 
-const BEATRIZ_EXCLUDED_KEY = "beatriz_kpi_excluded_cats";
-const BEATRIZ_CFG_KEY      = "beatriz_kpi_cfg";
+// Config de Beatriz: por cada CATEGORÍA de servicio (Compras = does_installations,
+// Mantenciones = does_maintenance) el admin define cuántos proveedores se exigen
+// POR RUBRO y POR ZONA para el 100% (min) y el 130% (sobre), y QUÉ rubros cuentan
+// para esa categoría (rubroIds). Se persiste en kpi_team_config (key 'beatriz')
+// para que la config sea global. El puntaje del bono junta (pooled) todas las
+// celdas rubro×zona de ambas categorías; la visualización es separada por
+// categoría para ver dónde faltan proveedores.
+// Tipos/config/merge compartidos con CategoryManager.tsx (pestaña Rubros de
+// Proveedores), que también lee y edita esta misma fila — ver
+// src/lib/beatrizRubroConfig.ts.
+type CatKey = "compras" | "mantenciones";
+const CAT_LABEL: Record<CatKey, string> = { compras: "Compras", mantenciones: "Mantenciones" };
+const CAT_KEYS: CatKey[] = ["compras", "mantenciones"];
 
-interface BeatrizCfg { metaMin: number; metaSobre: number; }
-const BEATRIZ_DEFAULTS: BeatrizCfg = { metaMin: 3, metaSobre: 5 };
-
-function cellColor(count: number, metaMin: number, metaSobre: number) {
-  if (count >= metaSobre) return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  if (count >= metaMin)   return "bg-blue-50 text-blue-800 border-blue-200";
-  if (count >= 1)         return "bg-amber-50 text-amber-800 border-amber-200";
+function cellColor(count: number, n70: number, n100: number, n130: number) {
+  if (count >= n130) return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (count >= n100) return "bg-blue-50 text-blue-800 border-blue-200";
+  if (count >= n70)  return "bg-amber-50 text-amber-800 border-amber-200";
   return "bg-red-50 text-red-700 border-red-200";
 }
 
+// Selector de rubros por ventana emergente (más amigable que un desplegable):
+// abre un modal con la lista completa de rubros como casillas + buscador.
+function RubroPickerModal({
+  title, rubros, value, onChange,
+}: {
+  title: string;
+  rubros: Array<{ id: string; name: string }>;
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const selected = new Set(value);
+  const filtered = rubros.filter(r => !q.trim() || r.name.toLowerCase().includes(q.toLowerCase()));
+  const toggle = (id: string) =>
+    onChange(selected.has(id) ? value.filter(v => v !== id) : [...value, id]);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full justify-between h-8 text-xs font-normal"
+        onClick={() => setOpen(true)}
+      >
+        {value.length === 0 ? "Seleccionar rubros…" : `${value.length} rubro(s) seleccionado(s)`}
+        <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rubros — {title}</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Buscar rubro…"
+            className="h-8 text-sm"
+          />
+          <div className="max-h-[50vh] overflow-y-auto space-y-0.5 border rounded-md p-2">
+            {filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic px-1 py-2">Sin resultados</p>
+            ) : (
+              filtered.map(r => (
+                <label key={r.id} className="flex items-center gap-2 py-1 px-1 hover:bg-muted/50 rounded cursor-pointer text-sm">
+                  <Checkbox checked={selected.has(r.id)} onCheckedChange={() => toggle(r.id)} />
+                  <span>{r.name}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex gap-1">
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onChange(rubros.map(r => r.id))}>
+                Todos
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onChange([])}>
+                Ninguno
+              </Button>
+            </div>
+            <Button type="button" size="sm" className="h-7 text-xs" onClick={() => setOpen(false)}>
+              Listo ({value.length})
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boolean }) {
-  const [excludedIds, setExcludedIds] = useState<Set<string>>(() =>
-    new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
-  );
-  const [savedExcludedIds, setSavedExcludedIds] = useState<Set<string>>(() =>
-    new Set(loadLS<string[]>(BEATRIZ_EXCLUDED_KEY, []))
-  );
-  const [cfg, setCfg]           = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
-  const [savedCfg, setSavedCfg] = useState<BeatrizCfg>(() => loadLS(BEATRIZ_CFG_KEY, BEATRIZ_DEFAULTS));
+  const { isAdmin } = useAuth();
+  const [cfg, setCfg]           = useState<BeatrizCfg>(BEATRIZ_DEFAULTS);
+  const [savedCfg, setSavedCfg] = useState<BeatrizCfg>(BEATRIZ_DEFAULTS);
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const [detailOpen, setDetailOpen]     = useState(false);
-  const [searchQuery, setSearchQuery]   = useState("");
+  const [savingCfg, setSavingCfg]       = useState(false);
+
+  // Config global desde la base (la fija ADMIN; todos la ven reflejada).
+  useEffect(() => {
+    (async () => {
+      const { data: row } = await supabase
+        .from("kpi_team_config")
+        .select("config")
+        .eq("key", BEATRIZ_CFG_DB_KEY)
+        .maybeSingle();
+      if (row?.config) {
+        const c = mergeBeatrizCfg(row.config as Partial<Record<CatKey, Partial<CatCfg> & { min?: number; sobre?: number }>>);
+        setCfg(c);
+        setSavedCfg(c);
+      }
+    })();
+  }, []);
 
   const toggleCell = (key: string) => setExpandedCell(prev => prev === key ? null : key);
 
-  const toggleExclude = (id: string) => {
-    setExcludedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next; // no auto-save — committed on Guardar
-    });
+  const updateCat = (catKey: CatKey, patch: Partial<CatCfg>) =>
+    setCfg(prev => ({ ...prev, [catKey]: { ...prev[catKey], ...patch } }));
+
+  const saveBeatrizAdmin = async () => {
+    setSavingCfg(true);
+    try {
+      const { error } = await supabase
+        .from("kpi_team_config")
+        .upsert(
+          { key: BEATRIZ_CFG_DB_KEY, config: cfg as unknown as Json, updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      if (error) throw error;
+      setSavedCfg(cfg);
+      toast.success("Configuración guardada");
+    } catch (err) {
+      console.error("Error guardando config KPI:", err);
+      toast.error("Error al guardar la configuración");
+      setCfg(savedCfg);
+    } finally {
+      setSavingCfg(false);
+    }
   };
 
-  const updateCfg = (patch: Partial<BeatrizCfg>) => {
-    setCfg(prev => ({ ...prev, ...patch })); // no auto-save
-  };
-
-  const saveBeatrizAdmin = () => {
-    saveLS(BEATRIZ_CFG_KEY, cfg);
-    saveLS(BEATRIZ_EXCLUDED_KEY, [...excludedIds]);
-    setSavedCfg(cfg);
-    setSavedExcludedIds(new Set(excludedIds));
-  };
-
-  const cancelBeatrizAdmin = () => {
-    setCfg(savedCfg);
-    setExcludedIds(new Set(savedExcludedIds));
-  };
+  const cancelBeatrizAdmin = () => setCfg(savedCfg);
 
   if (loading) return <CardSkeleton title="Beatriz Valenzuela" subtitle="Cobertura de Proveedores" />;
 
-  const activeCats  = data ? data.categories.filter(c => !excludedIds.has(c.id)) : [];
-  const zones       = data?.zones ?? [];
-  const matrix      = data?.matrix ?? {};
-  const totalComb   = activeCats.length * zones.length;
+  const zones = data?.zones ?? [];
+  const rubroName = new Map((data?.rubros ?? []).map(r => [r.id, r.name] as const));
 
-  let cubiertas3 = 0, cubiertas5 = 0;
-  activeCats.forEach(c => zones.forEach(z => {
-    const count = matrix[`${c.id}||${z}`] ?? 0;
-    if (count >= cfg.metaMin)   cubiertas3++;
-    if (count >= cfg.metaSobre) cubiertas5++;
-  }));
+  // Estadística de cobertura de una categoría: celdas (rubros elegidos × zonas)
+  // cubiertas al 100% (≥min) y al 130% (≥sobre).
+  const catStats = (catKey: CatKey) => {
+    const conf = cfg[catKey];
+    const cov = data ? data[catKey] : null;
+    const cells = conf.rubroIds.length * zones.length;
+    let c70 = 0, c100 = 0, c130 = 0;
+    if (cov) {
+      conf.rubroIds.forEach(rid => zones.forEach(z => {
+        const n = cov.matrix[`${rid}||${z}`] ?? 0;
+        if (n >= conf.n70)  c70++;
+        if (n >= conf.n100) c100++;
+        if (n >= conf.n130) c130++;
+      }));
+    }
+    return { cells, c70, c100, c130 };
+  };
+  const stats: Record<CatKey, { cells: number; c70: number; c100: number; c130: number }> = {
+    compras: catStats("compras"),
+    mantenciones: catStats("mantenciones"),
+  };
 
-  const score100 = pct(cubiertas3, totalComb);
-  const score130 = pct(cubiertas5, totalComb);
+  // Puntaje del bono: pooled sobre ambas categorías.
+  const pooledCells = stats.compras.cells + stats.mantenciones.cells;
+  const score100 = pct(stats.compras.c100 + stats.mantenciones.c100, pooledCells);
+  const score130 = pct(stats.compras.c130 + stats.mantenciones.c130, pooledCells);
   const score    = score100 >= 100 ? (score130 >= 100 ? 130 : 100) : score100 >= 70 ? 70 : score100;
-
-  // Search filters rows in the matrix (doesn't affect score)
-  const filteredCats = activeCats.filter(c =>
-    !searchQuery.trim() || c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const sinConfigurar = pooledCells === 0;
 
   return (
     <>
@@ -222,27 +336,35 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
                 <p className="text-xs text-muted-foreground">Activos Fijos y Proveedores</p>
               </div>
             </div>
-            {data && scoreBadge(score)}
+            {data && !sinConfigurar && scoreBadge(score)}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Cobertura ≥{cfg.metaMin} prov. (meta)</span>
-              <span className="font-semibold">{score100}%</span>
-            </div>
-            <Progress value={Math.min(score100, 100)} className="h-2" />
-          </div>
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Cobertura ≥{cfg.metaSobre} prov. (sobre)</span>
-              <span className="font-semibold">{score130}%</span>
-            </div>
-            <Progress value={Math.min(score130, 100)} className="h-2" />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {cubiertas3} de {totalComb} combinaciones categoría × zona cubiertas
-          </p>
+          {sinConfigurar ? (
+            <p className="text-xs text-muted-foreground italic">
+              Sin configurar. {isAdmin ? "Definí los rubros por categoría en “Ver detalle → Configuración admin”." : "Pendiente de configuración."}
+            </p>
+          ) : (
+            <>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Cobertura meta (100%)</span>
+                  <span className="font-semibold">{score100}%</span>
+                </div>
+                <Progress value={Math.min(score100, 100)} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Cobertura sobrecumplimiento</span>
+                  <span className="font-semibold">{score130}%</span>
+                </div>
+                <Progress value={Math.min(score130, 100)} className="h-2" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.compras.c100 + stats.mantenciones.c100} de {pooledCells} celdas rubro × zona cubiertas
+              </p>
+            </>
+          )}
           <Button variant="outline" size="sm" className="w-full" onClick={() => setDetailOpen(true)}>
             Ver detalle
           </Button>
@@ -257,164 +379,186 @@ function BeatrizCard({ data, loading }: { data: BeatrizData | null; loading: boo
           </DialogHeader>
           <div className="max-h-[78vh] overflow-y-auto space-y-4 pr-1">
 
-            {/* Score resumen */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Cobertura ≥{cfg.metaMin} proveedores (meta 100%)</span>
-                  <span className="font-semibold">{score100}%</span>
-                </div>
-                <Progress value={Math.min(score100, 100)} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">{cubiertas3} de {totalComb} combinaciones</p>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Cobertura ≥{cfg.metaSobre} proveedores (sobrecumplimiento)</span>
-                  <span className="font-semibold">{score130}%</span>
-                </div>
-                <Progress value={Math.min(score130, 100)} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">{cubiertas5} de {totalComb} combinaciones</p>
-              </div>
-            </div>
-
-            {/* Buscador */}
-            {data && activeCats.length > 0 && (
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Buscar categoría..."
-                  className="pl-8 pr-8 h-8 text-sm"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-2 top-1.5 p-0.5 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Matrix */}
-            {data && filteredCats.length > 0 && zones.length > 0 && (
-              <div>
-                {searchQuery && (
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Mostrando {filteredCats.length} de {activeCats.length} categorías
+            {/* Admin — solo visible para admin (Beatriz, no-admin, no lo ve).
+                Va ARRIBA para que, al desplegarse, sea visible de inmediato. */}
+            {data && isAdmin && (
+              <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
+                <p className="text-muted-foreground">
+                  Por cada categoría: proveedores exigibles <strong>por rubro y por zona</strong> para
+                  cada nivel de la escala de bono, y qué rubros cuentan para esa categoría.
+                </p>
+                {CAT_KEYS.map(catKey => (
+                  <div key={catKey} className="border rounded-md p-2 space-y-2">
+                    <p className="font-medium">{CAT_LABEL[catKey]}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Proveedores exigidos por rubro y zona
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { pct: "70%",  key: "n70"  as const, hint: "mínimo" },
+                        { pct: "100%", key: "n100" as const, hint: "meta" },
+                        { pct: "130%", key: "n130" as const, hint: "sobre" },
+                      ]).map(({ pct, key, hint }) => (
+                        <div key={key} className="flex flex-col items-center gap-1 rounded-md border p-2">
+                          <span className="text-sm font-semibold leading-none">{pct}</span>
+                          <span className="text-[10px] text-muted-foreground leading-none">{hint}</span>
+                          <Input
+                            type="number" min={0} max={999} step={1}
+                            value={cfg[catKey][key]}
+                            onFocus={e => e.currentTarget.select()}
+                            onChange={e => updateCat(catKey, { [key]: Number(e.target.value) })}
+                            className="w-14 h-7 text-sm text-center px-1 mt-0.5"
+                          />
+                          <span className="text-[10px] text-muted-foreground leading-none">prov.</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1">Rubros que cuentan para {CAT_LABEL[catKey]}:</p>
+                    <RubroPickerModal
+                      title={CAT_LABEL[catKey]}
+                      rubros={data?.rubros ?? []}
+                      value={cfg[catKey].rubroIds}
+                      onChange={ids => updateCat(catKey, { rubroIds: ids })}
+                    />
+                  </div>
+                ))}
+                {savingCfg && (
+                  <p className="flex items-center gap-1 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Guardando...
                   </p>
                 )}
-                <div className="overflow-x-auto">
-                  <table className="text-xs border-collapse w-full">
-                    <thead>
-                      <tr>
-                        <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[160px] sticky left-0 bg-background">
-                          Categoría
-                        </th>
-                        {zones.map(z => (
-                          <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[80px]">
-                            {z}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCats.map(c => {
-                        const openZone = zones.find(z => expandedCell === `${c.id}||${z}`);
-                        return (
-                          <>
-                            <tr key={c.id} className="border-t">
-                              <td className="py-1.5 pr-3 font-medium sticky left-0 bg-background">{c.name}</td>
-                              {zones.map(z => {
-                                const key   = `${c.id}||${z}`;
-                                const count = matrix[key] ?? 0;
-                                const isOpen = expandedCell === key;
-                                return (
-                                  <td key={z} className="text-center py-1.5 px-2">
-                                    <button
-                                      onClick={() => count > 0 ? toggleCell(key) : undefined}
-                                      className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
-                                        ${cellColor(count, cfg.metaMin, cfg.metaSobre)}
-                                        ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
-                                        ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
-                                    >
-                                      {count}
-                                    </button>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                            {openZone && (() => {
-                              const key      = `${c.id}||${openZone}`;
-                              const suppList = data?.suppliersMap?.[key] ?? [];
-                              return (
-                                <tr key={`${c.id}-detail`} className="bg-muted/40">
-                                  <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
-                                    <div className="flex items-center gap-2 mb-1.5 font-medium">
-                                      <span>{c.name}</span>
-                                      <span className="text-muted-foreground">·</span>
-                                      <span className="text-muted-foreground">{openZone}</span>
-                                      <span className="ml-auto text-muted-foreground">
-                                        {suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}
-                                      </span>
-                                    </div>
-                                    <ul className="space-y-0.5 columns-2">
-                                      {suppList.map(s => <li key={s.id} className="text-muted-foreground">• {s.name}</li>)}
-                                    </ul>
-                                  </td>
-                                </tr>
-                              );
-                            })()}
-                          </>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              </AdminSection>
+            )}
+
+            {/* Resumen del bono (pooled) */}
+            {!sinConfigurar && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Cobertura meta (100%)</span>
+                    <span className="font-semibold">{score100}%</span>
+                  </div>
+                  <Progress value={Math.min(score100, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stats.compras.c100 + stats.mantenciones.c100} de {pooledCells} celdas
+                  </p>
                 </div>
-                <div className="flex gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ≥{cfg.metaSobre} óptimo</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> {cfg.metaMin}–{cfg.metaSobre - 1} meta</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 1–{cfg.metaMin - 1} bajo</span>
-                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 0 sin cobertura</span>
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Cobertura sobrecumplimiento (130%)</span>
+                    <span className="font-semibold">{score130}%</span>
+                  </div>
+                  <Progress value={Math.min(score130, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stats.compras.c130 + stats.mantenciones.c130} de {pooledCells} celdas
+                  </p>
                 </div>
               </div>
             )}
 
-            {data && filteredCats.length === 0 && searchQuery && (
+            {sinConfigurar && (
               <p className="text-sm text-muted-foreground text-center py-4">
-                Sin resultados para "{searchQuery}"
+                No hay rubros configurados para ninguna categoría.
+                {isAdmin ? " Usá “Configuración admin” arriba para elegirlos." : ""}
               </p>
             )}
 
-            {/* Admin */}
-            {data && (
-              <AdminSection label="Configuración admin" onSave={saveBeatrizAdmin} onCancel={cancelBeatrizAdmin}>
-                <div>
-                  <p className="font-medium mb-2">Umbrales de cobertura</p>
-                  <div className="space-y-2">
-                    <WeightRow label="Meta (≥N proveedores)"              value={cfg.metaMin}   onChange={v => updateCfg({ metaMin: v })}   />
-                    <WeightRow label="Sobrecumplimiento (≥N proveedores)" value={cfg.metaSobre} onChange={v => updateCfg({ metaSobre: v })} />
+            {/* Visualización por categoría (separada, para ver dónde faltan proveedores) */}
+            {CAT_KEYS.map(catKey => {
+              const conf = cfg[catKey];
+              const cov = data ? data[catKey] : null;
+              const s = stats[catKey];
+              if (conf.rubroIds.length === 0) return null;
+              const p100 = pct(s.c100, s.cells);
+              return (
+                <div key={catKey}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-sm">{CAT_LABEL[catKey]}</span>
+                    <span className="text-xs text-muted-foreground">
+                      meta ≥{conf.n100}/zona · {s.c100} de {s.cells} celdas ({p100}%)
+                    </span>
                   </div>
-                </div>
-                <div>
-                  <p className="font-medium mb-2">Excluir categorías de la meta</p>
-                  <div className="space-y-1.5">
-                    {data.categories.map(c => (
-                      <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground">
-                        <Checkbox checked={excludedIds.has(c.id)} onCheckedChange={() => toggleExclude(c.id)} />
-                        <span className={excludedIds.has(c.id) ? "line-through" : ""}>{c.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {excludedIds.size > 0 && (
-                    <p className="text-amber-600 mt-1">
-                      {excludedIds.size} categoría{excludedIds.size !== 1 ? "s" : ""} excluida{excludedIds.size !== 1 ? "s" : ""}.
-                    </p>
+                  {zones.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No hay zonas de influencia registradas.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="text-xs border-collapse w-full">
+                        <thead>
+                          <tr>
+                            <th className="text-left py-1.5 pr-3 font-medium text-muted-foreground min-w-[160px] sticky left-0 bg-background">
+                              Rubro
+                            </th>
+                            {zones.map(z => (
+                              <th key={z} className="text-center py-1.5 px-2 font-medium text-muted-foreground whitespace-nowrap min-w-[80px]">
+                                {z}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {conf.rubroIds.map(rid => {
+                            const openZone = zones.find(z => expandedCell === `${catKey}||${rid}||${z}`);
+                            return (
+                              <Fragment key={rid}>
+                                <tr className="border-t">
+                                  <td className="py-1.5 pr-3 font-medium sticky left-0 bg-background">{rubroName.get(rid) ?? rid}</td>
+                                  {zones.map(z => {
+                                    const cellKey = `${catKey}||${rid}||${z}`;
+                                    const count = cov?.matrix[`${rid}||${z}`] ?? 0;
+                                    const isOpen = expandedCell === cellKey;
+                                    return (
+                                      <td key={z} className="text-center py-1.5 px-2">
+                                        <button
+                                          onClick={() => count > 0 ? toggleCell(cellKey) : undefined}
+                                          className={`inline-block rounded border px-2 py-0.5 font-semibold transition-opacity
+                                            ${cellColor(count, conf.n70, conf.n100, conf.n130)}
+                                            ${count > 0 ? "cursor-pointer hover:opacity-70 underline decoration-dotted" : "cursor-default"}
+                                            ${isOpen ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                                        >
+                                          {count}
+                                        </button>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                                {openZone && (() => {
+                                  const suppList = cov?.suppliersMap[`${rid}||${openZone}`] ?? [];
+                                  return (
+                                    <tr className="bg-muted/40">
+                                      <td colSpan={zones.length + 1} className="py-2 px-3 text-xs">
+                                        <div className="flex items-center gap-2 mb-1.5 font-medium">
+                                          <span>{rubroName.get(rid) ?? rid}</span>
+                                          <span className="text-muted-foreground">·</span>
+                                          <span className="text-muted-foreground">{openZone}</span>
+                                          <span className="ml-auto text-muted-foreground">
+                                            {suppList.length} proveedor{suppList.length !== 1 ? "es" : ""}
+                                          </span>
+                                        </div>
+                                        <ul className="space-y-0.5 columns-2">
+                                          {suppList.map(sp => <li key={sp.id} className="text-muted-foreground">• {sp.name}</li>)}
+                                        </ul>
+                                      </td>
+                                    </tr>
+                                  );
+                                })()}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
-              </AdminSection>
+              );
+            })}
+
+            {!sinConfigurar && (
+              <div className="flex gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> 130% sobrecumplimiento</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-200" /> 100% meta</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-50 border border-amber-200" /> 70% mínimo</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> bajo mínimo</span>
+              </div>
             )}
           </div>
         </DialogContent>
@@ -907,6 +1051,12 @@ function CardSkeleton({ title, subtitle }: { title: string; subtitle: string }) 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function TeamKPIDashboard() {
+  const { isAdmin, hasPermission } = useAuth();
+
+  const showBeatriz = isAdmin || hasPermission("kpi_cobertura_proveedores", "view") || hasPermission("kpi", "view");
+  const showFranco  = isAdmin || hasPermission("kpi_resolucion_forms",      "view") || hasPermission("kpi", "view");
+  const showEvelyn  = isAdmin || hasPermission("kpi_oc_facturas",           "view") || hasPermission("kpi", "view");
+
   const [francoData,   setFrancoData]   = useState<FrancoData | null>(null);
   const [evelynData,   setEvelynData]   = useState<EvelynData | null>(null);
   const [beatrizData,  setBeatrizData]  = useState<BeatrizData | null>(null);
@@ -1086,62 +1236,84 @@ export function TeamKPIDashboard() {
     async function load() {
       setLoadingBeatriz(true);
       try {
-        const { data: cats, error: catsErr } = await supabase
-          .from("supplier_categories" as any)
-          .select("id, name")
+        // Rubros activos (supplier_categories), para nombres y selectores.
+        const { data: cats } = await supabase
+          .from("supplier_categories")
+          .select("id, name, is_active")
           .order("name");
 
-        const { data: zones, error: zonesErr } = await supabase
-          .from("supplier_influence_zones" as any)
+        const { data: zones } = await supabase
+          .from("supplier_influence_zones")
           .select("supplier_id, region")
           .limit(5000);
 
-        const { data: suppliers, error: suppsErr } = await supabase
-          .from("suppliers" as any)
-          .select("id, name, category_id")
-          .not("category_id", "is", null)
+        // Categoría de servicio del proveedor: Compras (does_installations) /
+        // Mantenciones (does_maintenance).
+        const { data: suppliers } = await supabase
+          .from("suppliers")
+          .select("id, name, category_id, does_installations, does_maintenance")
           .limit(5000);
 
-        console.log("[Beatriz] cats:", cats?.length, catsErr);
-        console.log("[Beatriz] zones:", zones?.length, zonesErr);
-        console.log("[Beatriz] suppliers:", suppliers?.length, suppsErr);
+        // Rubros de cada proveedor (multi vía assignments; fallback a category_id).
+        const { data: assignments } = await supabase
+          .from("supplier_category_assignments")
+          .select("supplier_id, category_id")
+          .limit(10000);
 
-        const catList  = (cats     || []) as any[];
-        const zoneList = (zones    || []) as any[];
-        const suppList = (suppliers|| []) as any[];
+        const catList  = (cats || []).filter((c: { is_active: boolean | null }) => c.is_active !== false) as Array<{ id: string; name: string }>;
+        const zoneList = (zones || []) as Array<{ supplier_id: string; region: string }>;
+        const suppList = (suppliers || []) as Array<{ id: string; name: string; category_id: string | null; does_installations: boolean; does_maintenance: boolean }>;
+        const assignList = (assignments || []) as Array<{ supplier_id: string; category_id: string }>;
 
         const suppZones = new Map<string, Set<string>>();
-        zoneList.forEach((z: any) => {
-          const s = suppZones.get(z.supplier_id) || new Set();
+        zoneList.forEach((z) => {
+          const s = suppZones.get(z.supplier_id) || new Set<string>();
           s.add(z.region);
           suppZones.set(z.supplier_id, s);
         });
 
-        const allZones = new Set<string>();
-        zoneList.forEach((z: any) => allZones.add(z.region));
-
-        const matrix: Record<string, number> = {};
-        const suppliersMap: Record<string, Array<{ id: string; name: string }>> = {};
-
-        suppList.forEach((s: any) => {
-          const sZones = suppZones.get(s.id) || new Set<string>();
-          sZones.forEach((z: string) => {
-            const key = `${s.category_id}||${z}`;
-            matrix[key] = (matrix[key] || 0) + 1;
-            if (!suppliersMap[key]) suppliersMap[key] = [];
-            suppliersMap[key].push({ id: s.id, name: s.name });
-          });
+        const suppRubros = new Map<string, Set<string>>();
+        assignList.forEach((a) => {
+          const s = suppRubros.get(a.supplier_id) || new Set<string>();
+          s.add(a.category_id);
+          suppRubros.set(a.supplier_id, s);
         });
 
-        Object.values(suppliersMap).forEach(list =>
-          list.sort((a, b) => a.name.localeCompare(b.name, "es"))
+        const allZones = new Set<string>();
+        zoneList.forEach((z) => allZones.add(z.region));
+
+        const emptyCov = (): CatCoverage => ({ matrix: {}, suppliersMap: {} });
+        const cov: Record<CatKey, CatCoverage> = { compras: emptyCov(), mantenciones: emptyCov() };
+
+        const addTo = (catKey: CatKey, rubroId: string, zone: string, s: { id: string; name: string }) => {
+          const key = `${rubroId}||${zone}`;
+          const c = cov[catKey];
+          c.matrix[key] = (c.matrix[key] || 0) + 1;
+          (c.suppliersMap[key] ??= []).push({ id: s.id, name: s.name });
+        };
+
+        suppList.forEach((s) => {
+          const rubros = suppRubros.get(s.id) ?? (s.category_id ? new Set([s.category_id]) : new Set<string>());
+          if (rubros.size === 0) return;
+          const sZones = suppZones.get(s.id) || new Set<string>();
+          if (sZones.size === 0) return;
+          rubros.forEach((rid) => sZones.forEach((z) => {
+            if (s.does_installations) addTo("compras", rid, z, s);
+            if (s.does_maintenance)   addTo("mantenciones", rid, z, s);
+          }));
+        });
+
+        [cov.compras, cov.mantenciones].forEach(c =>
+          Object.values(c.suppliersMap).forEach(list =>
+            list.sort((a, b) => a.name.localeCompare(b.name, "es"))
+          )
         );
 
         setBeatrizData({
-          categories: catList.map((c: any) => ({ id: c.id, name: c.name })),
-          zones:      [...allZones].sort(),
-          matrix,
-          suppliersMap,
+          rubros: catList.map((c) => ({ id: c.id, name: c.name })),
+          zones:  [...allZones].sort(),
+          compras: cov.compras,
+          mantenciones: cov.mantenciones,
         });
       } finally {
         setLoadingBeatriz(false);
@@ -1160,9 +1332,9 @@ export function TeamKPIDashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <BeatrizCard data={beatrizData} loading={loadingBeatriz} />
-        <FrancoCard  data={francoData}  loading={loadingFranco}  />
-        <EvelynCard  data={evelynData}  loading={loadingEvelyn}  francoData={francoData} />
+        {showBeatriz && <BeatrizCard data={beatrizData} loading={loadingBeatriz} />}
+        {showFranco  && <FrancoCard  data={francoData}  loading={loadingFranco}  />}
+        {showEvelyn  && <EvelynCard  data={evelynData}  loading={loadingEvelyn}  francoData={francoData} />}
       </div>
 
       <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
