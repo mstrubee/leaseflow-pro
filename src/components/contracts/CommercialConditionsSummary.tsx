@@ -1428,8 +1428,15 @@ export function CommercialConditionsSummary({
               <Users className="h-3 w-3" />
               Tipo de Aviso
             </div>
-            <Badge variant={version.notice_bilaterality === "bilateral" ? "default" : "secondary"} className="text-xs">
-              {version.notice_bilaterality === "bilateral" ? "Bilateral" : "Unilateral GP"}
+            <Badge
+              variant={version.notice_bilaterality === "bilateral" ? "default" : version.notice_bilaterality === "unilateral_arrendador" ? "destructive" : "secondary"}
+              className="text-xs"
+            >
+              {version.notice_bilaterality === "bilateral"
+                ? "Bilateral"
+                : version.notice_bilaterality === "unilateral_arrendador"
+                  ? "Unilateral Arrendador"
+                  : "Unilateral GP"}
             </Badge>
           </div>
 

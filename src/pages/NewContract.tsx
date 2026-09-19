@@ -69,10 +69,10 @@ const NewContract = () => {
   const [autoRenewalMonths, setAutoRenewalMonths] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes" | "sin_termino">("meses");
   const [contractEndNoticeMonths, setContractEndNoticeMonths] = useState("6");
-  const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("bilateral");
+  const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">("bilateral");
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ start_month: number; end_month: number }>>([]);
-  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">("unilateral_gp");
   const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [fechaInicio, setFechaInicio] = useState("");
@@ -1202,12 +1202,16 @@ const NewContract = () => {
                     <Label>Tipo de Aviso</Label>
                     <RadioGroup
                       value={contractEndNoticeBilaterality}
-                      onValueChange={(value: "unilateral_gp" | "bilateral") => setContractEndNoticeBilaterality(value)}
-                      className="flex gap-4"
+                      onValueChange={(value: "unilateral_gp" | "unilateral_arrendador" | "bilateral") => setContractEndNoticeBilaterality(value)}
+                      className="flex flex-wrap gap-4"
                     >
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="unilateral_gp" id="contractEndUnilateral" />
                         <Label htmlFor="contractEndUnilateral">Unilateral GP</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="unilateral_arrendador" id="contractEndUnilateralArrendadorNew" />
+                        <Label htmlFor="contractEndUnilateralArrendadorNew" className="text-destructive">Unilateral Arrendador</Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="bilateral" id="contractEndBilateral" />
@@ -1226,12 +1230,16 @@ const NewContract = () => {
                   <Label>Tipo de Aviso</Label>
                   <RadioGroup
                     value={noticeBilaterality}
-                    onValueChange={(value: "unilateral_gp" | "bilateral") => setNoticeBilaterality(value)}
-                    className="flex gap-4"
+                    onValueChange={(value: "unilateral_gp" | "unilateral_arrendador" | "bilateral") => setNoticeBilaterality(value)}
+                    className="flex flex-wrap gap-4"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="unilateral_gp" id="unilateralGpNew" />
                       <Label htmlFor="unilateralGpNew">Unilateral GP</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="unilateral_arrendador" id="unilateralArrendadorNew" />
+                      <Label htmlFor="unilateralArrendadorNew" className="text-destructive">Unilateral Arrendador</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="bilateral" id="bilateralNew" />

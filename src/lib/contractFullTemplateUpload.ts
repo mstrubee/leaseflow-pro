@@ -152,13 +152,13 @@ export const uploadContractFullTemplate = async (
   );
   const avisoBilateralidad = validateEnum(
     mainRow.aviso_bilateralidad,
-    ['unilateral_gp', 'bilateral'],
+    ['unilateral_gp', 'unilateral_arrendador', 'bilateral'],
     'aviso_bilateralidad',
     errors
   );
   const avisoTerminoBilateralidadSinTermino = validateEnum(
     mainRow.aviso_termino_bilateralidad_sin_termino,
-    ['unilateral_gp', 'bilateral'],
+    ['unilateral_gp', 'unilateral_arrendador', 'bilateral'],
     'aviso_termino_bilateralidad_sin_termino',
     errors
   );

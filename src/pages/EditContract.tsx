@@ -120,11 +120,11 @@ const EditContract = () => {
   const [autoRenewalMonths, setAutoRenewalMonths] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes" | "sin_termino">("meses");
   const [contractEndNoticeMonths, setContractEndNoticeMonths] = useState("6");
-  const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("bilateral");
+  const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">("bilateral");
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ id?: string; start_month: number; end_month: number }>>([]);
   const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number; is_uf_m2?: boolean }>>([]);
-  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">("unilateral_gp");
   const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   
   // Guarantee and periodic adjustments
@@ -384,7 +384,7 @@ const EditContract = () => {
           setMultipleNotices(versionNotices.map((n: any) => ({
             id: n.id,
             months_before: parseInt(n.notice_value) || 6,
-            notice_bilaterality: n.notice_bilaterality as "unilateral_gp" | "bilateral",
+            notice_bilaterality: n.notice_bilaterality as "unilateral_gp" | "unilateral_arrendador" | "bilateral",
             // Legacy fields for reference
             notice_type: n.notice_type,
             notice_value: n.notice_value,
@@ -2398,15 +2398,19 @@ const EditContract = () => {
                                       <Label>Tipo de Aviso</Label>
                                       <RadioGroup
                                         value={contractEndNoticeBilaterality}
-                                        onValueChange={(value: "unilateral_gp" | "bilateral") => {
+                                        onValueChange={(value: "unilateral_gp" | "unilateral_arrendador" | "bilateral") => {
                                           setContractEndNoticeBilaterality(value);
                                           setHasUnsavedChanges(true);
                                         }}
-                                        className="flex gap-4"
+                                        className="flex flex-wrap gap-4"
                                       >
                                         <div className="flex items-center space-x-2">
                                           <RadioGroupItem value="unilateral_gp" id="contractEndUnilateral" />
                                           <Label htmlFor="contractEndUnilateral">Unilateral GP</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="unilateral_arrendador" id="contractEndUnilateralArrendador" />
+                                          <Label htmlFor="contractEndUnilateralArrendador" className="text-destructive">Unilateral Arrendador</Label>
                                         </div>
                                         <div className="flex items-center space-x-2">
                                           <RadioGroupItem value="bilateral" id="contractEndBilateral" />
@@ -2425,15 +2429,19 @@ const EditContract = () => {
                                     <Label>Tipo de Aviso</Label>
                                     <RadioGroup
                                       value={noticeBilaterality}
-                                      onValueChange={(value: "unilateral_gp" | "bilateral") => {
+                                      onValueChange={(value: "unilateral_gp" | "unilateral_arrendador" | "bilateral") => {
                                         setNoticeBilaterality(value);
                                         setHasUnsavedChanges(true);
                                       }}
-                                      className="flex gap-4"
+                                      className="flex flex-wrap gap-4"
                                     >
                                       <div className="flex items-center space-x-2">
                                         <RadioGroupItem value="unilateral_gp" id="unilateralGp" />
                                         <Label htmlFor="unilateralGp">Unilateral GP</Label>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="unilateral_arrendador" id="unilateralArrendador" />
+                                        <Label htmlFor="unilateralArrendador" className="text-destructive">Unilateral Arrendador</Label>
                                       </div>
                                       <div className="flex items-center space-x-2">
                                         <RadioGroupItem value="bilateral" id="bilateral" />
