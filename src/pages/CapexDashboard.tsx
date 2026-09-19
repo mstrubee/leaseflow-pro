@@ -1730,7 +1730,9 @@ export default function CapexDashboard() {
                             <span className="text-sm font-semibold text-right">{fmtMM(aprobadoMM)}</span>
                             <span className="text-sm text-muted-foreground">Aprob. Gasto {year}</span>
                             <span className="text-sm font-semibold text-right">{fmtMM(totalMM)}</span>
-                            <span className="text-sm text-muted-foreground border-t pt-1.5">Disponible</span>
+                            <span className="text-sm text-muted-foreground border-t pt-1.5">
+                              Disponible{row.includeCaidos ? " (considera caídos)" : ""}
+                            </span>
                             <span className={`text-sm font-bold text-right border-t pt-1.5 ${disponibleMM < 0 ? "text-destructive" : "text-green-600"}`}>
                               {fmtMM(disponibleMM)}
                             </span>
@@ -1739,10 +1741,14 @@ export default function CapexDashboard() {
                             variant={row.includeCaidos ? "default" : "outline"}
                             size="sm"
                             className="w-full text-xs h-7"
-                            title={`Sumar al Disponible el CAPEX de los contratos "${caidoLabel}" de ${year} (reversible)`}
+                            title={
+                              row.includeCaidos
+                                ? `Quitar del Disponible el CAPEX de los contratos "${caidoLabel}" de ${year} (reversible)`
+                                : `Sumar al Disponible el CAPEX de los contratos "${caidoLabel}" de ${year} (reversible)`
+                            }
                             onClick={() => handleToggleIncludeCaidos(year)}
                           >
-                            {row.includeCaidos ? "Disponible sumando caídos" : "Sumar Caídos"}
+                            {row.includeCaidos ? "Quitar Caídos" : "Sumar Caídos"}
                           </Button>
                         </div>
                       );
