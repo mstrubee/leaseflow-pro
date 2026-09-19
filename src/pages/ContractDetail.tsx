@@ -849,29 +849,50 @@ const ContractDetail = () => {
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>
-              {!isEquipoGerencia && (companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
-                <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5 mt-1 text-xs text-muted-foreground">
-                  {companyNames.length > 0 && (
-                    <span>
-                      <span className="font-medium">Empresa{companyNames.length > 1 ? 's' : ''}:</span> {companyNames.join(', ')}
-                    </span>
-                  )}
-                  {customFields.map((field) => {
-                    const value = customFieldValues[field.id];
-                    if (!value) return null;
-                    // Los campos de texto largo (ej. "Detalle Restricción") se
-                    // ensanchan y ocupan su propia línea -- sin esto, al no
-                    // haber wrap el navegador los apretaba en una columna
-                    // angosta y muy alta, ilegible.
-                    const isLong = value.length > 60;
-                    return (
-                      <span key={field.id} className={isLong ? "basis-full max-w-2xl" : "max-w-xs"}>
-                        <span className="font-medium">{field.field_name}:</span> {value}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
+              {!isEquipoGerencia && (companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (() => {
+                // Layout pedido explícitamente por Matias: dos columnas de
+                // ancho fijo (en caracteres, "ch"), cada una con sus campos
+                // en un orden específico, uno por línea. Los campos
+                // personalizados que existan pero no estén en ninguna de las
+                // dos listas se agregan al final de la columna 2 (no se
+                // ocultan, por si se crea uno nuevo desde Admin).
+                const column1FieldNames = [
+                  "CEBE", "Código", "Horario Funcionamiento", "Atiende Público", "Tenencia", "Estado Red", "Tipología",
+                ];
+                const column2FieldNames = ["Restricción de Uso", "Detalle Restricción"];
+                const fieldByName = new Map(customFields.map((f) => [f.field_name, f]));
+                const column1Fields = column1FieldNames.map((n) => fieldByName.get(n)).filter((f): f is CustomField => !!f);
+                const column2Fields = column2FieldNames.map((n) => fieldByName.get(n)).filter((f): f is CustomField => !!f);
+                const placedIds = new Set([...column1Fields, ...column2Fields].map((f) => f.id));
+                const otherFields = customFields.filter((f) => !placedIds.has(f.id));
+
+                const renderField = (field: CustomField) => {
+                  const value = customFieldValues[field.id];
+                  if (!value) return null;
+                  return (
+                    <div key={field.id}>
+                      <span className="font-medium">{field.field_name}:</span> {value}
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="flex flex-wrap items-start gap-x-8 gap-y-1 mt-1 text-xs text-muted-foreground">
+                    <div className="w-[70ch] max-w-full space-y-1">
+                      {companyNames.length > 0 && (
+                        <div>
+                          <span className="font-medium">Empresa{companyNames.length > 1 ? 's' : ''}:</span> {companyNames.join(', ')}
+                        </div>
+                      )}
+                      {column1Fields.map(renderField)}
+                    </div>
+                    <div className="w-[170ch] max-w-full space-y-1">
+                      {column2Fields.map(renderField)}
+                      {otherFields.map(renderField)}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             {/* Acciones del header: ninguna es de solo-lectura (generan documentos,
                 muestran datos financieros/comerciales, o navegan a otros módulos) --
