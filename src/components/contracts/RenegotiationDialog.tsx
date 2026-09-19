@@ -44,7 +44,7 @@ interface CurrentVersion {
 
   notice_type: "meses" | "fecha" | "rangos" | string;
   notice_value: string;
-  notice_bilaterality?: "unilateral_gp" | "bilateral" | string | null;
+  notice_bilaterality?: "unilateral_gp" | "unilateral_arrendador" | "bilateral" | string | null;
 
   // Canon escalonado
   rent_escalations?: Array<{ month_number: number; amount: number }>;
@@ -134,8 +134,10 @@ export const RenegotiationDialog = ({
   const [noticeValue, setNoticeValue] = useState(() =>
     initialNoticeType === "meses" ? parseMonths(currentVersion.notice_value || "") : currentVersion.notice_value || ""
   );
-  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">(
-    (currentVersion.notice_bilaterality as any) === "bilateral" ? "bilateral" : "unilateral_gp"
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">(
+    currentVersion.notice_bilaterality === "bilateral" || currentVersion.notice_bilaterality === "unilateral_arrendador"
+      ? currentVersion.notice_bilaterality
+      : "unilateral_gp"
   );
 
   const [noticeRanges, setNoticeRanges] = useState<NoticeRange[]>(currentVersion.notice_ranges || []);
@@ -619,6 +621,7 @@ export const RenegotiationDialog = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unilateral_gp">Unilateral GP</SelectItem>
+                    <SelectItem value="unilateral_arrendador" className="text-destructive">Unilateral Arrendador</SelectItem>
                     <SelectItem value="bilateral">Bilateral</SelectItem>
                   </SelectContent>
                 </Select>

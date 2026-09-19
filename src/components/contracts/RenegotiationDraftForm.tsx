@@ -108,7 +108,7 @@ export function RenegotiationDraftForm({
   // Avisos
   const [noticeType, setNoticeType] = useState<"meses" | "fecha" | "rangos" | "desde_mes">("meses");
   const [noticeValue, setNoticeValue] = useState("");
-  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">("unilateral_gp");
   const [noticeRanges, setNoticeRanges] = useState<NoticeRange[]>([]);
 
   useEffect(() => {
@@ -159,7 +159,7 @@ export function RenegotiationDraftForm({
       
       setNoticeType((draft.notice_type as "meses" | "fecha" | "rangos") || "meses");
       setNoticeValue(draft.notice_value || "");
-      setNoticeBilaterality((draft.notice_bilaterality as "unilateral_gp" | "bilateral") || "unilateral_gp");
+      setNoticeBilaterality((draft.notice_bilaterality as "unilateral_gp" | "unilateral_arrendador" | "bilateral") || "unilateral_gp");
       
       setEscalations(draft.escalations?.map(e => ({ month_number: e.month_number, amount: e.amount })) || []);
       setNoticeRanges(draft.notice_ranges?.map(r => ({ start_month: r.start_month, end_month: r.end_month })) || []);
@@ -886,12 +886,16 @@ export function RenegotiationDraftForm({
                   <Label>Bilateralidad del Aviso</Label>
                   <RadioGroup
                     value={noticeBilaterality}
-                    onValueChange={(value: "unilateral_gp" | "bilateral") => setNoticeBilaterality(value)}
-                    className="flex gap-4"
+                    onValueChange={(value: "unilateral_gp" | "unilateral_arrendador" | "bilateral") => setNoticeBilaterality(value)}
+                    className="flex flex-wrap gap-4"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="unilateral_gp" id="unilateralGp" />
                       <Label htmlFor="unilateralGp">Unilateral GP</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="unilateral_arrendador" id="unilateralArrendadorDraft" />
+                      <Label htmlFor="unilateralArrendadorDraft" className="text-destructive">Unilateral Arrendador</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="bilateral" id="bilateral" />
