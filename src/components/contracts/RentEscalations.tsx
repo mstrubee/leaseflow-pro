@@ -671,14 +671,25 @@ export const RentEscalations = ({
         <div className="space-y-2">
           <Label className="text-sm font-medium">Escalones definidos</Label>
           <div className="space-y-2">
-            {sortedEscalations.map((escalation, idx) => (
+            {sortedEscalations.map((escalation, idx) => {
+              // El mes de término real casi nunca se guarda (rent_escalations
+              // no tiene esa columna): se infiere como el mes anterior al
+              // inicio del siguiente tramo, o la duración del contrato para
+              // el último. Sin esto, un tramo importado (que solo trae su
+              // mes de inicio) se mostraba como "Mes 1" a secas -- dando a
+              // entender, incorrectamente, que terminaba en el mismo mes en
+              // que empezaba.
+              const nextEscalation = sortedEscalations[idx + 1];
+              const impliedEndMonth = escalation.end_month
+                ?? (nextEscalation ? nextEscalation.month_number - 1 : durationMonths);
+              return (
               <div
                 key={escalation.month_number}
                 className={`flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border ${!readOnly ? "cursor-pointer hover:bg-muted/80 transition-colors" : ""}`}
                 onClick={() => {
                   if (readOnly) return;
                   setEditStartMonth(escalation.month_number);
-                  setEditEndMonth(escalation.end_month || escalation.month_number);
+                  setEditEndMonth(impliedEndMonth);
                   setEditAmount(escalation.amount.toString());
                   setEditDialogOpen(true);
                 }}
@@ -691,8 +702,8 @@ export const RentEscalations = ({
                     <span className="text-muted-foreground">Mes </span>
                     <span className="font-semibold">
                       {escalation.month_number}
-                      {escalation.end_month && escalation.end_month !== escalation.month_number && 
-                        ` - ${escalation.end_month}`
+                      {impliedEndMonth !== escalation.month_number &&
+                        ` - ${impliedEndMonth}`
                       }
                     </span>
                   </div>
@@ -721,7 +732,8 @@ export const RentEscalations = ({
                   </Button>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
