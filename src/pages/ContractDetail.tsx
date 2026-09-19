@@ -850,7 +850,7 @@ const ContractDetail = () => {
                 {getStatusBadge(contract.status)}
               </div>
               {!isEquipoGerencia && (companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
-                <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5 mt-1 text-xs text-muted-foreground">
                   {companyNames.length > 0 && (
                     <span>
                       <span className="font-medium">Empresa{companyNames.length > 1 ? 's' : ''}:</span> {companyNames.join(', ')}
@@ -859,8 +859,13 @@ const ContractDetail = () => {
                   {customFields.map((field) => {
                     const value = customFieldValues[field.id];
                     if (!value) return null;
+                    // Los campos de texto largo (ej. "Detalle Restricción") se
+                    // ensanchan y ocupan su propia línea -- sin esto, al no
+                    // haber wrap el navegador los apretaba en una columna
+                    // angosta y muy alta, ilegible.
+                    const isLong = value.length > 60;
                     return (
-                      <span key={field.id}>
+                      <span key={field.id} className={isLong ? "basis-full max-w-2xl" : "max-w-xs"}>
                         <span className="font-medium">{field.field_name}:</span> {value}
                       </span>
                     );
