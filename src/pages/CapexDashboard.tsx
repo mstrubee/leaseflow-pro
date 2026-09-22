@@ -1264,6 +1264,32 @@ export default function CapexDashboard() {
     return m;
   }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
 
+  // Igual que yearBreakdownByAvance, pero con count + UF + nombres de
+  // contrato por año -- para la slide "Estado de Avance y Presupuesto
+  // Aprobado" del PPT (una slide por año, con el listado de contratos de
+  // cada estado debajo de su card).
+  const avanceBreakdownByYear = React.useMemo(() => {
+    const m: Record<number, Record<string, { uf: number; count: number; names: string[] }>> = {};
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const avance = rows[0].capex_avance_status;
+      if (!avance) return;
+      const contractName = rows[0].contract_name;
+      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        Object.entries(yearMap).forEach(([yearStr, clp]) => {
+          if (!clp) return;
+          const year = Number(yearStr);
+          if (!m[year]) m[year] = {};
+          if (!m[year][avance]) m[year][avance] = { uf: 0, count: 0, names: [] };
+          m[year][avance].uf += (ufValue || 0) > 0 ? clp / ufValue : 0;
+          m[year][avance].count += 1;
+          if (!m[year][avance].names.includes(contractName)) m[year][avance].names.push(contractName);
+        });
+      });
+    });
+    return m;
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract, ufValue]);
+
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
@@ -1392,27 +1418,45 @@ export default function CapexDashboard() {
           yearBreakdown: yearBreakdownByClasificacion[t.name],
         }));
 
-      const avanceTotalsArr = avanceStatusTypesOrdered
-        .filter((t) => avanceTotals[t.name])
-        .map((t) => ({
-          name: t.name,
-          color: t.color,
-          uf: avanceTotals[t.name].uf,
-          count: avanceTotals[t.name].count,
-        }));
-
-      const approvedBudgetsSummary = Object.keys(approvedBudgetsByYear)
-        .map(Number)
+      // Una slide "Estado de Avance y Presupuesto Aprobado" POR AÑO (2026 en
+      // adelante -- no se consideran años pasados), con el desglose de avance
+      // de ESE año específico (no el acumulado de todos los años como antes)
+      // y su propia fila de Presupuesto Aprobado.
+      const PPT_MIN_YEAR = 2026;
+      const caidoLabel = AVANCE_CARD_ORDER[3];
+      const avanceYears = new Set<number>([
+        ...Object.keys(avanceBreakdownByYear).map(Number),
+        ...Object.keys(approvedBudgetsByYear).map(Number),
+      ]);
+      const avanceByYearArr = Array.from(avanceYears)
+        .filter((year) => year >= PPT_MIN_YEAR)
+        .sort((a, b) => a - b)
         .map((year) => {
+          const yearData = avanceBreakdownByYear[year] || {};
+          const avanceForYear = avanceStatusTypesOrdered
+            .filter((t) => yearData[t.name])
+            .map((t) => ({
+              name: t.name,
+              color: t.color,
+              uf: yearData[t.name].uf,
+              count: yearData[t.name].count,
+              contractNames: yearData[t.name].names.slice().sort((a, b) => a.localeCompare(b)),
+            }));
+
           const row = approvedBudgetsByYear[year];
-          const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
-          const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
-          const caidoLabel = AVANCE_CARD_ORDER[3];
-          const caidosMM = row.includeCaidos
-            ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
-            : 0;
-          return { year, aprobadoMM, totalMM, disponibleMM: aprobadoMM - totalMM + caidosMM };
-        });
+          let approvedBudget: { aprobadoMM: number; totalMM: number; disponibleMM: number } | undefined;
+          if (row) {
+            const aprobadoMM = Math.round((row.amount_clp || 0) / 1_000_000);
+            const totalMM = Math.round((yearBreakdownTotal[year] || 0) / 1_000_000);
+            const caidosMM = row.includeCaidos
+              ? Math.round((yearBreakdownByAvance[caidoLabel]?.[year] || 0) / 1_000_000)
+              : 0;
+            approvedBudget = { aprobadoMM, totalMM, disponibleMM: aprobadoMM - totalMM + caidosMM };
+          }
+
+          return { year, avanceTotals: avanceForYear, approvedBudget };
+        })
+        .filter((y) => y.avanceTotals.length > 0 || y.approvedBudget);
 
       await generateCapexPPT({
         year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
@@ -1422,8 +1466,7 @@ export default function CapexDashboard() {
         totalLocales: contractsWithCapex.length,
         companyGroups: pptCompanyGroups,
         totalYearBreakdown: yearBreakdownTotal,
-        avanceTotals: avanceTotalsArr,
-        approvedBudgetsSummary,
+        avanceByYear: avanceByYearArr,
       });
       toast.success("Presentación descargada");
     } catch (err) {
