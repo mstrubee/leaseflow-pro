@@ -316,7 +316,20 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                         <th className="text-right font-normal">F.Prom</th>
                         <th className="text-right font-normal">Otros</th>
                         <th className="text-right font-normal">Total</th>
-                        <th className="text-right font-normal">UF/m²</th>
+                        <th className="text-right font-normal">
+                          <Popover>
+                            <PopoverTrigger className="underline decoration-dotted decoration-muted-foreground underline-offset-2 hover:text-primary">
+                              UF/m²
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 text-xs" align="end">
+                              <div className="space-y-1">
+                                <p className="font-semibold">UF/m² por periodo</p>
+                                <p>= (Canon + GGCC + Fondo Promoción + Otros) / Superficie</p>
+                                <p className="text-muted-foreground">Es decir, el Total de la fila dividido por la superficie -- sí incluye gastos comunes, fondo de promoción y otros egresos, no solo el canon de arriendo.</p>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </th>
                       </tr></thead>
                       <tbody>
                         {seed.contractPeriods.map((p) => (
@@ -327,7 +340,26 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                             <td className="text-right">{p.fProm ? fmtMM(p.fProm, 2) : "-"}</td>
                             <td className="text-right">{p.otros ? fmtMM(p.otros, 2) : "-"}</td>
                             <td className="text-right font-medium">{fmtMM(p.total, 2)}</td>
-                            <td className="text-right">{p.ufM2 != null ? fmtMM(p.ufM2, 2) : "-"}</td>
+                            <td className="text-right">
+                              {p.ufM2 != null ? (
+                                <Popover>
+                                  <PopoverTrigger className="underline decoration-dotted decoration-muted-foreground underline-offset-2 hover:text-primary">
+                                    {fmtMM(p.ufM2, 2)}
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-72 text-xs" align="end">
+                                    <div className="space-y-1">
+                                      <p className="font-semibold">{p.label}</p>
+                                      <p>Canon: {fmtMM(p.canon, 2)} UF</p>
+                                      <p>GGCC: {p.ggcc ? fmtMM(p.ggcc, 2) : "0,00"} UF</p>
+                                      <p>Fondo Promoción: {p.fProm ? fmtMM(p.fProm, 2) : "0,00"} UF</p>
+                                      <p>Otros: {p.otros ? fmtMM(p.otros, 2) : "0,00"} UF</p>
+                                      <p className="font-semibold border-t pt-1 mt-1">Total: {fmtMM(p.total, 2)} UF</p>
+                                      <p className="font-semibold">÷ {fmtMM(seed.superficie || 0)} m² = {fmtMM(p.ufM2, 2)} UF/m²</p>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              ) : "-"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -555,17 +587,26 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <Field label="Superficie (m²)"><NumCell value={inputs.superficie} disabled={ro} w="w-full" onChange={(v) => update("superficie", v)} /></Field>
                   {(() => {
-                    // Con escalonamiento, el UF/m² inicial no representa el
-                    // arriendo real del contrato — se muestra el promedio
+                    // Con escalonamiento, este campo edita el UF/m² del
+                    // TRAMO INICIAL (no el promedio) -- el promedio
                     // ponderado por los meses de cada tramo (solo arriendo,
                     // sin gasto común ni fondo de promoción, que tienen sus
-                    // propios campos más abajo).
+                    // propios campos más abajo) se muestra aparte en el
+                    // texto de conversión, como número explícito y no solo
+                    // camuflado en el $/mes -- antes el campo decía
+                    // "(promedio)" pero mostraba el tramo inicial, lo que
+                    // hacía parecer que el promedio incluía gastos comunes
+                    // cuando en realidad nunca los incluyó.
                     const hasEscalation = inputs.escalations.length > 0;
-                    const ufM2Display = hasEscalation ? averageCanonUfM2(inputs) : (inputs.ufM2 || 0);
+                    const ufM2Promedio = hasEscalation ? averageCanonUfM2(inputs) : (inputs.ufM2 || 0);
                     return (
                       <FieldConv
-                        label={hasEscalation ? "UF / m² (promedio)" : "UF / m²"}
-                        conv={`$${fmtMM((inputs.superficie || 0) * ufM2Display * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * ufM2Display, 2)} UF/mes)${hasEscalation ? " — promedio a toda la duración del contrato" : ""}`}
+                        label={hasEscalation ? "UF / m² (tramo inicial)" : "UF / m²"}
+                        conv={
+                          hasEscalation
+                            ? `Promedio ponderado a toda la duración (solo arriendo, sin gasto común): ${fmtMM(ufM2Promedio, 2)} UF/m² ($${fmtMM((inputs.superficie || 0) * ufM2Promedio * (inputs.ufBase || 0) / 1e6)} MM/mes)`
+                            : `$${fmtMM((inputs.superficie || 0) * ufM2Promedio * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * ufM2Promedio, 2)} UF/mes)`
+                        }
                       >
                         <NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></FieldConv>
                     );
