@@ -354,11 +354,11 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
   const addFooter = (slide: PptxGenJS.Slide, pageNum: number) => {
     slide.addText(`Presupuesto CAPEX ${data.year}`, {
-      x: 0.5, y: 5.15, w: 5, h: 0.35,
+      x: 0.5, y: 5.25, w: 5, h: 0.3,
       fontSize: 8, color: MUTED, fontFace: "Arial",
     });
     slide.addText(`${pageNum}`, {
-      x: 8.5, y: 5.15, w: 1, h: 0.35,
+      x: 8.5, y: 5.25, w: 1, h: 0.3,
       fontSize: 8, color: MUTED, fontFace: "Arial", align: "right",
     });
   };
@@ -450,8 +450,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   // un dato", secundario -- pedido explícito, mismo criterio en toda la
   // presentación (cards de clasificación, de empresa y de avance).
   s2.addText(formatCLP(data.totalCapexUF * data.ufValue), {
-    x: 0.7, y: TOTAL_CARD_Y + 0.39, w: 4, h: 0.5,
-    fontSize: 28, fontFace: "Arial", color: WHITE, bold: true,
+    x: 0.55, y: TOTAL_CARD_Y + 0.39, w: 4.3, h: 0.5,
+    fontSize: 28, fontFace: "Arial", color: WHITE, bold: true, wrap: false,
   });
 
   s2.addText(`${fmtUF(data.totalCapexUF)} UF`, {
@@ -508,8 +508,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     });
 
     s2.addText(formatCLP(card.uf * data.ufValue), {
-      x: x + 0.2, y: y + 0.20, w: cardW - 0.4, h: 0.35,
-      fontSize: 18, fontFace: "Arial", color: DARK, bold: true,
+      x: x + 0.05, y: y + 0.20, w: cardW - 0.10, h: 0.35,
+      fontSize: 16, fontFace: "Arial", color: DARK, bold: true, wrap: false,
     });
 
     s2.addText(`${card.count} ${card.count === 1 ? "local" : "locales"}`, {
@@ -586,9 +586,11 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
   if (classCards.length > 0) {
     const legendX = 0.5;
-    const legendStep = 0.22;
+    // Compacta (0.18 en vez de 0.22) para que, con 4+ tipos de CAPEX, el
+    // último ítem no llegue a montarse con el pie de página.
+    const legendStep = 0.18;
     classCards.forEach((card, i) => {
-      const y = pieChartY + 0.17 + i * legendStep;
+      const y = pieChartY + 0.12 + i * legendStep;
       s2.addShape(SHAPES.RECTANGLE, {
         x: legendX + 0.1, y: y + 0.02, w: 0.12, h: 0.12,
         fill: { color: card.color },
@@ -769,8 +771,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         // "meramente un dato", secundario -- mismo criterio en toda la
         // presentación.
         s2b.addText(formatCLP(card.uf * data.ufValue), {
-          x: x + 0.15, y: cardsY + dollarOffsetY, w: cardW - 0.3, h: 0.35,
-          fontSize: 15, fontFace: "Arial", color: DARK, bold: true,
+          x: x + 0.05, y: cardsY + dollarOffsetY, w: cardW - 0.10, h: 0.35,
+          fontSize: 13, fontFace: "Arial", color: DARK, bold: true, wrap: false,
         });
         s2b.addText(`${fmtUF(card.uf)} UF`, {
           x: x + 0.15, y: cardsY + ufOffsetY, w: cardW - 0.3, h: 0.25,
@@ -874,8 +876,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       });
 
       s.addText(formatCLP(card.uf * data.ufValue), {
-        x: x + 0.15, y: 1.4, w: companyCardW - 0.3, h: 0.35,
-        fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
+        x: x + 0.05, y: 1.4, w: companyCardW - 0.10, h: 0.35,
+        fontSize: 14, fontFace: "Arial", color: DARK, bold: true, wrap: false,
       });
 
       s.addText(`${fmtUF(card.uf)} UF`, {
