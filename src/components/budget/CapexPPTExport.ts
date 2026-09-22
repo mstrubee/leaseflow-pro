@@ -60,12 +60,16 @@ export interface CapexPPTData {
   totalYearBreakdown?: Record<number, number>;
   /** Una slide "Estado de Avance y Presupuesto Aprobado" POR AÑO (2026 en
    * adelante), con el desglose de Estado de Avance de ESE año específico
-   * (incluye el listado de nombres de contrato de cada estado, para
-   * mostrarlos debajo de su card) y su propia fila de Presupuesto Aprobado
-   * -- opcional, agrega una slide por cada año presente. */
+   * (incluye el desglose por empresa en chips, y la tabla de contratos con
+   * empresa/tipo de CAPEX/monto/fecha, para mostrarlos debajo de su card) y
+   * su propia fila de Presupuesto Aprobado -- opcional, agrega una slide
+   * por cada año presente. */
   avanceByYear?: Array<{
     year: number;
-    avanceTotals: Array<ClasificacionTotal & { contractNames: string[] }>;
+    avanceTotals: Array<ClasificacionTotal & {
+      companyBreakdown: Array<{ company: string; uf: number }>;
+      contractRows: Array<{ contractName: string; company: string; clasificacion: string | null; uf: number; date: string | null }>;
+    }>;
     approvedBudget?: { aprobadoMM: number; totalMM: number; disponibleMM: number };
   }>;
 }
@@ -425,7 +429,11 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   // demás hacia abajo).
   const TOTAL_CARD_Y = 0.99;
   const totalYears = yearsWithCapex(data.totalYearBreakdown);
-  const totalCardH = 1.26 + Math.max(0, totalYears.length - 1) * CHIP_LINE_H_LG;
+  // El texto de años adjunto a la card total no debe considerar años
+  // anteriores a 2026 (a diferencia de las cards de clasificación de más
+  // abajo, que sí siguen mostrando todos los años en sus propios chips).
+  const totalYearsForDisplay = totalYears.filter((y) => y >= PPT_MIN_YEAR);
+  const totalCardH = 1.26 + Math.max(0, totalYearsForDisplay.length - 1) * CHIP_LINE_H_LG;
 
   // Big total card
   s2.addShape(SHAPES.RECTANGLE, {
@@ -445,19 +453,22 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
   s2.addText(formatCLP(data.totalCapexUF * data.ufValue), {
     x: 5, y: TOTAL_CARD_Y + 0.31, w: 4.3, h: 0.5,
-    fontSize: 22, fontFace: "Arial", color: LIGHT_TEXT, align: "right",
+    fontSize: 22, fontFace: "Arial", color: WHITE, align: "right",
   });
 
   s2.addText(`${data.totalLocales} locales`, {
     x: 5, y: TOTAL_CARD_Y + 0.03, w: 4.3, h: 0.4,
-    fontSize: 14, fontFace: "Arial", color: LIGHT_TEXT, align: "right",
+    fontSize: 14, fontFace: "Arial", color: WHITE, align: "right",
   });
 
-  const totalYearLine = yearBreakdownLine(data.totalYearBreakdown);
+  const totalYearBreakdownForDisplay = totalYearsForDisplay.length > 0
+    ? Object.fromEntries(totalYearsForDisplay.map((y) => [y, data.totalYearBreakdown![y]]))
+    : undefined;
+  const totalYearLine = yearBreakdownLine(totalYearBreakdownForDisplay);
   if (totalYearLine) {
     s2.addText(totalYearLine, {
-      x: 5, y: TOTAL_CARD_Y + 0.71, w: 4.3, h: totalYears.length * CHIP_LINE_H_LG,
-      fontSize: 9, fontFace: "Arial", color: LIGHT_TEXT, align: "right",
+      x: 5, y: TOTAL_CARD_Y + 0.71, w: 4.3, h: totalYearsForDisplay.length * CHIP_LINE_H_LG,
+      fontSize: 9, fontFace: "Arial", color: WHITE, align: "right",
     });
   }
 
@@ -559,8 +570,14 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   // que la leyenda quede alineada con ellas.
   const slotCount = 1 + pieBlocks.length + (distributionBlock ? 1 : 0);
   const pieGap = 0.15;
-  const slotW = (9 - pieGap * (slotCount - 1)) / slotCount;
-  const pieH = Math.min(1.5, slotW);
+  // Ancho de contenido reducido a propósito (8.4 en vez de 9): las
+  // etiquetas de porcentaje de la torta (showPercent) pueden dibujarse
+  // ligeramente fuera de su recuadro nominal -- este margen extra evita que
+  // se salgan del borde derecho de la slide cuando hay pocas tortas (y por
+  // lo tanto cada una queda más ancha).
+  const PIE_ROW_W = 8.4;
+  const slotW = (PIE_ROW_W - pieGap * (slotCount - 1)) / slotCount;
+  const pieH = Math.min(1.35, slotW);
   const pieTitleY = classCardsY + classCardH + 0.16;
   const pieChartY = pieTitleY + 0.2;
 
@@ -689,14 +706,24 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       });
       const cardGap = 0.15;
       const cardW = (9 - cardGap * (avanceCards.length - 1)) / avanceCards.length;
-      const cardH = 1.10;
-      // Espacio disponible para el listado de contratos, debajo de las
-      // cards y hasta el footer -- si un estado tiene más contratos de los
-      // que entran, se corta con "+N más" en vez de desbordar la slide.
-      const namesY = cardsY + cardH + 0.10;
-      const namesMaxH = 5.02 - namesY;
-      const NAME_LINE_H = 0.145;
-      const maxNameLines = Math.max(0, Math.floor(namesMaxH / NAME_LINE_H));
+      // La card crece según cuántos chips de empresa tenga (máximo entre las
+      // 4), para que las 4 cards queden a la misma altura.
+      const COMPANY_CHIP_H = 0.13;
+      const maxCompanyChips = avanceCards.reduce((max, c) => Math.max(max, c.companyBreakdown.length), 0);
+      const cardH = 1.02 + maxCompanyChips * COMPANY_CHIP_H;
+      // Espacio disponible para la tabla de contratos, debajo de las cards
+      // y hasta el footer.
+      const tableY = cardsY + cardH + 0.08;
+      const tableMaxH = 5.0 - tableY;
+      const ROW_H = 0.155;
+      const maxTableRows = Math.max(0, Math.floor(tableMaxH / ROW_H) - 1); // -1 por el header
+
+      const companyShort: Record<string, string> = { Autoplanet: "AP", Agroplanet: "AG", "Grupo Planet": "GP", Otra: "Otra" };
+      const fmtDate = (iso: string | null) => {
+        if (!iso) return "-";
+        const [y, m, d] = iso.split("-");
+        return d && m && y ? `${d}/${m}/${y.slice(2)}` : "-";
+      };
 
       avanceCards.forEach((card, i) => {
         const x = 0.5 + i * (cardW + cardGap);
@@ -715,15 +742,57 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
           fontSize: 9, fontFace: "Arial", color: MUTED,
         });
 
-        // Listado de contratos de este estado, debajo de su card.
-        if (card.contractNames.length > 0 && maxNameLines > 0) {
-          const names = card.contractNames;
-          const lines = names.length > maxNameLines
-            ? [...names.slice(0, Math.max(0, maxNameLines - 1)), `+ ${names.length - (maxNameLines - 1)} más`]
-            : names;
-          s2b.addText(lines.join("\n"), {
-            x, y: namesY, w: cardW, h: namesMaxH,
-            fontSize: 8, fontFace: "Arial", color: DARK, valign: "top", lineSpacing: 10.5,
+        // Desglose por empresa en chips (Autoplanet, Agroplanet, Grupo
+        // Planet, en ese orden), un chip por línea, debajo del monto CLP.
+        if (card.companyBreakdown.length > 0) {
+          const chipLines = card.companyBreakdown.map((c) => `${c.company}: ${fmtUF(c.uf)} UF`);
+          s2b.addText(chipLines.join("\n"), {
+            x: x + 0.15, y: cardsY + 0.99, w: cardW - 0.3, h: card.companyBreakdown.length * COMPANY_CHIP_H,
+            fontSize: 7, fontFace: "Arial", color: MUTED, lineSpacing: 9.5,
+          });
+        }
+
+        // Tabla de contratos de este estado, debajo de su card: Empresa |
+        // Local | Tipo de CAPEX | Monto | Fecha de término/apertura --
+        // agrupada por empresa (Autoplanet, Agroplanet, Grupo Planet) y,
+        // dentro de cada una, ordenada por fecha (ya viene ordenada así
+        // desde CapexDashboard.tsx).
+        if (card.contractRows.length > 0 && maxTableRows > 0) {
+          const rows = card.contractRows;
+          const visibleRows = rows.length > maxTableRows ? rows.slice(0, Math.max(0, maxTableRows - 1)) : rows;
+          const cellOpts = (align: "left" | "right" = "left"): PptxGenJS.TextPropsOptions => ({
+            fontSize: 6, fontFace: "Arial", color: DARK, align,
+          });
+          const tableRows: PptxGenJS.TableRow[] = [
+            [
+              { text: "Emp.", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+              { text: "Local", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+              { text: "Tipo", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+              { text: "UF", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+              { text: "Fecha", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+            ],
+          ];
+          visibleRows.forEach((r) => {
+            tableRows.push([
+              { text: companyShort[r.company] || r.company, options: cellOpts() },
+              { text: r.contractName, options: cellOpts() },
+              { text: clasificacionLabel(r.clasificacion), options: cellOpts() },
+              { text: fmtUF(r.uf), options: cellOpts("right") },
+              { text: fmtDate(r.date), options: cellOpts("right") },
+            ]);
+          });
+          if (rows.length > maxTableRows) {
+            tableRows.push([{
+              text: `+ ${rows.length - visibleRows.length} más`,
+              options: { ...cellOpts(), colspan: 5, italic: true, color: MUTED },
+            }]);
+          }
+          s2b.addTable(tableRows, {
+            x, y: tableY, w: cardW,
+            colW: [0.28, cardW - 1.13, 0.35, 0.3, 0.4],
+            border: { type: "solid", color: BORDER, pt: 0.25 },
+            autoPage: false,
+            margin: 0.01,
           });
         }
       });
