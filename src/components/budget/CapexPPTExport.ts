@@ -713,7 +713,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       // debajo del monto) -- la card crece según cuántos chips tenga como
       // máximo entre las 4, para que las 4 queden a la misma altura.
       const COMPANY_CHIP_H = 0.13;
-      const CHIPS_W = 1.15;
+      const CHIPS_W = 1.3;
       const maxCompanyChips = avanceCards.reduce((max, c) => Math.max(max, c.companyBreakdown.length), 0);
       const topBlockH = Math.max(0.22, maxCompanyChips * COMPANY_CHIP_H);
       const dollarOffsetY = 0.10 + topBlockH + 0.06;
@@ -732,9 +732,18 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         const [y, m, d] = iso.split("-");
         return d && m && y ? `${d}/${m}/${y.slice(2)}` : "-";
       };
-      // "Monto de los detalles en millones de pesos" (ej. "300 mm$"), no
-      // en UF ni en $ completo -- pedido explícito para la tabla.
-      const fmtMM = (uf: number) => `${Math.round((uf * data.ufValue) / 1_000_000).toLocaleString("es-CL")} mm$`;
+      // Tipos de CAPEX abreviados para que entren en la columna "Tipo" de
+      // esta tabla angosta -- solo acá, el resto de la presentación sigue
+      // mostrando el nombre completo.
+      const clasificacionShort: Record<string, string> = { "Reemplazo": "Reemp.", "Regularización": "Regulariza" };
+      const fmtTipoShort = (c: string | null) => {
+        const label = clasificacionLabel(c);
+        return clasificacionShort[label] || label;
+      };
+      // "Monto de los detalles en millones de pesos" (ej. "265"), sin la
+      // unidad repetida en cada fila -- la unidad ("mm$") va una sola vez
+      // en el encabezado de la columna.
+      const fmtMM = (uf: number) => `${Math.round((uf * data.ufValue) / 1_000_000).toLocaleString("es-CL")}`;
 
       avanceCards.forEach((card, i) => {
         const x = 0.5 + i * (cardW + cardGap);
@@ -785,7 +794,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
               { text: "Emp.", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
               { text: "Local", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
               { text: "Tipo", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
-              { text: "$", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+              { text: "mm$", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
               { text: "Fecha", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
             ],
           ];
@@ -793,7 +802,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
             tableRows.push([
               { text: companyShort[r.company] || r.company, options: cellOpts() },
               { text: r.contractName, options: cellOpts() },
-              { text: clasificacionLabel(r.clasificacion), options: cellOpts() },
+              { text: fmtTipoShort(r.clasificacion), options: cellOpts() },
               { text: fmtMM(r.uf), options: cellOpts("right") },
               { text: fmtDate(r.date), options: cellOpts("right") },
             ]);
@@ -806,7 +815,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
           }
           s2b.addTable(tableRows, {
             x, y: tableY, w: cardW,
-            colW: [cardW * 0.14, cardW * 0.29, cardW * 0.29, cardW * 0.14, cardW * 0.14],
+            colW: [cardW * 0.09, cardW * 0.33, cardW * 0.32, cardW * 0.13, cardW * 0.13],
             border: { type: "solid", color: BORDER, pt: 0.25 },
             autoPage: false,
             margin: 0.01,
