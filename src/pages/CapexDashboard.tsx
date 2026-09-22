@@ -1264,31 +1264,57 @@ export default function CapexDashboard() {
     return m;
   }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract]);
 
-  // Igual que yearBreakdownByAvance, pero con count + UF + nombres de
-  // contrato por año -- para la slide "Estado de Avance y Presupuesto
-  // Aprobado" del PPT (una slide por año, con el listado de contratos de
-  // cada estado debajo de su card).
+  // Igual que yearBreakdownByAvance, pero con count + UF + el detalle línea
+  // por línea (empresa, tipo de CAPEX, monto, fecha) y el desglose por
+  // empresa -- para la slide "Estado de Avance y Presupuesto Aprobado" del
+  // PPT (una slide por año, con la tabla de contratos y los chips por
+  // empresa debajo de cada card).
+  interface AvanceYearContractRow {
+    contractName: string;
+    company: CompanyGroupKey;
+    clasificacion: string | null;
+    uf: number;
+    // "Fecha de término" -- para Terminado/Caído -- o "fecha de apertura"
+    // -- para Programado/En Curso -- ambas resuelven al mismo campo
+    // (contractInvestmentInfo.end: la tarea "Apertura" del Gantt si existe,
+    // que es la fecha real de apertura al público; si el contrato ya
+    // terminó, esa apertura ya ocurrida ES su fecha de término relevante).
+    date: string | null;
+  }
   const avanceBreakdownByYear = React.useMemo(() => {
-    const m: Record<number, Record<string, { uf: number; count: number; names: string[] }>> = {};
+    const m: Record<number, Record<string, {
+      uf: number; count: number; names: string[];
+      companyBreakdown: Record<CompanyGroupKey, number>;
+      rows: AvanceYearContractRow[];
+    }>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
       const avance = rows[0].capex_avance_status;
       if (!avance) return;
       const contractName = rows[0].contract_name;
-      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+      const clasificacion = rows[0].clasificacion;
+      const date = contractInvestmentInfo[contractId]?.end ?? null;
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
+        const company = getCompanyGroupKey(companyName ? [companyName] : rows[0].company_names);
         const yearMap = contractYearAmounts.get(groupKey) || {};
         Object.entries(yearMap).forEach(([yearStr, clp]) => {
           if (!clp) return;
           const year = Number(yearStr);
+          const uf = (ufValue || 0) > 0 ? clp / ufValue : 0;
           if (!m[year]) m[year] = {};
-          if (!m[year][avance]) m[year][avance] = { uf: 0, count: 0, names: [] };
-          m[year][avance].uf += (ufValue || 0) > 0 ? clp / ufValue : 0;
-          m[year][avance].count += 1;
-          if (!m[year][avance].names.includes(contractName)) m[year][avance].names.push(contractName);
+          if (!m[year][avance]) {
+            m[year][avance] = { uf: 0, count: 0, names: [], companyBreakdown: { Autoplanet: 0, Agroplanet: 0, "Grupo Planet": 0, Otra: 0 }, rows: [] };
+          }
+          const bucket = m[year][avance];
+          bucket.uf += uf;
+          bucket.count += 1;
+          bucket.companyBreakdown[company] += uf;
+          bucket.rows.push({ contractName, company, clasificacion, uf, date });
+          if (!bucket.names.includes(contractName)) bucket.names.push(contractName);
         });
       });
     });
     return m;
-  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract, ufValue]);
+  }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue]);
 
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
@@ -1424,6 +1450,10 @@ export default function CapexDashboard() {
       // y su propia fila de Presupuesto Aprobado.
       const PPT_MIN_YEAR = 2026;
       const caidoLabel = AVANCE_CARD_ORDER[3];
+      // Orden fijo pedido para los chips por empresa y para la tabla de
+      // contratos (agrupada por empresa, en este orden, y dentro de cada
+      // empresa por fecha de término/apertura ascendente).
+      const COMPANY_ORDER: CompanyGroupKey[] = ["Autoplanet", "Agroplanet", "Grupo Planet", "Otra"];
       const avanceYears = new Set<number>([
         ...Object.keys(avanceBreakdownByYear).map(Number),
         ...Object.keys(approvedBudgetsByYear).map(Number),
@@ -1435,13 +1465,24 @@ export default function CapexDashboard() {
           const yearData = avanceBreakdownByYear[year] || {};
           const avanceForYear = avanceStatusTypesOrdered
             .filter((t) => yearData[t.name])
-            .map((t) => ({
-              name: t.name,
-              color: t.color,
-              uf: yearData[t.name].uf,
-              count: yearData[t.name].count,
-              contractNames: yearData[t.name].names.slice().sort((a, b) => a.localeCompare(b)),
-            }));
+            .map((t) => {
+              const bucket = yearData[t.name];
+              return {
+                name: t.name,
+                color: t.color,
+                uf: bucket.uf,
+                count: bucket.count,
+                companyBreakdown: COMPANY_ORDER
+                  .map((company) => ({ company, uf: bucket.companyBreakdown[company] }))
+                  .filter((c) => c.uf > 0),
+                contractRows: bucket.rows.slice().sort((a, b) => {
+                  const ca = COMPANY_ORDER.indexOf(a.company);
+                  const cb = COMPANY_ORDER.indexOf(b.company);
+                  if (ca !== cb) return ca - cb;
+                  return (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99");
+                }),
+              };
+            });
 
           const row = approvedBudgetsByYear[year];
           let approvedBudget: { aprobadoMM: number; totalMM: number; disponibleMM: number } | undefined;
