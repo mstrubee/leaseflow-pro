@@ -1297,7 +1297,9 @@ export default function CapexDashboard() {
         const company = getCompanyGroupKey(companyName ? [companyName] : rows[0].company_names);
         const yearMap = contractYearAmounts.get(groupKey) || {};
         Object.entries(yearMap).forEach(([yearStr, clp]) => {
-          if (!clp) return;
+          // Un contrato con CAPEX $0 en este año igual debe aparecer en la
+          // tabla de detalle de su estado de avance (ej. Puerto Montt -
+          // Alerce) -- no se filtra por monto, solo por existir la fila.
           const year = Number(yearStr);
           const uf = (ufValue || 0) > 0 ? clp / ufValue : 0;
           if (!m[year]) m[year] = {};
