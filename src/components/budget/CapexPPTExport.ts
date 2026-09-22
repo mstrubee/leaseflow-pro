@@ -711,22 +711,30 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       });
       const cardGap = 0.15;
       const cardW = (9 - cardGap * (avanceCards.length - 1)) / avanceCards.length;
-      // Los chips de empresa van arriba a la derecha, junto al título (no
-      // debajo del monto) -- la card crece según cuántos chips tenga como
-      // máximo entre las 4, para que las 4 queden a la misma altura.
+      // El título (Terminado/En Curso/Programado/Caído) va en una línea
+      // propia, sin el "(N)" -- que va debajo, en su propia línea -- para
+      // que la palabra nunca se corte a dos líneas por falta de ancho. Los
+      // chips de empresa van arriba a la derecha, justificados al borde de
+      // la card, en el espacio que le sobra al título.
+      const TITLE_W = 0.85; // alcanza para "Programado", la palabra más larga
+      const CHIPS_W = cardW - 0.15 - TITLE_W - 0.05 - 0.10;
       const COMPANY_CHIP_H = 0.13;
-      const CHIPS_W = 1.3;
       const maxCompanyChips = avanceCards.reduce((max, c) => Math.max(max, c.companyBreakdown.length), 0);
-      const topBlockH = Math.max(0.22, maxCompanyChips * COMPANY_CHIP_H);
+      const topBlockH = Math.max(0.36, maxCompanyChips * COMPANY_CHIP_H); // título (2 líneas) + chips, lo que sea más alto
       const dollarOffsetY = 0.10 + topBlockH + 0.06;
       const ufOffsetY = dollarOffsetY + 0.35;
       const cardH = ufOffsetY + 0.30;
       // Espacio disponible para la tabla de contratos, debajo de las cards
-      // y hasta el footer.
+      // y hasta el footer. Todas las filas de la tabla (menos el
+      // encabezado) usan la misma altura fija (TABLE_ROW_H, con espacio
+      // para 2 líneas) -- así, si una fila necesita 2 líneas por un nombre
+      // de local largo, el resto queda igual de alta en vez de verse
+      // despareja.
+      const TABLE_HEADER_H = 0.14;
+      const TABLE_ROW_H = 0.26;
       const tableY = cardsY + cardH + 0.08;
       const tableMaxH = 5.0 - tableY;
-      const ROW_H = 0.155;
-      const maxTableRows = Math.max(0, Math.floor(tableMaxH / ROW_H) - 1); // -1 por el header
+      const maxTableRows = Math.max(0, Math.floor((tableMaxH - TABLE_HEADER_H) / TABLE_ROW_H));
 
       const companyShort: Record<string, string> = { Autoplanet: "AP", Agroplanet: "AG", "Grupo Planet": "GP", Otra: "Otra" };
       const fmtDate = (iso: string | null) => {
@@ -734,10 +742,15 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         const [y, m, d] = iso.split("-");
         return d && m && y ? `${d}/${m}/${y.slice(2)}` : "-";
       };
-      // Tipos de CAPEX abreviados para que entren en la columna "Tipo" de
-      // esta tabla angosta -- solo acá, el resto de la presentación sigue
-      // mostrando el nombre completo.
-      const clasificacionShort: Record<string, string> = { "Reemplazo": "Reemp.", "Regularización": "Regulariza" };
+      // Tipos de CAPEX abreviados para que entren en una sola línea en la
+      // columna "Tipo" de esta tabla angosta -- solo acá, el resto de la
+      // presentación sigue mostrando el nombre completo. Lo único que debe
+      // poder quedar en dos líneas es la columna "Local".
+      const clasificacionShort: Record<string, string> = {
+        "Reemplazo": "Reemp.",
+        "Regularización": "Regulariza",
+        "Amplia/Mejora": "Amp/Mejora",
+      };
       const fmtTipoShort = (c: string | null) => {
         const label = clasificacionLabel(c);
         return clasificacionShort[label] || label;
@@ -749,20 +762,24 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
       avanceCards.forEach((card, i) => {
         const x = 0.5 + i * (cardW + cardGap);
-        const titleW = cardW - 0.3 - CHIPS_W - 0.1;
         s2b.addShape(SHAPES.RECTANGLE, { x, y: cardsY, w: cardW, h: cardH, fill: { color: LIGHT_BG } });
         s2b.addShape(SHAPES.RECTANGLE, { x, y: cardsY, w: 0.06, h: cardH, fill: { color: colorHex(card.color) } });
-        s2b.addText(`${card.name} (${card.count})`, {
-          x: x + 0.15, y: cardsY + 0.1, w: titleW, h: 0.25,
-          fontSize: 10, fontFace: "Arial", color: MUTED,
+        s2b.addText(card.name, {
+          x: x + 0.15, y: cardsY + 0.09, w: TITLE_W, h: 0.18,
+          fontSize: 10, fontFace: "Arial", color: MUTED, wrap: false,
+        });
+        s2b.addText(`(${card.count})`, {
+          x: x + 0.15, y: cardsY + 0.26, w: TITLE_W, h: 0.16,
+          fontSize: 9, fontFace: "Arial", color: MUTED,
         });
 
         // Desglose por empresa en chips (Autoplanet, Agroplanet, Grupo
-        // Planet, en ese orden), arriba a la derecha, junto al título.
+        // Planet, en ese orden), arriba a la derecha, justificados al
+        // borde de la card.
         if (card.companyBreakdown.length > 0) {
           const chipLines = card.companyBreakdown.map((c) => `${c.company}: ${fmtUF(c.uf)} UF`);
           s2b.addText(chipLines.join("\n"), {
-            x: x + cardW - 0.15 - CHIPS_W, y: cardsY + 0.09, w: CHIPS_W, h: card.companyBreakdown.length * COMPANY_CHIP_H,
+            x: x + cardW - 0.10 - CHIPS_W, y: cardsY + 0.09, w: CHIPS_W, h: card.companyBreakdown.length * COMPANY_CHIP_H,
             fontSize: 7, fontFace: "Arial", color: MUTED, align: "right", lineSpacing: 9.5,
           });
         }
@@ -783,11 +800,16 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         // Local | Tipo de CAPEX | Monto | Fecha de término/apertura --
         // agrupada por empresa (Autoplanet, Agroplanet, Grupo Planet) y,
         // dentro de cada una, ordenada por fecha (ya viene ordenada así
-        // desde CapexDashboard.tsx). Anchos de columna calcados de la
-        // diagramación de referencia: Local y Tipo son las columnas anchas.
+        // desde CapexDashboard.tsx). Anchos de columna fijos (en pulgadas,
+        // no proporcionales al ancho de la card) para que Emp./Tipo/mm$/
+        // Fecha nunca necesiten una segunda línea -- "Local" se lleva el
+        // ancho restante y es la única columna que puede quedar en 2
+        // líneas.
         if (card.contractRows.length > 0 && maxTableRows > 0) {
           const rows = card.contractRows;
           const visibleRows = rows.length > maxTableRows ? rows.slice(0, Math.max(0, maxTableRows - 1)) : rows;
+          const EMP_W = 0.22, TIPO_W = 0.50, MONTO_W = 0.30, FECHA_W = 0.38;
+          const LOCAL_W = cardW - EMP_W - TIPO_W - MONTO_W - FECHA_W - 0.02;
           const cellOpts = (align: "left" | "right" = "left"): PptxGenJS.TextPropsOptions => ({
             fontSize: 6, fontFace: "Arial", color: DARK, align,
           });
@@ -801,12 +823,15 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
             ],
           ];
           visibleRows.forEach((r) => {
+            // Toda la fila en negrita para los locales de Autoplanet.
+            const rowCellOpts = (align: "left" | "right" = "left"): PptxGenJS.TextPropsOptions =>
+              r.company === "Autoplanet" ? { ...cellOpts(align), bold: true } : cellOpts(align);
             tableRows.push([
-              { text: companyShort[r.company] || r.company, options: cellOpts() },
-              { text: r.contractName, options: cellOpts() },
-              { text: fmtTipoShort(r.clasificacion), options: cellOpts() },
-              { text: fmtMM(r.uf), options: cellOpts("right") },
-              { text: fmtDate(r.date), options: cellOpts("right") },
+              { text: companyShort[r.company] || r.company, options: rowCellOpts() },
+              { text: r.contractName, options: rowCellOpts() },
+              { text: fmtTipoShort(r.clasificacion), options: rowCellOpts() },
+              { text: fmtMM(r.uf), options: rowCellOpts("right") },
+              { text: fmtDate(r.date), options: rowCellOpts("right") },
             ]);
           });
           if (rows.length > maxTableRows) {
@@ -817,10 +842,12 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
           }
           s2b.addTable(tableRows, {
             x, y: tableY, w: cardW,
-            colW: [cardW * 0.09, cardW * 0.33, cardW * 0.32, cardW * 0.13, cardW * 0.13],
+            colW: [EMP_W, LOCAL_W, TIPO_W, MONTO_W, FECHA_W],
+            rowH: [TABLE_HEADER_H, ...Array(tableRows.length - 1).fill(TABLE_ROW_H)],
             border: { type: "solid", color: BORDER, pt: 0.25 },
             autoPage: false,
             margin: 0.01,
+            valign: "middle",
           });
         }
       });
