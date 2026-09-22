@@ -597,18 +597,32 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                     // "(promedio)" pero mostraba el tramo inicial, lo que
                     // hacía parecer que el promedio incluía gastos comunes
                     // cuando en realidad nunca los incluyó.
+                    //
+                    // Con escalonamiento, el campo pasa a ser de SOLO
+                    // LECTURA y muestra el promedio (no el tramo inicial):
+                    // el promedio se construye a partir de los tramos y sus
+                    // duraciones (editables más abajo, uno por uno), no
+                    // tiene sentido editarlo directamente acá. Sin
+                    // escalonamiento no hay promedio que construir -- es un
+                    // valor único y editable.
                     const hasEscalation = inputs.escalations.length > 0;
                     const ufM2Promedio = hasEscalation ? averageCanonUfM2(inputs) : (inputs.ufM2 || 0);
                     return (
                       <FieldConv
-                        label={hasEscalation ? "UF / m² (tramo inicial)" : "UF / m²"}
+                        label={hasEscalation ? "UF / m² (promedio)" : "UF / m²"}
                         conv={
                           hasEscalation
-                            ? `Promedio ponderado a toda la duración (solo arriendo, sin gasto común): ${fmtMM(ufM2Promedio, 2)} UF/m² ($${fmtMM((inputs.superficie || 0) * ufM2Promedio * (inputs.ufBase || 0) / 1e6)} MM/mes)`
+                            ? `$${fmtMM((inputs.superficie || 0) * ufM2Promedio * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * ufM2Promedio, 2)} UF/mes) -- edita cada tramo más abajo`
                             : `$${fmtMM((inputs.superficie || 0) * ufM2Promedio * (inputs.ufBase || 0) / 1e6)} MM/mes (${fmtMM((inputs.superficie || 0) * ufM2Promedio, 2)} UF/mes)`
                         }
                       >
-                        <NumCell value={inputs.ufM2} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("ufM2", v)} /></FieldConv>
+                        <NumCell
+                          value={hasEscalation ? ufM2Promedio : inputs.ufM2}
+                          disabled={ro || hasEscalation}
+                          w="w-full"
+                          step="0.01"
+                          onChange={(v) => update("ufM2", v)}
+                        /></FieldConv>
                     );
                   })()}
                   <Field label="Gasto común (UF/m²)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" step="0.01" onChange={(v) => update("gastoComunUf", v)} /></Field>
