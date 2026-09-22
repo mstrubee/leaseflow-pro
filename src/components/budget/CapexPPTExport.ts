@@ -446,14 +446,17 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     fontSize: 14, fontFace: "Arial", color: LIGHT_TEXT,
   });
 
-  s2.addText(`${fmtUF(data.totalCapexUF)} UF`, {
+  // El monto en $ es el protagonista (bold, grande); la UF es "meramente
+  // un dato", secundario -- pedido explícito, mismo criterio en toda la
+  // presentación (cards de clasificación, de empresa y de avance).
+  s2.addText(formatCLP(data.totalCapexUF * data.ufValue), {
     x: 0.7, y: TOTAL_CARD_Y + 0.39, w: 4, h: 0.5,
     fontSize: 28, fontFace: "Arial", color: WHITE, bold: true,
   });
 
-  s2.addText(formatCLP(data.totalCapexUF * data.ufValue), {
+  s2.addText(`${fmtUF(data.totalCapexUF)} UF`, {
     x: 5, y: TOTAL_CARD_Y + 0.31, w: 4.3, h: 0.5,
-    fontSize: 22, fontFace: "Arial", color: WHITE, align: "right",
+    fontSize: 16, fontFace: "Arial", color: WHITE, align: "right",
   });
 
   s2.addText(`${data.totalLocales} locales`, {
@@ -504,7 +507,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       fontSize: 11, fontFace: "Arial", color: MUTED,
     });
 
-    s2.addText(`${fmtUF(card.uf)} UF`, {
+    s2.addText(formatCLP(card.uf * data.ufValue), {
       x: x + 0.2, y: y + 0.20, w: cardW - 0.4, h: 0.35,
       fontSize: 18, fontFace: "Arial", color: DARK, bold: true,
     });
@@ -514,7 +517,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       fontSize: 10, fontFace: "Arial", color: MUTED,
     });
 
-    s2.addText(formatCLP(card.uf * data.ufValue), {
+    s2.addText(`${fmtUF(card.uf)} UF`, {
       x: x + 0.2, y: y + 0.70, w: cardW - 0.4, h: 0.22,
       fontSize: 9, fontFace: "Arial", color: MUTED,
     });
@@ -706,11 +709,16 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       });
       const cardGap = 0.15;
       const cardW = (9 - cardGap * (avanceCards.length - 1)) / avanceCards.length;
-      // La card crece según cuántos chips de empresa tenga (máximo entre las
-      // 4), para que las 4 cards queden a la misma altura.
+      // Los chips de empresa van arriba a la derecha, junto al título (no
+      // debajo del monto) -- la card crece según cuántos chips tenga como
+      // máximo entre las 4, para que las 4 queden a la misma altura.
       const COMPANY_CHIP_H = 0.13;
+      const CHIPS_W = 1.15;
       const maxCompanyChips = avanceCards.reduce((max, c) => Math.max(max, c.companyBreakdown.length), 0);
-      const cardH = 1.02 + maxCompanyChips * COMPANY_CHIP_H;
+      const topBlockH = Math.max(0.22, maxCompanyChips * COMPANY_CHIP_H);
+      const dollarOffsetY = 0.10 + topBlockH + 0.06;
+      const ufOffsetY = dollarOffsetY + 0.35;
+      const cardH = ufOffsetY + 0.30;
       // Espacio disponible para la tabla de contratos, debajo de las cards
       // y hasta el footer.
       const tableY = cardsY + cardH + 0.08;
@@ -724,39 +732,48 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         const [y, m, d] = iso.split("-");
         return d && m && y ? `${d}/${m}/${y.slice(2)}` : "-";
       };
+      // "Monto de los detalles en millones de pesos" (ej. "300 mm$"), no
+      // en UF ni en $ completo -- pedido explícito para la tabla.
+      const fmtMM = (uf: number) => `${Math.round((uf * data.ufValue) / 1_000_000).toLocaleString("es-CL")} mm$`;
 
       avanceCards.forEach((card, i) => {
         const x = 0.5 + i * (cardW + cardGap);
+        const titleW = cardW - 0.3 - CHIPS_W - 0.1;
         s2b.addShape(SHAPES.RECTANGLE, { x, y: cardsY, w: cardW, h: cardH, fill: { color: LIGHT_BG } });
         s2b.addShape(SHAPES.RECTANGLE, { x, y: cardsY, w: 0.06, h: cardH, fill: { color: colorHex(card.color) } });
         s2b.addText(`${card.name} (${card.count})`, {
-          x: x + 0.15, y: cardsY + 0.1, w: cardW - 0.3, h: 0.25,
+          x: x + 0.15, y: cardsY + 0.1, w: titleW, h: 0.25,
           fontSize: 10, fontFace: "Arial", color: MUTED,
-        });
-        s2b.addText(`${fmtUF(card.uf)} UF`, {
-          x: x + 0.15, y: cardsY + 0.4, w: cardW - 0.3, h: 0.35,
-          fontSize: 15, fontFace: "Arial", color: DARK, bold: true,
-        });
-        s2b.addText(formatCLP(card.uf * data.ufValue), {
-          x: x + 0.15, y: cardsY + 0.75, w: cardW - 0.3, h: 0.25,
-          fontSize: 9, fontFace: "Arial", color: MUTED,
         });
 
         // Desglose por empresa en chips (Autoplanet, Agroplanet, Grupo
-        // Planet, en ese orden), un chip por línea, debajo del monto CLP.
+        // Planet, en ese orden), arriba a la derecha, junto al título.
         if (card.companyBreakdown.length > 0) {
           const chipLines = card.companyBreakdown.map((c) => `${c.company}: ${fmtUF(c.uf)} UF`);
           s2b.addText(chipLines.join("\n"), {
-            x: x + 0.15, y: cardsY + 0.99, w: cardW - 0.3, h: card.companyBreakdown.length * COMPANY_CHIP_H,
-            fontSize: 7, fontFace: "Arial", color: MUTED, lineSpacing: 9.5,
+            x: x + cardW - 0.15 - CHIPS_W, y: cardsY + 0.09, w: CHIPS_W, h: card.companyBreakdown.length * COMPANY_CHIP_H,
+            fontSize: 7, fontFace: "Arial", color: MUTED, align: "right", lineSpacing: 9.5,
           });
         }
+
+        // El monto en $ es el protagonista (bold, grande); la UF es
+        // "meramente un dato", secundario -- mismo criterio en toda la
+        // presentación.
+        s2b.addText(formatCLP(card.uf * data.ufValue), {
+          x: x + 0.15, y: cardsY + dollarOffsetY, w: cardW - 0.3, h: 0.35,
+          fontSize: 15, fontFace: "Arial", color: DARK, bold: true,
+        });
+        s2b.addText(`${fmtUF(card.uf)} UF`, {
+          x: x + 0.15, y: cardsY + ufOffsetY, w: cardW - 0.3, h: 0.25,
+          fontSize: 9, fontFace: "Arial", color: MUTED,
+        });
 
         // Tabla de contratos de este estado, debajo de su card: Empresa |
         // Local | Tipo de CAPEX | Monto | Fecha de término/apertura --
         // agrupada por empresa (Autoplanet, Agroplanet, Grupo Planet) y,
         // dentro de cada una, ordenada por fecha (ya viene ordenada así
-        // desde CapexDashboard.tsx).
+        // desde CapexDashboard.tsx). Anchos de columna calcados de la
+        // diagramación de referencia: Local y Tipo son las columnas anchas.
         if (card.contractRows.length > 0 && maxTableRows > 0) {
           const rows = card.contractRows;
           const visibleRows = rows.length > maxTableRows ? rows.slice(0, Math.max(0, maxTableRows - 1)) : rows;
@@ -768,7 +785,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
               { text: "Emp.", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
               { text: "Local", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
               { text: "Tipo", options: { ...cellOpts(), bold: true, color: WHITE, fill: { color: PRIMARY } } },
-              { text: "UF", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
+              { text: "$", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
               { text: "Fecha", options: { ...cellOpts("right"), bold: true, color: WHITE, fill: { color: PRIMARY } } },
             ],
           ];
@@ -777,7 +794,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
               { text: companyShort[r.company] || r.company, options: cellOpts() },
               { text: r.contractName, options: cellOpts() },
               { text: clasificacionLabel(r.clasificacion), options: cellOpts() },
-              { text: fmtUF(r.uf), options: cellOpts("right") },
+              { text: fmtMM(r.uf), options: cellOpts("right") },
               { text: fmtDate(r.date), options: cellOpts("right") },
             ]);
           });
@@ -789,7 +806,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
           }
           s2b.addTable(tableRows, {
             x, y: tableY, w: cardW,
-            colW: [0.28, cardW - 1.13, 0.35, 0.3, 0.4],
+            colW: [cardW * 0.14, cardW * 0.29, cardW * 0.29, cardW * 0.14, cardW * 0.14],
             border: { type: "solid", color: BORDER, pt: 0.25 },
             autoPage: false,
             margin: 0.01,
@@ -847,12 +864,12 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         fontSize: 10, fontFace: "Arial", color: MUTED,
       });
 
-      s.addText(`${fmtUF(card.uf)} UF`, {
+      s.addText(formatCLP(card.uf * data.ufValue), {
         x: x + 0.15, y: 1.4, w: companyCardW - 0.3, h: 0.35,
         fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
       });
 
-      s.addText(formatCLP(card.uf * data.ufValue), {
+      s.addText(`${fmtUF(card.uf)} UF`, {
         x: x + 0.15, y: 1.7, w: companyCardW - 0.3, h: 0.2,
         fontSize: 9, fontFace: "Arial", color: MUTED,
       });
