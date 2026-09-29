@@ -135,7 +135,7 @@ export interface BudgetLine {
   children?: BudgetLine[];
 }
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, onOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; onOcRequired?: (lineId: string, newStatusId: string) => void }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -143,7 +143,13 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, onOc
 
   if (isParent) return null;
   const current = statuses.find(s => s.id === localId);
-  const selectable = statuses.filter(s => s.is_selectable);
+  // Una línea "No Autorizado" todavía no tiene presupuesto aprobado para
+  // gastar -- no tiene sentido (ni se debe permitir) marcarla "OC Requerida"
+  // ni ningún otro estado de avance real de compra. Mientras no se autorice,
+  // lo único seleccionable es "Cotizando".
+  const selectable = lineStatus === "no_autorizado"
+    ? statuses.filter(s => s.is_selectable && s.name.trim().toLowerCase() === "cotizando")
+    : statuses.filter(s => s.is_selectable);
 
   const handleChange = async (newId: string | null) => {
     setLocalId(newId);
@@ -1688,6 +1694,7 @@ const BudgetLineItemInner = ({
               currentStatusId={line.progress_status_id}
               readOnly={effectiveReadOnly || !canEditEstado}
               isParent={isParent}
+              lineStatus={line.status}
               onOcRequired={onOcRequired}
             />
           )}
