@@ -2361,6 +2361,11 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 } : undefined}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
                 readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
+                // El badge de Estado de Avance usa su propio permiso
+                // (budget_editar_estado, revisado dentro de BudgetLineTree)
+                // -- no debe quedar bloqueado solo porque el usuario no
+                // tiene además budget_editar_lineas.
+                estadoReadOnly={isClosed || forceReadOnly || selectionPurpose === "capexOc"}
                 compactView={forceReadOnly || !canEditLines}
                 focusNewLineId={focusNewLineId}
                 globalExpandState={globalExpandState}
