@@ -146,10 +146,21 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, line
   // Una línea "No Autorizado" todavía no tiene presupuesto aprobado para
   // gastar -- no tiene sentido (ni se debe permitir) marcarla "OC Requerida"
   // ni ningún otro estado de avance real de compra. Mientras no se autorice,
-  // lo único seleccionable es "Cotizando".
+  // lo único seleccionable es "Cotizando". Coincidencia tolerante (sin
+  // tildes/mayúsculas, por substring) en vez de igualdad exacta -- una
+  // comparación exacta contra "cotizando" dejó la lista vacía para TODOS
+  // los usuarios (incluido admin) cuando el nombre real del estado en la
+  // base tenía una tilde/variante distinta ("Cotización", etc.).
+  const normalize = (s: string) => s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const allSelectable = statuses.filter(s => s.is_selectable);
+  const cotizandoOnly = allSelectable.filter(s => normalize(s.name).includes("cotiz"));
+  // Si por alguna razón no existe (o no calzó) un estado "Cotizando", se
+  // muestran todos en vez de dejar la lista vacía -- una restricción que
+  // no encuentra su propio estado permitido no debe bloquear a todo el
+  // mundo, incluido admin.
   const selectable = lineStatus === "no_autorizado"
-    ? statuses.filter(s => s.is_selectable && s.name.trim().toLowerCase() === "cotizando")
-    : statuses.filter(s => s.is_selectable);
+    ? (cotizandoOnly.length > 0 ? cotizandoOnly : allSelectable)
+    : allSelectable;
 
   const handleChange = async (newId: string | null) => {
     setLocalId(newId);
