@@ -295,6 +295,12 @@ interface BudgetLineTreeProps {
   linesWithDetails?: Set<string>;
   level?: number;
   readOnly?: boolean;
+  /** Lock "duro" para el badge de Estado de Avance (Cerrado / forzado /
+   *  modo selección de OC), SIN el permiso de editar líneas -- editar el
+   *  badge es un permiso distinto (budget_editar_estado) de editar líneas
+   *  (budget_editar_lineas); si no se pasa, se comporta igual que antes
+   *  (usa `readOnly`), para no tener que tocar todos los llamadores. */
+  estadoReadOnly?: boolean;
   compactView?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
@@ -343,6 +349,7 @@ export const BudgetLineTree = ({
   linesWithDetails,
   level = 0,
   readOnly = false,
+  estadoReadOnly = readOnly,
   compactView = false,
   parentCategoryId = null,
   globalExpandState = null,
@@ -440,6 +447,7 @@ export const BudgetLineTree = ({
       onOcRequired={onOcRequired}
       linesWithDetails={linesWithDetails}
       readOnly={readOnly}
+      estadoReadOnly={estadoReadOnly}
       compactView={compactView}
       parentCategoryId={line.category_id || parentCategoryId}
       globalExpandState={globalExpandState}
@@ -490,6 +498,7 @@ interface BudgetLineItemProps {
   onOcRequired?: (lineId: string, newStatusId: string) => void;
   linesWithDetails?: Set<string>;
   readOnly?: boolean;
+  estadoReadOnly?: boolean;
   compactView?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
@@ -530,6 +539,7 @@ const BudgetLineItemInner = ({
   onOcRequired,
   linesWithDetails,
   readOnly = false,
+  estadoReadOnly = readOnly,
   compactView = false,
   parentCategoryId = null,
   globalExpandState = null,
@@ -1703,7 +1713,14 @@ const BudgetLineItemInner = ({
             <ProgressStatusBadge
               lineId={line.id}
               currentStatusId={line.progress_status_id}
-              readOnly={effectiveReadOnly || !canEditEstado}
+              // OJO: no usar `effectiveReadOnly` acá -- ese incluye el
+              // permiso de editar líneas (budget_editar_lineas) y el
+              // bloqueo de líneas autorizadas para quien no puede
+              // autorizar (budget_autorizar). Editar este badge es un
+              // permiso PROPIO (budget_editar_estado): alguien que solo
+              // tenga ese permiso, sin los otros dos, igual debe poder
+              // cambiar el estado de avance de una línea autorizada.
+              readOnly={estadoReadOnly || !canEditEstado}
               isParent={isParent}
               lineStatus={line.status}
               onOcRequired={onOcRequired}
@@ -1861,7 +1878,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
