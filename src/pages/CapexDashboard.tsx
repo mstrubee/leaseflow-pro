@@ -24,6 +24,7 @@ import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
 import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
 import { ApprovedBudgetsDialog } from "@/components/budget/ApprovedBudgetsDialog";
+import { CapexBudgetPlanningDialog } from "@/components/budget/CapexBudgetPlanningDialog";
 import { exportCapexToExcel } from "@/components/budget/CapexExcelExport";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 
@@ -289,6 +290,7 @@ export default function CapexDashboard() {
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [budgetPlanningOpen, setBudgetPlanningOpen] = useState(false);
   const [approvedBudgetsOpen, setApprovedBudgetsOpen] = useState(false);
   // Presupuesto CAPEX aprobado por año (capex_approved_budgets, cargado
   // desde la card "Capex Aprobado") -- para la card de
@@ -1318,6 +1320,19 @@ export default function CapexDashboard() {
     return m;
   }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue]);
 
+  // "Planificar Presupuesto {año+1}" -- Arrastre: contratos "En Curso" o
+  // "Programado" cuyo CAPEX de ESE año (según sus fechas reales de Gantt)
+  // ya estaba contemplado en el presupuesto de este año. Reutiliza
+  // avanceBreakdownByYear (misma data que la tabla de detalle del PPT).
+  const budgetPlanningTargetYear = new Date().getFullYear() + 1;
+  const budgetPlanningArrastreRows = React.useMemo(() => {
+    const yearData = avanceBreakdownByYear[budgetPlanningTargetYear] || {};
+    return [
+      ...(yearData["En Curso"]?.rows || []),
+      ...(yearData["Programado"]?.rows || []),
+    ];
+  }, [avanceBreakdownByYear, budgetPlanningTargetYear]);
+
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
@@ -1754,6 +1769,10 @@ export default function CapexDashboard() {
             <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-2">
               <FileSliders className="h-4 w-4" />
               Template PPT Single
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setBudgetPlanningOpen(true)} className="gap-2">
+              <CalendarClock className="h-4 w-4" />
+              Planificar Presupuesto {new Date().getFullYear() + 1}
             </Button>
           </div>
         </div>
@@ -2507,6 +2526,14 @@ export default function CapexDashboard() {
           setApprovedBudgetsOpen(open);
           if (!open) loadApprovedBudgets();
         }}
+      />
+      <CapexBudgetPlanningDialog
+        open={budgetPlanningOpen}
+        onOpenChange={setBudgetPlanningOpen}
+        targetYear={budgetPlanningTargetYear}
+        ufValue={ufValue || 0}
+        objetivoContratosCLP={yearBreakdownTotal[budgetPlanningTargetYear] || 0}
+        arrastreRows={budgetPlanningArrastreRows}
       />
     </div>
   );
