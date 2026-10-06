@@ -60,6 +60,14 @@ interface ContractBudget {
   // presente, anula el año derivado de fechas/badge de Comité GP para TODO
   // el CAPEX del contrato (ver contractYearAmounts). null = automático.
   capexYearOverride: number | null;
+  // Año sugerido manualmente SOLO para contratos sin Gantt (ver
+  // contractYearAmounts): a diferencia de capexYearOverride (absoluto, anula
+  // incluso el Gantt), este hint se usa únicamente mientras el contrato no
+  // tenga cronograma Gantt -- apenas se carga uno, se ignora solo y el monto
+  // vuelve a derivarse de las fechas reales de desembolso. Pensado para
+  // marcar manualmente el arrastre de contratos sin Gantt (ver
+  // budgetPlanningMissingDataRows / handleSetNoGanttYearHint).
+  noGanttYearHint: number | null;
 }
 
 // Una fila de capex_company_splits: contrato duplicado con % de CAPEX propio
@@ -520,7 +528,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, contract_companies(companies(name)))")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, capex_no_gantt_year_hint, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .is("contracts.deleted_at", null)
         // Nunca se muestra un "Rechazada" en Comité GP, sea cual sea el
@@ -555,6 +563,7 @@ export default function CapexDashboard() {
         excluded: !!b.contracts?.excluded_from_capex_dashboard,
         comite_gp_status: b.contracts?.comite_gp_status || null,
         capexYearOverride: b.contracts?.capex_year_override ?? null,
+        noGanttYearHint: b.contracts?.capex_no_gantt_year_hint ?? null,
       }));
 
       // Contratos "autorizados" en negociación (status = en_negociacion,
@@ -565,7 +574,7 @@ export default function CapexDashboard() {
       // no tengan ninguna fila en contract_budgets (con $0 / "Sin CAPEX").
       const { data: acceptedNegotiationContracts, error: negErr } = await supabase
         .from("contracts")
-        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, contract_companies(companies(name))")
+        .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, capex_no_gantt_year_hint, contract_companies(companies(name))")
         .eq("status", "en_negociacion")
         .is("deleted_at", null)
         .ilike("comite_gp_status", "%acepta%")
@@ -617,6 +626,7 @@ export default function CapexDashboard() {
         excluded: !!c.excluded_from_capex_dashboard,
         comite_gp_status: c.comite_gp_status || null,
         capexYearOverride: c.capex_year_override ?? null,
+        noGanttYearHint: c.capex_no_gantt_year_hint ?? null,
       }));
 
       const allProcessed = [...processed, ...negotiationOnly];
@@ -757,6 +767,7 @@ export default function CapexDashboard() {
       const totalCLP = capexCLPByContract.get(contractId) || 0;
       const disbursement = contractInvestmentInfo[contractId]?.disbursement;
       const yearOverride = rows[0]?.capexYearOverride ?? null;
+      const noGanttYearHint = rows[0]?.noGanttYearHint ?? null;
       getCopiesForContract(contractId).forEach(({ groupKey, percentage }) => {
         const factor = percentage / 100;
         const yearMap: Record<number, number> = {};
@@ -778,14 +789,19 @@ export default function CapexDashboard() {
           addToYear(disbursement.midDate, disbursement.pago1);
           addToYear(disbursement.endDate, disbursement.pago2);
         } else {
-          // Sin fechas de inversión de las que derivar un año: se usa el año
-          // del badge de Comité GP (ej. "Aceptada 2027") si lo trae -- es
-          // solo un año, sin más detalle, así que todo el monto del contrato
-          // va ahí. Como último recurso (ni fechas ni año en el badge) se cae
-          // al campo "Año" manual de la fila.
+          // Sin fechas de inversión de las que derivar un año: se usa, en
+          // orden, (a) el hint manual de arrastre sin Gantt
+          // (contracts.capex_no_gantt_year_hint -- ver sección "Contratos con
+          // Estado de Avance incompleto"/handleSetNoGanttYearHint: a
+          // diferencia de capexYearOverride, este se IGNORA solo apenas el
+          // contrato tenga Gantt, ver rama "disbursement" arriba), (b) el año
+          // del badge de Comité GP (ej. "Aceptada 2027") si lo trae, o (c)
+          // como último recurso el campo "Año" manual de la fila. En
+          // cualquiera de los 3 casos es solo un año, sin más detalle, así
+          // que todo el monto del contrato va ahí.
           rows.forEach((b) => {
             const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0) * factor;
-            const year = extractYearFromComiteGP(b.comite_gp_status) ?? b.year;
+            const year = noGanttYearHint ?? extractYearFromComiteGP(b.comite_gp_status) ?? b.year;
             yearMap[year] = (yearMap[year] || 0) + clp;
           });
         }
@@ -1366,7 +1382,7 @@ export default function CapexDashboard() {
   const budgetPlanningStraddlingRows = React.useMemo(() => {
     const rows: Array<{
       contractName: string; company: string; clasificacion: string | null; avanceStatus: string | null;
-      currentYearUf: number; targetYearUf: number; date: string | null;
+      currentYearUf: number; targetYearUf: number; date: string | null; isManualNoGanttCarryover: boolean;
     }> = [];
     const caidoLabel = AVANCE_CARD_ORDER[3];
     budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
@@ -1375,11 +1391,21 @@ export default function CapexDashboard() {
       if (avanceStatus === caidoLabel) return;
       const contractName = lineRows[0].contract_name;
       const date = contractInvestmentInfo[contractId]?.end ?? null;
+      const hasGantt = !!contractInvestmentInfo[contractId];
+      // Un contrato sin Gantt no puede repartir naturalmente su CAPEX entre
+      // dos años (todo cae en uno solo -- ver contractYearAmounts), así que
+      // nunca cumpliría el criterio normal de "≠0 en ambos años". El hint
+      // manual (contracts.capex_no_gantt_year_hint) es la única forma de
+      // marcarlo como arrastre mientras no tenga Gantt: si está seteado y
+      // movió el monto completo al año siguiente, se incluye igual aunque el
+      // año actual quede en $0.
+      const isManualNoGanttCarryover = !hasGantt && (lineRows[0].noGanttYearHint ?? null) !== null;
       getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
         const yearMap = contractYearAmounts.get(groupKey) || {};
         const currentYearClp = yearMap[budgetPlanningCurrentYear] || 0;
         const targetYearClp = yearMap[budgetPlanningTargetYear] || 0;
-        if (currentYearClp === 0 || targetYearClp === 0) return;
+        if (targetYearClp === 0) return;
+        if (currentYearClp === 0 && !isManualNoGanttCarryover) return;
         const company = getCompanyGroupKey(companyName ? [companyName] : lineRows[0].company_names);
         rows.push({
           contractName,
@@ -1389,6 +1415,7 @@ export default function CapexDashboard() {
           currentYearUf: (ufValue || 0) > 0 ? currentYearClp / ufValue : 0,
           targetYearUf: (ufValue || 0) > 0 ? targetYearClp / ufValue : 0,
           date,
+          isManualNoGanttCarryover,
         });
       });
     });
@@ -1405,7 +1432,7 @@ export default function CapexDashboard() {
   const budgetPlanningMissingDataRows = React.useMemo(() => {
     const rows: Array<{
       contractId: string; contractName: string; company: string; superficie: number;
-      hasGantt: boolean; currentYearUf: number; targetYearUf: number;
+      hasGantt: boolean; currentYearUf: number; targetYearUf: number; noGanttYearHint: number | null;
     }> = [];
     const caidoLabel = AVANCE_CARD_ORDER[3];
     budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
@@ -1415,6 +1442,7 @@ export default function CapexDashboard() {
       if (avanceStatus && hasGantt) return;
       const contractName = lineRows[0].contract_name;
       const superficie = lineRows[0].superficie || 0;
+      const noGanttYearHint = lineRows[0].noGanttYearHint ?? null;
       let currentYearUf = 0, targetYearUf = 0;
       getCopiesForContract(contractId).forEach(({ groupKey, companyName: _companyName }) => {
         const yearMap = contractYearAmounts.get(groupKey) || {};
@@ -1423,7 +1451,7 @@ export default function CapexDashboard() {
       });
       if (currentYearUf === 0 && targetYearUf === 0) return;
       const company = getCompanyGroupKey(lineRows[0].company_names);
-      rows.push({ contractId, contractName, company, superficie, hasGantt, currentYearUf, targetYearUf });
+      rows.push({ contractId, contractName, company, superficie, hasGantt, currentYearUf, targetYearUf, noGanttYearHint });
     });
     return rows.sort((a, b) => a.contractName.localeCompare(b.contractName));
   }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
@@ -1442,9 +1470,11 @@ export default function CapexDashboard() {
   const currentYearForNewLocationOpex = new Date().getFullYear();
   const newLocationOpexContractIds = React.useMemo(() => {
     const ids: string[] = [];
+    const caidoLabel = AVANCE_CARD_ORDER[3];
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
       const clasificacion = rows[0]?.clasificacion;
       if (clasificacion !== "Nuevo") return;
+      if (rows[0]?.capex_avance_status === caidoLabel) return;
       const hasCapexInRange = getCopiesForContract(contractId).some(({ groupKey }) => {
         const yearMap = contractYearAmounts.get(groupKey) || {};
         return (

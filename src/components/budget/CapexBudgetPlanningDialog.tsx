@@ -31,6 +31,10 @@ export interface StraddlingContractRow {
   currentYearUf: number;
   targetYearUf: number;
   date: string | null;
+  /** true si este contrato no tiene Gantt y entró a Arrastre solo por el
+   *  hint manual (capex_no_gantt_year_hint), no porque su CAPEX esté
+   *  realmente repartido entre los dos años. */
+  isManualNoGanttCarryover: boolean;
 }
 
 /** Contrato con CAPEX en el año actual o targetYear pero SIN Estado de
@@ -45,6 +49,10 @@ export interface MissingDataContractRow {
   hasGantt: boolean;
   currentYearUf: number;
   targetYearUf: number;
+  /** Año asignado manualmente (contracts.capex_no_gantt_year_hint) para
+   *  tratar este contrato como arrastre mientras no tenga Gantt -- null si
+   *  no se ha definido. Se ignora solo apenas el contrato tenga Gantt. */
+  noGanttYearHint: number | null;
 }
 
 interface BudgetItem {
@@ -113,6 +121,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const [closing, setClosing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingAvanceFor, setSavingAvanceFor] = useState<string | null>(null);
+  const [savingHintFor, setSavingHintFor] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
@@ -204,6 +213,26 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
       toast.error("Error al guardar el Estado de Avance");
     } finally {
       setSavingAvanceFor(null);
+    }
+  };
+
+  // Marca manualmente a qué año atribuir el CAPEX completo de un contrato
+  // SIN Gantt, para que cuente como arrastre (ver contractYearAmounts en
+  // CapexDashboard.tsx: solo se usa mientras el contrato no tenga Gantt --
+  // apenas se cargue uno, se ignora solo y se reemplaza por la
+  // programación real de desembolsos).
+  const handleSetNoGanttYearHint = async (contractId: string, year: number) => {
+    setSavingHintFor(contractId);
+    try {
+      const { error } = await (supabase as any).from("contracts").update({ capex_no_gantt_year_hint: year }).eq("id", contractId);
+      if (error) throw error;
+      toast.success("Año de arrastre guardado");
+      onMissingDataSaved?.();
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al guardar el año de arrastre");
+    } finally {
+      setSavingHintFor(null);
     }
   };
 
@@ -384,7 +413,12 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                     <tbody>
                       {straddlingRows.map((r, i) => (
                         <tr key={i} className="border-b last:border-0">
-                          <td className="p-1.5 break-words">{r.contractName}</td>
+                          <td className="p-1.5 break-words">
+                            {r.contractName}
+                            {r.isManualNoGanttCarryover && (
+                              <Badge variant="outline" className="text-[9px] ml-1">manual, sin Gantt</Badge>
+                            )}
+                          </td>
                           <td className="p-1.5 whitespace-nowrap">{r.company}</td>
                           <td className="p-1.5 whitespace-nowrap">{r.avanceStatus || "-"}</td>
                           <td className="text-right p-1.5 whitespace-nowrap">{formatCLP(r.currentYearUf * (ufValue || 0))}</td>
@@ -421,22 +455,42 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                           {currentYear}: {formatCLP(r.currentYearUf * (ufValue || 0))} · {targetYear}: {formatCLP(r.targetYearUf * (ufValue || 0))}
                         </span>
                       </div>
-                      <Select
-                        disabled={savingAvanceFor === r.contractId}
-                        onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
-                      >
-                        <SelectTrigger className="w-40 h-8 text-xs shrink-0">
-                          <SelectValue placeholder="Estado de Avance" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {avanceStatusTypes.map((t) => (
-                            <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <Select
+                          disabled={savingAvanceFor === r.contractId}
+                          onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
+                        >
+                          <SelectTrigger className="w-40 h-8 text-xs">
+                            <SelectValue placeholder="Estado de Avance" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {avanceStatusTypes.map((t) => (
+                              <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {!r.hasGantt && (
+                          <Select
+                            disabled={savingHintFor === r.contractId}
+                            defaultValue={r.noGanttYearHint ? String(r.noGanttYearHint) : undefined}
+                            onValueChange={(v) => handleSetNoGanttYearHint(r.contractId, Number(v))}
+                          >
+                            <SelectTrigger className="w-40 h-8 text-xs">
+                              <SelectValue placeholder="Año de arrastre" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={String(currentYear)}>Se gasta en {currentYear}</SelectItem>
+                              <SelectItem value={String(targetYear)}>Arrastra a {targetYear}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Sin cronograma Gantt, el monto de un contrato cae entero en un solo año -- "Año de arrastre" permite definir manualmente en cuál. Se reemplaza automáticamente apenas se cargue un cronograma Gantt.
+                </p>
               </div>
             )}
 
