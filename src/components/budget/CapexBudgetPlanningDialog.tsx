@@ -103,6 +103,13 @@ interface Props {
    *  -- Arrastre preciso: se identifican por tener CAPEX != 0 en los dos
    *  años (contractYearAmounts), no solo por su Estado de Avance. */
   straddlingRows: StraddlingContractRow[];
+  /** Disponible del Presupuesto Aprobado del año actual (aprobado - total
+   *  comprometido + Caídos, siempre con Caídos incluidos para este cálculo)
+   *  -- la otra mitad de Arrastre junto con straddlingRows: plata YA
+   *  aprobada para el año actual que no se va a gastar este año y por lo
+   *  tanto sí reduce cuánto hay que pedir de nuevo para targetYear. Puede
+   *  ser negativo (presupuesto 2026 sobregirado). */
+  disponibleCurrentYearCLP: number;
   /** Contratos con CAPEX en alguno de los dos años pero sin Estado de
    *  Avance y/o sin cronograma -- se completan acá. */
   missingDataRows: MissingDataContractRow[];
@@ -134,7 +141,7 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, objetivoContratosRows, currentYearAvanceTotals, straddlingRows, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, objetivoContratosRows, currentYearAvanceTotals, straddlingRows, disponibleCurrentYearCLP, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -262,7 +269,14 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
   const objetivoInformativosCLP = items.reduce((sum, it) => sum + itemClp(it), 0);
   const objetivoCLP = objetivoContratosCLP + objetivoInformativosCLP;
-  const arrastreCLP = straddlingRows.reduce((sum, r) => sum + r.targetYearUf, 0) * (ufValue || 0);
+  // Arrastre = (a) contratos que YA tienen comprometido gasto en targetYear
+  // porque cruzan de año (straddlingRows) + (b) plata YA aprobada para el
+  // año actual que no se va a gastar este año (disponibleCurrentYearCLP,
+  // incluye Caídos). Ninguno de los dos está restando el mismo peso del
+  // Objetivo dos veces: (a) es sobre contratos específicos, (b) es sobre el
+  // presupuesto aprobado global del año actual.
+  const arrastreContratosCLP = straddlingRows.reduce((sum, r) => sum + r.targetYearUf, 0) * (ufValue || 0);
+  const arrastreCLP = arrastreContratosCLP + disponibleCurrentYearCLP;
   const aPedirCLP = objetivoCLP - arrastreCLP;
   const currentYearAvanceTotalCLP = currentYearAvanceTotals.reduce((sum, t) => sum + t.uf, 0) * (ufValue || 0);
 
@@ -479,6 +493,10 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                   </table>
                 </div>
               )}
+              <p className="text-right text-xs text-muted-foreground">Subtotal contratos que cruzan: {formatCLP(arrastreContratosCLP)}</p>
+              <p className="text-right text-xs text-muted-foreground">
+                + Disponible Presupuesto Aprobado {currentYear} (incl. Caídos): {formatCLP(disponibleCurrentYearCLP)}
+              </p>
               <p className="text-right text-sm font-medium">Total arrastre a {targetYear}: {formatCLP(arrastreCLP)}</p>
             </div>
 
