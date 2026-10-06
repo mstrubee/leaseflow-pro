@@ -5,14 +5,24 @@ import { formatCLP } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Loader2, Building2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Building2, CalendarClock } from "lucide-react";
 import { computeArriendoPeriods, type RentPeriodsVersionInput } from "@/lib/businessCase/rentPeriods";
+import { format, parseISO } from "date-fns";
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 type Category = "arriendo" | "ggcc" | "fondo_promocion" | "otros";
 const CATEGORIES: { key: Category; label: string }[] = [
   { key: "arriendo", label: "Arriendo" },
+  { key: "ggcc", label: "GGCC" },
+  { key: "fondo_promocion", label: "Fondo Promoción" },
+  { key: "otros", label: "Otros" },
+];
+// Los Ítems de Presupuesto informativos (gantt_overview_budget_items) no
+// tienen canon -- son solo informativos, sin contrato -- así que no
+// participan de la categoría Arriendo, a diferencia de los contratos.
+type ItemCategory = Exclude<Category, "arriendo">;
+const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
   { key: "ggcc", label: "GGCC" },
   { key: "fondo_promocion", label: "Fondo Promoción" },
   { key: "otros", label: "Otros" },
@@ -39,6 +49,21 @@ interface ManualOverride {
   year: number;
   category: Category;
   monthly_amount_clp: number;
+}
+
+// Ítem de Presupuesto informativo (gantt_overview_budget_items) -- fecha de
+// inicio según la Línea de tiempo general de Cartas Gantt (/reports), igual
+// "date" que ya usa esa vista y la valorización CAPEX del ítem (ver
+// CapexBudgetPlanningDialog). Los 3 campos de Opex se ingresan siempre en
+// UF, nunca en CLP.
+interface ItemRow {
+  id: string;
+  name: string;
+  date: string;
+  superficie_m2: number | null;
+  ggcc_uf_m2: number | null;
+  fondo_promocion_uf: number | null;
+  otros_uf: number | null;
 }
 
 interface Props {
@@ -85,11 +110,17 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
   const [contracts, setContracts] = useState<Record<string, ContractRow>>({});
   const [versions, setVersions] = useState<Record<string, VersionRow>>({});
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
+  const [items, setItems] = useState<ItemRow[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Edición local de los inputs manuales (texto crudo, por "contractId::year::category").
   const [manualEdits, setManualEdits] = useState<Record<string, string>>({});
+  // Edición local de los 3 campos Opex de los ítems informativos (texto
+  // crudo, por "itemId::campo"), mismo patrón que manualEdits.
+  const [itemEdits, setItemEdits] = useState<Record<string, string>>({});
 
   const overrideKey = (contractId: string, year: number, category: Category) => `${contractId}::${year}::${category}`;
+  const itemEditKey = (itemId: string, field: "ggcc_uf_m2" | "fondo_promocion_uf" | "otros_uf") => `${itemId}::${field}`;
 
   const sortedIds = useMemo(() => [...contractIds].sort(), [contractIds]);
   const idsKey = sortedIds.join(",");
@@ -152,6 +183,35 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey]);
 
+  // Ítems de Presupuesto informativos (gantt_overview_budget_items) con
+  // fecha dentro de currentYear o targetYear -- independiente de
+  // contractIds, no tienen contrato. Mismo criterio de fecha que la
+  // valorización CAPEX de estos ítems (ver CapexBudgetPlanningDialog): la
+  // fecha es la de la Línea de tiempo general de /reports.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setItemsLoading(true);
+      try {
+        const { data, error } = await (supabase as any)
+          .from("gantt_overview_budget_items")
+          .select("id, name, date, superficie_m2, ggcc_uf_m2, fondo_promocion_uf, otros_uf")
+          .gte("date", `${currentYear}-01-01`)
+          .lte("date", `${targetYear}-12-31`)
+          .order("date", { ascending: true });
+        if (error) throw error;
+        if (cancelled) return;
+        setItems(data || []);
+      } catch (err) {
+        console.error(err);
+        toast.error("Error al cargar los ítems de presupuesto informativos");
+      } finally {
+        if (!cancelled) setItemsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentYear, targetYear]);
+
   // Monto automático (en CLP) de una categoría de un contrato, para un mes
   // calendario dado, calculado a partir de los tramos de
   // computeArriendoPeriods (en UF, pasados a CLP con el ufValue único del
@@ -200,6 +260,58 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     }
     setOverrides((prev) => ({ ...prev, [overrideKey(contractId, year, category)]: { contract_id: contractId, year, category, monthly_amount_clp: value } }));
   };
+
+  // Guarda directo en la fila del ítem (no hay tabla de overrides por
+  // año/categoría como en contratos: un ítem informativo aplica el mismo
+  // valor en ambos años desde su fecha).
+  const saveItemField = async (itemId: string, field: "ggcc_uf_m2" | "fondo_promocion_uf" | "otros_uf", rawValue: string) => {
+    const value = rawValue.trim() === "" ? null : parseFloat(rawValue);
+    const parsed = value !== null && isNaN(value) ? null : value;
+    const { error } = await (supabase as any)
+      .from("gantt_overview_budget_items")
+      .update({ [field]: parsed, updated_at: new Date().toISOString() })
+      .eq("id", itemId);
+    if (error) {
+      console.error(error);
+      toast.error("Error al guardar el monto manual");
+      return;
+    }
+    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, [field]: parsed } : it)));
+  };
+
+  // Para cada ítem informativo: 3 categorías × 12 meses × 2 años, siempre
+  // manual, a partir del mes de su "date" (fecha de la Línea de tiempo
+  // general de /reports) -- sin fecha de término definida, se proyecta
+  // indefinidamente hacia adelante en ambos años.
+  interface ItemMonthlyData {
+    itemId: string;
+    name: string;
+    date: string;
+    superficie_m2: number | null;
+    monthly: Record<ItemCategory, { [year: number]: number[] }>;
+  }
+  const perItemData: ItemMonthlyData[] = useMemo(() => {
+    return items.map((item) => {
+      const itemDate = new Date(item.date + "T00:00:00");
+      const monthly: Record<ItemCategory, { [year: number]: number[] }> = {
+        ggcc: { [currentYear]: [], [targetYear]: [] },
+        fondo_promocion: { [currentYear]: [], [targetYear]: [] },
+        otros: { [currentYear]: [], [targetYear]: [] },
+      };
+      [currentYear, targetYear].forEach((year) => {
+        for (let m = 1; m <= 12; m++) {
+          const started = year > itemDate.getFullYear() || (year === itemDate.getFullYear() && m >= itemDate.getMonth() + 1);
+          const ggcc = started && item.ggcc_uf_m2 != null && item.superficie_m2 != null ? item.ggcc_uf_m2 * item.superficie_m2 * ufValue : 0;
+          const fondoPromocion = started && item.fondo_promocion_uf != null ? item.fondo_promocion_uf * ufValue : 0;
+          const otros = started && item.otros_uf != null ? item.otros_uf * ufValue : 0;
+          monthly.ggcc[year].push(ggcc);
+          monthly.fondo_promocion[year].push(fondoPromocion);
+          monthly.otros[year].push(otros);
+        }
+      });
+      return { itemId: item.id, name: item.name, date: item.date, superficie_m2: item.superficie_m2, monthly };
+    });
+  }, [items, currentYear, targetYear, ufValue]);
 
   // Para cada contrato: 4 categorías × 12 meses × 2 años -- con el valor
   // automático o, si falta el dato fuente, el override manual persistido.
@@ -270,8 +382,17 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         }
       });
     });
+    perItemData.forEach((it) => {
+      [currentYear, targetYear].forEach((year) => {
+        for (let m = 0; m < 12; m++) {
+          ITEM_CATEGORIES.forEach(({ key }) => {
+            totals[year][m] += it.monthly[key][year][m] || 0;
+          });
+        }
+      });
+    });
     return totals;
-  }, [perContractData, currentYear, targetYear]);
+  }, [perContractData, perItemData, currentYear, targetYear]);
 
   const sumYear = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 
@@ -287,21 +408,33 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     return total;
   };
 
+  // Mismo total, para un ítem informativo (3 categorías).
+  const itemTotalBothYears = (it: ItemMonthlyData) => {
+    let total = 0;
+    [currentYear, targetYear].forEach((year) => {
+      ITEM_CATEGORIES.forEach(({ key }) => {
+        total += sumYear(it.monthly[key][year]);
+      });
+    });
+    return total;
+  };
+
   return (
     <div className="space-y-3 border-t pt-4">
       <p className="text-sm font-medium">
         Presupuesto Operativo de Nuevos Locales ({currentYear}-{targetYear})
       </p>
       <p className="text-xs text-muted-foreground">
-        Estimación mensual (Arriendo, GGCC, Fondo de Promoción, Otros) para contratos "Nuevo" con CAPEX en {currentYear} o {targetYear}.
-        Calculado automáticamente cuando el contrato tiene el dato; si falta, se puede ingresar un monto manual (marcado "Manual").
+        Estimación mensual (Arriendo, GGCC, Fondo de Promoción, Otros) para contratos "Nuevo" con CAPEX en {currentYear} o {targetYear},
+        más los Ítems de Presupuesto informativos (GGCC, Fondo de Promoción, Otros -- sin Arriendo, no tienen canon) con fecha en ese rango.
+        Calculado automáticamente cuando hay dato; si falta, se puede ingresar un monto manual (marcado "Manual").
       </p>
 
-      {contractIds.length === 0 ? (
+      {contractIds.length === 0 && items.length === 0 && !itemsLoading ? (
         <p className="text-xs text-muted-foreground border rounded-lg p-3">
-          No hay contratos clasificación "Nuevo" con CAPEX en {currentYear} o {targetYear} todavía.
+          No hay contratos clasificación "Nuevo" ni ítems informativos con CAPEX/fecha en {currentYear} o {targetYear} todavía.
         </p>
-      ) : loading ? (
+      ) : (contractIds.length > 0 && loading) || itemsLoading ? (
         <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : (
         <>
@@ -392,6 +525,90 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                                             <td key={i} className="text-right p-1 whitespace-nowrap">{v > 0 ? formatCLP(v) : "-"}</td>
                                           ))
                                         )}
+                                        <td className="text-right p-1 font-semibold whitespace-nowrap">{formatCLP(total)}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              );
+            })}
+            {perItemData.map((it) => {
+              const isOpen = expanded.has(it.itemId);
+              return (
+                <Collapsible key={it.itemId} open={isOpen} onOpenChange={() => toggleExpanded(it.itemId)}>
+                  <div className="border rounded-lg">
+                    <CollapsibleTrigger asChild>
+                      <button type="button" className="w-full flex items-center gap-2 p-2 text-left hover:bg-muted/50 transition-colors">
+                        {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                        <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="text-sm font-medium flex-1 break-words">{it.name}</span>
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">Informativo</Badge>
+                        <span className="text-xs text-muted-foreground shrink-0">{format(parseISO(it.date), "dd/MM/yyyy")}</span>
+                        <span className="text-xs font-semibold shrink-0 ml-2">
+                          {formatCLP(itemTotalBothYears(it))}
+                        </span>
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-3 pt-0 space-y-4">
+                        {it.superficie_m2 == null && (
+                          <p className="text-[10px] text-amber-600">
+                            Sin superficie cargada -- GGCC (ingresado en UF/m2) no se puede convertir a monto hasta que se cargue en "Ítems de Presupuesto informativos".
+                          </p>
+                        )}
+                        {[currentYear, targetYear].map((year) => (
+                          <div key={year} className="space-y-1">
+                            <p className="text-xs font-semibold text-muted-foreground">{year}</p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr>
+                                    <th className="text-left p-1 font-medium">Categoría</th>
+                                    {MESES.map((m) => (
+                                      <th key={m} className="text-right p-1 font-medium whitespace-nowrap">{m}</th>
+                                    ))}
+                                    <th className="text-right p-1 font-medium">Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {ITEM_CATEGORIES.map(({ key, label }) => {
+                                    const values = it.monthly[key][year];
+                                    const total = sumYear(values);
+                                    const fieldName = key === "ggcc" ? "ggcc_uf_m2" : key === "fondo_promocion" ? "fondo_promocion_uf" : "otros_uf";
+                                    const rawItem = items.find((x) => x.id === it.itemId);
+                                    const currentUfValue = rawItem?.[fieldName] ?? null;
+                                    return (
+                                      <tr key={key} className="border-t">
+                                        <td className="p-1 whitespace-nowrap">
+                                          <div className="flex items-center gap-1">
+                                            {label}
+                                            <Badge variant="outline" className="text-[9px] px-1 py-0">Manual</Badge>
+                                          </div>
+                                        </td>
+                                        <td colSpan={12} className="p-1">
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                              {key === "ggcc" ? "UF/m2:" : "UF/mes:"}
+                                            </span>
+                                            <Input
+                                              type="number"
+                                              className="h-6 w-24 text-xs"
+                                              value={itemEdits[itemEditKey(it.itemId, fieldName)] ?? String(currentUfValue ?? "")}
+                                              onChange={(e) =>
+                                                setItemEdits((prev) => ({ ...prev, [itemEditKey(it.itemId, fieldName)]: e.target.value }))
+                                              }
+                                              onBlur={(e) => saveItemField(it.itemId, fieldName, e.target.value)}
+                                            />
+                                          </div>
+                                        </td>
                                         <td className="text-right p-1 font-semibold whitespace-nowrap">{formatCLP(total)}</td>
                                       </tr>
                                     );
