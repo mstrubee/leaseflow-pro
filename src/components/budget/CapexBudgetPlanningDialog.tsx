@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Lock, CalendarClock, Eye } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { CapexNewLocationOpexSection } from "./CapexNewLocationOpexSection";
 
 /** Contrato que aporta al Arrastre: su CAPEX de "en curso"/"programado" cae,
  * según sus fechas reales de Gantt, en el año que se está planificando --
@@ -48,6 +49,13 @@ interface Props {
   /** Contratos "En Curso"/"Programado" cuyo CAPEX de targetYear ya estaba
    *  contemplado en el presupuesto de este año (arrastre). */
   arrastreRows: CarryoverContractRow[];
+  /** Ids de contratos clasificación "Nuevo" con CAPEX presupuestado en el
+   *  año en curso o en targetYear -- base del bloque "Presupuesto Operativo
+   *  de Nuevos Locales" (sección aparte, no se mezcla con Objetivo/Arrastre). */
+  newLocationContractIds: string[];
+  /** Año en curso (el primero de los dos años que cubre el bloque de nuevos
+   *  locales; el segundo es targetYear). */
+  currentYear: number;
 }
 
 const fmtDate = (iso: string | null) => {
@@ -59,7 +67,7 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, arrastreRows }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, arrastreRows, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -307,6 +315,16 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                 <span className={`font-bold ${aPedirCLP < 0 ? "text-destructive" : "text-green-600"}`}>{formatCLP(aPedirCLP)}</span>
               </div>
             </div>
+
+            {/* Presupuesto Operativo de Nuevos Locales -- bloque informativo
+                paralelo, no integra con Objetivo/Arrastre/A pedir de arriba
+                (esos siguen siendo CAPEX puro). */}
+            <CapexNewLocationOpexSection
+              contractIds={newLocationContractIds}
+              currentYear={currentYear}
+              targetYear={targetYear}
+              ufValue={ufValue}
+            />
 
             {!isClosed && !previewMode && (
               <div className="flex justify-end gap-2">
