@@ -741,6 +741,23 @@ export default function CapexDashboard() {
     });
     return m;
   }, [activeBudgets]);
+  // Ids y nombres (normalizados) de TODOS los contratos que ya cuentan como
+  // CAPEX real en el dashboard (con fila en contract_budgets, o aceptados en
+  // negociación vía Comité GP) -- para excluir de los Ítems de Presupuesto
+  // informativos (gantt_overview_budget_items) cualquiera que ya represente
+  // a uno de estos contratos, y no contarlo dos veces (ver
+  // "Agregar Ítem"/GanttOverviewTimeline.tsx: un ítem nuevo se vincula a un
+  // contrato por id; uno antiguo de texto libre se excluye por nombre).
+  const realContractIdsAndNames = React.useMemo(() => {
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
+      ids.add(contractId);
+      names.add(rows[0].contract_name.trim().toLowerCase());
+    });
+    return { ids, names };
+  }, [budgetRowsByContractAllYearsUnfiltered]);
+
   // Contratos a considerar para traer su cronograma Gantt (fechas de
   // inversión / disbursement): TODOS los que tengan CAPEX en cualquier año,
   // no solo los visibles bajo el filtro de año -- el desglose por año de las
@@ -2863,6 +2880,8 @@ export default function CapexDashboard() {
         currentYearAvanceTotals={budgetPlanningCurrentYearAvance}
         straddlingRows={budgetPlanningStraddlingRows}
         disponibleCurrentYearCLP={budgetPlanningDisponibleCurrentYearCLP}
+        realContractIds={realContractIdsAndNames.ids}
+        realContractNames={realContractIdsAndNames.names}
         missingDataRows={budgetPlanningMissingDataRows}
         avanceStatusTypes={avanceStatusTypesOrdered}
         onAvanceStatusUpdated={handleBudgetPlanningAvanceStatusUpdated}

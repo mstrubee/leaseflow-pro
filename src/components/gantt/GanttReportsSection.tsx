@@ -638,7 +638,7 @@ export function GanttReportsSection() {
   const loadBudgetItems = async () => {
     const { data, error } = await (supabase as any)
       .from("gantt_overview_budget_items")
-      .select("id, name, date")
+      .select("id, name, date, contract_id")
       .order("date");
     if (!error) setBudgetItems(data || []);
   };
