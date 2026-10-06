@@ -66,11 +66,18 @@ const monthOffset = (effectiveDate: string, calYear: number, calMonth1Indexed: n
   return (calYear - effYear) * 12 + (calMonth1Indexed - effMonth) + 1;
 };
 
+// computeAutoMonthly necesita effective_date para ubicar cada mes dentro del
+// contrato (monthOffset) -- sin él, SIEMPRE da $0 en las 4 categorías, sin
+// importar si canon/GGCC/etc. están cargados. Antes esto no se detectaba
+// como "dato faltante" (ej. Puerto Montt - Alerce: con regime_rent y
+// gastos_comunes_uf_m2 cargados, pero effective_date null), así que el
+// contrato quedaba en $0 para siempre sin ofrecer el campo manual para
+// corregirlo. Ahora, sin effective_date, las 4 categorías caen a manual.
 const isMissing = {
-  arriendo: (v: VersionRow) => !v.initial_rent && !v.regime_rent,
-  ggcc: (v: VersionRow) => v.gastos_comunes_uf_m2 == null && v.gastos_comunes_percentage == null,
-  fondo_promocion: (v: VersionRow) => v.fondo_promocion_percentage == null,
-  otros: (v: VersionRow) => v.otros_egresos_amount == null,
+  arriendo: (v: VersionRow) => !v.effective_date || (!v.initial_rent && !v.regime_rent),
+  ggcc: (v: VersionRow) => !v.effective_date || (v.gastos_comunes_uf_m2 == null && v.gastos_comunes_percentage == null),
+  fondo_promocion: (v: VersionRow) => !v.effective_date || v.fondo_promocion_percentage == null,
+  otros: (v: VersionRow) => !v.effective_date || v.otros_egresos_amount == null,
 };
 
 export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYear, ufValue }: Props) {
