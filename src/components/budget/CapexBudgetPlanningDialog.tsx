@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Lock, CalendarClock, Eye } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CapexNewLocationOpexSection } from "./CapexNewLocationOpexSection";
 
 /** Totales por Estado de Avance (Terminado/En Curso/Programado/Caído) de un
@@ -30,6 +31,20 @@ export interface StraddlingContractRow {
   currentYearUf: number;
   targetYearUf: number;
   date: string | null;
+}
+
+/** Contrato con CAPEX en el año actual o targetYear pero SIN Estado de
+ * Avance cargado y/o SIN cronograma Gantt -- tratado igual que los Ítems
+ * informativos: se completa lo que falta acá, sin re-pedir superficie/canon
+ * (ya están en los datos del contrato). */
+export interface MissingDataContractRow {
+  contractId: string;
+  contractName: string;
+  company: string;
+  superficie: number;
+  hasGantt: boolean;
+  currentYearUf: number;
+  targetYearUf: number;
 }
 
 interface BudgetItem {
@@ -64,6 +79,16 @@ interface Props {
    *  -- Arrastre preciso: se identifican por tener CAPEX != 0 en los dos
    *  años (contractYearAmounts), no solo por su Estado de Avance. */
   straddlingRows: StraddlingContractRow[];
+  /** Contratos con CAPEX en alguno de los dos años pero sin Estado de
+   *  Avance y/o sin cronograma -- se completan acá. */
+  missingDataRows: MissingDataContractRow[];
+  /** Tipos de Estado de Avance administrables (Admin > Estados y
+   *  Categorías), para el selector de cada contrato en missingDataRows. */
+  avanceStatusTypes: Array<{ id: string; name: string; color: string }>;
+  /** Llamado después de guardar un Estado de Avance faltante, para que el
+   *  dashboard recargue sus datos (el contrato recién editado ya no debería
+   *  aparecer en missingDataRows en el próximo render). */
+  onMissingDataSaved?: () => void;
   /** Ids de contratos clasificación "Nuevo" con CAPEX presupuestado en el
    *  año en curso o en targetYear -- base del bloque "Presupuesto Operativo
    *  de Nuevos Locales" (sección aparte, no se mezcla con Objetivo/Arrastre). */
@@ -82,11 +107,12 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, currentYearAvanceTotals, straddlingRows, newLocationContractIds, currentYear }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, currentYearAvanceTotals, straddlingRows, missingDataRows, avanceStatusTypes, onMissingDataSaved, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingAvanceFor, setSavingAvanceFor] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
@@ -159,6 +185,25 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
       toast.success("Borrador guardado");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Completa el Estado de Avance de un contrato que hoy no lo tiene -- igual
+  // que editarlo desde la ficha del contrato, pero sin salir de esta
+  // herramienta. Superficie/canon no se piden de nuevo: ya están en los
+  // datos del contrato.
+  const handleSetAvanceStatus = async (contractId: string, statusName: string) => {
+    setSavingAvanceFor(contractId);
+    try {
+      const { error } = await (supabase as any).from("contracts").update({ capex_avance_status: statusName }).eq("id", contractId);
+      if (error) throw error;
+      toast.success("Estado de Avance guardado");
+      onMissingDataSaved?.();
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al guardar el Estado de Avance");
+    } finally {
+      setSavingAvanceFor(null);
     }
   };
 
@@ -352,6 +397,48 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               )}
               <p className="text-right text-sm font-medium">Total arrastre a {targetYear}: {formatCLP(arrastreCLP)}</p>
             </div>
+
+            {/* Contratos con datos incompletos (sin Estado de Avance y/o sin
+                cronograma) -- tratados como los Ítems informativos: se
+                completa lo que falta acá, sin re-pedir superficie/canon. */}
+            {missingDataRows.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Contratos con Estado de Avance incompleto</p>
+                <p className="text-xs text-muted-foreground">
+                  Tienen CAPEX en {currentYear} o {targetYear} pero no se pudieron incluir arriba (Presupuesto por Estado de Avance / Arrastre) porque les falta el Estado de Avance y/o el cronograma Gantt. Superficie y canon no se piden de nuevo -- ya están cargados en el contrato.
+                </p>
+                <div className="space-y-2">
+                  {missingDataRows.map((r) => (
+                    <div key={r.contractId} className="flex items-center gap-3 border rounded-lg p-2">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium break-words">{r.contractName}</span>
+                          <span className="text-xs text-muted-foreground">{r.company}</span>
+                          {!r.hasGantt && <Badge variant="outline" className="text-[10px]">Sin cronograma Gantt</Badge>}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {r.superficie > 0 ? `${r.superficie} m² · ` : ""}
+                          {currentYear}: {formatCLP(r.currentYearUf * (ufValue || 0))} · {targetYear}: {formatCLP(r.targetYearUf * (ufValue || 0))}
+                        </span>
+                      </div>
+                      <Select
+                        disabled={savingAvanceFor === r.contractId}
+                        onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
+                      >
+                        <SelectTrigger className="w-40 h-8 text-xs shrink-0">
+                          <SelectValue placeholder="Estado de Avance" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {avanceStatusTypes.map((t) => (
+                            <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Totales */}
             <div className="rounded-lg bg-primary/5 p-4 space-y-2">
