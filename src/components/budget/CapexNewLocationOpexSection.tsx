@@ -202,20 +202,29 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     companyNames: string[];
     missing: Record<Category, boolean>;
     monthly: Record<Category, { [year: number]: number[] }>; // 12 valores por año
+    // true si el contrato no tiene ninguna versión (contract_versions con
+    // is_current = true) -- típico de contratos aún "En Negociación" cuyo
+    // CAPEX sale del Business Case (ver "Est. Business Case" en /capex), que
+    // todavía no cargaron condiciones comerciales formales. Antes esto hacía
+    // que el contrato desapareciera ENTERO de la lista, sin aviso -- ahora
+    // se muestra igual, con las 4 categorías en modo manual.
+    noVersion: boolean;
   }
   const perContractData: ContractMonthlyData[] = useMemo(() => {
     return sortedIds
       .map((contractId) => {
         const contract = contracts[contractId];
+        if (!contract) return null;
         const version = versions[contractId];
-        if (!contract || !version) return null;
         const companyNames = (contract.contract_companies || []).map((cc) => cc.companies?.name).filter(Boolean) as string[];
-        const missing: Record<Category, boolean> = {
-          arriendo: isMissing.arriendo(version),
-          ggcc: isMissing.ggcc(version),
-          fondo_promocion: isMissing.fondo_promocion(version),
-          otros: isMissing.otros(version),
-        };
+        const missing: Record<Category, boolean> = version
+          ? {
+              arriendo: isMissing.arriendo(version),
+              ggcc: isMissing.ggcc(version),
+              fondo_promocion: isMissing.fondo_promocion(version),
+              otros: isMissing.otros(version),
+            }
+          : { arriendo: true, ggcc: true, fondo_promocion: true, otros: true };
         const monthly: Record<Category, { [year: number]: number[] }> = {
           arriendo: { [currentYear]: [], [targetYear]: [] },
           ggcc: { [currentYear]: [], [targetYear]: [] },
@@ -224,7 +233,9 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         };
         [currentYear, targetYear].forEach((year) => {
           for (let m = 1; m <= 12; m++) {
-            const auto = computeAutoMonthly(version, contract.superficie_edificada_local, contract.metros_lineales_frente, year, m);
+            const auto = version
+              ? computeAutoMonthly(version, contract.superficie_edificada_local, contract.metros_lineales_frente, year, m)
+              : { arriendo: 0, ggcc: 0, fondo_promocion: 0, otros: 0 };
             CATEGORIES.forEach(({ key }) => {
               if (missing[key]) {
                 const ov = overrides[overrideKey(contractId, year, key)];
@@ -235,7 +246,7 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
             });
           }
         });
-        return { contractId, name: contract.name, companyNames, missing, monthly };
+        return { contractId, name: contract.name, companyNames, missing, monthly, noVersion: !version };
       })
       .filter((x): x is ContractMonthlyData => x !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -309,6 +320,11 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                         {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
                         <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span className="text-sm font-medium flex-1 break-words">{c.name}</span>
+                        {c.noVersion && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0" title="El contrato no tiene condiciones comerciales cargadas (sin contract_versions) -- probablemente aún En Negociación.">
+                            Sin condiciones comerciales
+                          </Badge>
+                        )}
                         {c.companyNames.length > 0 && (
                           <span className="text-xs text-muted-foreground shrink-0">{c.companyNames.join(", ")}</span>
                         )}
