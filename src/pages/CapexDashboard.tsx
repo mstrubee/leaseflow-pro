@@ -1421,19 +1421,21 @@ export default function CapexDashboard() {
   // por "Planificar Presupuesto {año+1}" (ver budgetPlanningCurrentYearAvance),
   // que no debe perder contratos por un filtro activo en pantalla.
   const avanceBreakdownByYearUnfiltered = React.useMemo(() => {
-    const m: Record<number, Record<string, { uf: number; count: number }>> = {};
+    const m: Record<number, Record<string, { uf: number; count: number; names: string[] }>> = {};
     budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
       const avance = rows[0].capex_avance_status;
       if (!avance) return;
+      const contractName = rows[0].contract_name;
       getCopiesForContract(contractId).forEach(({ groupKey }) => {
         const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
         Object.entries(yearMap).forEach(([yearStr, clp]) => {
           const year = Number(yearStr);
           const uf = (ufValue || 0) > 0 ? clp / ufValue : 0;
           if (!m[year]) m[year] = {};
-          if (!m[year][avance]) m[year][avance] = { uf: 0, count: 0 };
+          if (!m[year][avance]) m[year][avance] = { uf: 0, count: 0, names: [] };
           m[year][avance].uf += uf;
           m[year][avance].count += 1;
+          if (!m[year][avance].names.includes(contractName)) m[year][avance].names.push(contractName);
         });
       });
     });
@@ -1454,7 +1456,7 @@ export default function CapexDashboard() {
     const caidoLabel = AVANCE_CARD_ORDER[3];
     return avanceStatusTypesOrdered
       .filter((t) => t.name !== caidoLabel && yearData[t.name])
-      .map((t) => ({ name: t.name, color: t.color, uf: yearData[t.name].uf, count: yearData[t.name].count }));
+      .map((t) => ({ name: t.name, color: t.color, uf: yearData[t.name].uf, count: yearData[t.name].count, names: yearData[t.name].names.sort() }));
   }, [avanceBreakdownByYearUnfiltered, avanceStatusTypesOrdered, budgetPlanningCurrentYear]);
 
   // Los contratos "Caído" no se consideran en NINGUNA sección de
