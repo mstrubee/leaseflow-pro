@@ -1476,6 +1476,35 @@ export default function CapexDashboard() {
     return total;
   }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, budgetPlanningTargetYear]);
 
+  // Detalle, contrato por contrato, de TODO lo que compone
+  // budgetPlanningObjetivoContratosCLP -- el total de Objetivo ya incluía
+  // correctamente un contrato con CAPEX 100% en targetYear (ej. uno cuyo
+  // Gantt cae completo en el año siguiente, con Estado de Avance y
+  // cronograma completos), pero no aparecía listado por nombre en NINGÚN
+  // lado: no entra a "Presupuesto {año actual} por Estado de Avance" (que
+  // solo cubre el año actual), ni a Arrastre (no cruza de año, ya que no
+  // tiene nada en el año actual), ni a "datos incompletos" (no le falta
+  // nada). Esta lista hace visible esos casos también.
+  const budgetPlanningObjetivoContratosRows = React.useMemo(() => {
+    const rows: Array<{
+      contractName: string; company: string; avanceStatus: string | null; targetYearUf: number;
+    }> = [];
+    const caidoLabel = AVANCE_CARD_ORDER[3];
+    budgetRowsByContractAllYearsUnfiltered.forEach((lineRows, contractId) => {
+      const avanceStatus = lineRows[0].capex_avance_status;
+      if (avanceStatus === caidoLabel) return;
+      const contractName = lineRows[0].contract_name;
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
+        const targetYearClp = yearMap[budgetPlanningTargetYear] || 0;
+        if (targetYearClp === 0) return;
+        const company = getCompanyGroupKey(companyName ? [companyName] : lineRows[0].company_names);
+        rows.push({ contractName, company, avanceStatus, targetYearUf: (ufValue || 0) > 0 ? targetYearClp / ufValue : 0 });
+      });
+    });
+    return rows.sort((a, b) => b.targetYearUf - a.targetYearUf);
+  }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, ufValue, budgetPlanningTargetYear]);
+
   // Arrastre: contratos que CONSUMEN presupuesto en AMBOS años (año actual Y
   // año siguiente) -- criterio preciso pedido explícitamente (antes se
   // filtraba solo por Estado de Avance "En Curso"/"Programado", lo que podía
@@ -2806,6 +2835,7 @@ export default function CapexDashboard() {
         targetYear={budgetPlanningTargetYear}
         ufValue={ufValue || 0}
         objetivoContratosCLP={budgetPlanningObjetivoContratosCLP}
+        objetivoContratosRows={budgetPlanningObjetivoContratosRows}
         currentYearAvanceTotals={budgetPlanningCurrentYearAvance}
         straddlingRows={budgetPlanningStraddlingRows}
         missingDataRows={budgetPlanningMissingDataRows}

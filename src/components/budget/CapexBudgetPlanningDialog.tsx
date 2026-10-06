@@ -88,6 +88,13 @@ interface Props {
    *  reales de Gantt/Comité GP), en CLP -- mismo total que yearBreakdownTotal
    *  en /capex. */
   objetivoContratosCLP: number;
+  /** Detalle, contrato por contrato, de todo lo que compone
+   *  objetivoContratosCLP -- incluye también contratos con CAPEX 100% en
+   *  targetYear (no cruzan de año, por lo que no aparecen en Arrastre, y si
+   *  ya tienen Estado de Avance y Gantt tampoco aparecen en "datos
+   *  incompletos"): sin esto, quedaban contando en el total sin que se
+   *  pudiera ver su nombre en ningún lado. */
+  objetivoContratosRows: Array<{ contractName: string; company: string; avanceStatus: string | null; targetYearUf: number }>;
   /** Desglose del presupuesto del AÑO ACTUAL (no targetYear) por Estado de
    *  Avance -- contexto de cómo quedó/se planificó ese año antes de
    *  proyectar el siguiente. */
@@ -127,7 +134,7 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, currentYearAvanceTotals, straddlingRows, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, objetivoContratosRows, currentYearAvanceTotals, straddlingRows, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -327,10 +334,34 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
             )}
 
             {/* Contratos -- solo lectura */}
-            <div className="space-y-1">
+            <div className="space-y-2">
               <p className="text-sm font-medium">Contratos (comprometido real en {targetYear})</p>
               <p className="text-2xl font-bold">{formatCLP(objetivoContratosCLP)}</p>
               <p className="text-xs text-muted-foreground">Según fechas reales de Gantt/Comité GP de cada contrato -- mismo total que las cards de /capex para este año.</p>
+              {objetivoContratosRows.length > 0 && (
+                <div className="overflow-x-auto max-h-56 overflow-y-auto border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-background">
+                      <tr className="border-b">
+                        <th className="text-left p-1.5 font-medium">Contrato</th>
+                        <th className="text-left p-1.5 font-medium">Empresa</th>
+                        <th className="text-left p-1.5 font-medium">Avance</th>
+                        <th className="text-right p-1.5 font-medium">{targetYear}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {objetivoContratosRows.map((r, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="p-1.5 break-words">{r.contractName}</td>
+                          <td className="p-1.5 whitespace-nowrap">{r.company}</td>
+                          <td className="p-1.5 whitespace-nowrap">{r.avanceStatus || "-"}</td>
+                          <td className="text-right p-1.5 whitespace-nowrap">{formatCLP(r.targetYearUf * (ufValue || 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Ítems informativos -- editables */}
