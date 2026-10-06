@@ -269,8 +269,6 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     return total;
   };
 
-  if (contractIds.length === 0) return null;
-
   return (
     <div className="space-y-3 border-t pt-4">
       <p className="text-sm font-medium">
@@ -281,7 +279,11 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         Calculado automáticamente cuando el contrato tiene el dato; si falta, se puede ingresar un monto manual (marcado "Manual").
       </p>
 
-      {loading ? (
+      {contractIds.length === 0 ? (
+        <p className="text-xs text-muted-foreground border rounded-lg p-3">
+          No hay contratos clasificación "Nuevo" con CAPEX en {currentYear} o {targetYear} todavía.
+        </p>
+      ) : loading ? (
         <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : (
         <>

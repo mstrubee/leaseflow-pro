@@ -1375,6 +1375,37 @@ export default function CapexDashboard() {
     return rows;
   }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
 
+  // Contratos con CAPEX en el año actual o el siguiente pero SIN Estado de
+  // Avance cargado y/o SIN cronograma Gantt -- hoy quedan completamente
+  // afuera de "Presupuesto {año actual} por Estado de Avance" y del
+  // Arrastre (ambos requieren esos datos). Se tratan igual que los Ítems de
+  // Presupuesto informativos: se listan para completar lo que falta, sin
+  // pedir de nuevo superficie/canon (esos ya están en los datos del
+  // contrato -- acá solo se completa el Estado de Avance).
+  const budgetPlanningMissingDataRows = React.useMemo(() => {
+    const rows: Array<{
+      contractId: string; contractName: string; company: string; superficie: number;
+      hasGantt: boolean; currentYearUf: number; targetYearUf: number;
+    }> = [];
+    budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
+      const avanceStatus = lineRows[0].capex_avance_status;
+      const hasGantt = !!contractInvestmentInfo[contractId];
+      if (avanceStatus && hasGantt) return;
+      const contractName = lineRows[0].contract_name;
+      const superficie = lineRows[0].superficie || 0;
+      let currentYearUf = 0, targetYearUf = 0;
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName: _companyName }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        currentYearUf += (yearMap[budgetPlanningCurrentYear] || 0) / (ufValue || 1);
+        targetYearUf += (yearMap[budgetPlanningTargetYear] || 0) / (ufValue || 1);
+      });
+      if (currentYearUf === 0 && targetYearUf === 0) return;
+      const company = getCompanyGroupKey(lineRows[0].company_names);
+      rows.push({ contractId, contractName, company, superficie, hasGantt, currentYearUf, targetYearUf });
+    });
+    return rows.sort((a, b) => a.contractName.localeCompare(b.contractName));
+  }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
+
   // Contratos "Nuevo" (contracts.clasificacion) con CAPEX presupuestado en el
   // año en curso O en el próximo -- base del bloque "Presupuesto Operativo de
   // Nuevos Locales" del diálogo de planificación (un local nuevo suele abrir
@@ -2606,6 +2637,9 @@ export default function CapexDashboard() {
         objetivoContratosCLP={yearBreakdownTotal[budgetPlanningTargetYear] || 0}
         currentYearAvanceTotals={budgetPlanningCurrentYearAvance}
         straddlingRows={budgetPlanningStraddlingRows}
+        missingDataRows={budgetPlanningMissingDataRows}
+        avanceStatusTypes={avanceStatusTypesOrdered}
+        onMissingDataSaved={loadBudgets}
         newLocationContractIds={newLocationOpexContractIds}
         currentYear={currentYearForNewLocationOpex}
       />
