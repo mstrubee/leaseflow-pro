@@ -724,14 +724,35 @@ export default function CapexDashboard() {
     });
     return m;
   }, [budgetsAllYears]);
+  // Mismo agrupamiento que budgetRowsByContractAllYears, pero SIN los
+  // filtros de búsqueda/empresa/clasificación/Estado de Avance de la
+  // pantalla (solo excluye contratos marcados como excluidos) -- base de
+  // "Planificar Presupuesto {año+1}": un filtro activo en /capex (ej. buscar
+  // por nombre, o filtrar por Estado de Avance) no debe hacer desaparecer
+  // contratos de Objetivo/Arrastre/Estado de Avance incompleto, que tienen
+  // que reflejar SIEMPRE el total real, sin importar qué esté filtrado en
+  // pantalla en ese momento.
+  const budgetRowsByContractAllYearsUnfiltered = React.useMemo(() => {
+    const m = new Map<string, ContractBudget[]>();
+    activeBudgets.forEach((b) => {
+      const arr = m.get(b.contract_id) || [];
+      arr.push(b);
+      m.set(b.contract_id, arr);
+    });
+    return m;
+  }, [activeBudgets]);
   // Contratos a considerar para traer su cronograma Gantt (fechas de
   // inversión / disbursement): TODOS los que tengan CAPEX en cualquier año,
   // no solo los visibles bajo el filtro de año -- el desglose por año de las
   // cards necesita las fechas reales de todos ellos para poder ubicar cada
   // tramo en su año correcto, sin importar qué año esté seleccionado arriba.
+  // Se deriva de la versión SIN filtros de búsqueda/empresa/clasificación/
+  // avance (superset de budgetRowsByContractAllYears) para que el
+  // cronograma esté disponible también para "Planificar Presupuesto", sin
+  // depender de qué esté filtrado en pantalla.
   const contractIdsForInvestmentInfoKey = React.useMemo(
-    () => Array.from(budgetRowsByContractAllYears.keys()).sort().join(","),
-    [budgetRowsByContractAllYears]
+    () => Array.from(budgetRowsByContractAllYearsUnfiltered.keys()).sort().join(","),
+    [budgetRowsByContractAllYearsUnfiltered]
   );
 
   // CAPEX en CLP por contrato, sumando TODOS sus años -- necesario para el
@@ -748,6 +769,22 @@ export default function CapexDashboard() {
     });
     return m;
   }, [budgetRowsByContractAllYears, authByBudget, ufValue]);
+
+  // Mismo cálculo, pero sobre budgetRowsByContractAllYearsUnfiltered -- el
+  // disbursement de contratos filtrados fuera de pantalla (por
+  // búsqueda/empresa/clasificación/avance) igual debe calcularse bien para
+  // "Planificar Presupuesto" (ver contractYearAmountsUnfiltered).
+  const capexCLPByContractUnfiltered = React.useMemo(() => {
+    const m = new Map<string, number>();
+    budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
+      const clp = rows.reduce(
+        (sum, b) => sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0),
+        0
+      );
+      m.set(contractId, clp);
+    });
+    return m;
+  }, [budgetRowsByContractAllYearsUnfiltered, authByBudget, ufValue]);
 
   // Año de cada tramo de CAPEX, derivado de las fechas reales que ya se
   // muestran por línea de contrato (Anticipo/Pago 1/Pago 2 -- ver
@@ -810,6 +847,49 @@ export default function CapexDashboard() {
     });
     return m;
   }, [budgetRowsByContractAllYears, capexCLPByContract, contractInvestmentInfo, authByBudget, ufValue, getCopiesForContract]);
+
+  // Mismo cálculo que contractYearAmounts, pero sobre
+  // budgetRowsByContractAllYearsUnfiltered/capexCLPByContractUnfiltered --
+  // "Planificar Presupuesto {año+1}" necesita el total real de CADA
+  // contrato con CAPEX, sin que un filtro activo en pantalla (búsqueda,
+  // empresa, clasificación, Estado de Avance) le haga perder contratos que
+  // sí deben contar en Objetivo/Arrastre (ver budgetPlanningStraddlingRows).
+  const contractYearAmountsUnfiltered = React.useMemo(() => {
+    const m = new Map<string, Record<number, number>>();
+    budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
+      const totalCLP = capexCLPByContractUnfiltered.get(contractId) || 0;
+      const disbursement = contractInvestmentInfo[contractId]?.disbursement;
+      const yearOverride = rows[0]?.capexYearOverride ?? null;
+      const noGanttYearHint = rows[0]?.noGanttYearHint ?? null;
+      getCopiesForContract(contractId).forEach(({ groupKey, percentage }) => {
+        const factor = percentage / 100;
+        const yearMap: Record<number, number> = {};
+        if (yearOverride !== null) {
+          const clp = rows.reduce(
+            (sum, b) => sum + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0),
+            0
+          ) * factor;
+          yearMap[yearOverride] = clp;
+        } else if (disbursement && totalCLP > 0) {
+          const addToYear = (dateStr: string, amount: number) => {
+            const year = parseISO(dateStr).getFullYear();
+            yearMap[year] = (yearMap[year] || 0) + amount * factor;
+          };
+          addToYear(disbursement.startDate, disbursement.anticipo);
+          addToYear(disbursement.midDate, disbursement.pago1);
+          addToYear(disbursement.endDate, disbursement.pago2);
+        } else {
+          rows.forEach((b) => {
+            const clp = getEffectiveBudgetTotal(b, authByBudget[b.budget_id]) * (ufValue || 0) * factor;
+            const year = noGanttYearHint ?? extractYearFromComiteGP(b.comite_gp_status) ?? b.year;
+            yearMap[year] = (yearMap[year] || 0) + clp;
+          });
+        }
+        m.set(groupKey, yearMap);
+      });
+    });
+    return m;
+  }, [budgetRowsByContractAllYearsUnfiltered, capexCLPByContractUnfiltered, contractInvestmentInfo, authByBudget, ufValue, getCopiesForContract]);
 
   // Años disponibles para el dropdown "Año" -- unión del campo "Año" cargado
   // a mano (contract_budgets.year) con los años que arrojan las fechas
@@ -899,7 +979,7 @@ export default function CapexDashboard() {
         const habilitacion = findGanttTaskByNameHint(tasks, "habilitacion");
         const obrasStart = obrasCiviles ? effOf(obrasCiviles).start : null;
         const habilEnd = habilitacion ? effOf(habilitacion).end : null;
-        const capexCLP = capexCLPByContract.get(contractId) || 0;
+        const capexCLP = capexCLPByContractUnfiltered.get(contractId) || 0;
         if (obrasStart && habilEnd && capexCLP > 0) {
           const start = parseISO(obrasStart);
           const end = parseISO(habilEnd);
@@ -921,7 +1001,7 @@ export default function CapexDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [contractIdsForInvestmentInfoKey, capexCLPByContract]);
+  }, [contractIdsForInvestmentInfoKey, capexCLPByContractUnfiltered]);
 
   // El filtro "Año" compara contra el año DERIVADO de las fechas reales de
   // pago (contractYearAmounts), el mismo que ya usan las cards -- no el
@@ -1336,6 +1416,30 @@ export default function CapexDashboard() {
     return m;
   }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue]);
 
+  // Versión liviana (solo uf/count, sin el detalle línea por línea) de
+  // avanceBreakdownByYear sobre los datos SIN filtrar -- usada únicamente
+  // por "Planificar Presupuesto {año+1}" (ver budgetPlanningCurrentYearAvance),
+  // que no debe perder contratos por un filtro activo en pantalla.
+  const avanceBreakdownByYearUnfiltered = React.useMemo(() => {
+    const m: Record<number, Record<string, { uf: number; count: number }>> = {};
+    budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
+      const avance = rows[0].capex_avance_status;
+      if (!avance) return;
+      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
+        Object.entries(yearMap).forEach(([yearStr, clp]) => {
+          const year = Number(yearStr);
+          const uf = (ufValue || 0) > 0 ? clp / ufValue : 0;
+          if (!m[year]) m[year] = {};
+          if (!m[year][avance]) m[year][avance] = { uf: 0, count: 0 };
+          m[year][avance].uf += uf;
+          m[year][avance].count += 1;
+        });
+      });
+    });
+    return m;
+  }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, ufValue]);
+
   // "Planificar Presupuesto {año+1}":
   const budgetPlanningTargetYear = new Date().getFullYear() + 1;
   const budgetPlanningCurrentYear = budgetPlanningTargetYear - 1;
@@ -1346,12 +1450,12 @@ export default function CapexDashboard() {
   // contexto de cómo se gastó/planificó ese año antes de proyectar el
   // siguiente.
   const budgetPlanningCurrentYearAvance = React.useMemo(() => {
-    const yearData = avanceBreakdownByYear[budgetPlanningCurrentYear] || {};
+    const yearData = avanceBreakdownByYearUnfiltered[budgetPlanningCurrentYear] || {};
     const caidoLabel = AVANCE_CARD_ORDER[3];
     return avanceStatusTypesOrdered
       .filter((t) => t.name !== caidoLabel && yearData[t.name])
       .map((t) => ({ name: t.name, color: t.color, uf: yearData[t.name].uf, count: yearData[t.name].count }));
-  }, [avanceBreakdownByYear, avanceStatusTypesOrdered, budgetPlanningCurrentYear]);
+  }, [avanceBreakdownByYearUnfiltered, avanceStatusTypesOrdered, budgetPlanningCurrentYear]);
 
   // Los contratos "Caído" no se consideran en NINGUNA sección de
   // "Planificar Presupuesto {año+1}" (Objetivo, desglose por Estado de
@@ -1360,15 +1464,15 @@ export default function CapexDashboard() {
   const budgetPlanningObjetivoContratosCLP = React.useMemo(() => {
     const caidoLabel = AVANCE_CARD_ORDER[3];
     let total = 0;
-    budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
+    budgetRowsByContractAllYearsUnfiltered.forEach((lineRows, contractId) => {
       if (lineRows[0].capex_avance_status === caidoLabel) return;
       getCopiesForContract(contractId).forEach(({ groupKey }) => {
-        const yearMap = contractYearAmounts.get(groupKey) || {};
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
         total += yearMap[budgetPlanningTargetYear] || 0;
       });
     });
     return total;
-  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract, budgetPlanningTargetYear]);
+  }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, budgetPlanningTargetYear]);
 
   // Arrastre: contratos que CONSUMEN presupuesto en AMBOS años (año actual Y
   // año siguiente) -- criterio preciso pedido explícitamente (antes se
@@ -1385,7 +1489,7 @@ export default function CapexDashboard() {
       currentYearUf: number; targetYearUf: number; date: string | null; isManualNoGanttCarryover: boolean;
     }> = [];
     const caidoLabel = AVANCE_CARD_ORDER[3];
-    budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
+    budgetRowsByContractAllYearsUnfiltered.forEach((lineRows, contractId) => {
       const clasificacion = lineRows[0].clasificacion;
       const avanceStatus = lineRows[0].capex_avance_status;
       if (avanceStatus === caidoLabel) return;
@@ -1401,7 +1505,7 @@ export default function CapexDashboard() {
       // año actual quede en $0.
       const isManualNoGanttCarryover = !hasGantt && (lineRows[0].noGanttYearHint ?? null) !== null;
       getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
-        const yearMap = contractYearAmounts.get(groupKey) || {};
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
         const currentYearClp = yearMap[budgetPlanningCurrentYear] || 0;
         const targetYearClp = yearMap[budgetPlanningTargetYear] || 0;
         if (targetYearClp === 0) return;
@@ -1420,7 +1524,7 @@ export default function CapexDashboard() {
       });
     });
     return rows;
-  }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
+  }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
 
   // Contratos con CAPEX en el año actual o el siguiente pero SIN Estado de
   // Avance cargado y/o SIN cronograma Gantt -- hoy quedan completamente
@@ -1435,7 +1539,7 @@ export default function CapexDashboard() {
       hasGantt: boolean; currentYearUf: number; targetYearUf: number; noGanttYearHint: number | null;
     }> = [];
     const caidoLabel = AVANCE_CARD_ORDER[3];
-    budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
+    budgetRowsByContractAllYearsUnfiltered.forEach((lineRows, contractId) => {
       const avanceStatus = lineRows[0].capex_avance_status;
       if (avanceStatus === caidoLabel) return;
       const hasGantt = !!contractInvestmentInfo[contractId];
@@ -1445,7 +1549,7 @@ export default function CapexDashboard() {
       const noGanttYearHint = lineRows[0].noGanttYearHint ?? null;
       let currentYearUf = 0, targetYearUf = 0;
       getCopiesForContract(contractId).forEach(({ groupKey, companyName: _companyName }) => {
-        const yearMap = contractYearAmounts.get(groupKey) || {};
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
         currentYearUf += (yearMap[budgetPlanningCurrentYear] || 0) / (ufValue || 1);
         targetYearUf += (yearMap[budgetPlanningTargetYear] || 0) / (ufValue || 1);
       });
@@ -1454,7 +1558,7 @@ export default function CapexDashboard() {
       rows.push({ contractId, contractName, company, superficie, hasGantt, currentYearUf, targetYearUf, noGanttYearHint });
     });
     return rows.sort((a, b) => a.contractName.localeCompare(b.contractName));
-  }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
+  }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
 
   // Contratos "Nuevo" (contracts.clasificacion) con CAPEX presupuestado en el
   // año en curso O en el próximo -- base del bloque "Presupuesto Operativo de
@@ -1471,12 +1575,12 @@ export default function CapexDashboard() {
   const newLocationOpexContractIds = React.useMemo(() => {
     const ids: string[] = [];
     const caidoLabel = AVANCE_CARD_ORDER[3];
-    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+    budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
       const clasificacion = rows[0]?.clasificacion;
       if (clasificacion !== "Nuevo") return;
       if (rows[0]?.capex_avance_status === caidoLabel) return;
       const hasCapexInRange = getCopiesForContract(contractId).some(({ groupKey }) => {
-        const yearMap = contractYearAmounts.get(groupKey) || {};
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
         return (
           (yearMap[currentYearForNewLocationOpex] || 0) !== 0 ||
           (yearMap[currentYearForNewLocationOpex + 1] || 0) !== 0
@@ -1485,7 +1589,7 @@ export default function CapexDashboard() {
       if (hasCapexInRange) ids.push(contractId);
     });
     return ids;
-  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract, currentYearForNewLocationOpex]);
+  }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, currentYearForNewLocationOpex]);
 
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
