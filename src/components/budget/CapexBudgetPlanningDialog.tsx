@@ -7,9 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, CalendarClock, Eye } from "lucide-react";
+import { Loader2, Lock, CalendarClock, Eye, ChevronDown, ChevronRight } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { CapexNewLocationOpexSection } from "./CapexNewLocationOpexSection";
 
 /** Totales por Estado de Avance (Terminado/En Curso/Programado/Caído) de un
@@ -149,6 +150,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const [savingAvanceFor, setSavingAvanceFor] = useState<string | null>(null);
   const [savingHintFor, setSavingHintFor] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
+  const [missingDataOpen, setMissingDataOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
   // Edición local de superficie/UF por ítem (keyed por id) -- se guarda al
@@ -279,6 +281,10 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const arrastreCLP = arrastreContratosCLP + disponibleCurrentYearCLP;
   const aPedirCLP = objetivoCLP - arrastreCLP;
   const currentYearAvanceTotalCLP = currentYearAvanceTotals.reduce((sum, t) => sum + t.uf, 0) * (ufValue || 0);
+  // Las líneas marcadas "Terminado" ya tienen su año definido (no les falta
+  // nada que completar acá) -- pedido explícito de no listarlas en "datos
+  // incompletos".
+  const missingDataRowsFiltered = missingDataRows.filter((r) => r.avanceStatus !== "Terminado");
 
   const handleClose = async () => {
     if (!isAdmin) return;
@@ -318,7 +324,11 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-7xl max-h-[85vh] overflow-y-auto"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5 text-primary" />
@@ -347,15 +357,86 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               </div>
             )}
 
-            {/* Contratos -- solo lectura */}
+            {/* 1. Presupuesto del año actual -- contexto, desglosado por
+                Estado de Avance. Solo lectura. */}
             <div className="space-y-2">
-              <p className="text-sm font-medium">Contratos (comprometido real en {targetYear})</p>
-              <p className="text-2xl font-bold">{formatCLP(objetivoContratosCLP)}</p>
-              <p className="text-xs text-muted-foreground">Según fechas reales de Gantt/Comité GP de cada contrato -- mismo total que las cards de /capex para este año.</p>
-              {objetivoContratosRows.length > 0 && (
+              <p className="text-sm font-medium">Presupuesto {currentYear} por Estado de Avance</p>
+              {currentYearAvanceTotals.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No hay CAPEX con Estado de Avance cargado en {currentYear}.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {currentYearAvanceTotals.map((t) => (
+                    <div key={t.name} className="border rounded-lg p-2 space-y-0.5">
+                      <p className="text-xs text-muted-foreground">{t.name} ({t.count})</p>
+                      <p className="text-sm font-semibold">{formatCLP(t.uf * (ufValue || 0))}</p>
+                      {t.names.length > 0 && (
+                        <ul className="text-[10px] text-muted-foreground leading-tight pt-1 space-y-0.5">
+                          {t.names.map((name) => (
+                            <li key={name} className="break-words">{name}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-right text-sm font-medium">Total {currentYear}: {formatCLP(currentYearAvanceTotalCLP)}</p>
+            </div>
+
+            {/* 2. Arrastre -- contratos que consumen presupuesto en AMBOS
+                años (el actual y targetYear), con el monto de cada año por
+                separado, para ser precisos en cuáles cruzan. */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Arrastre de Presupuesto {currentYear} a {targetYear}</p>
+              {straddlingRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Ningún contrato tiene CAPEX distinto de cero en ambos años.</p>
+              ) : (
                 <div className="overflow-x-auto max-h-56 overflow-y-auto border rounded-lg">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-background">
+                      <tr className="border-b">
+                        <th className="text-left p-1.5 font-medium">Contrato</th>
+                        <th className="text-left p-1.5 font-medium">Empresa</th>
+                        <th className="text-left p-1.5 font-medium">Avance</th>
+                        <th className="text-right p-1.5 font-medium">{currentYear}</th>
+                        <th className="text-right p-1.5 font-medium">{targetYear}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {straddlingRows.map((r, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="p-1.5 break-words">
+                            {r.contractName}
+                            {r.isManualNoGanttCarryover && (
+                              <Badge variant="outline" className="text-[9px] ml-1">manual, sin Gantt</Badge>
+                            )}
+                          </td>
+                          <td className="p-1.5 whitespace-nowrap">{r.company}</td>
+                          <td className="p-1.5 whitespace-nowrap">{r.avanceStatus || "-"}</td>
+                          <td className="text-right p-1.5 whitespace-nowrap">{formatCLP(r.currentYearUf * (ufValue || 0))}</td>
+                          <td className="text-right p-1.5 whitespace-nowrap font-medium">{formatCLP(r.targetYearUf * (ufValue || 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="text-right text-xs text-muted-foreground">Subtotal contratos que cruzan: {formatCLP(arrastreContratosCLP)}</p>
+              <p className="text-right text-xs text-muted-foreground">
+                + Disponible Presupuesto Aprobado {currentYear} (incl. Caídos): {formatCLP(disponibleCurrentYearCLP)}
+              </p>
+              <p className="text-right text-sm font-medium">Total arrastre a {targetYear}: {formatCLP(arrastreCLP)}</p>
+            </div>
+
+            {/* 3. Contratos -- solo lectura. Sin scroll (pedido explícito) y
+                el total al final, igual que el resto de las secciones. */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Contratos (comprometido real en {targetYear})</p>
+              <p className="text-xs text-muted-foreground">Según fechas reales de Gantt/Comité GP de cada contrato -- mismo total que las cards de /capex para este año.</p>
+              {objetivoContratosRows.length > 0 && (
+                <div className="overflow-x-auto border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead>
                       <tr className="border-b">
                         <th className="text-left p-1.5 font-medium">Contrato</th>
                         <th className="text-left p-1.5 font-medium">Empresa</th>
@@ -376,9 +457,10 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                   </table>
                 </div>
               )}
+              <p className="text-right text-sm font-medium">Total comprometido {targetYear}: {formatCLP(objetivoContratosCLP)}</p>
             </div>
 
-            {/* Ítems informativos -- editables */}
+            {/* 4. Ítems informativos -- editables */}
             <div className="space-y-2">
               <p className="text-sm font-medium">Ítems de Presupuesto informativos (sin contrato)</p>
               {items.length === 0 ? (
@@ -429,163 +511,89 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               <p className="text-right text-sm font-medium">Subtotal informativos: {formatCLP(objetivoInformativosCLP)}</p>
             </div>
 
-            {/* Presupuesto del año actual -- contexto, desglosado por Estado
-                de Avance. Solo lectura. */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Presupuesto {currentYear} por Estado de Avance</p>
-              {currentYearAvanceTotals.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No hay CAPEX con Estado de Avance cargado en {currentYear}.</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {currentYearAvanceTotals.map((t) => (
-                    <div key={t.name} className="border rounded-lg p-2 space-y-0.5">
-                      <p className="text-xs text-muted-foreground">{t.name} ({t.count})</p>
-                      <p className="text-sm font-semibold">{formatCLP(t.uf * (ufValue || 0))}</p>
-                      {t.names.length > 0 && (
-                        <ul className="text-[10px] text-muted-foreground leading-tight pt-1 space-y-0.5">
-                          {t.names.map((name) => (
-                            <li key={name} className="break-words">{name}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="text-right text-sm font-medium">Total {currentYear}: {formatCLP(currentYearAvanceTotalCLP)}</p>
-            </div>
-
-            {/* Arrastre -- contratos que consumen presupuesto en AMBOS años
-                (el actual y targetYear), con el monto de cada año por
-                separado, para ser precisos en cuáles cruzan. */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Arrastre -- contratos que consumen presupuesto en {currentYear} Y {targetYear}</p>
-              {straddlingRows.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Ningún contrato tiene CAPEX distinto de cero en ambos años.</p>
-              ) : (
-                <div className="overflow-x-auto max-h-56 overflow-y-auto border rounded-lg">
-                  <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-background">
-                      <tr className="border-b">
-                        <th className="text-left p-1.5 font-medium">Contrato</th>
-                        <th className="text-left p-1.5 font-medium">Empresa</th>
-                        <th className="text-left p-1.5 font-medium">Avance</th>
-                        <th className="text-right p-1.5 font-medium">{currentYear}</th>
-                        <th className="text-right p-1.5 font-medium">{targetYear}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {straddlingRows.map((r, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="p-1.5 break-words">
-                            {r.contractName}
-                            {r.isManualNoGanttCarryover && (
-                              <Badge variant="outline" className="text-[9px] ml-1">manual, sin Gantt</Badge>
-                            )}
-                          </td>
-                          <td className="p-1.5 whitespace-nowrap">{r.company}</td>
-                          <td className="p-1.5 whitespace-nowrap">{r.avanceStatus || "-"}</td>
-                          <td className="text-right p-1.5 whitespace-nowrap">{formatCLP(r.currentYearUf * (ufValue || 0))}</td>
-                          <td className="text-right p-1.5 whitespace-nowrap font-medium">{formatCLP(r.targetYearUf * (ufValue || 0))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p className="text-right text-xs text-muted-foreground">Subtotal contratos que cruzan: {formatCLP(arrastreContratosCLP)}</p>
-              <p className="text-right text-xs text-muted-foreground">
-                + Disponible Presupuesto Aprobado {currentYear} (incl. Caídos): {formatCLP(disponibleCurrentYearCLP)}
-              </p>
-              <p className="text-right text-sm font-medium">Total arrastre a {targetYear}: {formatCLP(arrastreCLP)}</p>
-            </div>
-
-            {/* Contratos con datos incompletos (sin Estado de Avance y/o sin
-                cronograma) -- tratados como los Ítems informativos: se
-                completa lo que falta acá, sin re-pedir superficie/canon. */}
-            {missingDataRows.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Contratos con datos incompletos para Objetivo/Arrastre</p>
-                <p className="text-xs text-muted-foreground">
-                  Tienen CAPEX en {currentYear} o {targetYear} pero no se pudieron incluir arriba (Presupuesto por Estado de Avance / Arrastre) porque les falta el Estado de Avance y/o el cronograma Gantt -- muchos de estos SÍ tienen Estado de Avance cargado (se ve abajo), solo les falta el cronograma. Superficie y canon no se piden de nuevo -- ya están cargados en el contrato.
-                </p>
-                <div className="space-y-2">
-                  {missingDataRows.map((r) => (
-                    <div key={r.contractId} className="flex items-center gap-3 border rounded-lg p-2">
-                      <div className="flex-1 min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium break-words">{r.contractName}</span>
-                          <span className="text-xs text-muted-foreground">{r.company}</span>
-                          {r.avanceStatus ? (
-                            <Badge variant="outline" className="text-[10px]">Avance: {r.avanceStatus}</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Sin Estado de Avance</Badge>
-                          )}
-                          {!r.hasGantt && <Badge variant="outline" className="text-[10px]">Sin cronograma Gantt</Badge>}
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {r.superficie > 0 ? `${r.superficie} m² · ` : ""}
-                          {currentYear}: {formatCLP(r.currentYearUf * (ufValue || 0))} · {targetYear}: {formatCLP(r.targetYearUf * (ufValue || 0))}
-                        </span>
+            {/* 5. Contratos con datos incompletos (sin Estado de Avance y/o
+                sin cronograma) -- tratados como los Ítems informativos: se
+                completa lo que falta acá, sin re-pedir superficie/canon.
+                Colapsada por defecto (pedido explícito) y sin las líneas
+                "Terminado" (ya tienen su año definido, no les falta nada). */}
+            {missingDataRowsFiltered.length > 0 && (
+              <Collapsible open={missingDataOpen} onOpenChange={setMissingDataOpen}>
+                <div className="border rounded-lg">
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="w-full flex items-center gap-2 p-2 text-left hover:bg-muted/50 transition-colors">
+                      {missingDataOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                      <span className="text-sm font-medium flex-1">Contratos con datos incompletos para Objetivo/Arrastre ({missingDataRowsFiltered.length})</span>
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="p-3 pt-0 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Tienen CAPEX en {currentYear} o {targetYear} pero no se pudieron incluir arriba (Presupuesto por Estado de Avance / Arrastre) porque les falta el Estado de Avance y/o el cronograma Gantt -- muchos de estos SÍ tienen Estado de Avance cargado (se ve abajo), solo les falta el cronograma. Superficie y canon no se piden de nuevo -- ya están cargados en el contrato.
+                      </p>
+                      <div className="space-y-2">
+                        {missingDataRowsFiltered.map((r) => (
+                          <div key={r.contractId} className="flex items-center gap-3 border rounded-lg p-2">
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium break-words">{r.contractName}</span>
+                                <span className="text-xs text-muted-foreground">{r.company}</span>
+                                {r.avanceStatus ? (
+                                  <Badge variant="outline" className="text-[10px]">Avance: {r.avanceStatus}</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Sin Estado de Avance</Badge>
+                                )}
+                                {!r.hasGantt && <Badge variant="outline" className="text-[10px]">Sin cronograma Gantt</Badge>}
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {r.superficie > 0 ? `${r.superficie} m² · ` : ""}
+                                {currentYear}: {formatCLP(r.currentYearUf * (ufValue || 0))} · {targetYear}: {formatCLP(r.targetYearUf * (ufValue || 0))}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-1 shrink-0">
+                              {!r.avanceStatus && (
+                                <Select
+                                  disabled={savingAvanceFor === r.contractId}
+                                  onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
+                                >
+                                  <SelectTrigger className="w-40 h-8 text-xs">
+                                    <SelectValue placeholder="Estado de Avance" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {avanceStatusTypes.map((t) => (
+                                      <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              {!r.hasGantt && (
+                                <Select
+                                  disabled={savingHintFor === r.contractId}
+                                  value={r.noGanttYearHint ? String(r.noGanttYearHint) : undefined}
+                                  onValueChange={(v) => handleSetNoGanttYearHint(r.contractId, Number(v))}
+                                >
+                                  <SelectTrigger className="w-40 h-8 text-xs">
+                                    <SelectValue placeholder="Año de arrastre" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value={String(currentYear)}>Se gasta en {currentYear}</SelectItem>
+                                    <SelectItem value={String(targetYear)}>Arrastra a {targetYear}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex flex-col gap-1 shrink-0">
-                        {!r.avanceStatus && (
-                          <Select
-                            disabled={savingAvanceFor === r.contractId}
-                            onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
-                          >
-                            <SelectTrigger className="w-40 h-8 text-xs">
-                              <SelectValue placeholder="Estado de Avance" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {avanceStatusTypes.map((t) => (
-                                <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                        {!r.hasGantt && (
-                          <Select
-                            disabled={savingHintFor === r.contractId}
-                            value={r.noGanttYearHint ? String(r.noGanttYearHint) : undefined}
-                            onValueChange={(v) => handleSetNoGanttYearHint(r.contractId, Number(v))}
-                          >
-                            <SelectTrigger className="w-40 h-8 text-xs">
-                              <SelectValue placeholder="Año de arrastre" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={String(currentYear)}>Se gasta en {currentYear}</SelectItem>
-                              <SelectItem value={String(targetYear)}>Arrastra a {targetYear}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Sin cronograma Gantt, el monto de un contrato cae entero en un solo año -- "Año de arrastre" permite definir manualmente en cuál. Se reemplaza automáticamente apenas se cargue un cronograma Gantt.
+                      </p>
                     </div>
-                  ))}
+                  </CollapsibleContent>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Sin cronograma Gantt, el monto de un contrato cae entero en un solo año -- "Año de arrastre" permite definir manualmente en cuál. Se reemplaza automáticamente apenas se cargue un cronograma Gantt.
-                </p>
-              </div>
+              </Collapsible>
             )}
 
-            {/* Totales */}
-            <div className="rounded-lg bg-primary/5 p-4 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>Objetivo (Contratos + Informativos)</span>
-                <span className="font-semibold">{formatCLP(objetivoCLP)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Arrastre</span>
-                <span className="font-semibold">− {formatCLP(arrastreCLP)}</span>
-              </div>
-              <div className="flex items-center justify-between text-base border-t pt-2">
-                <span className="font-bold">A pedir</span>
-                <span className={`font-bold ${aPedirCLP < 0 ? "text-destructive" : "text-green-600"}`}>{formatCLP(aPedirCLP)}</span>
-              </div>
-            </div>
-
-            {/* Presupuesto Operativo de Nuevos Locales -- bloque informativo
+            {/* 6. Presupuesto Operativo de Nuevos Locales -- bloque informativo
                 paralelo, no integra con Objetivo/Arrastre/A pedir de arriba
                 (esos siguen siendo CAPEX puro). */}
             <CapexNewLocationOpexSection
@@ -595,11 +603,39 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               ufValue={ufValue}
             />
 
+            {/* 7. Total -- al final de todo. Arrastre se RESTA de Objetivo
+                (no se suma aparte): los contratos de Arrastre ya están
+                incluidos dentro de "Contratos (comprometido real
+                {targetYear})" de la sección 3 (arrastreContratosCLP es un
+                subconjunto de objetivoContratosCLP, no un monto adicional),
+                así que no hay doble conteo acá. */}
+            <div className="rounded-lg bg-primary/5 p-4 space-y-2">
+              <div className="flex items-center justify-between text-base">
+                <span className="font-bold">TOTAL PRESUPUESTO {targetYear}</span>
+                <span className="font-bold">{formatCLP(objetivoCLP)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span>Arrastre (ya incluido arriba, no se suma de nuevo)</span>
+                <span className="font-semibold">− {formatCLP(arrastreCLP)}</span>
+              </div>
+              <div className="flex items-center justify-between text-base border-t pt-2">
+                <span className="font-bold">A pedir</span>
+                <span className={`font-bold ${aPedirCLP < 0 ? "text-destructive" : "text-green-600"}`}>{formatCLP(aPedirCLP)}</span>
+              </div>
+            </div>
+
             {!isClosed && !previewMode && (
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={handleSaveAll} disabled={saving}>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    await handleSaveAll();
+                    onOpenChange(false);
+                  }}
+                  disabled={saving}
+                >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Guardar
+                  Salir
                 </Button>
                 <Button variant="outline" onClick={() => setPreviewMode(true)}>
                   <Eye className="h-4 w-4 mr-2" />
