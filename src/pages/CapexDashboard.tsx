@@ -1476,6 +1476,30 @@ export default function CapexDashboard() {
     return total;
   }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, budgetPlanningTargetYear]);
 
+  // Disponible del Presupuesto Aprobado {año actual} -- plata YA aprobada
+  // para el año actual que no se va a gastar este año (aprobado - total
+  // comprometido + Caídos, siempre sumando los Caídos acá sin importar el
+  // toggle "Sumar/Quitar Caídos" de la card "Capex Aprobado": un contrato
+  // caído libera su presupuesto para el año siguiente). Es la mitad
+  // "plata ya aprobada que sobra" de Arrastre -- la otra mitad es
+  // budgetPlanningStraddlingRows (contratos que YA tienen comprometido
+  // gasto en targetYear). Ninguna de las dos resta del Objetivo per se:
+  // juntas SON el Arrastre que sí reduce cuánto hay que pedir de nuevo.
+  const budgetPlanningDisponibleCurrentYearCLP = React.useMemo(() => {
+    const row = approvedBudgetsByYear[budgetPlanningCurrentYear];
+    if (!row) return 0;
+    const caidoLabel = AVANCE_CARD_ORDER[3];
+    let totalCurrentYearClp = 0;
+    budgetRowsByContractAllYearsUnfiltered.forEach((lineRows, contractId) => {
+      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+        const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
+        totalCurrentYearClp += yearMap[budgetPlanningCurrentYear] || 0;
+      });
+    });
+    const caidosCurrentYearClp = (avanceBreakdownByYearUnfiltered[budgetPlanningCurrentYear]?.[caidoLabel]?.uf || 0) * (ufValue || 0);
+    return row.amount_clp - totalCurrentYearClp + caidosCurrentYearClp;
+  }, [approvedBudgetsByYear, budgetPlanningCurrentYear, budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, getCopiesForContract, avanceBreakdownByYearUnfiltered, ufValue]);
+
   // Detalle, contrato por contrato, de TODO lo que compone
   // budgetPlanningObjetivoContratosCLP -- el total de Objetivo ya incluía
   // correctamente un contrato con CAPEX 100% en targetYear (ej. uno cuyo
@@ -2838,6 +2862,7 @@ export default function CapexDashboard() {
         objetivoContratosRows={budgetPlanningObjetivoContratosRows}
         currentYearAvanceTotals={budgetPlanningCurrentYearAvance}
         straddlingRows={budgetPlanningStraddlingRows}
+        disponibleCurrentYearCLP={budgetPlanningDisponibleCurrentYearCLP}
         missingDataRows={budgetPlanningMissingDataRows}
         avanceStatusTypes={avanceStatusTypesOrdered}
         onAvanceStatusUpdated={handleBudgetPlanningAvanceStatusUpdated}
