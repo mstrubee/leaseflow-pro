@@ -1320,18 +1320,60 @@ export default function CapexDashboard() {
     return m;
   }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue]);
 
-  // "Planificar Presupuesto {año+1}" -- Arrastre: contratos "En Curso" o
-  // "Programado" cuyo CAPEX de ESE año (según sus fechas reales de Gantt)
-  // ya estaba contemplado en el presupuesto de este año. Reutiliza
-  // avanceBreakdownByYear (misma data que la tabla de detalle del PPT).
+  // "Planificar Presupuesto {año+1}":
   const budgetPlanningTargetYear = new Date().getFullYear() + 1;
-  const budgetPlanningArrastreRows = React.useMemo(() => {
-    const yearData = avanceBreakdownByYear[budgetPlanningTargetYear] || {};
-    return [
-      ...(yearData["En Curso"]?.rows || []),
-      ...(yearData["Programado"]?.rows || []),
-    ];
-  }, [avanceBreakdownByYear, budgetPlanningTargetYear]);
+  const budgetPlanningCurrentYear = budgetPlanningTargetYear - 1;
+
+  // Presupuesto {año actual} desglosado por Estado de Avance -- mismo
+  // criterio que las cards de Estado de Avance de /capex, pero fijado al
+  // año actual (no al filtro "Año" de la pantalla), para mostrar el
+  // contexto de cómo se gastó/planificó ese año antes de proyectar el
+  // siguiente.
+  const budgetPlanningCurrentYearAvance = React.useMemo(() => {
+    const yearData = avanceBreakdownByYear[budgetPlanningCurrentYear] || {};
+    return avanceStatusTypesOrdered
+      .filter((t) => yearData[t.name])
+      .map((t) => ({ name: t.name, color: t.color, uf: yearData[t.name].uf, count: yearData[t.name].count }));
+  }, [avanceBreakdownByYear, avanceStatusTypesOrdered, budgetPlanningCurrentYear]);
+
+  // Arrastre: contratos que CONSUMEN presupuesto en AMBOS años (año actual Y
+  // año siguiente) -- criterio preciso pedido explícitamente (antes se
+  // filtraba solo por Estado de Avance "En Curso"/"Programado", lo que podía
+  // dejar fuera contratos que sí cruzan de un año a otro, o incluir
+  // contratos cuyo CAPEX en realidad ya se movió 100% al año siguiente sin
+  // quedar nada pendiente este año). Se arma directo desde
+  // budgetRowsByContractAllYears/contractYearAmounts (no desde
+  // avanceBreakdownByYear, que no trae el dato por copia de ambos años a la
+  // vez), por COPIA (groupKey), igual que el resto de los desgloses.
+  const budgetPlanningStraddlingRows = React.useMemo(() => {
+    const rows: Array<{
+      contractName: string; company: string; clasificacion: string | null; avanceStatus: string | null;
+      currentYearUf: number; targetYearUf: number; date: string | null;
+    }> = [];
+    budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
+      const clasificacion = lineRows[0].clasificacion;
+      const avanceStatus = lineRows[0].capex_avance_status;
+      const contractName = lineRows[0].contract_name;
+      const date = contractInvestmentInfo[contractId]?.end ?? null;
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        const currentYearClp = yearMap[budgetPlanningCurrentYear] || 0;
+        const targetYearClp = yearMap[budgetPlanningTargetYear] || 0;
+        if (currentYearClp === 0 || targetYearClp === 0) return;
+        const company = getCompanyGroupKey(companyName ? [companyName] : lineRows[0].company_names);
+        rows.push({
+          contractName,
+          company,
+          clasificacion,
+          avanceStatus,
+          currentYearUf: (ufValue || 0) > 0 ? currentYearClp / ufValue : 0,
+          targetYearUf: (ufValue || 0) > 0 ? targetYearClp / ufValue : 0,
+          date,
+        });
+      });
+    });
+    return rows;
+  }, [budgetRowsByContractAllYears, contractYearAmounts, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
 
   // Contratos "Nuevo" (contracts.clasificacion) con CAPEX presupuestado en el
   // año en curso O en el próximo -- base del bloque "Presupuesto Operativo de
@@ -2562,7 +2604,8 @@ export default function CapexDashboard() {
         targetYear={budgetPlanningTargetYear}
         ufValue={ufValue || 0}
         objetivoContratosCLP={yearBreakdownTotal[budgetPlanningTargetYear] || 0}
-        arrastreRows={budgetPlanningArrastreRows}
+        currentYearAvanceTotals={budgetPlanningCurrentYearAvance}
+        straddlingRows={budgetPlanningStraddlingRows}
         newLocationContractIds={newLocationOpexContractIds}
         currentYear={currentYearForNewLocationOpex}
       />

@@ -11,14 +11,24 @@ import { Loader2, Lock, CalendarClock, Eye } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { CapexNewLocationOpexSection } from "./CapexNewLocationOpexSection";
 
-/** Contrato que aporta al Arrastre: su CAPEX de "en curso"/"programado" cae,
- * según sus fechas reales de Gantt, en el año que se está planificando --
- * mismo shape que arma avanceBreakdownByYear en CapexDashboard.tsx. */
-export interface CarryoverContractRow {
+/** Totales por Estado de Avance (Terminado/En Curso/Programado/Caído) de un
+ * año -- mismo shape que las cards de Estado de Avance de /capex. */
+export interface AvanceTotalRow {
+  name: string;
+  color: string;
+  uf: number;
+  count: number;
+}
+
+/** Contrato que CONSUME presupuesto en AMBOS años (el actual y el
+ * siguiente que se está planificando) -- "cruza" de un año a otro. */
+export interface StraddlingContractRow {
   contractName: string;
   company: string;
   clasificacion: string | null;
-  uf: number;
+  avanceStatus: string | null;
+  currentYearUf: number;
+  targetYearUf: number;
   date: string | null;
 }
 
@@ -46,9 +56,14 @@ interface Props {
    *  reales de Gantt/Comité GP), en CLP -- mismo total que yearBreakdownTotal
    *  en /capex. */
   objetivoContratosCLP: number;
-  /** Contratos "En Curso"/"Programado" cuyo CAPEX de targetYear ya estaba
-   *  contemplado en el presupuesto de este año (arrastre). */
-  arrastreRows: CarryoverContractRow[];
+  /** Desglose del presupuesto del AÑO ACTUAL (no targetYear) por Estado de
+   *  Avance -- contexto de cómo quedó/se planificó ese año antes de
+   *  proyectar el siguiente. */
+  currentYearAvanceTotals: AvanceTotalRow[];
+  /** Contratos que consumen presupuesto en AMBOS años (actual y targetYear)
+   *  -- Arrastre preciso: se identifican por tener CAPEX != 0 en los dos
+   *  años (contractYearAmounts), no solo por su Estado de Avance. */
+  straddlingRows: StraddlingContractRow[];
   /** Ids de contratos clasificación "Nuevo" con CAPEX presupuestado en el
    *  año en curso o en targetYear -- base del bloque "Presupuesto Operativo
    *  de Nuevos Locales" (sección aparte, no se mezcla con Objetivo/Arrastre). */
@@ -67,7 +82,7 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, arrastreRows, newLocationContractIds, currentYear }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, currentYearAvanceTotals, straddlingRows, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -154,8 +169,9 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
   const objetivoInformativosCLP = items.reduce((sum, it) => sum + itemClp(it), 0);
   const objetivoCLP = objetivoContratosCLP + objetivoInformativosCLP;
-  const arrastreCLP = arrastreRows.reduce((sum, r) => sum + r.uf, 0) * (ufValue || 0);
+  const arrastreCLP = straddlingRows.reduce((sum, r) => sum + r.targetYearUf, 0) * (ufValue || 0);
   const aPedirCLP = objetivoCLP - arrastreCLP;
+  const currentYearAvanceTotalCLP = currentYearAvanceTotals.reduce((sum, t) => sum + t.uf, 0) * (ufValue || 0);
 
   const handleClose = async () => {
     if (!isAdmin) return;
@@ -167,7 +183,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
         objetivoCLP,
         arrastreCLP,
         aPedirCLP,
-        arrastreRows,
+        straddlingRows,
         items: items.map((it) => ({ name: it.name, date: it.date, superficie_m2: it.superficie_m2, valor_uf_m2: it.valor_uf_m2, clp: itemClp(it) })),
       };
       const { data: userData } = await supabase.auth.getUser();
@@ -282,22 +298,59 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               <p className="text-right text-sm font-medium">Subtotal informativos: {formatCLP(objetivoInformativosCLP)}</p>
             </div>
 
-            {/* Arrastre -- solo lectura, con detalle */}
+            {/* Presupuesto del año actual -- contexto, desglosado por Estado
+                de Avance. Solo lectura. */}
             <div className="space-y-2">
-              <p className="text-sm font-medium">Arrastre (contratos En Curso/Programado que ya pagan en {targetYear})</p>
-              {arrastreRows.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No hay contratos en curso/programados con pago en {targetYear}.</p>
+              <p className="text-sm font-medium">Presupuesto {currentYear} por Estado de Avance</p>
+              {currentYearAvanceTotals.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No hay CAPEX con Estado de Avance cargado en {currentYear}.</p>
               ) : (
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {arrastreRows.map((r, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs border-b py-1 gap-2">
-                      <span className="break-words">{r.company} · {r.contractName}</span>
-                      <span className="shrink-0 ml-2 whitespace-nowrap">{formatCLP(r.uf * (ufValue || 0))}</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {currentYearAvanceTotals.map((t) => (
+                    <div key={t.name} className="border rounded-lg p-2 space-y-0.5">
+                      <p className="text-xs text-muted-foreground">{t.name} ({t.count})</p>
+                      <p className="text-sm font-semibold">{formatCLP(t.uf * (ufValue || 0))}</p>
                     </div>
                   ))}
                 </div>
               )}
-              <p className="text-right text-sm font-medium">Total arrastre: {formatCLP(arrastreCLP)}</p>
+              <p className="text-right text-sm font-medium">Total {currentYear}: {formatCLP(currentYearAvanceTotalCLP)}</p>
+            </div>
+
+            {/* Arrastre -- contratos que consumen presupuesto en AMBOS años
+                (el actual y targetYear), con el monto de cada año por
+                separado, para ser precisos en cuáles cruzan. */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Arrastre -- contratos que consumen presupuesto en {currentYear} Y {targetYear}</p>
+              {straddlingRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Ningún contrato tiene CAPEX distinto de cero en ambos años.</p>
+              ) : (
+                <div className="overflow-x-auto max-h-56 overflow-y-auto border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-background">
+                      <tr className="border-b">
+                        <th className="text-left p-1.5 font-medium">Contrato</th>
+                        <th className="text-left p-1.5 font-medium">Empresa</th>
+                        <th className="text-left p-1.5 font-medium">Avance</th>
+                        <th className="text-right p-1.5 font-medium">{currentYear}</th>
+                        <th className="text-right p-1.5 font-medium">{targetYear}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {straddlingRows.map((r, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="p-1.5 break-words">{r.contractName}</td>
+                          <td className="p-1.5 whitespace-nowrap">{r.company}</td>
+                          <td className="p-1.5 whitespace-nowrap">{r.avanceStatus || "-"}</td>
+                          <td className="text-right p-1.5 whitespace-nowrap">{formatCLP(r.currentYearUf * (ufValue || 0))}</td>
+                          <td className="text-right p-1.5 whitespace-nowrap font-medium">{formatCLP(r.targetYearUf * (ufValue || 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="text-right text-sm font-medium">Total arrastre a {targetYear}: {formatCLP(arrastreCLP)}</p>
             </div>
 
             {/* Totales */}
