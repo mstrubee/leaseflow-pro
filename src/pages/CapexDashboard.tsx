@@ -1333,6 +1333,35 @@ export default function CapexDashboard() {
     ];
   }, [avanceBreakdownByYear, budgetPlanningTargetYear]);
 
+  // Contratos "Nuevo" (contracts.clasificacion) con CAPEX presupuestado en el
+  // año en curso O en el próximo -- base del bloque "Presupuesto Operativo de
+  // Nuevos Locales" del diálogo de planificación (un local nuevo suele abrir
+  // a mitad de año, así que su primer tramo de operación cruza de un año al
+  // otro). Se deriva de contractYearAmounts (mismo mapa, por COPIA/groupKey,
+  // que ya usa el resto del dashboard para el desglose por año), y no de
+  // contractGroups/filteredBudgets -- estos últimos ya vienen filtrados por el
+  // año seleccionado en el dropdown "Año", lo que haría desaparecer contratos
+  // nuevos cuyo CAPEX cae en el otro año del rango. budgetRowsByContractAllYears
+  // en cambio solo aplica los filtros de búsqueda/empresa/clasificación/avance
+  // (no el de año), así que es la base correcta para "todos los años".
+  const currentYearForNewLocationOpex = new Date().getFullYear();
+  const newLocationOpexContractIds = React.useMemo(() => {
+    const ids: string[] = [];
+    budgetRowsByContractAllYears.forEach((rows, contractId) => {
+      const clasificacion = rows[0]?.clasificacion;
+      if (clasificacion !== "Nuevo") return;
+      const hasCapexInRange = getCopiesForContract(contractId).some(({ groupKey }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        return (
+          (yearMap[currentYearForNewLocationOpex] || 0) !== 0 ||
+          (yearMap[currentYearForNewLocationOpex + 1] || 0) !== 0
+        );
+      });
+      if (hasCapexInRange) ids.push(contractId);
+    });
+    return ids;
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract, currentYearForNewLocationOpex]);
+
   const yearBreakdownByClasificacion = React.useMemo(() => {
     const m: Record<string, Record<number, number>> = {};
     budgetRowsByContractAllYears.forEach((rows, contractId) => {
@@ -2534,6 +2563,8 @@ export default function CapexDashboard() {
         ufValue={ufValue || 0}
         objetivoContratosCLP={yearBreakdownTotal[budgetPlanningTargetYear] || 0}
         arrastreRows={budgetPlanningArrastreRows}
+        newLocationContractIds={newLocationOpexContractIds}
+        currentYear={currentYearForNewLocationOpex}
       />
     </div>
   );
