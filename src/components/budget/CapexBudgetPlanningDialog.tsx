@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, CalendarClock } from "lucide-react";
+import { Loader2, Lock, CalendarClock, Eye } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 /** Contrato que aporta al Arrastre: su CAPEX de "en curso"/"programado" cae,
@@ -63,10 +63,12 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
   // Edición local de superficie/UF por ítem (keyed por id) -- se guarda al
-  // salir del campo (onBlur), no en cada tecla.
+  // salir del campo (onBlur) o al presionar "Guardar", no en cada tecla.
   const [edits, setEdits] = useState<Record<string, { superficie: string; valorUfM2: string }>>({});
 
   const isClosed = draft?.status === "cerrado";
@@ -124,6 +126,19 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
     setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, superficie_m2: superficie, valor_uf_m2: valorUfM2 } : it)));
   };
 
+  // "Guardar": persiste de una vez todos los ítems editados (por si el
+  // usuario usó las flechitas del input numérico sin pasar por un blur, o
+  // simplemente quiere confirmar que todo quedó guardado antes de cerrar).
+  const handleSaveAll = async () => {
+    setSaving(true);
+    try {
+      await Promise.all(items.map((it) => handleSaveItemValuation(it.id)));
+      toast.success("Borrador guardado");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const itemClp = (it: BudgetItem): number => {
     if (!it.superficie_m2 || !it.valor_uf_m2) return 0;
     return it.superficie_m2 * it.valor_uf_m2 * (ufValue || 0);
@@ -172,7 +187,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5 text-primary" />
@@ -194,6 +209,13 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               </div>
             )}
 
+            {previewMode && !isClosed && (
+              <div className="flex items-center justify-between gap-2 text-sm bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg p-3">
+                <span>Vista previa -- así se vería el presupuesto si lo cierras ahora. Nada se guarda al salir de acá.</span>
+                <Button size="sm" variant="outline" onClick={() => setPreviewMode(false)}>Volver a editar</Button>
+              </div>
+            )}
+
             {/* Contratos -- solo lectura */}
             <div className="space-y-1">
               <p className="text-sm font-medium">Contratos (comprometido real en {targetYear})</p>
@@ -209,37 +231,41 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               ) : (
                 <div className="space-y-2">
                   {items.map((it) => (
-                    <div key={it.id} className="flex items-center gap-2 border rounded-lg p-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{it.name}</span>
+                    <div key={it.id} className="flex items-center gap-3 border rounded-lg p-2">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium break-words">{it.name}</span>
                           <Badge variant="secondary" className="text-[10px] shrink-0">Informativo, sin contrato</Badge>
                         </div>
                         <span className="text-xs text-muted-foreground">{fmtDate(it.date)}</span>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Input
-                          type="number"
-                          placeholder="m²"
-                          className="w-20 h-8 text-xs"
-                          disabled={isClosed}
-                          value={edits[it.id]?.superficie ?? ""}
-                          onChange={(e) => setEdits((prev) => ({ ...prev, [it.id]: { ...prev[it.id], superficie: e.target.value } }))}
-                          onBlur={() => handleSaveItemValuation(it.id)}
-                        />
-                        <span className="text-xs text-muted-foreground">m² ×</span>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="UF/m²"
-                          className="w-20 h-8 text-xs"
-                          disabled={isClosed}
-                          value={edits[it.id]?.valorUfM2 ?? ""}
-                          onChange={(e) => setEdits((prev) => ({ ...prev, [it.id]: { ...prev[it.id], valorUfM2: e.target.value } }))}
-                          onBlur={() => handleSaveItemValuation(it.id)}
-                        />
-                        <span className="text-xs text-muted-foreground">UF/m²</span>
-                      </div>
+                      {previewMode || isClosed ? (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {it.superficie_m2 ?? "-"} m² × {it.valor_uf_m2 ?? "-"} UF/m²
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Input
+                            type="number"
+                            placeholder="m²"
+                            className="w-20 h-8 text-xs"
+                            value={edits[it.id]?.superficie ?? ""}
+                            onChange={(e) => setEdits((prev) => ({ ...prev, [it.id]: { ...prev[it.id], superficie: e.target.value } }))}
+                            onBlur={() => handleSaveItemValuation(it.id)}
+                          />
+                          <span className="text-xs text-muted-foreground">m² ×</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="UF/m²"
+                            className="w-20 h-8 text-xs"
+                            value={edits[it.id]?.valorUfM2 ?? ""}
+                            onChange={(e) => setEdits((prev) => ({ ...prev, [it.id]: { ...prev[it.id], valorUfM2: e.target.value } }))}
+                            onBlur={() => handleSaveItemValuation(it.id)}
+                          />
+                          <span className="text-xs text-muted-foreground">UF/m²</span>
+                        </div>
+                      )}
                       <span className="text-sm font-semibold w-28 text-right shrink-0">{formatCLP(itemClp(it))}</span>
                     </div>
                   ))}
@@ -256,9 +282,9 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               ) : (
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {arrastreRows.map((r, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs border-b py-1">
-                      <span className="truncate">{r.company} · {r.contractName}</span>
-                      <span className="shrink-0 ml-2">{formatCLP(r.uf * (ufValue || 0))}</span>
+                    <div key={i} className="flex items-center justify-between text-xs border-b py-1 gap-2">
+                      <span className="break-words">{r.company} · {r.contractName}</span>
+                      <span className="shrink-0 ml-2 whitespace-nowrap">{formatCLP(r.uf * (ufValue || 0))}</span>
                     </div>
                   ))}
                 </div>
@@ -282,8 +308,16 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               </div>
             </div>
 
-            {!isClosed && (
-              <div className="flex justify-end">
+            {!isClosed && !previewMode && (
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={handleSaveAll} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Guardar
+                </Button>
+                <Button variant="outline" onClick={() => setPreviewMode(true)}>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Vista Previa
+                </Button>
                 <Button onClick={handleClose} disabled={!isAdmin || closing} title={!isAdmin ? "Solo un administrador puede cerrar el presupuesto" : undefined}>
                   {closing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
                   Cerrar Presupuesto {targetYear}
