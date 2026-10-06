@@ -64,6 +64,7 @@ interface ItemRow {
   ggcc_uf_m2: number | null;
   fondo_promocion_uf: number | null;
   otros_uf: number | null;
+  contract_id: string | null;
 }
 
 interface Props {
@@ -71,6 +72,12 @@ interface Props {
   currentYear: number;
   targetYear: number;
   ufValue: number;
+  /** Ids/nombres (normalizados) de contratos que ya cuentan como CAPEX real
+   *  en el dashboard -- excluye de esta lista cualquier ítem informativo
+   *  que ya represente a uno de ellos (vinculado por id, o por nombre en
+   *  ítems antiguos de texto libre), para no contarlo dos veces. */
+  realContractIds: Set<string>;
+  realContractNames: Set<string>;
 }
 
 // Parsea el label "M{start}-M{end}" de un RentPeriodRow (ver rentPeriods.ts).
@@ -105,7 +112,7 @@ const isMissing = {
   otros: (v: VersionRow) => !v.effective_date || v.otros_egresos_amount == null,
 };
 
-export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYear, ufValue }: Props) {
+export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYear, ufValue, realContractIds, realContractNames }: Props) {
   const [loading, setLoading] = useState(false);
   const [contracts, setContracts] = useState<Record<string, ContractRow>>({});
   const [versions, setVersions] = useState<Record<string, VersionRow>>({});
@@ -195,13 +202,20 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
       try {
         const { data, error } = await (supabase as any)
           .from("gantt_overview_budget_items")
-          .select("id, name, date, superficie_m2, ggcc_uf_m2, fondo_promocion_uf, otros_uf")
+          .select("id, name, date, superficie_m2, ggcc_uf_m2, fondo_promocion_uf, otros_uf, contract_id")
           .gte("date", `${currentYear}-01-01`)
           .lte("date", `${targetYear}-12-31`)
           .order("date", { ascending: true });
         if (error) throw error;
         if (cancelled) return;
-        setItems(data || []);
+        // Excluye ítems que ya representan un contrato que cuenta como
+        // CAPEX real (vinculado por id, o por nombre en ítems antiguos de
+        // texto libre) -- evita el doble conteo (ej. "Chiguayante" en
+        // Arrastre Y en Informativos).
+        const filtered = (data || []).filter((it: ItemRow) =>
+          it.contract_id ? !realContractIds.has(it.contract_id) : !realContractNames.has(it.name.trim().toLowerCase())
+        );
+        setItems(filtered);
       } catch (err) {
         console.error(err);
         toast.error("Error al cargar los ítems de presupuesto informativos");

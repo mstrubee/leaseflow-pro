@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -45,6 +46,12 @@ export interface GanttOverviewBudgetItem {
   id: string;
   name: string;
   date: string;
+  // Contrato real vinculado (elegido del desplegable al crear el ítem) --
+  // null en ítems antiguos de texto libre. Ver capex_no_gantt_year_hint/
+  // CapexDashboard.tsx: un ítem vinculado se excluye de los cálculos de
+  // CAPEX/Presupuesto Operativo apenas el contrato tenga CAPEX real
+  // cargado, para no contarlo dos veces.
+  contract_id: string | null;
 }
 
 // Variante "clara" (borde+fondo suave) de la paleta de PROGRESS_COLOR_OPTIONS,
@@ -120,7 +127,56 @@ export function GanttOverviewTimeline({
   const [editing, setEditing] = useState<GanttOverviewBudgetItem | null>(null);
   const [formName, setFormName] = useState("");
   const [formDate, setFormDate] = useState("");
+  const [formContractId, setFormContractId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Contratos "En Negociación" elegibles para "Agregar Ítem" -- Estado de
+  // Comité marcado "Calendarizable" en Admin (ver ComiteGPStatusManager),
+  // sin contar los que ya tienen un ítem vinculado (contract_id) para no
+  // ofrecer crear un duplicado.
+  const [eligibleContracts, setEligibleContracts] = useState<{ id: string; name: string }[]>([]);
+  const [loadingEligible, setLoadingEligible] = useState(false);
+
+  useEffect(() => {
+    if (!dialogOpen || editing) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingEligible(true);
+      try {
+        const { data: calendarizableStatuses } = await (supabase as any)
+          .from("comite_gp_statuses")
+          .select("name")
+          .eq("is_calendarizable", true)
+          .eq("is_active", true);
+        const statusNames = (calendarizableStatuses || []).map((s: any) => s.name);
+        if (statusNames.length === 0) {
+          if (!cancelled) setEligibleContracts([]);
+          return;
+        }
+        const { data: contractsData } = await supabase
+          .from("contracts")
+          .select("id, name, comite_gp_status")
+          .eq("status", "en_negociacion")
+          .is("deleted_at", null)
+          .in("comite_gp_status", statusNames);
+        const { data: linkedItems } = await (supabase as any)
+          .from("gantt_overview_budget_items")
+          .select("contract_id")
+          .not("contract_id", "is", null);
+        const linkedIds = new Set((linkedItems || []).map((it: any) => it.contract_id));
+        if (!cancelled) {
+          setEligibleContracts(
+            (contractsData || [])
+              .filter((c: any) => !linkedIds.has(c.id))
+              .map((c: any) => ({ id: c.id, name: c.name }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingEligible(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dialogOpen, editing]);
   const [deleting, setDeleting] = useState(false);
 
   const { rangeStart, rangeEnd, months, years, todayPct, innerWidthPct } = useMemo(() => {
@@ -469,6 +525,7 @@ export function GanttOverviewTimeline({
   const openCreate = () => {
     setEditing(null);
     setFormName("");
+    setFormContractId(null);
     setFormDate(format(today, "yyyy-MM-dd"));
     setDialogOpen(true);
   };
@@ -476,12 +533,21 @@ export function GanttOverviewTimeline({
   const openEdit = (item: GanttOverviewBudgetItem) => {
     setEditing(item);
     setFormName(item.name);
+    setFormContractId(item.contract_id);
     setFormDate(item.date);
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
-    if (!formName.trim() || !formDate) {
+    // Un ítem nuevo se crea eligiendo un contrato del desplegable (no texto
+    // libre) -- ver eligibleContracts. Un ítem antiguo de texto libre
+    // (contract_id null) que se está editando conserva su nombre editable.
+    const effectiveName = !editing ? eligibleContracts.find((c) => c.id === formContractId)?.name ?? "" : formName.trim();
+    if (!editing && !formContractId) {
+      toast.error("Elige un contrato");
+      return;
+    }
+    if (!effectiveName || !formDate) {
       toast.error("El nombre y la fecha son requeridos");
       return;
     }
@@ -490,7 +556,7 @@ export function GanttOverviewTimeline({
       if (editing) {
         const { error } = await (supabase as any)
           .from("gantt_overview_budget_items")
-          .update({ name: formName.trim(), date: formDate, updated_at: new Date().toISOString() })
+          .update({ name: effectiveName, date: formDate, updated_at: new Date().toISOString() })
           .eq("id", editing.id);
         if (error) throw error;
         toast.success("Ítem actualizado");
@@ -498,7 +564,7 @@ export function GanttOverviewTimeline({
         const { data: userData } = await supabase.auth.getUser();
         const { error } = await (supabase as any)
           .from("gantt_overview_budget_items")
-          .insert({ name: formName.trim(), date: formDate, created_by: userData.user?.id });
+          .insert({ name: effectiveName, date: formDate, contract_id: formContractId, created_by: userData.user?.id });
         if (error) throw error;
         toast.success("Ítem creado");
       }
@@ -730,10 +796,42 @@ export function GanttOverviewTimeline({
             <DialogTitle>{editing ? "Editar Ítem de Presupuesto" : "Nuevo Ítem de Presupuesto"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Nombre *</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Ej: Presupuesto Q1" />
-            </div>
+            {editing ? (
+              editing.contract_id ? (
+                <div className="space-y-2">
+                  <Label>Contrato</Label>
+                  <p className="text-sm">{formName}</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Nombre *</Label>
+                  <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Ej: Presupuesto Q1" />
+                </div>
+              )
+            ) : (
+              <div className="space-y-2">
+                <Label>Contrato *</Label>
+                <Select value={formContractId ?? undefined} onValueChange={setFormContractId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingEligible ? "Cargando..." : "Elige un contrato En Negociación"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleContracts.length === 0 && !loadingEligible ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No hay contratos En Negociación con Estado de Comité "Calendarizable" disponibles.
+                      </div>
+                    ) : (
+                      eligibleContracts.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Solo contratos "En Negociación" cuyo Estado de Comité esté marcado "Calendarizable" en Admin &gt; Estados y Categorías &gt; Estados Comité GP.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Fecha *</Label>
               <Input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} />

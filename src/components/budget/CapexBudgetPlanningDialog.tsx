@@ -71,6 +71,7 @@ interface BudgetItem {
   date: string;
   superficie_m2: number | null;
   valor_uf_m2: number | null;
+  contract_id: string | null;
 }
 
 interface Draft {
@@ -111,6 +112,15 @@ interface Props {
    *  tanto sí reduce cuánto hay que pedir de nuevo para targetYear. Puede
    *  ser negativo (presupuesto 2026 sobregirado). */
   disponibleCurrentYearCLP: number;
+  /** Ids y nombres (normalizados, minúscula/trim) de TODOS los contratos que
+   *  ya cuentan como CAPEX real en el dashboard -- para excluir de los
+   *  Ítems de Presupuesto informativos cualquiera que ya represente a uno
+   *  de estos contratos (vinculado por id, o por nombre en ítems antiguos
+   *  de texto libre), evitando contarlo dos veces. También se pasa a
+   *  CapexNewLocationOpexSection para el mismo filtro en Presupuesto
+   *  Operativo. */
+  realContractIds: Set<string>;
+  realContractNames: Set<string>;
   /** Contratos con CAPEX en alguno de los dos años pero sin Estado de
    *  Avance y/o sin cronograma -- se completan acá. */
   missingDataRows: MissingDataContractRow[];
@@ -142,7 +152,7 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, objetivoContratosRows, currentYearAvanceTotals, straddlingRows, disponibleCurrentYearCLP, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, objetivoContratosRows, currentYearAvanceTotals, straddlingRows, disponibleCurrentYearCLP, realContractIds, realContractNames, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -169,14 +179,22 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
         (supabase as any).from("capex_budget_drafts").select("id, year, status, closed_at").eq("year", targetYear).maybeSingle(),
         (supabase as any)
           .from("gantt_overview_budget_items")
-          .select("id, name, date, superficie_m2, valor_uf_m2")
+          .select("id, name, date, superficie_m2, valor_uf_m2, contract_id")
           .gte("date", yearStart)
           .lte("date", yearEnd)
           .order("date", { ascending: true }),
       ]);
 
       setDraft(draftData || null);
-      const loadedItems: BudgetItem[] = itemsData || [];
+      // Excluye ítems que ya representan un contrato que cuenta como CAPEX
+      // real en el dashboard (vinculado por id, o por nombre en ítems
+      // antiguos de texto libre) -- evita el doble conteo (ej. un contrato
+      // que ya aparece en Arrastre, y además como "informativo"). Ver
+      // realContractIds/realContractNames en CapexDashboard.tsx.
+      const loadedItems: BudgetItem[] = (itemsData || []).filter((it: BudgetItem) => {
+        if (it.contract_id) return !realContractIds.has(it.contract_id);
+        return !realContractNames.has(it.name.trim().toLowerCase());
+      });
       setItems(loadedItems);
       setEdits(
         Object.fromEntries(
@@ -601,6 +619,8 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               currentYear={currentYear}
               targetYear={targetYear}
               ufValue={ufValue}
+              realContractIds={realContractIds}
+              realContractNames={realContractNames}
             />
 
             {/* 7. Total -- al final de todo. Arrastre se RESTA de Objetivo
