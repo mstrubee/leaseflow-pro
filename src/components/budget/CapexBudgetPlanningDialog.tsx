@@ -19,6 +19,10 @@ export interface AvanceTotalRow {
   color: string;
   uf: number;
   count: number;
+  /** Nombres de los contratos que componen este total -- para listarlos
+   *  debajo de la card (pedido explícito: "debajo de cada card, lista los
+   *  proyectos Terminados/En Curso/Programados"). */
+  names: string[];
 }
 
 /** Contrato que CONSUME presupuesto en AMBOS años (el actual y el
@@ -392,6 +396,13 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                     <div key={t.name} className="border rounded-lg p-2 space-y-0.5">
                       <p className="text-xs text-muted-foreground">{t.name} ({t.count})</p>
                       <p className="text-sm font-semibold">{formatCLP(t.uf * (ufValue || 0))}</p>
+                      {t.names.length > 0 && (
+                        <ul className="text-[10px] text-muted-foreground leading-tight pt-1 space-y-0.5">
+                          {t.names.map((name) => (
+                            <li key={name} className="break-words">{name}</li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   ))}
                 </div>
