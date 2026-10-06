@@ -1331,10 +1331,28 @@ export default function CapexDashboard() {
   // siguiente.
   const budgetPlanningCurrentYearAvance = React.useMemo(() => {
     const yearData = avanceBreakdownByYear[budgetPlanningCurrentYear] || {};
+    const caidoLabel = AVANCE_CARD_ORDER[3];
     return avanceStatusTypesOrdered
-      .filter((t) => yearData[t.name])
+      .filter((t) => t.name !== caidoLabel && yearData[t.name])
       .map((t) => ({ name: t.name, color: t.color, uf: yearData[t.name].uf, count: yearData[t.name].count }));
   }, [avanceBreakdownByYear, avanceStatusTypesOrdered, budgetPlanningCurrentYear]);
+
+  // Los contratos "Caído" no se consideran en NINGUNA sección de
+  // "Planificar Presupuesto {año+1}" (Objetivo, desglose por Estado de
+  // Avance, Arrastre ni Estado de Avance incompleto), de ningún año --
+  // pedido explícito: un contrato caído no compromete CAPEX futuro.
+  const budgetPlanningObjetivoContratosCLP = React.useMemo(() => {
+    const caidoLabel = AVANCE_CARD_ORDER[3];
+    let total = 0;
+    budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
+      if (lineRows[0].capex_avance_status === caidoLabel) return;
+      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+        const yearMap = contractYearAmounts.get(groupKey) || {};
+        total += yearMap[budgetPlanningTargetYear] || 0;
+      });
+    });
+    return total;
+  }, [budgetRowsByContractAllYears, contractYearAmounts, getCopiesForContract, budgetPlanningTargetYear]);
 
   // Arrastre: contratos que CONSUMEN presupuesto en AMBOS años (año actual Y
   // año siguiente) -- criterio preciso pedido explícitamente (antes se
@@ -1350,9 +1368,11 @@ export default function CapexDashboard() {
       contractName: string; company: string; clasificacion: string | null; avanceStatus: string | null;
       currentYearUf: number; targetYearUf: number; date: string | null;
     }> = [];
+    const caidoLabel = AVANCE_CARD_ORDER[3];
     budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
       const clasificacion = lineRows[0].clasificacion;
       const avanceStatus = lineRows[0].capex_avance_status;
+      if (avanceStatus === caidoLabel) return;
       const contractName = lineRows[0].contract_name;
       const date = contractInvestmentInfo[contractId]?.end ?? null;
       getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
@@ -1387,8 +1407,10 @@ export default function CapexDashboard() {
       contractId: string; contractName: string; company: string; superficie: number;
       hasGantt: boolean; currentYearUf: number; targetYearUf: number;
     }> = [];
+    const caidoLabel = AVANCE_CARD_ORDER[3];
     budgetRowsByContractAllYears.forEach((lineRows, contractId) => {
       const avanceStatus = lineRows[0].capex_avance_status;
+      if (avanceStatus === caidoLabel) return;
       const hasGantt = !!contractInvestmentInfo[contractId];
       if (avanceStatus && hasGantt) return;
       const contractName = lineRows[0].contract_name;
@@ -2634,7 +2656,7 @@ export default function CapexDashboard() {
         onOpenChange={setBudgetPlanningOpen}
         targetYear={budgetPlanningTargetYear}
         ufValue={ufValue || 0}
-        objetivoContratosCLP={yearBreakdownTotal[budgetPlanningTargetYear] || 0}
+        objetivoContratosCLP={budgetPlanningObjetivoContratosCLP}
         currentYearAvanceTotals={budgetPlanningCurrentYearAvance}
         straddlingRows={budgetPlanningStraddlingRows}
         missingDataRows={budgetPlanningMissingDataRows}
