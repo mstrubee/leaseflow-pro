@@ -53,6 +53,11 @@ export interface MissingDataContractRow {
    *  tratar este contrato como arrastre mientras no tenga Gantt -- null si
    *  no se ha definido. Se ignora solo apenas el contrato tenga Gantt. */
   noGanttYearHint: number | null;
+  /** Estado de Avance YA cargado del contrato (puede no ser null -- un
+   *  contrato puede estar acá solo porque le falta el Gantt, con su Estado
+   *  de Avance completo; no asumir que "está en esta lista" == "sin Estado
+   *  de Avance"). */
+  avanceStatus: string | null;
 }
 
 interface BudgetItem {
@@ -93,10 +98,13 @@ interface Props {
   /** Tipos de Estado de Avance administrables (Admin > Estados y
    *  Categorías), para el selector de cada contrato en missingDataRows. */
   avanceStatusTypes: Array<{ id: string; name: string; color: string }>;
-  /** Llamado después de guardar un Estado de Avance faltante, para que el
-   *  dashboard recargue sus datos (el contrato recién editado ya no debería
-   *  aparecer en missingDataRows en el próximo render). */
-  onMissingDataSaved?: () => void;
+  /** Llamado después de guardar el Estado de Avance de un contrato, para que
+   *  el dashboard actualice su estado local SIN recargar todo (evita el
+   *  "refresh" completo de la página al elegir una opción acá). */
+  onAvanceStatusUpdated?: (contractId: string, statusName: string) => void;
+  /** Llamado después de guardar el año de arrastre manual (sin Gantt) de un
+   *  contrato, mismo motivo que onAvanceStatusUpdated. */
+  onNoGanttYearHintUpdated?: (contractId: string, year: number) => void;
   /** Ids de contratos clasificación "Nuevo" con CAPEX presupuestado en el
    *  año en curso o en targetYear -- base del bloque "Presupuesto Operativo
    *  de Nuevos Locales" (sección aparte, no se mezcla con Objetivo/Arrastre). */
@@ -115,7 +123,7 @@ const fmtDate = (iso: string | null) => {
   }
 };
 
-export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, currentYearAvanceTotals, straddlingRows, missingDataRows, avanceStatusTypes, onMissingDataSaved, newLocationContractIds, currentYear }: Props) {
+export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufValue, objetivoContratosCLP, currentYearAvanceTotals, straddlingRows, missingDataRows, avanceStatusTypes, onAvanceStatusUpdated, onNoGanttYearHintUpdated, newLocationContractIds, currentYear }: Props) {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -207,7 +215,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
       const { error } = await (supabase as any).from("contracts").update({ capex_avance_status: statusName }).eq("id", contractId);
       if (error) throw error;
       toast.success("Estado de Avance guardado");
-      onMissingDataSaved?.();
+      onAvanceStatusUpdated?.(contractId, statusName);
     } catch (err) {
       console.error(err);
       toast.error("Error al guardar el Estado de Avance");
@@ -227,7 +235,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
       const { error } = await (supabase as any).from("contracts").update({ capex_no_gantt_year_hint: year }).eq("id", contractId);
       if (error) throw error;
       toast.success("Año de arrastre guardado");
-      onMissingDataSaved?.();
+      onNoGanttYearHintUpdated?.(contractId, year);
     } catch (err) {
       console.error(err);
       toast.error("Error al guardar el año de arrastre");
@@ -437,9 +445,9 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                 completa lo que falta acá, sin re-pedir superficie/canon. */}
             {missingDataRows.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm font-medium">Contratos con Estado de Avance incompleto</p>
+                <p className="text-sm font-medium">Contratos con datos incompletos para Objetivo/Arrastre</p>
                 <p className="text-xs text-muted-foreground">
-                  Tienen CAPEX en {currentYear} o {targetYear} pero no se pudieron incluir arriba (Presupuesto por Estado de Avance / Arrastre) porque les falta el Estado de Avance y/o el cronograma Gantt. Superficie y canon no se piden de nuevo -- ya están cargados en el contrato.
+                  Tienen CAPEX en {currentYear} o {targetYear} pero no se pudieron incluir arriba (Presupuesto por Estado de Avance / Arrastre) porque les falta el Estado de Avance y/o el cronograma Gantt -- muchos de estos SÍ tienen Estado de Avance cargado (se ve abajo), solo les falta el cronograma. Superficie y canon no se piden de nuevo -- ya están cargados en el contrato.
                 </p>
                 <div className="space-y-2">
                   {missingDataRows.map((r) => (
@@ -448,6 +456,11 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium break-words">{r.contractName}</span>
                           <span className="text-xs text-muted-foreground">{r.company}</span>
+                          {r.avanceStatus ? (
+                            <Badge variant="outline" className="text-[10px]">Avance: {r.avanceStatus}</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Sin Estado de Avance</Badge>
+                          )}
                           {!r.hasGantt && <Badge variant="outline" className="text-[10px]">Sin cronograma Gantt</Badge>}
                         </div>
                         <span className="text-xs text-muted-foreground">
@@ -456,23 +469,25 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                         </span>
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
-                        <Select
-                          disabled={savingAvanceFor === r.contractId}
-                          onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
-                        >
-                          <SelectTrigger className="w-40 h-8 text-xs">
-                            <SelectValue placeholder="Estado de Avance" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {avanceStatusTypes.map((t) => (
-                              <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {!r.avanceStatus && (
+                          <Select
+                            disabled={savingAvanceFor === r.contractId}
+                            onValueChange={(v) => handleSetAvanceStatus(r.contractId, v)}
+                          >
+                            <SelectTrigger className="w-40 h-8 text-xs">
+                              <SelectValue placeholder="Estado de Avance" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {avanceStatusTypes.map((t) => (
+                                <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                         {!r.hasGantt && (
                           <Select
                             disabled={savingHintFor === r.contractId}
-                            defaultValue={r.noGanttYearHint ? String(r.noGanttYearHint) : undefined}
+                            value={r.noGanttYearHint ? String(r.noGanttYearHint) : undefined}
                             onValueChange={(v) => handleSetNoGanttYearHint(r.contractId, Number(v))}
                           >
                             <SelectTrigger className="w-40 h-8 text-xs">

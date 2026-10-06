@@ -1537,6 +1537,7 @@ export default function CapexDashboard() {
     const rows: Array<{
       contractId: string; contractName: string; company: string; superficie: number;
       hasGantt: boolean; currentYearUf: number; targetYearUf: number; noGanttYearHint: number | null;
+      avanceStatus: string | null;
     }> = [];
     const caidoLabel = AVANCE_CARD_ORDER[3];
     budgetRowsByContractAllYearsUnfiltered.forEach((lineRows, contractId) => {
@@ -1555,7 +1556,7 @@ export default function CapexDashboard() {
       });
       if (currentYearUf === 0 && targetYearUf === 0) return;
       const company = getCompanyGroupKey(lineRows[0].company_names);
-      rows.push({ contractId, contractName, company, superficie, hasGantt, currentYearUf, targetYearUf, noGanttYearHint });
+      rows.push({ contractId, contractName, company, superficie, hasGantt, currentYearUf, targetYearUf, noGanttYearHint, avanceStatus });
     });
     return rows.sort((a, b) => a.contractName.localeCompare(b.contractName));
   }, [budgetRowsByContractAllYearsUnfiltered, contractYearAmountsUnfiltered, contractInvestmentInfo, getCopiesForContract, ufValue, budgetPlanningCurrentYear, budgetPlanningTargetYear]);
@@ -1949,6 +1950,18 @@ export default function CapexDashboard() {
     }
     setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, capexYearOverride: year } : b));
     toast.success(year ? `Año de CAPEX forzado a ${year}` : "Año de CAPEX vuelto a automático");
+  };
+
+  // Actualiza localmente (sin volver a pedir todos los datos con loadBudgets)
+  // el Estado de Avance / el hint de arrastre sin Gantt de un contrato recién
+  // editado desde "Planificar Presupuesto" -- loadBudgets() recarga TODO el
+  // dashboard (filtros, scroll, etc.), lo que se sentía como un refresh de
+  // página completo cada vez que se elegía una opción en el diálogo.
+  const handleBudgetPlanningAvanceStatusUpdated = (contractId: string, statusName: string) => {
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, capex_avance_status: statusName } : b));
+  };
+  const handleBudgetPlanningNoGanttYearHintUpdated = (contractId: string, year: number) => {
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, noGanttYearHint: year } : b));
   };
 
   const BADGE_COLOR_MAP: Record<string, string> = {
@@ -2795,7 +2808,8 @@ export default function CapexDashboard() {
         straddlingRows={budgetPlanningStraddlingRows}
         missingDataRows={budgetPlanningMissingDataRows}
         avanceStatusTypes={avanceStatusTypesOrdered}
-        onMissingDataSaved={loadBudgets}
+        onAvanceStatusUpdated={handleBudgetPlanningAvanceStatusUpdated}
+        onNoGanttYearHintUpdated={handleBudgetPlanningNoGanttYearHintUpdated}
         newLocationContractIds={newLocationOpexContractIds}
         currentYear={currentYearForNewLocationOpex}
       />
