@@ -11,6 +11,7 @@ import { format, parseISO } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { CapexNewLocationOpexSection } from "./CapexNewLocationOpexSection";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 /** Totales por Estado de Avance (Terminado/En Curso/Programado/Caído) de un
  * año -- mismo shape que las cards de Estado de Avance de /capex. */
@@ -21,8 +22,9 @@ export interface AvanceTotalRow {
   count: number;
   /** Nombres de los contratos que componen este total -- para listarlos
    *  debajo de la card (pedido explícito: "debajo de cada card, lista los
-   *  proyectos Terminados/En Curso/Programados"). */
-  names: string[];
+   *  proyectos Terminados/En Curso/Programados"), con la empresa asociada
+   *  para mostrar su logo (pedido explícito). */
+  names: { name: string; company: string }[];
 }
 
 /** Contrato que CONSUME presupuesto en AMBOS años (el actual y el
@@ -386,9 +388,12 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                       <p className="text-xs text-muted-foreground">{t.name} ({t.count})</p>
                       <p className="text-sm font-semibold">{formatCLP(t.uf * (ufValue || 0))}</p>
                       {t.names.length > 0 && (
-                        <ul className="text-[10px] text-muted-foreground leading-tight pt-1 space-y-0.5">
-                          {t.names.map((name) => (
-                            <li key={name} className="break-words">{name}</li>
+                        <ul className="text-[10px] text-muted-foreground leading-tight pt-1 space-y-1">
+                          {t.names.map((n) => (
+                            <li key={`${n.name}::${n.company}`} className="flex items-center gap-1">
+                              <CompanyLogo companyName={n.company} size="sm" className="h-3.5 w-3.5 shrink-0" />
+                              <span className="break-words">{n.name}</span>
+                            </li>
                           ))}
                         </ul>
                       )}
