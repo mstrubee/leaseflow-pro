@@ -129,6 +129,7 @@ Antes de entregar cualquier código, ejecutar internamente:
 |---|---|
 | Supabase de Lovable (`tgxiqvfpirwvhktgqqfa`) | **No accesible.** Lovable no entrega acceso directo a la base de datos ni a las claves de servicio. No intentar pg_dump, CLI link, ni pedir credenciales. |
 | `.env.production` en `main` | **Nunca debe existir.** Está en `.gitignore`. Su presencia causa que Lovable autentique contra el Supabase nuevo (vacío), rompiendo el login de todos los usuarios. |
+| MariaDB (herramienta `mcp__MariaDB_GrupoPlanet__*`) | **No mencionar ni usar.** Es un sistema de GrupoPlanet totalmente distinto a la base de datos de LeaseFlow-pro (que es Supabase/Postgres). Nunca asumir que es la base de este proyecto. Solo usarla si Matias pide explícitamente una migración desde Supabase hacia ese sistema. |
 
 ---
 
