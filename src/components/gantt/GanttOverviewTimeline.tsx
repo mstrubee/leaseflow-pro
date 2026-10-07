@@ -126,7 +126,11 @@ export function GanttOverviewTimeline({
         .select("extended_until")
         .eq("id", 1)
         .maybeSingle();
-      if (!error && data?.extended_until) setExtendedUntil(parseISO(data.extended_until));
+      // Fecha local (no parseISO -- interpretaría la fecha "yyyy-MM-dd" como
+      // medianoche UTC, que en husos horarios negativos como Chile retrocede
+      // un día -- a veces un mes entero -- al pasar a hora local, dejando la
+      // extensión corta sin avisar).
+      if (!error && data?.extended_until) setExtendedUntil(new Date(data.extended_until + "T00:00:00"));
     })();
   }, []);
 
@@ -228,7 +232,8 @@ export function GanttOverviewTimeline({
 
   const handleExtend = async () => {
     if (!extendDate) return;
-    const target = parseISO(extendDate);
+    // Hora local, mismo motivo que la carga inicial más arriba.
+    const target = new Date(extendDate + "T00:00:00");
     if (target <= baseEnd) {
       toast.error("La fecha debe ser posterior al rango de 12 meses actual");
       return;
