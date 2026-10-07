@@ -727,14 +727,25 @@ export function GanttReportsSection() {
       // 2) Datos del contrato (nombre, superficie, verificar no eliminado)
       const { data: contractRows, error: cErr } = await supabase
         .from("contracts")
-        .select("id, name, deleted_at, comite_gp_status, superficie_edificada_local, clasificacion")
+        .select("id, name, status, deleted_at, comite_gp_status, superficie_edificada_local, clasificacion")
         .in("id", contractIds);
       if (cErr) throw cErr;
 
       const contractMap = new Map<string, any>();
       (contractRows || [])
-        // Excluir eliminados y contratos rechazados en Comité GP
-        .filter((c: any) => !c.deleted_at && c.comite_gp_status !== "Rechazada")
+        // Excluir eliminados y contratos rechazados en Comité GP. Un
+        // contrato "En Negociación" (pedido explícito) solo se muestra por
+        // defecto si su Comité GP ya es "Aceptada" (o variante, ej.
+        // "Aceptada 2027") -- aunque ya tenga CAPEX cargado (ej. San
+        // Javier, "En Revisión" con CAPEX 2026): eso ya no basta por sí
+        // solo. Para verlo antes de esa aceptación, se agrega a mano con
+        // "Contratos No Firmados" (o "Agregar Ítem"), que viven aparte en
+        // extraData/gantt_overview_extra_contracts y no pasan por este filtro.
+        .filter((c: any) => {
+          if (c.deleted_at || c.comite_gp_status === "Rechazada") return false;
+          if (c.status === "en_negociacion" && !c.comite_gp_status?.toLowerCase().includes("acepta")) return false;
+          return true;
+        })
         .forEach((c: any) => contractMap.set(c.id, c));
 
       // 2b) Empresas asociadas a cada contrato (para mostrar su logo/logos)
