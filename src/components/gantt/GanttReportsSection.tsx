@@ -586,11 +586,34 @@ export function GanttReportsSection() {
   /** Cambia el estado (Activo/En Pausa/Terminado/etc.) del cronograma principal — solo afecta esta vista. */
   const updateOverviewStatus = async (
     contractId: string,
-    timelineId: string,
+    timelineId: string | null,
     statusId: string
   ) => {
     const prev = data;
     const prevExtra = extraData;
+
+    // Un contrato sin ningún cronograma (timelineId null) no tiene dónde
+    // guardar el estado -- se crea uno mínimo (category 'general') la
+    // primera vez que se elige un estado, para que el badge quede
+    // disponible sin exigir cargar tareas todavía.
+    let effectiveTimelineId = timelineId;
+    if (!effectiveTimelineId) {
+      const contractName = [...data, ...extraData].find((d) => d.contractId === contractId)?.contractName ?? "Cronograma";
+      const { data: created, error: createError } = await (supabase as any)
+        .from("gantt_timelines")
+        .insert({ contract_id: contractId, category: "general", name: contractName, overview_status_id: statusId })
+        .select("id")
+        .single();
+      if (createError || !created) {
+        toast.error("No se pudo crear el cronograma para guardar el estado");
+        return;
+      }
+      effectiveTimelineId = created.id;
+      setData((cur) => cur.map((d) => (d.contractId === contractId ? { ...d, timelineId: effectiveTimelineId, overviewStatusId: statusId } : d)));
+      setExtraData((cur) => cur.map((d) => (d.contractId === contractId ? { ...d, timelineId: effectiveTimelineId, overviewStatusId: statusId } : d)));
+      return;
+    }
+
     setData((cur) =>
       cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatusId: statusId } : d))
     );
@@ -603,7 +626,7 @@ export function GanttReportsSection() {
     const { error } = await supabase
       .from("gantt_timelines")
       .update({ overview_status_id: statusId } as any)
-      .eq("id", timelineId);
+      .eq("id", effectiveTimelineId);
     if (error) {
       setData(prev);
       setExtraData(prevExtra);
@@ -1063,6 +1086,27 @@ export function GanttReportsSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Agrega un contrato al listado (si todavía no está) -- misma acción que
+  // el botón "Contratos No Firmados", reutilizada por "Agregar Ítem" de la
+  // Línea de tiempo general: al vincular el ítem a un contrato, ese
+  // contrato debe quedar visible de inmediato en el listado, con su Estado
+  // de Comité, igual que si se hubiera agregado a mano.
+  const ensureNegotiationContractAdded = async (contractId: string, contractName: string) => {
+    if (extraData.some((e) => e.contractId === contractId)) return;
+    const newItem = await buildNegotiationContractItem(contractId, contractName);
+    setExtraData((prev) => [...prev, newItem]);
+    setAddedNegotiationIds((prev) => new Set([...prev, contractId]));
+
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await (supabase as any)
+      .from("gantt_overview_extra_contracts")
+      .insert({ contract_id: contractId, added_by: userData.user?.id });
+    if (error) {
+      console.error(error);
+      toast.error("No se pudo guardar el contrato agregado -- se perderá al recargar la página");
+    }
+  };
+
   const addNegotiationContract = async (contractId: string, contractName: string) => {
     if (extraData.some((e) => e.contractId === contractId)) {
       // Remove it -- también de la persistencia, si no vuelve a aparecer
@@ -1076,19 +1120,7 @@ export function GanttReportsSection() {
       await (supabase as any).from("gantt_overview_extra_contracts").delete().eq("contract_id", contractId);
       return;
     }
-
-    const newItem = await buildNegotiationContractItem(contractId, contractName);
-    setExtraData((prev) => [...prev, newItem]);
-    setAddedNegotiationIds((prev) => new Set([...prev, contractId]));
-
-    const { data: userData } = await supabase.auth.getUser();
-    const { error } = await (supabase as any)
-      .from("gantt_overview_extra_contracts")
-      .insert({ contract_id: contractId, added_by: userData.user?.id });
-    if (error) {
-      console.error(error);
-      toast.error("No se pudo guardar el contrato agregado -- se perderá al recargar la página");
-    }
+    await ensureNegotiationContractAdded(contractId, contractName);
   };
 
   const toggleCard = (id: string) => {
@@ -1534,6 +1566,7 @@ export function GanttReportsSection() {
                   onSelect={(contractId) => navigateToContractFromReports(contractId, "gantt")}
                   budgetItems={budgetItems}
                   onBudgetItemsChange={loadBudgetItems}
+                  onContractLinked={ensureNegotiationContractAdded}
                 />
 
                 {/* Ítems de Presupuesto -- informativo, no son contratos: no
@@ -1900,13 +1933,18 @@ export function GanttReportsSection() {
                               </SelectContent>
                             </Select>
                             <div>
-                              {item.timelineId ? (() => {
+                              {(() => {
+                                // Sin cronograma (sin timelineId) también se puede elegir el
+                                // Estado del proyecto -- antes este badge solo existía para
+                                // contratos CON Gantt. updateOverviewStatus crea un cronograma
+                                // mínimo (category 'general') la primera vez que se elige un
+                                // estado para uno de estos contratos.
                                 const currentStatus = resolveOverviewStatus(item.overviewStatusId);
                                 return (
                                   <Select
                                     value={currentStatus?.id ?? ""}
                                     onValueChange={(v) =>
-                                      updateOverviewStatus(item.contractId, item.timelineId!, v)
+                                      updateOverviewStatus(item.contractId, item.timelineId, v)
                                     }
                                   >
                                     <SelectTrigger
@@ -1914,7 +1952,7 @@ export function GanttReportsSection() {
                                       className={cn("h-7 w-full text-xs gap-1", getProgressColorClass(currentStatus?.color))}
                                       title="Estado del proyecto en esta vista"
                                     >
-                                      <SelectValue />
+                                      <SelectValue placeholder="Estado del proyecto" />
                                     </SelectTrigger>
                                     <SelectContent onClick={(e) => e.stopPropagation()}>
                                       {overviewStatuses.map((s) => (
@@ -1923,7 +1961,7 @@ export function GanttReportsSection() {
                                     </SelectContent>
                                   </Select>
                                 );
-                              })() : null}
+                              })()}
                             </div>
                             <div className="text-right text-xs">
                               <div className="text-muted-foreground">CAPEX Total</div>

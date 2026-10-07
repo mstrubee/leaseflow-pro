@@ -79,6 +79,12 @@ interface GanttOverviewTimelineProps {
   budgetItems: GanttOverviewBudgetItem[];
   /** Se llama después de crear/editar/eliminar un ítem para que el padre recargue la lista. */
   onBudgetItemsChange: () => void;
+  /** Se llama al crear un ítem nuevo vinculado a un contrato (no al editar
+   *  uno existente) -- el padre agrega ese contrato al listado de "Cartas
+   *  Gantt - Vista General", igual que si se hubiera agregado a mano con
+   *  "Contratos No Firmados", para que quede visible con su Estado de
+   *  Comité de inmediato. */
+  onContractLinked?: (contractId: string, contractName: string) => void;
 }
 
 /**
@@ -94,6 +100,7 @@ export function GanttOverviewTimeline({
   onSelect,
   budgetItems,
   onBudgetItemsChange,
+  onContractLinked,
 }: GanttOverviewTimelineProps) {
   const today = startOfDay(new Date());
   const baseStart = useMemo(() => startOfMonth(addMonths(today, -1)), [today]);
@@ -567,6 +574,10 @@ export function GanttOverviewTimeline({
           .insert({ name: effectiveName, date: formDate, contract_id: formContractId, created_by: userData.user?.id });
         if (error) throw error;
         toast.success("Ítem creado");
+        // El contrato recién vinculado debe quedar visible de inmediato en
+        // el listado de contratos, con su Estado de Comité -- misma acción
+        // que agregarlo a mano con "Contratos No Firmados".
+        if (formContractId) onContractLinked?.(formContractId, effectiveName);
       }
       setDialogOpen(false);
       onBudgetItemsChange();
