@@ -627,7 +627,13 @@ const BudgetLineItemInner = ({
   const isSurchargeRow = !!line.is_surcharge;
   // Authorized lines are locked for non-admins. They can still request adicionales/descuentos
   // via the dedicated surcharge "+" button (kept accessible via originalReadOnly below).
-  const isAuthorizedLockedForUser = line.status === "autorizado" && !canAutorizar && !isSurchargeRow;
+  // Nunca aplica a líneas madre (isParent): su propio campo `status` es vestigial --
+  // la UI no lo usa para nada visual (muestra el resumen Autorizado/No Autorizado
+  // calculado de las hijas, no este valor propio), pero si quedó guardado como
+  // "autorizado" (dato histórico, ej. contrato Casablanca) bloqueaba por error el
+  // botón de "Agregar línea hija" para cualquiera sin permiso de Autorizar, aunque
+  // una línea madre siempre debe poder agregar hijas nuevas sin importar su estado.
+  const isAuthorizedLockedForUser = !isParent && line.status === "autorizado" && !canAutorizar && !isSurchargeRow;
   const effectiveReadOnly = readOnly || isAuthorizedLockedForUser;
 
   // Drag-to-reorder (dnd-kit) — el handle real es el ícono GripVertical (ver
