@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -1502,6 +1504,48 @@ export function GanttReportsSection() {
         })),
     [allData, overviewStatusesById]
   );
+
+  // Contratos marcados Estado "Estimado" (ver gantt_overview_statuses, uno
+  // administrado en Admin > Estados de Gantt General) que todavía no tienen
+  // Gantt NI un Ítem de Presupuesto vinculado que los ubique en la línea de
+  // tiempo -- se listan aparte para poder asignarles una fecha estimada a
+  // mano (al guardarla se crea el ítem vinculado y pasan a verse en rojo en
+  // la línea de tiempo, igual que cualquier otro ítem informativo).
+  const [estimatingContract, setEstimatingContract] = useState<{ id: string; name: string } | null>(null);
+  const [estimateDate, setEstimateDate] = useState("");
+  const [savingEstimate, setSavingEstimate] = useState(false);
+  const estimadoPendingDateContracts = useMemo(() => {
+    const linkedContractIds = new Set(budgetItems.filter((it) => it.contract_id).map((it) => it.contract_id));
+    return allData
+      .filter(
+        (d) =>
+          d.tasks.length === 0 &&
+          resolveOverviewStatus(d.overviewStatusId)?.name === "Estimado" &&
+          !linkedContractIds.has(d.contractId)
+      )
+      .map((d) => ({ id: d.contractId, name: d.contractName }));
+  }, [allData, budgetItems, overviewStatusesById]);
+
+  const saveEstimateDate = async () => {
+    if (!estimatingContract || !estimateDate) return;
+    setSavingEstimate(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const { error } = await (supabase as any)
+        .from("gantt_overview_budget_items")
+        .insert({ name: estimatingContract.name, date: estimateDate, contract_id: estimatingContract.id, created_by: userData.user?.id });
+      if (error) throw error;
+      toast.success("Fecha estimada guardada");
+      setEstimatingContract(null);
+      setEstimateDate("");
+      loadBudgetItems();
+    } catch (err: any) {
+      toast.error(err.message || "Error al guardar la fecha estimada");
+    } finally {
+      setSavingEstimate(false);
+    }
+  };
+
   const allVisibleOpen =
     displayData.length > 0 && displayData.every((d) => openCards.has(d.contractId));
 
@@ -1597,6 +1641,32 @@ export function GanttReportsSection() {
                           {" · "}
                           {it.name}
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Contratos Estado "Estimado" sin Gantt y sin fecha aún --
+                    clic para asignarla; al guardar pasan a verse en rojo en
+                    la línea de tiempo arriba, como cualquier otro ítem. */}
+                {estimadoPendingDateContracts.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Contratos en estado "Estimado" sin fecha en la línea de tiempo -- clic para asignarla
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {estimadoPendingDateContracts.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setEstimatingContract(c);
+                            setEstimateDate(format(new Date(), "yyyy-MM-dd"));
+                          }}
+                          className="text-xs border border-red-300 border-dashed bg-red-50/50 text-red-700 rounded px-2 py-1 hover:bg-red-100 transition-colors"
+                        >
+                          {c.name}
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -2054,6 +2124,23 @@ export function GanttReportsSection() {
           </CardContent>
         </CollapsibleContent>
       </Card>
+
+      <Dialog open={!!estimatingContract} onOpenChange={(open) => !open && setEstimatingContract(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fecha estimada -- {estimatingContract?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Input type="date" value={estimateDate} onChange={(e) => setEstimateDate(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEstimatingContract(null)}>Cancelar</Button>
+            <Button onClick={saveEstimateDate} disabled={savingEstimate || !estimateDate}>
+              {savingEstimate ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Collapsible>
   );
 }
