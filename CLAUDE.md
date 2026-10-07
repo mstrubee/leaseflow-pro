@@ -126,3 +126,33 @@ Output: `[MIGRATION: ✅ OK]` o `[MIGRATION: ⚠️ ALERTA — descripción]`
 - Matias es el founder. Es no-técnico, así que explicar las decisiones técnicas en lenguaje simple cuando sea relevante.
 - Cuando haya más de una forma de hacer algo, presentar las opciones con sus trade-offs antes de implementar.
 - Si algo no está claro, preguntar antes de asumir — especialmente en temas que afecten datos de usuarios reales.
+
+---
+
+## Presentaciones (PPTX) — criterios aprendidos con Matias
+
+Aplican a cualquier PPT que se edite o genere en este proyecto (ej. "Trimestral Octubre 26", área Desarrollo).
+
+**Estilo de marca (extraído de la slide de análisis territorial):**
+- Fuente: Arial en todo. Rojo corporativo `#C0003F` (cabeceras, cifras, títulos de sección), texto `#1A1A1A`, grises `#F2F2F2` (fondo de cards) y `#CCCCCC` (bordes), blanco.
+- Estructura: sobretítulo rojo ("Desarrollo"), título en negrita, línea gris, contenido en cards con cabecera roja.
+
+**Cómo trabajar un PPT que Matias ya editó:**
+1. Matias retoca el archivo a mano entre iteraciones. Partir SIEMPRE de la última versión que suba, nunca de la propia; no rehacer lo que él ya ajustó.
+2. Si él corrige algo (ej. los logos), su corrección es la fuente de verdad: no revertirla ni "mejorarla" sin avisar.
+3. Antes de editar, revisar la lista de shapes y renderizar a imagen para ver el estado real; después de editar, validar y renderizar de nuevo y mirar la imagen.
+
+**Logos en listados (AP / AG / otros):**
+- AP → logo AP; AG → logo AG (cuadrado rojo/verde); Egakat → logo GP; filas "AP / AG ..." llevan los dos logos (AG a la izquierda, AP pegado al texto).
+- Nunca usar un solo logo para todos los ítems: el logo depende del prefijo del ítem.
+- Los logos deben tener fondo transparente (el PNG original del AP trae fondo blanco opaco y se ve como cuadrito sobre el gris).
+- Todos los logos de ítems con la MISMA altura (0.19") y centrados verticalmente en su fila de texto. Calcular el centro de la fila desde el interlineado exacto del cuadro de texto (no a ojo).
+
+**Alineación de cards:**
+- Cards de una misma fila comparten exactamente el mismo `top`, alto de cabecera y ancho. Diferencias de milésimas de pulgada se notan (el texto de una cabecera "sube"). Ajustar con un script que fuerce los valores, no a mano.
+- Listas en 10 pt con interlineado exacto (16.56 pt); en cards de 1.82" de ancho "AP / AG Casablanca" no cabe a 11 pt junto al logo.
+- Dejar ≥0.1" entre el último ítem y el borde inferior de la card.
+
+**Mantener consistentes los datos derivados:** si cambia una lista (ej. se saca "Mall Plaza Trébol"), actualizar también los totales (tiles) y el mapa/pines, o avisar a Matias de lo que quedó inconsistente.
+
+**Entrega:** guardar el .pptx final con nombre versionado y enviarlo con SendUserFile; el repo no es el lugar de los PPT salvo que Matias lo pida.
