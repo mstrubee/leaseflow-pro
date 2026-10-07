@@ -98,18 +98,21 @@ const monthOffset = (effectiveDate: string, calYear: number, calMonth1Indexed: n
   return (calYear - effYear) * 12 + (calMonth1Indexed - effMonth) + 1;
 };
 
-// computeAutoMonthly necesita effective_date para ubicar cada mes dentro del
-// contrato (monthOffset) -- sin él, SIEMPRE da $0 en las 4 categorías, sin
-// importar si canon/GGCC/etc. están cargados. Antes esto no se detectaba
-// como "dato faltante" (ej. Puerto Montt - Alerce: con regime_rent y
-// gastos_comunes_uf_m2 cargados, pero effective_date null), así que el
-// contrato quedaba en $0 para siempre sin ofrecer el campo manual para
-// corregirlo. Ahora, sin effective_date, las 4 categorías caen a manual.
+// computeAutoMonthly necesita una fecha de inicio para ubicar cada mes
+// dentro del contrato (monthOffset). Si contract_versions.effective_date no
+// está cargada, se usa como respaldo la fecha del ítem del contrato en la
+// Línea de tiempo general de Cartas Gantt (/reports -- gantt_overview_budget_items.date,
+// ver fallbackDateByContract) -- esa es la fecha de inicio de pago de
+// Arriendo/GGCC/Fondo de Promoción/Otros mientras el contrato no tenga su
+// propia effective_date. Solo si NINGUNA de las dos existe, la categoría
+// cae a manual (antes, sin effective_date, siempre caía a manual aunque
+// hubiera una fecha útil en la Línea de tiempo general -- casos: Chicureo,
+// Villarrica, Curauma).
 const isMissing = {
-  arriendo: (v: VersionRow) => !v.effective_date || (!v.initial_rent && !v.regime_rent),
-  ggcc: (v: VersionRow) => !v.effective_date || (v.gastos_comunes_uf_m2 == null && v.gastos_comunes_percentage == null),
-  fondo_promocion: (v: VersionRow) => !v.effective_date || v.fondo_promocion_percentage == null,
-  otros: (v: VersionRow) => !v.effective_date || v.otros_egresos_amount == null,
+  arriendo: (v: VersionRow, hasDate: boolean) => !hasDate || (!v.initial_rent && !v.regime_rent),
+  ggcc: (v: VersionRow, hasDate: boolean) => !hasDate || (v.gastos_comunes_uf_m2 == null && v.gastos_comunes_percentage == null),
+  fondo_promocion: (v: VersionRow, hasDate: boolean) => !hasDate || v.fondo_promocion_percentage == null,
+  otros: (v: VersionRow, hasDate: boolean) => !hasDate || v.otros_egresos_amount == null,
 };
 
 export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYear, ufValue, realContractIds, realContractNames }: Props) {
@@ -117,6 +120,9 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
   const [contracts, setContracts] = useState<Record<string, ContractRow>>({});
   const [versions, setVersions] = useState<Record<string, VersionRow>>({});
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
+  // Fecha de respaldo (gantt_overview_budget_items.date) por contrato, para
+  // cuando contract_versions.effective_date no está cargada -- ver isMissing.
+  const [fallbackDateByContract, setFallbackDateByContract] = useState<Record<string, string>>({});
   const [items, setItems] = useState<ItemRow[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -143,7 +149,7 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     (async () => {
       setLoading(true);
       try {
-        const [{ data: contractsData, error: cErr }, { data: versionsData, error: vErr }, { data: overridesData, error: oErr }] =
+        const [{ data: contractsData, error: cErr }, { data: versionsData, error: vErr }, { data: overridesData, error: oErr }, { data: fallbackDateRows, error: fErr }] =
           await Promise.all([
             supabase
               .from("contracts")
@@ -160,10 +166,16 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
               .from("capex_new_location_budget")
               .select("contract_id, year, category, monthly_amount_clp")
               .in("contract_id", sortedIds),
+            (supabase as any)
+              .from("gantt_overview_budget_items")
+              .select("contract_id, date")
+              .in("contract_id", sortedIds)
+              .order("date", { ascending: true }),
           ]);
         if (cErr) throw cErr;
         if (vErr) throw vErr;
         if (oErr) throw oErr;
+        if (fErr) throw fErr;
         if (cancelled) return;
 
         const contractsMap: Record<string, ContractRow> = {};
@@ -179,6 +191,14 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
           overridesMap[overrideKey(o.contract_id, o.year, o.category)] = o;
         });
         setOverrides(overridesMap);
+
+        // Primera fecha (más antigua) de la Línea de tiempo general por
+        // contrato -- respaldo cuando no hay effective_date.
+        const fallbackMap: Record<string, string> = {};
+        (fallbackDateRows || []).forEach((r: any) => {
+          if (!fallbackMap[r.contract_id]) fallbackMap[r.contract_id] = r.date;
+        });
+        setFallbackDateByContract(fallbackMap);
       } catch (err) {
         console.error(err);
         toast.error("Error al cargar el presupuesto operativo de nuevos locales");
@@ -230,10 +250,11 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
   // calendario dado, calculado a partir de los tramos de
   // computeArriendoPeriods (en UF, pasados a CLP con el ufValue único del
   // diálogo -- estimación de planificación, no exacto mes a mes).
-  const computeAutoMonthly = (version: VersionRow, superficie: number | null, metrosLinealesFrente: number | null, calYear: number, calMonth1Indexed: number) => {
+  const computeAutoMonthly = (version: VersionRow, superficie: number | null, metrosLinealesFrente: number | null, calYear: number, calMonth1Indexed: number, effectiveDateOverride: string | null) => {
     const zero = { arriendo: 0, ggcc: 0, fondo_promocion: 0, otros: 0 };
-    if (!version.effective_date) return zero;
-    const offset = monthOffset(version.effective_date, calYear, calMonth1Indexed);
+    const effectiveDate = version.effective_date ?? effectiveDateOverride;
+    if (!effectiveDate) return zero;
+    const offset = monthOffset(effectiveDate, calYear, calMonth1Indexed);
     if (offset < 1 || offset > version.duration_months) return zero;
     const periods = computeArriendoPeriods(version, superficie, metrosLinealesFrente);
     const period = periods.find((p) => {
@@ -342,6 +363,10 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     // que el contrato desapareciera ENTERO de la lista, sin aviso -- ahora
     // se muestra igual, con las 4 categorías en modo manual.
     noVersion: boolean;
+    // true si no hay effective_date en el contrato y se usó en su lugar la
+    // fecha de la Línea de tiempo general de Cartas Gantt (/reports) como
+    // respaldo para ubicar los meses de Arriendo/GGCC/Fondo Promoción/Otros.
+    usedFallbackDate: boolean;
   }
   const perContractData: ContractMonthlyData[] = useMemo(() => {
     return sortedIds
@@ -349,13 +374,15 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         const contract = contracts[contractId];
         if (!contract) return null;
         const version = versions[contractId];
+        const fallbackDate = fallbackDateByContract[contractId] ?? null;
+        const hasDate = !!version?.effective_date || !!fallbackDate;
         const companyNames = (contract.contract_companies || []).map((cc) => cc.companies?.name).filter(Boolean) as string[];
         const missing: Record<Category, boolean> = version
           ? {
-              arriendo: isMissing.arriendo(version),
-              ggcc: isMissing.ggcc(version),
-              fondo_promocion: isMissing.fondo_promocion(version),
-              otros: isMissing.otros(version),
+              arriendo: isMissing.arriendo(version, hasDate),
+              ggcc: isMissing.ggcc(version, hasDate),
+              fondo_promocion: isMissing.fondo_promocion(version, hasDate),
+              otros: isMissing.otros(version, hasDate),
             }
           : { arriendo: true, ggcc: true, fondo_promocion: true, otros: true };
         const monthly: Record<Category, { [year: number]: number[] }> = {
@@ -367,7 +394,7 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         [currentYear, targetYear].forEach((year) => {
           for (let m = 1; m <= 12; m++) {
             const auto = version
-              ? computeAutoMonthly(version, contract.superficie_edificada_local, contract.metros_lineales_frente, year, m)
+              ? computeAutoMonthly(version, contract.superficie_edificada_local, contract.metros_lineales_frente, year, m, fallbackDate)
               : { arriendo: 0, ggcc: 0, fondo_promocion: 0, otros: 0 };
             CATEGORIES.forEach(({ key }) => {
               if (missing[key]) {
@@ -379,11 +406,19 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
             });
           }
         });
-        return { contractId, name: contract.name, companyNames, missing, monthly, noVersion: !version };
+        return {
+          contractId,
+          name: contract.name,
+          companyNames,
+          missing,
+          monthly,
+          noVersion: !version,
+          usedFallbackDate: !version?.effective_date && !!fallbackDate,
+        };
       })
       .filter((x): x is ContractMonthlyData => x !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortedIds, contracts, versions, overrides, currentYear, targetYear, ufValue]);
+  }, [sortedIds, contracts, versions, overrides, fallbackDateByContract, currentYear, targetYear, ufValue]);
 
   const grandTotal = useMemo(() => {
     const totals: { [year: number]: number[] } = { [currentYear]: new Array(12).fill(0), [targetYear]: new Array(12).fill(0) };
@@ -477,6 +512,11 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                         {c.noVersion && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0" title="El contrato no tiene condiciones comerciales cargadas (sin contract_versions) -- probablemente aún En Negociación.">
                             Sin condiciones comerciales
+                          </Badge>
+                        )}
+                        {c.usedFallbackDate && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0" title="El contrato no tiene fecha de inicio de arriendo (effective_date) -- se usó la fecha de la Línea de tiempo general de Cartas Gantt (/reports).">
+                            Fecha según Línea de tiempo general
                           </Badge>
                         )}
                         {c.companyNames.length > 0 && (
