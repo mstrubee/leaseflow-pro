@@ -159,6 +159,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const [savingHintFor, setSavingHintFor] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [missingDataOpen, setMissingDataOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"capex" | "operativo">("capex");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
   // Superficie Edificada Local + Total CAPEX (Business Case Financiero) de
@@ -375,6 +376,28 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               </div>
             )}
 
+            {/* Dos secciones -- CAPEX (Objetivo/Arrastre/A pedir, todo lo de
+                siempre) y Operativo (Presupuesto Operativo de Nuevos
+                Locales, aparte, no integra con los totales de CAPEX). */}
+            <div className="flex gap-2">
+              <Button
+                variant={activeTab === "capex" ? "default" : "outline"}
+                className="flex-1 basis-1/2"
+                onClick={() => setActiveTab("capex")}
+              >
+                CAPEX
+              </Button>
+              <Button
+                variant={activeTab === "operativo" ? "default" : "outline"}
+                className="flex-1 basis-1/2"
+                onClick={() => setActiveTab("operativo")}
+              >
+                Operativo
+              </Button>
+            </div>
+
+            {activeTab === "capex" && (
+            <>
             {/* 1. Presupuesto del año actual -- contexto, desglosado por
                 Estado de Avance. Solo lectura. */}
             <div className="space-y-2">
@@ -602,21 +625,10 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               </Collapsible>
             )}
 
-            {/* 6. Presupuesto Operativo de Nuevos Locales -- bloque informativo
-                paralelo, no integra con Objetivo/Arrastre/A pedir de arriba
-                (esos siguen siendo CAPEX puro). */}
-            <CapexNewLocationOpexSection
-              contractIds={newLocationContractIds}
-              currentYear={currentYear}
-              targetYear={targetYear}
-              ufValue={ufValue}
-              realContractIds={realContractIds}
-              realContractNames={realContractNames}
-            />
-
-            {/* 7. Total -- al final de todo. Arrastre se RESTA de Objetivo
-                (no se suma aparte): los contratos de Arrastre ya están
-                incluidos dentro de "Contratos (comprometido real
+            {/* 6. Total -- al final de la pestaña CAPEX (pedido explícito:
+                antes de la sección Operativo). Arrastre se RESTA de
+                Objetivo (no se suma aparte): los contratos de Arrastre ya
+                están incluidos dentro de "Contratos (comprometido real
                 {targetYear})" de la sección 3 (arrastreContratosCLP es un
                 subconjunto de objetivoContratosCLP, no un monto adicional),
                 así que no hay doble conteo acá. */}
@@ -634,6 +646,21 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                 <span className={`font-bold ${aPedirCLP < 0 ? "text-destructive" : "text-green-600"}`}>{formatCLP(aPedirCLP)}</span>
               </div>
             </div>
+            </>
+            )}
+
+            {/* Presupuesto Operativo de Nuevos Locales -- bloque informativo
+                paralelo, no integra con Objetivo/Arrastre/A pedir de CAPEX. */}
+            {activeTab === "operativo" && (
+              <CapexNewLocationOpexSection
+                contractIds={newLocationContractIds}
+                currentYear={currentYear}
+                targetYear={targetYear}
+                ufValue={ufValue}
+                realContractIds={realContractIds}
+                realContractNames={realContractNames}
+              />
+            )}
 
             {!isClosed && !previewMode && (
               <div className="flex justify-end gap-2">
