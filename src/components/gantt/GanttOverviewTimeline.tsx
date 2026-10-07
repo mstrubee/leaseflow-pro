@@ -159,11 +159,15 @@ export function GanttOverviewTimeline({
           if (!cancelled) setEligibleContracts([]);
           return;
         }
+        // Un contrato "Rechazado" nunca debe ofrecerse acá, aunque ese
+        // estado esté marcado "Calendarizable" en Admin por error -- dejó
+        // de ser una alternativa.
         const { data: contractsData } = await supabase
           .from("contracts")
           .select("id, name, comite_gp_status")
           .eq("status", "en_negociacion")
           .is("deleted_at", null)
+          .neq("comite_gp_status", "Rechazada")
           .in("comite_gp_status", statusNames);
         const { data: linkedItems } = await (supabase as any)
           .from("gantt_overview_budget_items")

@@ -957,11 +957,17 @@ export function GanttReportsSection() {
     if (negotiationContracts.length > 0 || loadingNegotiation) return;
     setLoadingNegotiation(true);
     try {
+      // Un contrato "Rechazado" dejó de ser una alternativa -- no debe
+      // ofrecerse acá (pedido explícito, tras detectar un "Chiguayante"
+      // duplicado: un contrato real y uno rechazado con el mismo nombre).
       const { data: contracts } = await supabase
         .from("contracts")
         .select("id, name, contract_companies(companies(name))")
         .eq("status", "en_negociacion")
         .is("deleted_at", null)
+        // .neq deja afuera las filas con comite_gp_status NULL (NULL <> 'x'
+        // no es true en SQL) -- hay que admitirlas explícitamente.
+        .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada")
         .order("name");
       setNegotiationContracts(
         (contracts || []).map((c: any) => ({

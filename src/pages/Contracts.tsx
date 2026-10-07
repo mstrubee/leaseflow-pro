@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle, Download, Plus, XCircle } from "lucide-react";
+import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle, Download, Plus } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ContractsTable, ContractSortField } from "@/components/contracts/ContractsTable";
 import { ColumnSelector } from "@/components/contracts/ColumnSelector";
@@ -1089,27 +1089,14 @@ const Contracts = () => {
                   )}
                 </Button>
               )}
-              {isNegociacionView && !rechazadosFilter && (
-                <div className="flex flex-col gap-1">
-                  {canEditContracts && (
-                    <Button
-                      onClick={() => navigate("/contracts/new")}
-                      className="gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Nuevo Contrato
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 text-xs"
-                    onClick={() => navigate("/contracts?status=en_negociacion&rechazados=true")}
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                    Rechazados
-                  </Button>
-                </div>
+              {isNegociacionView && !rechazadosFilter && canEditContracts && (
+                <Button
+                  onClick={() => navigate("/contracts/new")}
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Nuevo Contrato
+                </Button>
               )}
               {isNegociacionView && rechazadosFilter && (
                 <Button
