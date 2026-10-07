@@ -590,7 +590,14 @@ export function GanttReportsSection() {
     statusId: string
   ) => {
     const prev = data;
+    const prevExtra = extraData;
     setData((cur) =>
+      cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatusId: statusId } : d))
+    );
+    // Un contrato agregado vía "Contratos No Firmados" vive en extraData, no
+    // en data -- sin esto, el cambio se guardaba en la BD pero no se veía
+    // reflejado en pantalla.
+    setExtraData((cur) =>
       cur.map((d) => (d.contractId === contractId ? { ...d, overviewStatusId: statusId } : d))
     );
     const { error } = await supabase
@@ -599,6 +606,7 @@ export function GanttReportsSection() {
       .eq("id", timelineId);
     if (error) {
       setData(prev);
+      setExtraData(prevExtra);
       toast.error("No se pudo actualizar el estado del proyecto");
     }
   };
@@ -627,10 +635,15 @@ export function GanttReportsSection() {
 
   const updateClasificacion = async (contractId: string, value: string) => {
     const prev = data;
+    const prevExtra = extraData;
     setData((cur) => cur.map((d) => (d.contractId === contractId ? { ...d, clasificacion: value } : d)));
+    // Igual que updateOverviewStatus -- un contrato agregado vía "Contratos
+    // No Firmados" vive en extraData, no en data.
+    setExtraData((cur) => cur.map((d) => (d.contractId === contractId ? { ...d, clasificacion: value } : d)));
     const { error } = await supabase.from("contracts").update({ clasificacion: value }).eq("id", contractId);
     if (error) {
       setData(prev);
+      setExtraData(prevExtra);
       toast.error("No se pudo actualizar la clasificación");
     }
   };
@@ -940,11 +953,15 @@ export function GanttReportsSection() {
       return;
     }
 
-    // Fetch timeline and tasks
-    const { data: timelines } = await supabase
+    // Fetch timeline (solo el PRINCIPAL -- category 'general', igual
+    // criterio que loadData -- un timeline de mantenciones no corresponde
+    // acá) y tasks.
+    const { data: timelines } = await (supabase as any)
       .from("gantt_timelines")
-      .select("id, name, contract_id")
+      .select("id, name, contract_id, is_priority, overview_status_id")
       .eq("contract_id", contractId)
+      .eq("category", "general")
+      .order("is_priority", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -978,18 +995,61 @@ export function GanttReportsSection() {
       .map((r: any) => r.companies?.name)
       .filter(Boolean) as string[];
 
+    // Mismos campos que loadData (clasificación, superficie, dirección/comuna,
+    // CEBE) -- antes quedaban todos undefined acá, lo que rompía en silencio
+    // cosas como el desplegable de Clasificación para un contrato agregado
+    // vía "Contratos No Firmados" (ej. un proyecto nuevo en negociación que
+    // todavía no entra al listado principal).
+    const { data: contractRow } = await supabase
+      .from("contracts")
+      .select("clasificacion, superficie_edificada_local")
+      .eq("id", contractId)
+      .maybeSingle();
+
+    const { data: addressRows } = await supabase
+      .from("contract_addresses")
+      .select("street, number, commune")
+      .eq("contract_id", contractId)
+      .limit(1);
+    const addressRow = addressRows?.[0];
+    const address = addressRow ? [addressRow.street, addressRow.number].filter(Boolean).join(" ") || null : null;
+    const commune = addressRow?.commune || null;
+
+    const { data: cebeFields } = await supabase
+      .from("contract_custom_fields")
+      .select("id, field_name")
+      .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
+      .eq("is_active", true);
+    const cebeField = cebeFields?.find((f: any) => f.field_name.toLowerCase() === "cebe");
+    let cebe: string | null = null;
+    if (cebeField) {
+      const { data: cebeVal } = await supabase
+        .from("contract_custom_field_values")
+        .select("field_value")
+        .eq("contract_id", contractId)
+        .eq("field_id", cebeField.id)
+        .maybeSingle();
+      cebe = cebeVal?.field_value || null;
+    }
+
     const newItem: GanttContractData = {
       contractId,
       contractName,
+      timelineId: timeline?.id ?? null,
+      overviewStatusId: timeline?.overview_status_id ?? null,
       timelineName: timeline?.name ?? "",
       tasks,
       taskTree,
       endDate,
       capexUF: 0,
       capexCLP: 0,
-      surfaceM2: 0,
+      surfaceM2: contractRow?.superficie_edificada_local ?? 0,
       disbursement: null,
       companyNames,
+      address,
+      commune,
+      cebe,
+      clasificacion: contractRow?.clasificacion ?? null,
     };
 
     setExtraData((prev) => [...prev, newItem]);
