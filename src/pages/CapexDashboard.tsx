@@ -1438,12 +1438,14 @@ export default function CapexDashboard() {
   // por "Planificar Presupuesto {año+1}" (ver budgetPlanningCurrentYearAvance),
   // que no debe perder contratos por un filtro activo en pantalla.
   const avanceBreakdownByYearUnfiltered = React.useMemo(() => {
-    const m: Record<number, Record<string, { uf: number; count: number; names: string[] }>> = {};
+    const m: Record<number, Record<string, { uf: number; count: number; names: { name: string; company: string }[] }>> = {};
+    const seenNameCompany = new Set<string>();
     budgetRowsByContractAllYearsUnfiltered.forEach((rows, contractId) => {
       const avance = rows[0].capex_avance_status;
       if (!avance) return;
       const contractName = rows[0].contract_name;
-      getCopiesForContract(contractId).forEach(({ groupKey }) => {
+      getCopiesForContract(contractId).forEach(({ groupKey, companyName }) => {
+        const company = getCompanyGroupKey(companyName ? [companyName] : rows[0].company_names);
         const yearMap = contractYearAmountsUnfiltered.get(groupKey) || {};
         Object.entries(yearMap).forEach(([yearStr, clp]) => {
           const year = Number(yearStr);
@@ -1452,7 +1454,11 @@ export default function CapexDashboard() {
           if (!m[year][avance]) m[year][avance] = { uf: 0, count: 0, names: [] };
           m[year][avance].uf += uf;
           m[year][avance].count += 1;
-          if (!m[year][avance].names.includes(contractName)) m[year][avance].names.push(contractName);
+          const dedupKey = `${year}::${avance}::${contractName}::${company}`;
+          if (!seenNameCompany.has(dedupKey)) {
+            seenNameCompany.add(dedupKey);
+            m[year][avance].names.push({ name: contractName, company });
+          }
         });
       });
     });
@@ -1473,7 +1479,13 @@ export default function CapexDashboard() {
     const caidoLabel = AVANCE_CARD_ORDER[3];
     return avanceStatusTypesOrdered
       .filter((t) => t.name !== caidoLabel && yearData[t.name])
-      .map((t) => ({ name: t.name, color: t.color, uf: yearData[t.name].uf, count: yearData[t.name].count, names: yearData[t.name].names.sort() }));
+      .map((t) => ({
+        name: t.name,
+        color: t.color,
+        uf: yearData[t.name].uf,
+        count: yearData[t.name].count,
+        names: yearData[t.name].names.slice().sort((a, b) => a.name.localeCompare(b.name)),
+      }));
   }, [avanceBreakdownByYearUnfiltered, avanceStatusTypesOrdered, budgetPlanningCurrentYear]);
 
   // Los contratos "Caído" no se consideran en NINGUNA sección de
