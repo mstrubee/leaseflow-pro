@@ -941,21 +941,12 @@ export function GanttReportsSection() {
     }
   };
 
-  const addNegotiationContract = async (contractId: string, contractName: string) => {
-    if (extraData.some((e) => e.contractId === contractId)) {
-      // Remove it
-      setExtraData((prev) => prev.filter((e) => e.contractId !== contractId));
-      setAddedNegotiationIds((prev) => {
-        const next = new Set(prev);
-        next.delete(contractId);
-        return next;
-      });
-      return;
-    }
-
-    // Fetch timeline (solo el PRINCIPAL -- category 'general', igual
-    // criterio que loadData -- un timeline de mantenciones no corresponde
-    // acá) y tasks.
+  // Arma el GanttContractData de un contrato "En Negociación" agregado a
+  // mano vía "Contratos No Firmados" -- mismos campos que loadData
+  // (clasificación, superficie, dirección/comuna, CEBE, timeline PRINCIPAL
+  // category='general') para que el desplegable de Clasificación y el
+  // resto de la card funcionen igual que para cualquier otro contrato.
+  const buildNegotiationContractItem = async (contractId: string, contractName: string): Promise<GanttContractData> => {
     const { data: timelines } = await (supabase as any)
       .from("gantt_timelines")
       .select("id, name, contract_id, is_priority, overview_status_id")
@@ -986,7 +977,6 @@ export function GanttReportsSection() {
         ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
         : null;
 
-    // Fetch companies
     const { data: ccRows } = await supabase
       .from("contract_companies")
       .select("contract_id, companies(name)")
@@ -995,11 +985,6 @@ export function GanttReportsSection() {
       .map((r: any) => r.companies?.name)
       .filter(Boolean) as string[];
 
-    // Mismos campos que loadData (clasificación, superficie, dirección/comuna,
-    // CEBE) -- antes quedaban todos undefined acá, lo que rompía en silencio
-    // cosas como el desplegable de Clasificación para un contrato agregado
-    // vía "Contratos No Firmados" (ej. un proyecto nuevo en negociación que
-    // todavía no entra al listado principal).
     const { data: contractRow } = await supabase
       .from("contracts")
       .select("clasificacion, superficie_edificada_local")
@@ -1032,7 +1017,7 @@ export function GanttReportsSection() {
       cebe = cebeVal?.field_value || null;
     }
 
-    const newItem: GanttContractData = {
+    return {
       contractId,
       contractName,
       timelineId: timeline?.id ?? null,
@@ -1051,9 +1036,59 @@ export function GanttReportsSection() {
       cebe,
       clasificacion: contractRow?.clasificacion ?? null,
     };
+  };
 
+  // Carga, al abrir la página, los contratos que quedaron agregados a mano
+  // en una sesión anterior (gantt_overview_extra_contracts) -- antes
+  // "Contratos No Firmados" solo guardaba la selección en memoria del
+  // navegador (extraData/addedNegotiationIds), así que se perdía en cada
+  // recarga y había que volver a agregar el contrato cada vez.
+  useEffect(() => {
+    (async () => {
+      const { data: rows, error } = await (supabase as any)
+        .from("gantt_overview_extra_contracts")
+        .select("contract_id, contracts(name)");
+      if (error || !rows || rows.length === 0) return;
+      const items = await Promise.all(
+        rows
+          .filter((r: any) => r.contracts?.name)
+          .map((r: any) => buildNegotiationContractItem(r.contract_id, r.contracts.name))
+      );
+      setExtraData((prev) => {
+        const existingIds = new Set(prev.map((e) => e.contractId));
+        return [...prev, ...items.filter((it) => !existingIds.has(it.contractId))];
+      });
+      setAddedNegotiationIds((prev) => new Set([...prev, ...items.map((it) => it.contractId)]));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const addNegotiationContract = async (contractId: string, contractName: string) => {
+    if (extraData.some((e) => e.contractId === contractId)) {
+      // Remove it -- también de la persistencia, si no vuelve a aparecer
+      // solo al recargar la página.
+      setExtraData((prev) => prev.filter((e) => e.contractId !== contractId));
+      setAddedNegotiationIds((prev) => {
+        const next = new Set(prev);
+        next.delete(contractId);
+        return next;
+      });
+      await (supabase as any).from("gantt_overview_extra_contracts").delete().eq("contract_id", contractId);
+      return;
+    }
+
+    const newItem = await buildNegotiationContractItem(contractId, contractName);
     setExtraData((prev) => [...prev, newItem]);
     setAddedNegotiationIds((prev) => new Set([...prev, contractId]));
+
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await (supabase as any)
+      .from("gantt_overview_extra_contracts")
+      .insert({ contract_id: contractId, added_by: userData.user?.id });
+    if (error) {
+      console.error(error);
+      toast.error("No se pudo guardar el contrato agregado -- se perderá al recargar la página");
+    }
   };
 
   const toggleCard = (id: string) => {
