@@ -5,7 +5,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { formatCLP } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Lock, CalendarClock, Eye, ChevronDown, ChevronRight } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -69,8 +68,6 @@ interface BudgetItem {
   id: string;
   name: string;
   date: string;
-  superficie_m2: number | null;
-  valor_uf_m2: number | null;
   contract_id: string | null;
 }
 
@@ -156,16 +153,17 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [savingAvanceFor, setSavingAvanceFor] = useState<string | null>(null);
   const [savingHintFor, setSavingHintFor] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [missingDataOpen, setMissingDataOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
-  // Edición local de superficie/UF por ítem (keyed por id) -- se guarda al
-  // salir del campo (onBlur) o al presionar "Guardar", no en cada tecla.
-  const [edits, setEdits] = useState<Record<string, { superficie: string; valorUfM2: string }>>({});
+  // Superficie Edificada Local + Total CAPEX (Business Case Financiero) de
+  // cada ítem VINCULADO a un contrato (contract_id) -- ya no se ingresan a
+  // mano acá, se leen directo del contrato. null si el contrato no tiene
+  // uno de los dos datos cargado todavía.
+  const [contractDataByItem, setContractDataByItem] = useState<Record<string, { superficie: number | null; capexClp: number | null }>>({});
 
   const isClosed = draft?.status === "cerrado";
 
@@ -179,7 +177,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
         (supabase as any).from("capex_budget_drafts").select("id, year, status, closed_at").eq("year", targetYear).maybeSingle(),
         (supabase as any)
           .from("gantt_overview_budget_items")
-          .select("id, name, date, superficie_m2, valor_uf_m2, contract_id")
+          .select("id, name, date, contract_id")
           .gte("date", yearStart)
           .lte("date", yearEnd)
           .order("date", { ascending: true }),
@@ -196,11 +194,32 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
         return !realContractNames.has(it.name.trim().toLowerCase());
       });
       setItems(loadedItems);
-      setEdits(
-        Object.fromEntries(
-          loadedItems.map((it) => [it.id, { superficie: it.superficie_m2?.toString() ?? "", valorUfM2: it.valor_uf_m2?.toString() ?? "" }])
-        )
-      );
+
+      // Superficie Edificada Local (contracts) + Total CAPEX del Business
+      // Case Financiero (contract_business_cases.computed) de cada ítem
+      // vinculado a un contrato -- ya no se piden a mano, se leen de ahí.
+      const linkedContractIds = Array.from(new Set(loadedItems.map((it) => it.contract_id).filter(Boolean))) as string[];
+      if (linkedContractIds.length > 0) {
+        const [{ data: contractRows }, { data: businessCaseRows }] = await Promise.all([
+          supabase.from("contracts").select("id, superficie_edificada_local").in("id", linkedContractIds),
+          supabase.from("contract_business_cases").select("contract_id, computed").in("contract_id", linkedContractIds),
+        ]);
+        const byContract: Record<string, { superficie: number | null; capexClp: number | null }> = {};
+        (contractRows || []).forEach((c: any) => {
+          byContract[c.id] = { superficie: c.superficie_edificada_local ?? null, capexClp: null };
+        });
+        (businessCaseRows || []).forEach((row: any) => {
+          const computed = row.computed as { inv?: { total?: number; rows?: { id: string; monto: number }[] } } | null;
+          const total = computed?.inv?.total;
+          if (total == null) return;
+          const inventario = computed?.inv?.rows?.find((r) => r.id === "inv")?.monto || 0;
+          const capexClp = (total - inventario) * 1_000_000;
+          byContract[row.contract_id] = { ...(byContract[row.contract_id] || { superficie: null }), capexClp };
+        });
+        setContractDataByItem(byContract);
+      } else {
+        setContractDataByItem({});
+      }
     } catch (err) {
       console.error(err);
       toast.error("Error al cargar el borrador de presupuesto");
@@ -214,34 +233,6 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, targetYear]);
 
-  const handleSaveItemValuation = async (itemId: string) => {
-    const edit = edits[itemId];
-    if (!edit) return;
-    const superficie = edit.superficie.trim() === "" ? null : parseFloat(edit.superficie);
-    const valorUfM2 = edit.valorUfM2.trim() === "" ? null : parseFloat(edit.valorUfM2);
-    const { error } = await (supabase as any)
-      .from("gantt_overview_budget_items")
-      .update({ superficie_m2: superficie, valor_uf_m2: valorUfM2 })
-      .eq("id", itemId);
-    if (error) {
-      toast.error("Error al guardar el valor del ítem");
-      return;
-    }
-    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, superficie_m2: superficie, valor_uf_m2: valorUfM2 } : it)));
-  };
-
-  // "Guardar": persiste de una vez todos los ítems editados (por si el
-  // usuario usó las flechitas del input numérico sin pasar por un blur, o
-  // simplemente quiere confirmar que todo quedó guardado antes de cerrar).
-  const handleSaveAll = async () => {
-    setSaving(true);
-    try {
-      await Promise.all(items.map((it) => handleSaveItemValuation(it.id)));
-      toast.success("Borrador guardado");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   // Completa el Estado de Avance de un contrato que hoy no lo tiene -- igual
   // que editarlo desde la ficha del contrato, pero sin salir de esta
@@ -282,9 +273,16 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
     }
   };
 
+  // Superficie Edificada Local + Total CAPEX (Business Case Financiero) del
+  // contrato vinculado al ítem -- ya no se ingresan a mano (ver
+  // contractDataByItem). Un ítem sin contrato vinculado, o cuyo contrato no
+  // tiene ambos datos cargados, no aporta monto (debe completarse en la
+  // ficha del contrato, no acá).
   const itemClp = (it: BudgetItem): number => {
-    if (!it.superficie_m2 || !it.valor_uf_m2) return 0;
-    return it.superficie_m2 * it.valor_uf_m2 * (ufValue || 0);
+    if (!it.contract_id) return 0;
+    const d = contractDataByItem[it.contract_id];
+    if (!d || !d.superficie || !d.capexClp) return 0;
+    return d.capexClp;
   };
 
   const objetivoInformativosCLP = items.reduce((sum, it) => sum + itemClp(it), 0);
@@ -315,7 +313,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
         arrastreCLP,
         aPedirCLP,
         straddlingRows,
-        items: items.map((it) => ({ name: it.name, date: it.date, superficie_m2: it.superficie_m2, valor_uf_m2: it.valor_uf_m2, clp: itemClp(it) })),
+        items: items.map((it) => ({ name: it.name, date: it.date, superficie: it.contract_id ? contractDataByItem[it.contract_id]?.superficie ?? null : null, clp: itemClp(it) })),
       };
       const { data: userData } = await supabase.auth.getUser();
       if (draft) {
@@ -478,52 +476,40 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
               <p className="text-right text-sm font-medium">Total comprometido {targetYear}: {formatCLP(objetivoContratosCLP)}</p>
             </div>
 
-            {/* 4. Ítems informativos -- editables */}
+            {/* 4. Ítems informativos -- Superficie Edificada Local y Total
+                CAPEX (Business Case Financiero) se leen del contrato
+                vinculado; ya no se pueden ingresar a mano acá. */}
             <div className="space-y-2">
               <p className="text-sm font-medium">Ítems de Presupuesto informativos (sin contrato)</p>
               {items.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No hay ítems de la línea de tiempo general (/reports) con fecha en {targetYear}.</p>
               ) : (
                 <div className="space-y-2">
-                  {items.map((it) => (
-                    <div key={it.id} className="flex items-center gap-3 border rounded-lg p-2">
-                      <div className="flex-1 min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium break-words">{it.name}</span>
-                          <Badge variant="secondary" className="text-[10px] shrink-0">Informativo, sin contrato</Badge>
+                  {items.map((it) => {
+                    const d = it.contract_id ? contractDataByItem[it.contract_id] : null;
+                    const hasData = !!d && !!d.superficie && !!d.capexClp;
+                    return (
+                      <div key={it.id} className="flex items-center gap-3 border rounded-lg p-2">
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium break-words">{it.name}</span>
+                            <Badge variant="secondary" className="text-[10px] shrink-0">Informativo, sin contrato</Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">{fmtDate(it.date)}</span>
+                          {hasData ? (
+                            <p className="text-xs text-muted-foreground">
+                              Superficie Edificada Local: {d!.superficie} m² · Total CAPEX (Business Case): {formatCLP(d!.capexClp!)}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-amber-600">
+                              Gestionar Superficie y CAPEX en los datos del contrato
+                            </p>
+                          )}
                         </div>
-                        <span className="text-xs text-muted-foreground">{fmtDate(it.date)}</span>
+                        <span className="text-sm font-semibold w-28 text-right shrink-0">{formatCLP(itemClp(it))}</span>
                       </div>
-                      {previewMode || isClosed ? (
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {it.superficie_m2 ?? "-"} m² × {it.valor_uf_m2 ?? "-"} UF/m²
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Input
-                            type="number"
-                            placeholder="m²"
-                            className="w-20 h-8 text-xs"
-                            value={edits[it.id]?.superficie ?? ""}
-                            onChange={(e) => setEdits((prev) => ({ ...prev, [it.id]: { ...prev[it.id], superficie: e.target.value } }))}
-                            onBlur={() => handleSaveItemValuation(it.id)}
-                          />
-                          <span className="text-xs text-muted-foreground">m² ×</span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="UF/m²"
-                            className="w-20 h-8 text-xs"
-                            value={edits[it.id]?.valorUfM2 ?? ""}
-                            onChange={(e) => setEdits((prev) => ({ ...prev, [it.id]: { ...prev[it.id], valorUfM2: e.target.value } }))}
-                            onBlur={() => handleSaveItemValuation(it.id)}
-                          />
-                          <span className="text-xs text-muted-foreground">UF/m²</span>
-                        </div>
-                      )}
-                      <span className="text-sm font-semibold w-28 text-right shrink-0">{formatCLP(itemClp(it))}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               <p className="text-right text-sm font-medium">Subtotal informativos: {formatCLP(objetivoInformativosCLP)}</p>
@@ -646,15 +632,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
             {!isClosed && !previewMode && (
               <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    await handleSaveAll();
-                    onOpenChange(false);
-                  }}
-                  disabled={saving}
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
                   Salir
                 </Button>
                 <Button variant="outline" onClick={() => setPreviewMode(true)}>
