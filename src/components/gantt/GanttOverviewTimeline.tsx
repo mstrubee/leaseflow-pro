@@ -226,7 +226,10 @@ export function GanttOverviewTimeline({
   }, [baseStart, baseEnd, extendedUntil, compacted, today]);
 
   const openExtendDialog = () => {
-    setExtendDate(format(addMonths(extendedUntil ?? baseEnd, 1), "yyyy-MM-dd"));
+    // Muestra la extensión actual tal cual quedó guardada, para editarla
+    // directamente (antes sugería siempre un mes más, lo que no dejaba ver
+    // ni corregir fácilmente el valor ya guardado).
+    setExtendDate(format(extendedUntil ?? addMonths(baseEnd, 1), "yyyy-MM-dd"));
     setExtendDialogOpen(true);
   };
 
@@ -238,7 +241,10 @@ export function GanttOverviewTimeline({
       toast.error("La fecha debe ser posterior al rango de 12 meses actual");
       return;
     }
-    const newExtendedUntil = extendedUntil && extendedUntil > target ? extendedUntil : target;
+    // La fecha elegida SIEMPRE se aplica tal cual -- antes, si quedaba antes
+    // de la extensión ya guardada, se ignoraba en silencio y la vista
+    // seguía mostrando la extensión vieja sin ningún aviso.
+    const newExtendedUntil = target;
     setExtendedUntil(newExtendedUntil);
     setCompacted(false);
     setExtendDialogOpen(false);
