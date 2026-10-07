@@ -12,6 +12,7 @@ import { format } from "date-fns";
 import * as XLSX from "xlsx";
 import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { detectMaintenanceType, MaintenanceType } from "@/components/maintenance/types";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface ScheduledRow {
   taskId: string;
@@ -400,6 +401,7 @@ export default function MaintenanceSchedulesPage() {
                       <CollapsibleTrigger asChild>
                         <button type="button" className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 rounded-lg text-left">
                           {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                          <CompanyLogo companyNames={companyMap[g.contractId]} size="sm" />
                           <span className="font-medium text-sm truncate">{g.contractName}</span>
                           <Badge variant="outline" className="text-[10px] ml-auto shrink-0">{g.items.length} tarea{g.items.length === 1 ? "" : "s"}</Badge>
                           <button
