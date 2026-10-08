@@ -1,5 +1,5 @@
 import { Fragment, useEffect } from "react";
-import { IngresosOrigenMargen, LineasAdicionales } from "./SupuestosLines";
+import { GastosOperacionalesLineas, IngresosYCostosDirectos } from "./SupuestosLines";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ interface Props {
   result: AutoplanetResult;
   readOnly: boolean;
   update: <K extends keyof AutoplanetInputs>(key: K, value: AutoplanetInputs[K]) => void;
-  updateArr: (key: "ventaMes" | "ufRates", idx: number, value: number) => void;
+  updateArr: (key: "ventaCrec" | "ufRates", idx: number, value: number) => void;
   mutate: Mutate;
   undo: () => void;
 }
@@ -226,7 +226,9 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
           </div>
         </Card>
 
-        <Card title="Ventas y Crecimiento UF anual" sub="Editar cualquiera recalcula el modelo en tiempo real">
+        <IngresosYCostosDirectos inputs={inputs} result={result} ro={ro} mutate={mutate} />
+
+        <Card title="Ventas y Crecimiento UF anual" sub="La venta del año 1 resulta de los ingresos ingresados en «Ingresos y Costos Directos»; los años siguientes crecen con la tasa anual que se ingresa aquí.">
           <div className="overflow-x-auto">
             <table className="text-xs">
               <thead><tr className="text-muted-foreground">
@@ -236,8 +238,15 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
               <tbody>
                 <tr>
                   <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Venta (MM/mes)</td>
-                  {inputs.ventaMes.map((v, i) => (
-                    <td key={i} className="px-1 text-center"><NumCell value={v} disabled={ro} onChange={(val) => updateArr("ventaMes", i, val)} /></td>
+                  {result.ventaMes.map((v, i) => (
+                    <td key={i} className="px-1 text-center"><Input value={fmtMM(v)} disabled readOnly className="h-7 w-20 text-xs text-right px-1 bg-muted/40" /></td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">Crec. ventas anual %</td>
+                  <td className="px-1 text-center text-muted-foreground">—</td>
+                  {inputs.ventaCrec.map((r, i) => (
+                    <td key={i} className="px-1 text-center"><NumCell value={r} disabled={ro} onChange={(v) => updateArr("ventaCrec", i, v)} /></td>
                   ))}
                 </tr>
                 <tr>
@@ -257,16 +266,10 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
           </div>
         </Card>
 
-        <IngresosOrigenMargen inputs={inputs} result={result} ro={ro} mutate={mutate} />
-
         <Card title="Márgenes y costos" sub="Conversión a MM CLP (Año 1) bajo cada campo">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <FieldConv label="Margen directo % (promedio)" conv={`Ponderado por ingresos, desde «Origen y margen de los ingresos» · Costo venta A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costoVentas", 1)))} MM`}>
+            <FieldConv label="Margen directo % (promedio)" conv={`Ponderado por ingresos, desde los márgenes de «Ingresos y Costos Directos» · Costo venta A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costoVentas", 1)))} MM`}>
               <Input value={fmtPct(result.margenDirectoProm)} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
-            <FieldConv label="Otros costos dir. %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "otrosCostos", 1)))} MM`}>
-              <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
-            <FieldConv label="Costos variables %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costosVar", 1)))} MM`}>
-              <NumCell value={inputs.costosVar} disabled={ro} w="w-full" onChange={(v) => update("costosVar", v)} /></FieldConv>
             <FieldConv label="Gastos generales %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "gastosGral", 1)))} MM`}>
               <NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></FieldConv>
             <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "tecnologia", 1)))} MM`}>
@@ -285,7 +288,7 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
               <NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></FieldConv>
           </div>
         </Card>
-        <LineasAdicionales inputs={inputs} ro={ro} mutate={mutate} />
+        <GastosOperacionalesLineas inputs={inputs} ro={ro} mutate={mutate} />
       </TabsContent>
     </Tabs>
   );
@@ -424,7 +427,7 @@ function PnlNodeRows({ node, depth }: { node: PnlNode; depth: number }) {
         </td>
         {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(node.total[i] ?? 0)}</td>)}
       </tr>
-      {node.base && hasKids && (
+      {node.base && hasKids && node.own.some((v) => v !== 0) && (
         <tr className="text-muted-foreground border-b border-gray-50">
           <td style={{ paddingLeft: 16 }} className="py-0.5 italic">↳ Según Supuestos (base)</td>
           {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(node.own[i] ?? 0)}</td>)}
