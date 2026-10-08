@@ -59,7 +59,7 @@ export function IngresosOrigenMargen({ inputs, result, ro, mutate }: { inputs: A
 
   return (
     <Card title="Origen y margen de los ingresos"
-      sub="Define de dónde vienen los ingresos y con qué margen. Aquí se ingresan TODOS los márgenes: el de la venta base y el de cada fuente. El «Margen directo %» de Márgenes y costos es el promedio ponderado de estos. Proyecciones se calcula desde aquí.">
+      sub="Define de dónde vienen los ingresos y con qué margen. Aquí se ingresan todos los márgenes: el de la venta base y el de cada fuente. Una fuente sin margen propio usa el margen ponderado de la venta, el mismo que se muestra en Márgenes y costos. Proyecciones se calcula desde aquí.">
       <datalist id="autoplanet-origenes">{ORIGEN_SUGGESTIONS.map((o) => <option key={o} value={o} />)}</datalist>
 
       <div className="overflow-x-auto mb-3">
@@ -125,8 +125,8 @@ export function IngresosOrigenMargen({ inputs, result, ro, mutate }: { inputs: A
                     </Select>
                     <div className="flex items-center gap-1">
                       <span className="text-[11px] text-muted-foreground">Margen %</span>
-                      <Input type="number" step="any" disabled={ro} className="h-7 w-20 text-xs text-right px-1"
-                        value={l.margen ?? ""} placeholder={`= base (${inputs.margenDir})`}
+                      <Input type="number" step="any" disabled={ro} className="h-7 w-36 text-xs text-right px-1"
+                        value={l.margen ?? ""} placeholder={`= ${fmtPct(result.margenDirectoProm)} ponderado`}
                         onChange={(e) => patch(l.id, "margen", { margen: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })} />
                     </div>
                   </>

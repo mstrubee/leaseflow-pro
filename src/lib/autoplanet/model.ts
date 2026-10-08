@@ -1,5 +1,5 @@
 // ============================================================
-// Autoplanet Servicios — Business Case (negocio operativo B2C, NO arriendo de inmueble)
+// Autoplanet Servicios — Business Case (negocio operativo B2C, NO arriendo de inmueble; independiente del Autoplanet de contratos)
 //
 // Decisión de arquitectura: este modelo es una CAPA sobre el motor del Business Case
 // de contratos (src/lib/businessCase/model.ts), que NO se modifica. Los Supuestos son
@@ -136,7 +136,7 @@ export interface AutoplanetResult {
   costosDirectos: number[];
   margenCtrib: number[];
   margenDirecto: number[]; // (Ingresos − costo de ventas) / Ingresos, ponderado por fuente
-  margenDirectoProm: number; // lo mismo, ponderado sobre los años 1..5 (se muestra en Márgenes y costos)
+  margenDirectoProm: number; // fracción 0..1: margen ponderado de la venta (Márgenes y costos; default de fuentes sin margen propio)
   gavs: number[];
   ebitda: number[];
   depreciacion: number[];
@@ -217,16 +217,21 @@ const BASE_ADMIN: AdminConfig = { ...defaultAdminConfig, invLineas: { Nuevo: [] 
 
 // ---------- defaults ----------
 export function buildDefaultAutoplanetInputs(seed: BCSeed = {}): AutoplanetInputs {
-  const base = buildDefaultBCInputs({ ...seed, tipo: "Autoplanet" }, defaultAdminConfig);
-  // Punto de partida: mismos montos que el caso "Nuevo" de contratos, repartidos por categoría.
+  const base = buildDefaultBCInputs(seed, defaultAdminConfig);
+  // Autoplanet Servicios es un negocio distinto al Autoplanet de contratos (retail): no se heredan
+  // sus cifras de negocio (margen, venta, dotación, inversión). Parte en cero para que el usuario las defina.
+  // Se mantienen solo los parámetros financieros genéricos (UF, tasa, impuesto, % de gastos).
+  base.margenDir = 0;
+  base.ventaMes = [0, 0, 0, 0, 0];
+  base.personalY1 = 0;
   const invLines: AutoInvLine[] = [
-    { id: "hab", categoria: "habilitacion", nombre: "Habilitación", metodo: "uf_m2", valor: 6.33 },
-    { id: "af_mob", categoria: "activos_fijos", nombre: "Mobiliario", metodo: "total", valor: 30 },
+    { id: "hab", categoria: "habilitacion", nombre: "Habilitación", metodo: "total", valor: 0 },
+    { id: "af_1", categoria: "activos_fijos", nombre: "Activos fijos", metodo: "total", valor: 0 },
     { id: "eq_1", categoria: "equipos", nombre: "Equipos de servicio", metodo: "total", valor: 0 },
-    { id: "tec", categoria: "tecnologia", nombre: "Tecnología", metodo: "total", valor: 10 },
+    { id: "tec", categoria: "tecnologia", nombre: "Tecnología", metodo: "total", valor: 0 },
     { id: "mkt", categoria: "marketing", nombre: "Marketing", metodo: "total", valor: 0 },
-    { id: "gar", categoria: "garantia", nombre: "Garantía", metodo: "auto", valor: 0 },
-    { id: "inv", categoria: "inventario", nombre: "Inventario", metodo: "total", valor: 100 },
+    { id: "gar", categoria: "garantia", nombre: "Garantía", metodo: "total", valor: 0 },
+    { id: "inv", categoria: "inventario", nombre: "Inventario", metodo: "total", valor: 0 },
   ];
   return { ...base, invLines, ingresoLines: [], pnlLines: [] };
 }
@@ -297,14 +302,29 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   }
   const monthly = (l: IngresoLine, y: number) =>
     l.modo === "volumen" ? ((l.unidades[y] || 0) * (l.ticket[y] || 0)) / 1e6 : l.ventaMes[y] || 0;
+  const isLeaf = (l: IngresoLine) => !(ingKids.get(l.id)?.length);
+  const leafRev = (l: IngresoLine) =>
+    yearCols().map((i) => (i === 0 ? 0 : round(monthly(l, i - 1) * base.mesesArr[i] * sf, 2)));
+  const sumY15 = (a: number[]) => a.slice(1).reduce((x, y) => x + y, 0);
+  // Margen ponderado de la venta: promedio, ponderado por ingresos (años 1..5), de los márgenes ingresados
+  // explícitamente (venta base + fuentes con margen propio). Las fuentes sin margen propio usan este valor,
+  // por lo que el promedio final de todo el negocio coincide con él. Sin ingresos aún: promedio simple.
+  const explicit = [
+    { rev: sumY15(ventaBase), m: inputs.margenDir || 0 },
+    ...inputs.ingresoLines.filter((l) => isLeaf(l) && l.margen !== null).map((l) => ({ rev: sumY15(leafRev(l)), m: l.margen as number })),
+  ];
+  const explicitRev = explicit.reduce((a, e) => a + e.rev, 0);
+  const margenPonderado = explicitRev > 0
+    ? explicit.reduce((a, e) => a + e.m * e.rev, 0) / explicitRev
+    : explicit.reduce((a, e) => a + e.m, 0) / explicit.length;
   const ingVisited = new Set<string>();
   // Devuelve el nodo de ingreso y su espejo en Costo de Ventas (mismo árbol, con signo negativo).
   const buildIngreso = (l: IngresoLine): { rev: PnlNode; cost: PnlNode } => {
     ingVisited.add(l.id);
     const kids = (ingKids.get(l.id) ?? []).filter((k) => !ingVisited.has(k.id)).map(buildIngreso);
-    const margen = l.margen ?? inputs.margenDir;
+    const margen = l.margen ?? margenPonderado;
     const isGroup = kids.length > 0;
-    const revOwn = yearCols().map((i) => (i === 0 || isGroup ? 0 : round(monthly(l, i - 1) * base.mesesArr[i] * sf, 2)));
+    const revOwn = isGroup ? zeros() : leafRev(l);
     const costOwn = revOwn.map((v) => round(-v * (1 - (margen || 0) / 100), 2));
     const rev: PnlNode = {
       id: l.id, label: l.nombre, base: false, sign: 1, origen: l.origen, margen: l.margen,
@@ -386,8 +406,7 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   const operacionales = blockNodes("operacionales");
   const costoVentasTotal = directos.find((n) => n.id === "costoVentas")!.total;
   const margenDirecto = ing.map((x, i) => (x ? (x + costoVentasTotal[i]) / x : 0));
-  const ingY15 = ing.slice(1).reduce((a, x) => a + x, 0);
-  const margenDirectoProm = ingY15 ? (ingY15 + costoVentasTotal.slice(1).reduce((a, x) => a + x, 0)) / ingY15 : mDir;
+  const margenDirectoProm = margenPonderado / 100;
 
   const costosDirectos = sumArrays(zeros(), directos.filter((n) => n.id !== "ingresos").map((n) => n.total));
   const margenCtrib = ing.map((x, i) => round(x + costosDirectos[i], 2));
