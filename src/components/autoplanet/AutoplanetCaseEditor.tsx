@@ -261,8 +261,8 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
 
         <Card title="Márgenes y costos" sub="Conversión a MM CLP (Año 1) bajo cada campo">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costoVentas", 1)))} MM`}>
-              <NumCell value={inputs.margenDir} disabled={ro} w="w-full" onChange={(v) => update("margenDir", v)} /></FieldConv>
+            <FieldConv label="Margen directo % (promedio)" conv={`Ponderado por ingresos, desde «Origen y margen de los ingresos» · Costo venta A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costoVentas", 1)))} MM`}>
+              <Input value={fmtPct(result.margenDirectoProm)} disabled readOnly className="h-7 w-full text-xs text-right px-1 bg-muted/40" /></FieldConv>
             <FieldConv label="Otros costos dir. %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "otrosCostos", 1)))} MM`}>
               <NumCell value={inputs.otrosCostosDir} disabled={ro} w="w-full" onChange={(v) => update("otrosCostosDir", v)} /></FieldConv>
             <FieldConv label="Costos variables %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costosVar", 1)))} MM`}>

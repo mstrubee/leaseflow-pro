@@ -136,6 +136,7 @@ export interface AutoplanetResult {
   costosDirectos: number[];
   margenCtrib: number[];
   margenDirecto: number[]; // (Ingresos − costo de ventas) / Ingresos, ponderado por fuente
+  margenDirectoProm: number; // lo mismo, ponderado sobre los años 1..5 (se muestra en Márgenes y costos)
   gavs: number[];
   ebitda: number[];
   depreciacion: number[];
@@ -385,6 +386,8 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   const operacionales = blockNodes("operacionales");
   const costoVentasTotal = directos.find((n) => n.id === "costoVentas")!.total;
   const margenDirecto = ing.map((x, i) => (x ? (x + costoVentasTotal[i]) / x : 0));
+  const ingY15 = ing.slice(1).reduce((a, x) => a + x, 0);
+  const margenDirectoProm = ingY15 ? (ingY15 + costoVentasTotal.slice(1).reduce((a, x) => a + x, 0)) / ingY15 : mDir;
 
   const costosDirectos = sumArrays(zeros(), directos.filter((n) => n.id !== "ingresos").map((n) => n.total));
   const margenCtrib = ing.map((x, i) => round(x + costosDirectos[i], 2));
@@ -407,7 +410,7 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
     canonUF: base.canonUF, garantiaUF: base.garantiaUF, mesesY1: base.mesesY1,
     inv: { groups: invGroups, total: invTotal, fisica, inventario },
     directos, operacionales,
-    ingresos: ing, costosDirectos, margenCtrib, margenDirecto, gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, flujoOp, payback,
+    ingresos: ing, costosDirectos, margenCtrib, margenDirecto, margenDirectoProm, gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, flujoOp, payback,
     totalCapex: invTotal,
     tir: calcIRR(flujoOp),
     van: round(calcNPV(flujoOp, (inputs.waccRate || 0) / 100), 1),

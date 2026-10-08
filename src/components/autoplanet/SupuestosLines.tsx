@@ -59,7 +59,7 @@ export function IngresosOrigenMargen({ inputs, result, ro, mutate }: { inputs: A
 
   return (
     <Card title="Origen y margen de los ingresos"
-      sub="Define de dónde vienen los ingresos y con qué margen. La «Venta (MM/mes)» de arriba es la venta base y usa el margen directo global; cada fuente puede tener su propio margen. Proyecciones se calcula desde aquí.">
+      sub="Define de dónde vienen los ingresos y con qué margen. Aquí se ingresan TODOS los márgenes: el de la venta base y el de cada fuente. El «Margen directo %» de Márgenes y costos es el promedio ponderado de estos. Proyecciones se calcula desde aquí.">
       <datalist id="autoplanet-origenes">{ORIGEN_SUGGESTIONS.map((o) => <option key={o} value={o} />)}</datalist>
 
       <div className="overflow-x-auto mb-3">
@@ -85,6 +85,13 @@ export function IngresosOrigenMargen({ inputs, result, ro, mutate }: { inputs: A
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2 mb-2 text-xs">
+        <span className="font-medium">Venta base</span>
+        <span className="text-muted-foreground">(fila «Venta (MM/mes)» de arriba)</span>
+        <span className="ml-auto text-[11px] text-muted-foreground">Margen %</span>
+        <NumCell value={inputs.margenDir} disabled={ro} w="w-20" onChange={(v) => mutate("margenDir", (p) => ({ ...p, margenDir: v }))} />
       </div>
 
       <div className="space-y-2">
@@ -119,7 +126,7 @@ export function IngresosOrigenMargen({ inputs, result, ro, mutate }: { inputs: A
                     <div className="flex items-center gap-1">
                       <span className="text-[11px] text-muted-foreground">Margen %</span>
                       <Input type="number" step="any" disabled={ro} className="h-7 w-20 text-xs text-right px-1"
-                        value={l.margen ?? ""} placeholder={`= ${inputs.margenDir}`}
+                        value={l.margen ?? ""} placeholder={`= base (${inputs.margenDir})`}
                         onChange={(e) => patch(l.id, "margen", { margen: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })} />
                     </div>
                   </>
