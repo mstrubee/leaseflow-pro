@@ -31,7 +31,7 @@ interface Props {
 const PIE_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#64748b", "#f43f5e", "#06b6d4"];
 const yearCols = [0, 1, 2, 3, 4, 5];
 
-function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
+export function NumCell({ value, onChange, disabled, w = "w-20", step = "any" }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string }) {
   return (
     <Input type="number" step={step} value={Number.isFinite(value) ? value : 0}
       onChange={(e) => onChange(parseFloat(e.target.value) || 0)} disabled={disabled}
@@ -385,7 +385,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, seed, c
   );
 }
 
-function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: string; good?: boolean }) {
+export function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: string; good?: boolean }) {
   return (
     <div className={`rounded-lg border p-3 ${good ? "border-green-300 bg-green-50/50" : "border-gray-200"}`}>
       <div className="text-[11px] text-muted-foreground">{label}</div>
@@ -394,7 +394,7 @@ function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: 
     </div>
   );
 }
-function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+export function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
       <div className="mb-2"><h3 className="text-sm font-semibold">{title}</h3>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</div>
@@ -402,10 +402,10 @@ function Card({ title, sub, children }: { title: string; sub?: string; children:
     </div>
   );
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><Label className="text-xs">{label}</Label><div className="mt-0.5">{children}</div></div>;
 }
-function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
+export function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
   return (
     <div>
       <Label className="text-xs">{label}</Label>
@@ -414,7 +414,7 @@ function FieldConv({ label, conv, children }: { label: string; conv: string; chi
     </div>
   );
 }
-function Stat({ label, value }: { label: string; value: string }) {
+export function Stat({ label, value }: { label: string; value: string }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
 }
 function PnlRow({ label, vals, bold }: { label: string; vals: number[]; bold?: boolean }) {

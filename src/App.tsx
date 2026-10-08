@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
@@ -40,6 +40,9 @@ const GoogleDriveCallback = lazy(() => import("./pages/GoogleDriveCallback"));
 const GeoLocPage = lazy(() => import("./pages/GeoLocPage"));
 const MaintenanceRoutesPage = lazy(() => import("./pages/MaintenanceRoutesPage"));
 const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
+const AutoplanetLayout = lazy(() => import("./pages/autoplanet/AutoplanetLayout"));
+const AutoplanetCasesList = lazy(() => import("./pages/autoplanet/AutoplanetCasesList"));
+const AutoplanetCasePage = lazy(() => import("./pages/autoplanet/AutoplanetCasePage"));
 
 const queryClient = new QueryClient();
 
@@ -97,7 +100,13 @@ const App = () => (
                   <Route path="/maintenance/routes" element={<ProtectedRoute resource="maintenance"><MaintenanceRoutesPage /></ProtectedRoute>} />
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute><RouteExecutionPage /></ProtectedRoute>} />
                   <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
-                  
+                  {/* Autoplanet Servicios — solo ADMIN, o roles con el recurso "autoplanet_servicios" habilitado */}
+                  <Route path="/autoplanet" element={<ProtectedRoute resource="autoplanet_servicios"><AutoplanetLayout /></ProtectedRoute>}>
+                    <Route index element={<Navigate to="casos-de-negocio" replace />} />
+                    <Route path="casos-de-negocio" element={<AutoplanetCasesList />} />
+                    <Route path="casos-de-negocio/:caseId" element={<AutoplanetCasePage />} />
+                  </Route>
+
                   <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
