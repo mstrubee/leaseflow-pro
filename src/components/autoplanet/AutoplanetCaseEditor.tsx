@@ -1,4 +1,5 @@
 import { Fragment, useEffect } from "react";
+import { IngresosOrigenMargen, LineasAdicionales } from "./SupuestosLines";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 import type { BCInputs } from "@/lib/businessCase/model";
 import {
   AutoInvLine, AutoInvMethod, AutoplanetInputs, AutoplanetResult, BLOCK_LABEL, INV_CATEGORIES,
-  PnlBlock, PnlLine, PnlNode, newInvLine, newPnlLine, removePnlLineCascade,
+  PnlNode, newInvLine,
 } from "@/lib/autoplanet/model";
 
 type Mutate = (key: string, fn: (p: AutoplanetInputs) => AutoplanetInputs) => void;
@@ -129,25 +130,23 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
 
       {/* ───────── PROYECCIONES ───────── */}
       <TabsContent value="proyecciones" className="space-y-4">
-        <Card title="Estado de Resultados" sub="MM CLP — Año 0 = pre-apertura. Usa + para crear una línea hija en cualquier fila (para sumar un ingreso, agrégalo bajo «Ingresos»).">
+        <Card title="Estado de Resultados" sub="MM CLP — Año 0 = pre-apertura. Solo lectura: todo se calcula desde Inversión y Supuestos (ahí se editan los ingresos, su origen y margen, y las líneas adicionales).">
           <div className="overflow-x-auto">
             <table className="w-full text-xs whitespace-nowrap">
               <thead>
                 <tr className="text-right text-muted-foreground border-b">
                   <th className="text-left py-1">Línea</th>
-                  <th className="px-1 text-center">Tipo</th>
                   {yearCols.map((i) => <th key={i} className="px-2">{i === 0 ? "Año 0" : `Año ${i}`}</th>)}
                 </tr>
               </thead>
               <tbody>
                 <SectionRow label={BLOCK_LABEL.directos} />
-                {result.directos.map((n) => <PnlNodeRows key={n.id} node={n} depth={0} bloque="directos" ro={ro} mutate={mutate} />)}
-                <AddLineRow label="Agregar costo directo" ro={ro} onClick={() => mutate(`pnl.add.${Date.now()}`, (p) => ({ ...p, pnlLines: [...p.pnlLines, newPnlLine("directos", null)] }))} />
+                {result.directos.map((n) => <PnlNodeRows key={n.id} node={n} depth={0} />)}
                 <TotalRow label="Margen Contribución" vals={result.margenCtrib} />
+                <PctRow label="Margen directo %" vals={result.margenDirecto} />
 
                 <SectionRow label={BLOCK_LABEL.operacionales} />
-                {result.operacionales.map((n) => <PnlNodeRows key={n.id} node={n} depth={0} bloque="operacionales" ro={ro} mutate={mutate} />)}
-                <AddLineRow label="Agregar gasto operacional" ro={ro} onClick={() => mutate(`pnl.add.${Date.now()}`, (p) => ({ ...p, pnlLines: [...p.pnlLines, newPnlLine("operacionales", null)] }))} />
+                {result.operacionales.map((n) => <PnlNodeRows key={n.id} node={n} depth={0} />)}
                 <TotalRow label="Total Gastos Operacionales" vals={result.gavs} />
 
                 <SectionRow label="Resultado" />
@@ -162,8 +161,7 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
             </table>
           </div>
           <p className="text-[11px] text-muted-foreground mt-2">
-            «MM» = monto en MM CLP por año · «%» = porcentaje de la venta base de Supuestos. Los montos se ingresan en positivo; el signo lo define la sección.
-            Los costos % de Supuestos se calculan sobre el total de Ingresos (incluye las líneas hijas) y el escenario aplica a todas las líneas de ingreso.
+            Los costos % de Supuestos se calculan sobre el total de Ingresos; el costo de ventas usa el margen de cada fuente de ingreso. El escenario aplica a todas las fuentes de ingreso.
           </p>
         </Card>
         <Card title="Ingresos vs EBITDA" sub="MM CLP por año">
@@ -259,6 +257,8 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
           </div>
         </Card>
 
+        <IngresosOrigenMargen inputs={inputs} result={result} ro={ro} mutate={mutate} />
+
         <Card title="Márgenes y costos" sub="Conversión a MM CLP (Año 1) bajo cada campo">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <FieldConv label="Margen directo %" conv={`Costo venta A1: $${fmtMM(Math.abs(nodeTotal(result.directos, "costoVentas", 1)))} MM`}>
@@ -285,6 +285,7 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
               <NumCell value={inputs.deprAnos} disabled={ro} w="w-full" onChange={(v) => update("deprAnos", v)} /></FieldConv>
           </div>
         </Card>
+        <LineasAdicionales inputs={inputs} ro={ro} mutate={mutate} />
       </TabsContent>
     </Tabs>
   );
@@ -376,14 +377,14 @@ function InvGroupCard({ title, sub, rows, subtotal, inputs, ro, mutate, categori
 // ───────── Proyecciones ─────────
 function SectionRow({ label }: { label: string }) {
   return (
-    <tr><td colSpan={2 + yearCols.length} className="pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</td></tr>
+    <tr><td colSpan={1 + yearCols.length} className="pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</td></tr>
   );
 }
 
 function ValueRow({ label, vals }: { label: string; vals: number[] }) {
   return (
     <tr className="border-b border-gray-50">
-      <td className="text-left py-1">{label}</td><td />
+      <td className="text-left py-1">{label}</td>
       {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>)}
     </tr>
   );
@@ -392,101 +393,44 @@ function ValueRow({ label, vals }: { label: string; vals: number[] }) {
 function TotalRow({ label, vals }: { label: string; vals: number[] }) {
   return (
     <tr className="border-b border-gray-50 font-semibold bg-muted/30">
-      <td className="text-left py-1 pl-1">{label}</td><td />
+      <td className="text-left py-1 pl-1">{label}</td>
       {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(vals[i] ?? 0)}</td>)}
     </tr>
   );
 }
 
-function AddLineRow({ label, ro, onClick }: { label: string; ro: boolean; onClick: () => void }) {
-  if (ro) return null;
+function PctRow({ label, vals }: { label: string; vals: number[] }) {
   return (
-    <tr>
-      <td colSpan={2 + yearCols.length} className="py-1">
-        <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs text-muted-foreground" onClick={onClick}>
-          <Plus className="h-3 w-3" /> {label}
-        </Button>
-      </td>
+    <tr className="border-b border-gray-50 text-muted-foreground">
+      <td className="text-left py-1 pl-1 italic">{label}</td>
+      {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtPct(vals[i] ?? 0)}</td>)}
     </tr>
   );
 }
 
-function PnlNodeRows({ node, depth, bloque, ro, mutate }: { node: PnlNode; depth: number; bloque: PnlBlock; ro: boolean; mutate: Mutate }) {
+/** Fila de solo lectura del estado de resultados (con sus líneas hijas). */
+function PnlNodeRows({ node, depth }: { node: PnlNode; depth: number }) {
   const hasKids = node.children.length > 0;
-  const bold = depth === 0 && (node.id === "ingresos");
-
-  const addChild = () =>
-    mutate(`pnl.add.${Date.now()}`, (p) => {
-      // Una línea con hijas pasa a ser un subtotal: sus valores propios se reemplazan por la suma de las hijas.
-      const lines = p.pnlLines.map((l) => (l.id === node.id ? { ...l, valores: new Array(6).fill(0) } : l));
-      return { ...p, pnlLines: [...lines, newPnlLine(bloque, node.id)] };
-    });
-  const patch = (field: string, change: Partial<PnlLine>) =>
-    mutate(`pnl.${node.id}.${field}`, (p) => ({ ...p, pnlLines: p.pnlLines.map((l) => (l.id === node.id ? { ...l, ...change } : l)) }));
-  const setYear = (i: number, v: number) =>
-    mutate(`pnl.${node.id}.v${i}`, (p) => ({
-      ...p,
-      pnlLines: p.pnlLines.map((l) => {
-        if (l.id !== node.id) return l;
-        const valores = [...l.valores];
-        valores[i] = v;
-        return { ...l, valores };
-      }),
-    }));
-  const remove = () => mutate(`pnl.rm.${node.id}`, (p) => ({ ...p, pnlLines: removePnlLineCascade(p.pnlLines, node.id) }));
-
   return (
     <Fragment>
-      <tr className={`border-b border-gray-50 ${bold ? "font-semibold" : ""}`}>
+      <tr className={`border-b border-gray-50 ${depth === 0 && node.id === "ingresos" ? "font-semibold" : ""}`}>
         <td className="py-0.5" style={{ paddingLeft: depth * 16 }}>
-          <div className="flex items-center gap-1">
+          <span className="inline-flex items-center gap-1">
             {depth > 0 && <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0" />}
-            {node.base || ro
-              ? <span>{node.label}</span>
-              : <Input value={node.label} onChange={(e) => patch("nombre", { nombre: e.target.value })} className="h-6 w-44 text-xs px-1" />}
-            {!ro && (
-              <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" title="Agregar línea hija" onClick={addChild}>
-                <Plus className="h-3 w-3" />
-              </Button>
-            )}
-            {!ro && !node.base && (
-              <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" title="Eliminar línea (y sus hijas)" onClick={remove}>
-                <Trash2 className="h-3 w-3 text-muted-foreground" />
-              </Button>
-            )}
-          </div>
+            {node.label}
+            {node.origen && <span className="text-[10px] text-muted-foreground">· {node.origen}</span>}
+            {node.margen != null && <span className="text-[10px] text-muted-foreground">· margen {node.margen}%</span>}
+          </span>
         </td>
-        <td className="px-1 text-center">
-          {!node.base && !hasKids && (
-            <Select value={node.modo} disabled={ro} onValueChange={(v) => patch("modo", { modo: v as "monto" | "pct" })}>
-              <SelectTrigger className="h-6 w-16 text-[11px] px-1"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="monto">MM</SelectItem>
-                <SelectItem value="pct">%</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        </td>
-        {yearCols.map((i) => (
-          <td key={i} className="text-right px-1">
-            {!node.base && !hasKids
-              ? <EditableYear node={node} ro={ro} i={i} onChange={setYear} />
-              : fmtMM(node.total[i] ?? 0)}
-          </td>
-        ))}
+        {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(node.total[i] ?? 0)}</td>)}
       </tr>
       {node.base && hasKids && (
         <tr className="text-muted-foreground border-b border-gray-50">
-          <td style={{ paddingLeft: 16 }} className="py-0.5 italic">↳ Según Supuestos</td><td />
+          <td style={{ paddingLeft: 16 }} className="py-0.5 italic">↳ Según Supuestos (base)</td>
           {yearCols.map((i) => <td key={i} className="text-right px-2">{fmtMM(node.own[i] ?? 0)}</td>)}
         </tr>
       )}
-      {node.children.map((c) => <PnlNodeRows key={c.id} node={c} depth={depth + 1} bloque={bloque} ro={ro} mutate={mutate} />)}
+      {node.children.map((c) => <PnlNodeRows key={c.id} node={c} depth={depth + 1} />)}
     </Fragment>
   );
-}
-
-/** Celda editable de una línea agregada: se edita el valor ingresado (positivo); el signo lo da la sección. */
-function EditableYear({ node, ro, i, onChange }: { node: PnlNode; ro: boolean; i: number; onChange: (i: number, v: number) => void }) {
-  return <NumCell value={node.raw?.[i] ?? 0} disabled={ro} w="w-16" onChange={(v) => onChange(i, v)} />;
 }
