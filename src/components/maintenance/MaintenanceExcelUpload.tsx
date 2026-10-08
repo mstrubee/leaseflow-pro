@@ -107,8 +107,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
               contractsByPrefix.set(prefixMatch[1], entry);
             }
             if (fullCebe.length >= 5) {
+              // El código de 4 caracteres puede ser alfanumérico (ej. "04A4"
+              // en el CEBE H04A4P1390 de Agroplanet, o "04C6" en Autoplanet)
+              // — no solo dígitos puros.
               const digits4 = fullCebe.substring(1, 5);
-              if (/^\d{4}$/.test(digits4)) {
+              if (/^[A-Z0-9]{4}$/.test(digits4)) {
                 if (!contractsByDigits.has(digits4)) {
                   contractsByDigits.set(digits4, []);
                 }
@@ -128,9 +131,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           if (upperText.includes(cebe)) return { match: contract };
         }
 
-        const cebeMatch = rawText.trim().match(/^H(\d{4})P\d+/i);
-        const plainDigitsMatch = rawText.trim().match(/^(\d{4})/);
-        const excelDigits = cebeMatch?.[1] || plainDigitsMatch?.[1];
+        // El código corto de tienda (columna "Tienda") puede ser alfanumérico
+        // (ej. "04a4" para el CEBE H04A4P1390) — no asumir solo dígitos.
+        const cebeMatch = rawText.trim().match(/^H([A-Za-z0-9]{4})P\d+/i);
+        const plainDigitsMatch = rawText.trim().match(/^([A-Za-z0-9]{4})/);
+        const excelDigits = (cebeMatch?.[1] || plainDigitsMatch?.[1])?.toUpperCase();
         if (excelDigits && contractsByDigits.has(excelDigits)) {
           const candidates = contractsByDigits.get(excelDigits)!;
           if (candidates.length === 1) return { match: candidates[0] };

@@ -6,9 +6,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { Loader2 } from "lucide-react";
 
 type AuthMode = "login" | "forgot" | "reset";
+// "none": no hay invitación asociada (reset normal de admin/user/operador_terreno).
+// "activatable": invitación pending/reset -> puede fijar contraseña.
+// "used": la invitación ya fue consumida -> bloquear.
+type InvitationGate = "checking" | "none" | "activatable" | "used";
+
+// Supabase a veces dispara INITIAL_SESSION/SIGNED_IN antes que
+// PASSWORD_RECOVERY al aterrizar en un enlace de recovery en una carga en
+// frío (condición de carrera conocida de supabase-js) -- si eso pasa, el
+// listener de abajo redirigiría a "/" antes de llegar a mostrar el
+// formulario de nueva contraseña, dejando al usuario "logueado" sin haber
+// fijado contraseña nunca. Se detecta el hash de la URL de forma síncrona,
+// en el estado inicial, para blindar contra esa carrera sin importar qué
+// evento llegue primero.
+const isRecoveryLink = () => window.location.hash.includes("type=recovery");
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -16,8 +31,12 @@ const Auth = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<AuthMode>("login");
-  const recoveryRef = useRef(false);
+  const [mode, setMode] = useState<AuthMode>(() => (isRecoveryLink() ? "reset" : "login"));
+  const [invitationGate, setInvitationGate] = useState<InvitationGate>("none");
+  const recoveryRef = useRef(isRecoveryLink());
+  // Evita repetir la consulta a `invitations` si llegan varios eventos
+  // (PASSWORD_RECOVERY, INITIAL_SESSION, TOKEN_REFRESHED...) para la misma sesión.
+  const invitationCheckedRef = useRef(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -26,6 +45,23 @@ const Auth = () => {
       if (event === "PASSWORD_RECOVERY") {
         recoveryRef.current = true;
         setMode("reset");
+      }
+
+      if (recoveryRef.current && session && !invitationCheckedRef.current) {
+        invitationCheckedRef.current = true;
+        setInvitationGate("checking");
+        supabase
+          .from("invitations")
+          .select("status")
+          .eq("user_id", session.user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (!data) setInvitationGate("none");
+            else if (data.status === "used") setInvitationGate("used");
+            else setInvitationGate("activatable");
+          });
       } else if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session && !recoveryRef.current) {
         navigate("/");
       }
@@ -77,6 +113,14 @@ const Auth = () => {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (invitationGate === "used") {
+      toast({
+        variant: "destructive",
+        title: "Enlace ya utilizado",
+        description: "Este enlace de activación ya fue usado. Pide a tu gerente o administrador que reenvíe la invitación.",
+      });
+      return;
+    }
     if (newPassword !== confirmPassword) {
       toast({ variant: "destructive", title: "Error", description: "Las contraseñas no coinciden." });
       return;
@@ -89,11 +133,16 @@ const Auth = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
+      if (invitationGate === "activatable") {
+        const { error: completeError } = await supabase.functions.invoke("complete-invitation");
+        if (completeError) throw completeError;
+      }
       recoveryRef.current = false;
       toast({ title: "Contraseña actualizada", description: "Tu contraseña fue cambiada exitosamente." });
       navigate("/");
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      const message = await getFunctionErrorMessage(error, error.message || "No se pudo actualizar la contraseña.");
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setLoading(false);
     }
@@ -189,7 +238,19 @@ const Auth = () => {
           </>
         )}
 
-        {mode === "reset" && (
+        {mode === "reset" && invitationGate === "used" && (
+          <>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-2xl font-semibold">Enlace ya utilizado</CardTitle>
+              <CardDescription>
+                Este enlace de activación ya fue usado anteriormente. Pide a tu gerente o administrador
+                que reenvíe la invitación desde "Reset Password".
+              </CardDescription>
+            </CardHeader>
+          </>
+        )}
+
+        {mode === "reset" && invitationGate !== "used" && (
           <>
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl font-semibold">Nueva Contraseña</CardTitle>
@@ -219,8 +280,8 @@ const Auth = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button type="submit" className="w-full" disabled={loading || invitationGate === "checking"}>
+                  {(loading || invitationGate === "checking") && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Guardar Nueva Contraseña
                 </Button>
               </form>

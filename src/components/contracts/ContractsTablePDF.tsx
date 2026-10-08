@@ -79,6 +79,8 @@ export const getAvailableColumns = (isFirmadoView: boolean, isNegociacionView: b
     { key: "empresa", label: "Empresa" },
     { key: "ubicacion", label: "Ubicación" },
     { key: "direccion", label: "Dirección" },
+    { key: "capex", label: "Capex" },
+    { key: "capex_est", label: "Capex Est / Sup." },
     { key: "costo_arriendo", label: "Costo Arriendo" },
     { key: "duracion", label: "Duración" },
   ];
@@ -176,13 +178,19 @@ const origenLabels: Record<string, string> = {
   inversionista: "Inversionista",
 };
 
+export interface CapexData {
+  capexByContract: Record<string, { authorized: number; unauthorized: number }>;
+  capexEstByContract: Record<string, { capexEstMM: number; capitalTrabajoMM: number }>;
+}
+
 export const generateContractsListPDF = async (
   contracts: Contract[],
   selectedColumns: string[],
   title: string,
   isFirmadoView: boolean,
   isNegociacionView: boolean,
-  ufValue: number = 0
+  ufValue: number = 0,
+  capexData: CapexData = { capexByContract: {}, capexEstByContract: {} }
 ) => {
   const doc = new jsPDF({ orientation: 'landscape' });
   const today = new Date().toLocaleDateString('es-CL');
@@ -280,6 +288,49 @@ export const generateContractsListPDF = async (
             rowData.push('-');
           }
           break;
+        case "capex": {
+          // Mismo cálculo que la columna "CAPEX" en pantalla (ContractsTable.tsx):
+          // presupuesto real del año en curso, contract_budgets.
+          const capex = capexData.capexByContract[contract.id];
+          const totalUF = (capex?.authorized || 0) + (capex?.unauthorized || 0);
+          if (totalUF > 0) {
+            const superficie = contract.superficie_edificada_local || 0;
+            const perM2 = superficie > 0 ? totalUF / superficie : 0;
+            const lines = [
+              `$${Math.round(totalUF * ufValue).toLocaleString('es-CL')}`,
+              `${totalUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`,
+            ];
+            if (perM2 > 0) lines.push(`${perM2.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²`);
+            rowData.push(lines.join('\n'));
+          } else {
+            rowData.push('-');
+          }
+          break;
+        }
+        case "capex_est": {
+          // Inversión estimada del Business Case Financiero, sin inventario —
+          // mismo cálculo que "Capex Est / Sup." en pantalla. Capital de
+          // Trabajo = el inventario (input "Inventario" en Inversión del BC),
+          // se muestra aparte, no se suma al Capex Estimado.
+          const capexEstData = capexData.capexEstByContract[contract.id];
+          const capexEst = capexEstData?.capexEstMM || 0;
+          if (capexEst > 0) {
+            const capitalTrabajo = capexEstData?.capitalTrabajoMM || 0;
+            const superficie = contract.superficie_edificada_local || 0;
+            const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
+            const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
+            const lines = [
+              `${capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$`,
+              capitalTrabajo > 0 ? `${capitalTrabajo.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$ (CT)` : '-',
+              superficie > 0 ? `${superficie.toLocaleString('es-CL')} m²` : '-',
+            ];
+            if (perM2UF > 0) lines.push(`${perM2UF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²`);
+            rowData.push(lines.join('\n'));
+          } else {
+            rowData.push('-');
+          }
+          break;
+        }
         case "duracion":
           rowData.push(currentVersion ? `${currentVersion.duration_months} meses` : '-');
           break;
@@ -319,71 +370,46 @@ export const generateContractsListPDF = async (
               : `${ventaMinMM}-${ventaMaxMM} MM$`);
             
             // Line 2: Range in UF (if ufValue available)
+            const ventaMinUF = ufValue > 0 ? ventaMin / ufValue : 0;
+            const ventaMaxUF = ufValue > 0 ? ventaMax / ufValue : 0;
             if (ufValue > 0) {
-              const ventaMinUF = Math.round(ventaMin / ufValue);
-              const ventaMaxUF = Math.round(ventaMax / ufValue);
-              lines.push(ventaMinUF === ventaMaxUF 
-                ? `${ventaMinUF.toLocaleString('es-CL')} UF` 
-                : `${ventaMinUF.toLocaleString('es-CL')}-${ventaMaxUF.toLocaleString('es-CL')} UF`);
+              lines.push(Math.round(ventaMinUF) === Math.round(ventaMaxUF)
+                ? `${Math.round(ventaMinUF).toLocaleString('es-CL')} UF`
+                : `${Math.round(ventaMinUF).toLocaleString('es-CL')}-${Math.round(ventaMaxUF).toLocaleString('es-CL')} UF`);
             }
-            
+
             // Line 3: UF/m² (if superficie available)
             if (superficie > 0 && ufValue > 0) {
-              const ventaMinUFm2 = (ventaMin / ufValue) / superficie;
-              const ventaMaxUFm2 = (ventaMax / ufValue) / superficie;
+              const ventaMinUFm2 = ventaMinUF / superficie;
+              const ventaMaxUFm2 = ventaMaxUF / superficie;
               const fmtUFm2 = (n: number) => n.toFixed(1);
-              lines.push(ventaMinUFm2 === ventaMaxUFm2 
-                ? `${fmtUFm2(ventaMinUFm2)} UF/m²` 
+              lines.push(ventaMinUFm2 === ventaMaxUFm2
+                ? `${fmtUFm2(ventaMinUFm2)} UF/m²`
                 : `${fmtUFm2(ventaMinUFm2)}-${fmtUFm2(ventaMaxUFm2)} UF/m²`);
             }
-            
-            // Line 4: Arr/Vta ratio
+
+            // Line 4: Arr/Vta ratio — mismo cálculo que la pantalla
+            // (ContractsTable.tsx): promedio ponderado por periodo/escalación
+            // vía calculateWeightedAverageTotalArriendo, no solo el canon
+            // vigente. Antes esto se recalculaba a mano acá mismo ignorando
+            // escalations/ajustes periódicos, dando un % distinto al de la
+            // pantalla para cualquier contrato con renta escalonada.
             if (ufValue > 0 && currentVersion) {
-              const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-              const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-              
-              // Calculate current rent
-              let currentRent = currentVersion.regime_rent || 0;
-              if (currentVersion.regime_rent_is_uf_m2 && superficie > 0) {
-                currentRent = currentVersion.regime_rent * superficie;
-              }
-              
-              // Calculate GGCC
-              let gastosComunesTotal = 0;
-              if (methodology === "percentage") {
-                const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-                const percentage = currentVersion.gastos_comunes_percentage || 0;
-                const topeValue = currentVersion.gastos_comunes_tope;
-                const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-                const calculatedAmount = (totalCentro * percentage) / 100;
-                if (topeValue && topeValue > 0) {
-                  const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-                  gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
-                } else {
-                  gastosComunesTotal = calculatedAmount;
-                }
-              } else {
-                const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-                const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-                const adicionalAdmin = hasExtended ? currentRent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
-              }
-              
-              const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
-              const fondoPromocion = currentRent * (fondoPromocionPct / 100);
-              const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-              
-              const arriendoTotalMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
-              const ventaPromedio = ventaMax ? (ventaMin + ventaMax) / 2 : ventaMin;
-              const ventaPromedioEnUF = ventaPromedio / ufValue;
-              const ratioArrVta = ventaPromedioEnUF > 0 ? (arriendoTotalMensual / ventaPromedioEnUF) * 100 : 0;
-              
+              const { promedio: arriendoTotalMensual } = calculateWeightedAverageTotalArriendo({
+                version: currentVersion,
+                signedDate: contract.signed_date,
+                superficie,
+                metrosLinealesFrente: metrosFrente,
+              });
+              const arriendoAnual = arriendoTotalMensual * 12;
+              const ventaAnualUF = ((ventaMinUF + ventaMaxUF) / 2) * 12;
+              const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
+
               if (ratioArrVta > 0) {
                 lines.push(`Arr/Vta: ${ratioArrVta.toFixed(2)}%`);
               }
             }
-            
+
           rowData.push(lines.join('\n'));
           } else {
             rowData.push('-');
@@ -400,6 +426,22 @@ export const generateContractsListPDF = async (
     return rowData;
   });
 
+  // Fila "TOTAL": solo si la columna Capex Est / Sup. está seleccionada.
+  // Suma el Capex Estimado y el Capital de Trabajo (Inventario) de TODOS
+  // los contratos incluidos en este PDF — no promedios ni ratios, esos no
+  // tienen sentido sumados (superficie/UF-m² se dejan en blanco acá).
+  if (columns.length > 0 && columns.some((col) => col.key === "capex_est")) {
+    const totalCapexEst = contracts.reduce((sum, c) => sum + (capexData.capexEstByContract[c.id]?.capexEstMM || 0), 0);
+    const totalCapitalTrabajo = contracts.reduce((sum, c) => sum + (capexData.capexEstByContract[c.id]?.capitalTrabajoMM || 0), 0);
+    const totalRow = columns.map((col, idx) => {
+      if (col.key === "capex_est") {
+        return `${totalCapexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$\n${totalCapitalTrabajo.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$ (CT)`;
+      }
+      return idx === 0 ? 'TOTAL' : '';
+    });
+    tableData.push(totalRow);
+  }
+
   // Calculate column widths
   const pageWidth = doc.internal.pageSize.getWidth();
   const availableWidth = pageWidth - 28; // margins
@@ -409,33 +451,50 @@ export const generateContractsListPDF = async (
   columns.forEach((col, idx) => {
     columnStyles[idx] = { 
       cellWidth: colWidth,
-      halign: ['costo_arriendo', 'venta_estimada'].includes(col.key) ? 'right' : 
+      halign: ['costo_arriendo', 'venta_estimada', 'capex', 'capex_est'].includes(col.key) ? 'right' :
               ['duracion', 'termino', 'aviso', 'categoria', 'clasificacion', 'estado_patente'].includes(col.key) ? 'center' : 'left'
     };
   });
 
-  // Generate table
-  autoTable(doc, {
-    startY: 36,
-    head: [headers],
-    body: tableData,
-    theme: 'grid',
-    headStyles: { 
-      fillColor: [220, 38, 38],
-      textColor: 255,
-      fontStyle: 'bold',
-      halign: 'center'
-    },
-    margin: { left: 14, right: 14 },
-    columnStyles,
-    styles: {
-      fontSize: 8,
-      cellPadding: 3,
-      overflow: 'linebreak',
-    },
-    alternateRowStyles: {
-      fillColor: [245, 247, 250],
-    },
+  // Generate table — máximo 8 filas por página, forzado (no autoTable
+  // decidiendo cuántas entran según el contenido). Cada bloque de hasta 8
+  // filas arranca en una página propia y usa exactamente el mismo estilo
+  // (mismo fontSize/cellPadding en todas), así ninguna página queda con un
+  // "zoom" distinto. rowPageBreak: 'avoid' asegura además que, si un bloque
+  // no entrara entero, jsPDF nunca corte una fila a la mitad — la empuja
+  // completa a la página siguiente en vez de partirla.
+  const ROWS_PER_PAGE = 8;
+  const rowChunks: string[][][] = tableData.length > 0
+    ? Array.from({ length: Math.ceil(tableData.length / ROWS_PER_PAGE) }, (_, i) =>
+        tableData.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE))
+    : [[]];
+
+  rowChunks.forEach((chunk, idx) => {
+    if (idx > 0) doc.addPage();
+    autoTable(doc, {
+      startY: idx === 0 ? 36 : 20,
+      head: [headers],
+      body: chunk,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 38, 38],
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      margin: { left: 14, right: 14 },
+      columnStyles,
+      styles: {
+        fontSize: 8,
+        cellPadding: 3,
+        overflow: 'linebreak',
+      },
+      alternateRowStyles: {
+        fillColor: [245, 247, 250],
+      },
+      rowPageBreak: 'avoid',
+      showHead: 'everyPage',
+    });
   });
 
   // Footer with page numbers

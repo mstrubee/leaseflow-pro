@@ -7,9 +7,9 @@ import { SupplierForm } from "./SupplierForm";
 import { SuppliersList } from "./SuppliersList";
 import { SupplierBulkUpload } from "./SupplierBulkUpload";
 import { CategoryManager } from "./CategoryManager";
+import { SupplierCategoryView } from "./SupplierCategoryView";
 import { Supplier } from "./types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { generateSupplierTemplate } from "@/lib/generateSupplierTemplate";
 
 type DialogMode = "form" | "bulk";
@@ -58,8 +58,7 @@ export const SuppliersModule = () => {
 
   return (
     <>
-      <SelectableElement elementId="suppliers.module" label="Módulo de Proveedores">
-        <Card>
+      <Card>
           <CardHeader className="flex flex-row items-center justify-between py-3">
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-muted-foreground" />
@@ -91,6 +90,7 @@ export const SuppliersModule = () => {
                   <Settings className="h-3 w-3" />
                   Rubros
                 </TabsTrigger>
+                <TabsTrigger value="service-type">Categoría</TabsTrigger>
               </TabsList>
               <TabsContent value="list">
                 <SuppliersList onEdit={handleEdit} refreshKey={refreshKey} />
@@ -98,10 +98,12 @@ export const SuppliersModule = () => {
               <TabsContent value="categories">
                 <CategoryManager />
               </TabsContent>
+              <TabsContent value="service-type">
+                <SupplierCategoryView refreshKey={refreshKey} />
+              </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
-      </SelectableElement>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, ShieldAlert, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface LoginEntry {
   user_id: string;
@@ -20,6 +21,7 @@ export function SecuritySessionsPanel() {
   const [logins, setLogins] = useState<LoginEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [forcing, setForcing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const loadLogins = async () => {
     setLoading(true);
@@ -28,15 +30,21 @@ export function SecuritySessionsPanel() {
       if (error) throw error;
       setLogins(data?.logins ?? []);
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      const message = await getFunctionErrorMessage(e, "No se pudieron cargar los inicios de sesión recientes.");
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadLogins();
-  }, []);
+  // Carga lazy: solo cuando el usuario abre la card por primera vez.
+  // Evita llamar a la Edge Function en cada page-reload si la card está colapsada.
+  const handleToggle = (isOpen: boolean) => {
+    if (isOpen && !hasLoaded) {
+      setHasLoaded(true);
+      loadLogins();
+    }
+  };
 
   const handleForceLogoutAll = async () => {
     setForcing(true);
@@ -48,7 +56,8 @@ export function SecuritySessionsPanel() {
         description: `Se cerraron ${data?.signed_out ?? 0} sesiones. Todos deberán volver a iniciar sesión.`,
       });
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      const message = await getFunctionErrorMessage(e, "No se pudieron cerrar todas las sesiones.");
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setForcing(false);
     }
@@ -59,6 +68,7 @@ export function SecuritySessionsPanel() {
       title="Seguridad y Sesiones"
       description="Auditoría de inicios de sesión y control de sesiones activas"
       defaultOpen={false}
+      onToggle={handleToggle}
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">

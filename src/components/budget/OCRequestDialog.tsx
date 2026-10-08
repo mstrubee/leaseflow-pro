@@ -8,10 +8,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Download, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
+import { Loader2, Download, FileSpreadsheet, Plus, Trash2, FileUp, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
+
+// Presupuesto/cotización adjuntado a la Solicitud -- mismas extensiones y
+// mismo criterio de previsualización que usa "Requerimiento de OC"
+// (CapexOCRequiredDialog.tsx), para que la experiencia sea consistente.
+const ACCEPTED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".doc", ".docx"];
+const ACCEPT_ATTR =
+  ".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx," +
+  "application/pdf,image/jpeg,image/png," +
+  "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
+  "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+type PreviewKind = "pdf" | "image" | "none";
+function previewKindOf(fileName: string): PreviewKind {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
+  if (ext === ".pdf") return "pdf";
+  if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image";
+  return "none";
+}
 
 interface SelectedLine {
   lineId: string;
@@ -38,6 +59,10 @@ interface OCRequestDialogProps {
   lineName: string;
   lineAvailable: number;
   lineBudget: number;
+  /** Proveedor ya asignado a la línea CAPEX de origen, si tiene uno -- se
+   *  prellena al abrir (el usuario puede cambiarlo o dejarlo en blanco). */
+  initialSupplierId?: string | null;
+  initialSupplierName?: string | null;
   year: number;
   ufValue: number;
   formatUF: (value: number) => string;
@@ -55,13 +80,21 @@ export const OCRequestDialog = ({
   lineName,
   lineAvailable,
   lineBudget,
+  initialSupplierId = null,
+  initialSupplierName = null,
   year,
   ufValue,
   formatUF,
   onSuccess
 }: OCRequestDialogProps) => {
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("basic");
+  // Al crear una solicitud DIRECTA (sin venir de un Requerimiento de OC), la
+  // primera interacción es elegir la(s) línea(s) de presupuesto.
+  const [activeTab, setActiveTab] = useState("lines");
+  // Mientras sea true, la Descripción se autocompleta con el nombre de las
+  // líneas seleccionadas -- se apaga apenas el usuario la edita a mano, para
+  // no pisar un texto que ya escribió.
+  const [descriptionIsAuto, setDescriptionIsAuto] = useState(true);
   const [form, setForm] = useState({
     description: "",
     amount: "",
@@ -72,8 +105,15 @@ export const OCRequestDialog = ({
   const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
   const [useMultipleLines, setUseMultipleLines] = useState(false);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  // Presupuesto/cotización adjuntado -- obligatorio para poder crear la
+  // solicitud. Se sube al repositorio del contrato (carpeta "Solicitudes de
+  // OC") recién al crear, no al elegir el archivo.
+  const [quoteFile, setQuoteFile] = useState<File | null>(null);
+  const [quotePreviewUrl, setQuotePreviewUrl] = useState<string | null>(null);
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [templateFileName, setTemplateName] = useState<string | null>(null);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const { toast } = useToast();
 
   // Load active template
@@ -98,15 +138,55 @@ export const OCRequestDialog = ({
         description: lineName,
         amount: "",
         currency: "CLP",
-        supplier_id: null,
-        supplier_name: null
+        supplier_id: initialSupplierId,
+        supplier_name: initialSupplierName
       });
-      setSelectedLines([{ lineId: budgetLineId, lineName, amount: 0, maxAmount: lineAvailable }]);
+      setSelectedLines([{ lineId: budgetLineId, lineName, amount: lineAvailable, maxAmount: lineAvailable }]);
       setUseMultipleLines(false);
       setPaymentPlan([]);
-      setActiveTab("basic");
+      setActiveTab("lines");
+      setDescriptionIsAuto(true);
+      setQuoteFile(null);
+      setQuotePreviewUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
     }
-  }, [open, lineName, budgetLineId, lineAvailable]);
+  }, [open, lineName, budgetLineId, lineAvailable, initialSupplierId, initialSupplierName]);
+
+  // Libera el blob URL de previsualización al desmontar el diálogo.
+  useEffect(() => {
+    return () => {
+      if (quotePreviewUrl) URL.revokeObjectURL(quotePreviewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotePreviewUrl]);
+
+  const handleQuoteFileChange = (f: File | null) => {
+    if (!f) return;
+    const ext = f.name.toLowerCase().slice(f.name.lastIndexOf("."));
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+      toast({ variant: "destructive", title: "Archivo no válido", description: "El archivo debe ser PDF, JPEG, PNG, Excel o Word" });
+      return;
+    }
+    setQuotePreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
+    });
+    setQuoteFile(f);
+  };
+
+  // Autocompleta la Descripción (pestaña "Datos Básicos") con el nombre de
+  // las líneas seleccionadas, unidas por coma -- solo mientras el usuario no
+  // la haya editado a mano. Con una sola línea (modo por defecto), no hace
+  // falta: form.description ya arranca con lineName.
+  useEffect(() => {
+    if (!useMultipleLines || !descriptionIsAuto) return;
+    const joined = selectedLines.map(l => l.lineName).join(", ");
+    setForm(prev => ({ ...prev, description: joined }));
+  }, [selectedLines, useMultipleLines, descriptionIsAuto]);
+
+  const formatCLP = (value: number) => `$${Math.round(value).toLocaleString("es-CL")}`;
 
   const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
     const today = new Date();
@@ -133,7 +213,51 @@ export const OCRequestDialog = ({
     return { number: requestNumber, correlative };
   };
 
+  /** Resuelve cada línea del plan de pagos a un monto CLP concreto — misma
+   *  lógica que se usaba solo al insertar, extraída para poder validar el
+   *  total ANTES de crear nada y para reutilizarla en el PDF de la Solicitud. */
+  const resolvePaymentPlan = (amountClp: number) => {
+    return paymentPlan
+      .map((p, idx) => {
+        let resolvedClp = 0;
+        if (p.input_mode === "balance") {
+          const previousSum = paymentPlan.slice(0, idx).reduce((sum, prev) => {
+            if (prev.input_mode === "percent") return sum + (amountClp * (parseFloat(prev.amount) || 0) / 100);
+            if (prev.input_mode === "balance") return sum;
+            return sum + (parseFloat(prev.amount) || 0);
+          }, 0);
+          resolvedClp = amountClp - previousSum;
+        } else if (p.input_mode === "percent") {
+          resolvedClp = amountClp * (parseFloat(p.amount) || 0) / 100;
+        } else {
+          resolvedClp = parseFloat(p.amount) || 0;
+        }
+        return {
+          description: p.description || `Pago ${idx + 1}`,
+          amountClp: Math.round(resolvedClp),
+          dueDate: p.due_date || null,
+        };
+      })
+      .filter((e) => e.amountClp > 0);
+  };
+
   const handleCreate = async () => {
+    if (!quoteFile) {
+      toast({ variant: "destructive", title: "Falta adjuntar presupuesto", description: "Debe adjuntar el presupuesto/cotización antes de crear la solicitud" });
+      setActiveTab("quote");
+      return;
+    }
+
+    if (!form.supplier_id) {
+      toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
+      return;
+    }
+
+    if (paymentPlan.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe agregar al menos un pago al plan de pagos" });
+      return;
+    }
+
     // Amount is always entered in basic tab
     const amount = parseFloat(form.amount) || 0;
     if (amount <= 0) {
@@ -153,6 +277,19 @@ export const OCRequestDialog = ({
         return;
       }
       lineNamesForNumber = validLines.map(l => l.lineName);
+
+      // El monto ingresado en "Datos Básicos" debe caber en la suma de las
+      // líneas elegidas -- comparación en UF de ambos lados para no mezclar
+      // monedas (ver bug: comparar UF contra CLP daba un falso "excede").
+      const sumLinesUf = validLines.reduce((s, l) => s + (l.amount || 0), 0);
+      if (totalAmountUf > sumLinesUf + 0.01) {
+        toast({
+          variant: "destructive",
+          title: "Monto excede la suma de las líneas",
+          description: `El monto ingresado (${formatCLP(totalAmountUf * ufValue)}) supera la suma de las líneas seleccionadas (${formatCLP(sumLinesUf * ufValue)}). Ajusta los montos de las líneas o el monto ingresado.`,
+        });
+        return;
+      }
     } else {
       lineNamesForNumber = [lineName];
       
@@ -173,13 +310,30 @@ export const OCRequestDialog = ({
     // Calculate CLP equivalent (round to integer)
     const amountClp = Math.round(totalAmountUf * ufValue);
 
+    const resolvedPayments = resolvePaymentPlan(amountClp);
+    const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), amountClp);
+    if (planError) {
+      toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: planError });
+      return;
+    }
+
     setLoading(true);
     try {
+      // Sube el presupuesto/cotización a la carpeta "Cotizaciones" del
+      // repositorio del contrato (misma carpeta que usa Requerimiento de OC)
+      // ANTES de crear la solicitud -- si falla, no se crea nada (evita
+      // quedar con una solicitud sin respaldo).
+      const upload = await backupQuotationFileToRepository(contractId, quoteFile, quoteFile.name);
+      if (!upload.success || !upload.driveUrl) {
+        toast({ variant: "destructive", title: "Error", description: upload.error || "No se pudo subir el presupuesto adjunto" });
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       const { number, correlative } = await generateRequestNumber(lineNamesForNumber);
-      
+
       // Build line_name for display - include all line names
-      const displayLineName = useMultipleLines 
+      const displayLineName = useMultipleLines
         ? selectedLines.filter(l => l.amount > 0).map(l => l.lineName).join(' + ')
         : lineName;
 
@@ -202,7 +356,9 @@ export const OCRequestDialog = ({
         supplier_name: form.supplier_name,
         year: year,
         status: "pending",
-        created_by: user?.id
+        created_by: user?.id,
+        quotation_url: upload.driveUrl,
+        quotation_file_name: quoteFile.name
       }).select().single();
 
       if (error) throw error;
@@ -224,38 +380,17 @@ export const OCRequestDialog = ({
 
       // Create payment plan entries - if no plan defined, create single payment entry
       if (requestData) {
-        if (paymentPlan.length > 0) {
-          const planEntries = paymentPlan
-            .map((p, idx) => {
-              let resolvedClp = 0;
-              if (p.input_mode === "balance") {
-                // Total minus sum of previous payments
-                const previousSum = paymentPlan.slice(0, idx).reduce((sum, prev) => {
-                  if (prev.input_mode === "percent") return sum + (amountClp * (parseFloat(prev.amount) || 0) / 100);
-                  if (prev.input_mode === "balance") return sum; // skip, will be resolved
-                  return sum + (parseFloat(prev.amount) || 0);
-                }, 0);
-                resolvedClp = amountClp - previousSum;
-              } else if (p.input_mode === "percent") {
-                resolvedClp = amountClp * (parseFloat(p.amount) || 0) / 100;
-              } else {
-                resolvedClp = parseFloat(p.amount) || 0;
-              }
-              const resolvedUf = ufValue > 0 ? resolvedClp / ufValue : 0;
-              return {
-                oc_request_id: requestData.id,
-                payment_number: idx + 1,
-                description: p.description || `Pago ${idx + 1}`,
-                amount_uf: Math.round(resolvedUf * 10000) / 10000,
-                due_date: p.due_date || null,
-                status: "pending"
-              };
-            })
-            .filter(e => e.amount_uf > 0);
-
-          if (planEntries.length > 0) {
-            await supabase.from("oc_payment_plans").insert(planEntries);
-          }
+        if (resolvedPayments.length > 0) {
+          const planEntries = resolvedPayments.map((p, idx) => ({
+            oc_request_id: requestData.id,
+            payment_number: idx + 1,
+            description: p.description,
+            amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            amount_clp: Math.round(p.amountClp),
+            due_date: p.dueDate,
+            status: "pending"
+          }));
+          await supabase.from("oc_payment_plans").insert(planEntries);
         } else {
           // No payment plan defined - assume single payment with full amount
           await supabase.from("oc_payment_plans").insert({
@@ -263,15 +398,50 @@ export const OCRequestDialog = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: amountClp,
             due_date: null,
             status: "pending"
           });
         }
       }
 
-      toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+      toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
       onOpenChange(false);
       onSuccess?.();
+
+      let supplierRut: string | null = null;
+      if (form.supplier_id) {
+        const { data: supplierData } = await supabase
+          .from("suppliers")
+          .select("rut")
+          .eq("id", form.supplier_id)
+          .single();
+        supplierRut = supplierData?.rut || null;
+      }
+
+      // Se ofrece compartir recién creada, con los mismos datos que se acaban
+      // de guardar — así el PDF y lo que quedó en la base nunca se desalinean.
+      setShareData({
+        requestDate: new Date().toISOString().split("T")[0],
+        currency: form.currency as "UF" | "CLP",
+        contractNames: [contractName],
+        contractCebe,
+        description: form.description,
+        lines: useMultipleLines
+          ? selectedLines.filter((l) => l.amount > 0).map((l) => ({
+              lineName: l.lineName,
+              amountClp: Math.round(l.amount * ufValue),
+            }))
+          : [{ lineName, amountClp }],
+        totalAmountClp: amountClp,
+        payments: resolvedPayments,
+        supplierName: form.supplier_name,
+        supplierRut,
+        sequenceNumber: requestData?.sequence_number,
+        requestId: requestData?.id,
+        verificationCode: (requestData as any)?.verification_code,
+      });
+      setShareRequestId(requestData?.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -315,6 +485,7 @@ export const OCRequestDialog = ({
     : parseFloat(form.amount) || 0;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -326,11 +497,76 @@ export const OCRequestDialog = ({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="basic">Datos Básicos</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="lines">Líneas de Presupuesto</TabsTrigger>
-            <TabsTrigger value="payments">Plan de Pagos</TabsTrigger>
+            <TabsTrigger value="quote">Adjuntar Presupuesto</TabsTrigger>
+            <TabsTrigger value="basic" disabled={!quoteFile}>Datos Básicos</TabsTrigger>
+            <TabsTrigger value="payments" disabled={!form.supplier_id || !(parseFloat(form.amount) > 0)}>Plan de Pagos</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="quote" className="space-y-4 mt-4">
+            {!quoteFile ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="oc-request-quote-file">Presupuesto / Cotización *</Label>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" asChild className="cursor-pointer">
+                    <label htmlFor="oc-request-quote-file" className="flex items-center gap-1.5">
+                      <FileUp className="h-3.5 w-3.5" />
+                      Elegir archivo
+                    </label>
+                  </Button>
+                  <span className="text-sm text-muted-foreground truncate">Ningún archivo seleccionado</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word. Se guarda en la carpeta "Cotizaciones" del repositorio del contrato.</p>
+                <input
+                  id="oc-request-quote-file"
+                  type="file"
+                  accept={ACCEPT_ATTR}
+                  className="hidden"
+                  onChange={(e) => handleQuoteFileChange(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {previewKindOf(quoteFile.name) === "pdf" && quotePreviewUrl && (
+                  <iframe src={quotePreviewUrl} title="Previsualización del presupuesto" className="w-full h-[24rem] rounded-md border" />
+                )}
+                {previewKindOf(quoteFile.name) === "image" && quotePreviewUrl && (
+                  <img
+                    src={quotePreviewUrl}
+                    alt="Previsualización del presupuesto"
+                    className="w-full h-[24rem] rounded-md border object-contain bg-muted/30"
+                  />
+                )}
+                {previewKindOf(quoteFile.name) === "none" && (
+                  <div className="w-full h-[24rem] rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
+                    <FileText className="h-10 w-10" />
+                    <span className="text-xs">Sin previsualización disponible para este tipo de archivo</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground truncate">{quoteFile.name}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setQuoteFile(null);
+                      setQuotePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+                    }}
+                  >
+                    Reemplazar archivo
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setActiveTab("lines")}>Atrás</Button>
+              <Button onClick={() => setActiveTab("basic")} disabled={!quoteFile} className="flex-1">
+                Continuar a Datos Básicos
+              </Button>
+            </div>
+          </TabsContent>
 
           <TabsContent value="basic" className="space-y-4 mt-4">
             {/* Admin template (if configured) */}
@@ -356,7 +592,10 @@ export const OCRequestDialog = ({
               <Label>Titulo</Label>
               <Textarea
                 value={form.description}
-                onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+                onChange={(e) => {
+                  setDescriptionIsAuto(false);
+                  setForm(prev => ({ ...prev, description: e.target.value }));
+                }}
                 placeholder="Titulo"
                 rows={2}
               />
@@ -408,11 +647,23 @@ export const OCRequestDialog = ({
 
             {/* Supplier */}
             <div className="space-y-2">
-              <Label>Proveedor (opcional)</Label>
+              <Label>Proveedor *</Label>
               <SupplierSelect
                 value={form.supplier_id}
+                supplierName={form.supplier_name}
                 onChange={handleSupplierChange}
               />
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
+              <Button
+                onClick={() => setActiveTab("payments")}
+                disabled={!form.supplier_id || !(parseFloat(form.amount) > 0)}
+                className="flex-1"
+              >
+                Continuar a Plan de Pagos
+              </Button>
             </div>
           </TabsContent>
 
@@ -436,6 +687,8 @@ export const OCRequestDialog = ({
                 selectedLines={selectedLines}
                 onSelectionChange={setSelectedLines}
                 formatUF={formatUF}
+                formatCLP={formatCLP}
+                ufValue={ufValue}
               />
             ) : (
               <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
@@ -443,11 +696,15 @@ export const OCRequestDialog = ({
                 <p className="text-xs mt-1">Active la opción de múltiples líneas para seleccionar otras.</p>
               </div>
             )}
+
+            <Button onClick={() => setActiveTab("quote")} className="w-full">
+              Continuar a Adjuntar Presupuesto
+            </Button>
           </TabsContent>
 
           <TabsContent value="payments" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
-              <Label>Plan de Pagos (opcional)</Label>
+              <Label>Plan de Pagos *</Label>
               <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
                 <Plus className="h-3 w-3" />
                 Agregar Pago
@@ -457,7 +714,7 @@ export const OCRequestDialog = ({
             {paymentPlan.length === 0 ? (
               <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
                 <p>No hay pagos planificados.</p>
-                <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
+                <p className="text-xs mt-1">Debes agregar al menos un pago para poder crear la solicitud.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -568,12 +825,24 @@ export const OCRequestDialog = ({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleCreate} disabled={loading}>
+          <Button
+            onClick={handleCreate}
+            disabled={loading || paymentPlan.length === 0 || !quoteFile}
+            title={!quoteFile ? "Adjunta el presupuesto antes de crear la solicitud" : paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : undefined}
+          >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Crear Solicitud
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+      requestId={shareRequestId}
+    />
+    </>
   );
 };

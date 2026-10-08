@@ -556,7 +556,9 @@ export const DocumentVersions = ({
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {/* Import data button for drafts */}
+                        {/* Import data button for drafts — deshabilitado 2026-09-07: la
+                            extracción con IA sigue llamando a ai.gateway.lovable.dev (ver
+                            CLAUDE.md); se deja sin uso hasta que se decida el proveedor de IA.
                         {!readOnly && (isDraftType(doc.document_type) || isFinalDraftType(doc.document_type)) && (
                           <Button
                             variant="ghost"
@@ -571,6 +573,7 @@ export const DocumentVersions = ({
                             <Sparkles className="h-3 w-3" />
                           </Button>
                         )}
+                        */}
                         {!readOnly && isDraftType(doc.document_type) && (
                           <Button
                             variant="outline"
@@ -827,12 +830,11 @@ export const DocumentVersions = ({
             <Button variant="outline" onClick={() => setFileDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button variant="outline" onClick={() => handleUploadFile(false)} disabled={uploading || !suggestedFileName.trim()}>
-              {uploading ? "Subiendo..." : "Subir sin importar"}
-            </Button>
-            <Button onClick={() => handleUploadFile(true)} disabled={uploading || !suggestedFileName.trim()} className="gap-2">
-              <Sparkles className="h-4 w-4" />
-              {uploading ? "Subiendo..." : "Subir e importar datos"}
+            {/* Importar datos con IA deshabilitado 2026-09-07 — ver
+                CLAUDE.md (dependencia de ai.gateway.lovable.dev sin resolver).
+                Antes había un segundo botón "Subir e importar datos" acá. */}
+            <Button onClick={() => handleUploadFile(false)} disabled={uploading || !suggestedFileName.trim()}>
+              {uploading ? "Subiendo..." : "Subir"}
             </Button>
           </DialogFooter>
         </DialogContent>

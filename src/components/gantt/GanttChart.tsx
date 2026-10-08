@@ -1,11 +1,12 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { GanttTask, OrgMember } from "@/hooks/useGantt";
+import { useToast } from "@/hooks/use-toast";
 import { Holiday, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronsDownUp, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, Eye, EyeOff, FileDown, Palette, CornerLeftUp, ZoomIn, ZoomOut, ArrowLeft, ArrowRight, TriangleAlert } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,25 +44,34 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { DependencyDialog } from "./DependencyDialog";
+import { TaskStatusActions, StatusDot } from "./TaskStatusActions";
 
 // Local input that only commits the value on Enter or blur, allowing free typing/erasing.
 function DurationInput({
   value,
   onCommit,
+  editable = true,
 }: {
   value: number;
   onCommit: (n: number) => void;
+  editable?: boolean;
 }) {
   const [local, setLocal] = useState<string>(String(value ?? 1));
   const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (!focused) setLocal(String(value ?? 1));
   }, [value, focused]);
+
+  if (!editable) {
+    return <span className="text-xs px-1 text-center w-14 truncate">{value ?? 1}</span>;
+  }
+
   const commit = () => {
     const n = parseInt(local);
-    if (isNaN(n) || n < 1) {
-      onCommit(1);
-      setLocal("1");
+    if (isNaN(n) || n < 0) {
+      onCommit(0);
+      setLocal("0");
     } else {
       onCommit(n);
       setLocal(String(n));
@@ -70,7 +80,7 @@ function DurationInput({
   return (
     <Input
       type="number"
-      min={1}
+      min={0}
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onFocus={() => setFocused(true)}
@@ -136,11 +146,14 @@ function TaskNameInput({
 }
 
 
-// Auto-progress based on today's date vs task start/end
-function computeAutoProgress(task: GanttTask): number {
-  if (!task.start_date || !task.end_date) return 0;
-  const start = parseISO(task.start_date).getTime();
-  const end = parseISO(task.end_date).getTime();
+// % de avance implícito por fecha: días transcurridos / duración total, entre
+// un start y un end dados. Compartido por "Avance Real" (fechas ACTUALES,
+// que cambian con Reprog./cascada) y "Avance Prog." (fechas de BASELINE,
+// fijas desde que la tarea nació).
+function computeDateProgress(start_date: string | null, end_date: string | null): number {
+  if (!start_date || !end_date) return 0;
+  const start = parseISO(start_date).getTime();
+  const end = parseISO(end_date).getTime();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const now = today.getTime();
@@ -149,6 +162,18 @@ function computeAutoProgress(task: GanttTask): number {
   const total = end - start;
   if (total <= 0) return 0;
   return Math.round(((now - start) / total) * 100);
+}
+
+// "% Avance Real": usa las fechas ACTUALES de la tarea (las que cambian con
+// Reprog., arrastre de barra o cascada de dependencias).
+function computeAutoProgress(task: GanttTask): number {
+  return computeDateProgress(task.start_date, task.end_date);
+}
+
+// "% Avance Prog.": usa las fechas de BASELINE (el plan original, congelado
+// desde que la tarea nació y nunca modificado después).
+function computeBaselineProgress(task: GanttTask): number {
+  return computeDateProgress(task.baseline_start_date, task.baseline_end_date);
 }
 
 // Predefined color palette for Gantt task bars
@@ -271,17 +296,31 @@ interface GanttChartProps {
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
   orgMembers?: OrgMember[];
-  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
+  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean; isReprogram?: boolean }) => Promise<Map<string, Partial<GanttTask>> | void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
-  onUndoDelete?: () => Promise<void>;
+  beginUndoGroup: (label: string) => void;
+  endUndoGroup: () => void;
   onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
+  onDiscardTask?: (taskId: string) => Promise<void>;
+  onRestoreTask?: (taskId: string) => Promise<void>;
+  getDescendantCount?: (taskId: string) => number;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
+  /** Usuarios con permiso de ver: pueden reprogramar (columna Reprog.) */
+  canReprogram?: boolean;
+  /** Usuarios con permiso de ver: pueden marcar tareas como completadas */
+  canComplete?: boolean;
   onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
   rentStartDate?: string | null;
+  /** Fila-resumen no editable arriba de todas las tareas, con la fecha de
+   *  inicio/término de todo el cronograma — solo para cronogramas "general"
+   *  (no se pasa en "Cronogramas de Mantenciones"). */
+  showSummaryRow?: boolean;
+  /** ID del timeline activo — usado para persistir ajustes de advertencia en localStorage. */
+  ganttId?: string | null;
 }
 
 const BASE_DAY_WIDTH = 30;
@@ -291,11 +330,11 @@ const ROW_HEIGHT = 40;
 const TASK_NAME_WIDTH = 450;
 const INDEX_COL_WIDTH = 40;
 const RESPONSIBLE_COL_WIDTH = 180;
-const ORIGIN_COL_WIDTH = 120;
 const DATE_COL_WIDTH = 140;
 const DURATION_COL_WIDTH = 110;
 const REPROG_COL_WIDTH = 72;
 const PROGRESS_COL_WIDTH = 80;
+const PROGRESS_REAL_COL_WIDTH = 90;
 
 interface NewTaskRow {
   name: string;
@@ -315,81 +354,6 @@ const createEmptyNewTask = (): NewTaskRow => ({
   parent_id: null,
 });
 
-function ChartAddDependencyForm({
-  task,
-  allTasks,
-  onAdd,
-  onCancel,
-}: {
-  task: GanttTask;
-  allTasks: GanttTask[];
-  onAdd: (parentId: string, dep_type: "start" | "end", lag_days: number) => void | Promise<void>;
-  onCancel?: () => void;
-}) {
-  const [parentId, setParentId] = useState("");
-  const [depType, setDepType] = useState<"start" | "end">("end");
-  const [lag, setLag] = useState(0);
-
-  const reset = () => { setParentId(""); setLag(0); setDepType("end"); };
-
-  const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
-  const options = allTasks
-    .filter((t) => t.id !== task.id && !currentDeps.includes(t.id))
-    .map((t) => ({ value: t.id, label: t.name }));
-
-  return (
-    <div className="space-y-1.5">
-      <SearchableSelect
-        value={parentId}
-        onValueChange={setParentId}
-        options={options}
-        placeholder="Buscar tarea predecesora..."
-        searchPlaceholder="Buscar tarea..."
-        triggerClassName="h-7 text-xs"
-      />
-      <div className="flex items-center gap-1">
-        <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
-          <SelectTrigger className="h-7 text-xs w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="end">al término</SelectItem>
-            <SelectItem value="start">al inicio</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          type="number"
-          className="h-7 text-xs w-20"
-          value={lag}
-          onChange={(e) => setLag(parseInt(e.target.value) || 0)}
-          title="Días de desfase (+ retrasa, − adelanta)"
-        />
-        <span className="text-[10px] text-muted-foreground">días</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs"
-          onClick={() => { reset(); onCancel?.(); }}
-        >
-          Cancelar
-        </Button>
-        <Button
-          size="sm"
-          className="h-7 text-xs ml-auto"
-          disabled={!parentId}
-          onClick={async () => {
-            if (!parentId) return;
-            await onAdd(parentId, depType, lag);
-            reset();
-          }}
-        >
-          Agregar
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export function GanttChart({
   tasks,
   taskTree,
@@ -398,19 +362,88 @@ export function GanttChart({
   onUpdateTask,
   onAddTask,
   onDeleteTask,
-  onUndoDelete,
+  beginUndoGroup,
+  endUndoGroup,
   onAddDependency,
   onRemoveDependency,
   onUpdateDependency,
+  onDiscardTask,
+  onRestoreTask,
+  getDescendantCount,
   onReorderTask,
   isAdmin = false,
+  canReprogram = false,
+  canComplete = false,
   onExportPDF,
   rentStartDate,
+  showSummaryRow = false,
+  ganttId,
 }: GanttChartProps) {
+  const { toast } = useToast();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const didInitExpandRef = useRef(false);
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>(100);
+  // Tracks tasks whose start date was shifted by the non-working-day warning button.
+  // Map: taskId → { from: originalDate, to: shiftedDate }. Persisted in localStorage by ganttId.
+  const [shiftedByWarning, setShiftedByWarning] = useState<Map<string, { from: string; to: string }>>(new Map());
+  const shiftedByWarningRef = useRef(shiftedByWarning);
+  shiftedByWarningRef.current = shiftedByWarning;
+  const warningLoadedRef = useRef(false);
+
+  // Load from localStorage once when ganttId and tasks are both ready; validate against DB dates.
+  useEffect(() => {
+    if (!ganttId || tasks.length === 0 || warningLoadedRef.current) return;
+    warningLoadedRef.current = true;
+    try {
+      const stored = localStorage.getItem(`gantt-warn-shifts-${ganttId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, { from: string; to: string }>;
+        const taskById = new Map(tasks.map((t) => [t.id, t]));
+        // Only restore entries where the task still has the shifted date in DB
+        const valid = new Map(
+          Object.entries(parsed).filter(([taskId, shifted]) => {
+            const t = taskById.get(taskId);
+            return t && t.start_date === shifted.to;
+          })
+        );
+        if (valid.size > 0) setShiftedByWarning(valid);
+        // Prune stale entries from storage (e.g., Ctrl+Z happened in a previous session)
+        if (valid.size !== Object.keys(parsed).length) {
+          try {
+            if (valid.size === 0) localStorage.removeItem(`gantt-warn-shifts-${ganttId}`);
+            else localStorage.setItem(`gantt-warn-shifts-${ganttId}`, JSON.stringify(Object.fromEntries(valid)));
+          } catch { /* ignore */ }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [ganttId, tasks]);
+
+  // When tasks change (e.g., Ctrl+Z reverts a shifted date), remove stale entries and persist.
+  useEffect(() => {
+    if (!warningLoadedRef.current || !ganttId) return;
+    const current = shiftedByWarningRef.current;
+    if (current.size === 0) return;
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    let changed = false;
+    const newMap = new Map(current);
+    for (const [taskId, shifted] of newMap) {
+      const t = taskById.get(taskId);
+      if (!t || t.start_date !== shifted.to) {
+        newMap.delete(taskId);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setShiftedByWarning(newMap);
+      try {
+        if (newMap.size === 0) localStorage.removeItem(`gantt-warn-shifts-${ganttId}`);
+        else localStorage.setItem(`gantt-warn-shifts-${ganttId}`, JSON.stringify(Object.fromEntries(newMap)));
+      } catch { /* ignore */ }
+    }
+  }, [tasks, ganttId]);
   const DAY_WIDTH = BASE_DAY_WIDTH * (zoomLevel / 100);
   const [taskNameColWidth, setTaskNameColWidth] = useState(TASK_NAME_WIDTH);
   const [colSelectMode, setColSelectMode] = useState(false);
@@ -418,7 +451,22 @@ export function GanttChart({
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const cw = useCallback((key: string, width: number) => hiddenCols.has(key) ? 0 : width, [hiddenCols]);
   const [reprogValues, setReprogValues] = useState<Map<string, string>>(new Map());
-  const [reprogDeltas, setReprogDeltas] = useState<Map<string, number>>(new Map());
+  const reprogBusyRef = useRef<Set<string>>(new Set());
+  // La columna "Término" se ensancha si ALGUNA tarea quedó con fecha actual
+  // distinta de su baseline (persistido en la base — no depende de la sesión),
+  // para que "(fecha baseline) ±N días" entre completo. Ancho normal si no
+  // hay ninguna reprogramación pendiente que mostrar.
+  const hasAnyReprogDelta = tasks.some(
+    (t) => t.baseline_end_date && t.end_date && t.baseline_end_date !== t.end_date
+  );
+  const endColWidth = hasAnyReprogDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
+  // Igual criterio para "Inicio": se ensancha si alguna hoja quedó con un
+  // Inicio movido por cascada de dependencia, para que el indicador de
+  // origen entre completo.
+  const hasAnyCascadeDelta = tasks.some(
+    (t) => t.start_date && t.baseline_start_date && t.start_date !== t.baseline_start_date
+  );
+  const startColWidth = hasAnyCascadeDelta ? DATE_COL_WIDTH + 60 : DATE_COL_WIDTH;
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
@@ -458,6 +506,9 @@ export function GanttChart({
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | "into" | null>(null);
+  // Soltar "dentro" de otra fila reparenta -- se confirma antes de aplicar
+  // (fácil soltar sin querer justo en el centro de la fila).
+  const [pendingReparent, setPendingReparent] = useState<{ sourceId: string; targetId: string } | null>(null);
 
   // State for "change parent" dialog
   const [parentDialogTaskId, setParentDialogTaskId] = useState<string | null>(null);
@@ -548,36 +599,6 @@ export function GanttChart({
     }
   }, [newTaskRow]);
 
-  // Deshacer la última eliminación con Ctrl+Z (PC) / Cmd+Z (Mac).
-  // No interferir cuando se está escribiendo en un campo de texto.
-  useEffect(() => {
-    if (!onUndoDelete || !isAdmin) return;
-    const onKey = (e: KeyboardEvent) => {
-      const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z");
-      if (!isUndo) return;
-      const el = document.activeElement;
-      const tag = el?.tagName;
-      const typing = tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement | null)?.isContentEditable;
-      if (typing) return; // dejar que el navegador deshaga el texto
-      e.preventDefault();
-      onUndoDelete();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onUndoDelete, isAdmin]);
-
-  const toggleExpand = (taskId: string) => {
-    setExpandedTasks((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
-        next.delete(taskId);
-      } else {
-        next.add(taskId);
-      }
-      return next;
-    });
-  };
-
   const allParentTaskIds = useMemo(() => {
     const ids: string[] = [];
     const collect = (list: GanttTask[]) => {
@@ -609,13 +630,108 @@ export function GanttChart({
 
   const allExpanded = allParentTaskIds.length > 0 && allParentTaskIds.every((id) => expandedTasks.has(id));
 
-  const toggleExpandAll = () => {
-    if (allExpanded) {
-      setExpandedTasks(new Set());
-    } else {
-      setExpandedTasks(new Set(allParentTaskIds));
-    }
+  // ── Expansión progresiva (un nivel por clic, con rebote en los extremos) ──
+  // Memoria de dirección por clave (id de la línea madre, o "__all__" para el botón global).
+  const expandDirRef = useRef<Map<string, "expand" | "collapse">>(new Map());
+
+  // Parents (líneas madre) que son hijas directas de `id`.
+  const childParentsOf = useCallback(
+    (id: string) => tasks.filter((t) => t.parent_id === id && parentTaskIds.has(t.id)).map((t) => t.id),
+    [tasks, parentTaskIds]
+  );
+
+  // Todas las madres del subárbol de `rootId` (incluye rootId si es madre).
+  const subtreeParents = useCallback(
+    (rootId: string): string[] => {
+      const res: string[] = [];
+      const rec = (id: string) => {
+        if (!parentTaskIds.has(id)) return;
+        res.push(id);
+        childParentsOf(id).forEach(rec);
+      };
+      rec(rootId);
+      return res;
+    },
+    [parentTaskIds, childParentsOf]
+  );
+
+  // Frontera de expansión: madres visibles (ancestros expandidos) que aún están colapsadas.
+  const computeFrontier = useCallback(
+    (set: Set<string>, roots: string[]): string[] => {
+      const frontier: string[] = [];
+      const rec = (id: string) => {
+        if (!parentTaskIds.has(id)) return;
+        if (!set.has(id)) { frontier.push(id); return; } // colapsada → frontera, no seguir
+        childParentsOf(id).forEach(rec);
+      };
+      roots.forEach(rec);
+      return frontier;
+    },
+    [parentTaskIds, childParentsOf]
+  );
+
+  // Nivel más profundo actualmente expandido: madres expandidas sin descendiente-madre expandida.
+  const computeDeepestExpanded = useCallback(
+    (set: Set<string>, roots: string[]): string[] => {
+      const deepest: string[] = [];
+      const seen = new Set<string>();
+      roots.forEach((r) => subtreeParents(r).forEach((id) => {
+        if (seen.has(id) || !set.has(id)) return;
+        seen.add(id);
+        const hasExpandedDesc = subtreeParents(id).some((d) => d !== id && set.has(d));
+        if (!hasExpandedDesc) deepest.push(id);
+      }));
+      return deepest;
+    },
+    [subtreeParents]
+  );
+
+  const progressiveToggle = useCallback(
+    (roots: string[], key: string) => {
+      setExpandedTasks((prev) => {
+        const next = new Set(prev);
+        const frontier = computeFrontier(next, roots);
+        const anyExpanded = roots.some((r) => subtreeParents(r).some((id) => next.has(id)));
+        const fullyExpanded = frontier.length === 0;
+        const fullyCollapsed = !anyExpanded;
+
+        let dir = expandDirRef.current.get(key) ?? "expand";
+        if (fullyCollapsed) dir = "expand";
+        else if (fullyExpanded) dir = "collapse";
+
+        if (dir === "expand") {
+          frontier.forEach((id) => next.add(id));
+        } else {
+          computeDeepestExpanded(next, roots).forEach((id) => next.delete(id));
+        }
+
+        // Fijar dirección para el próximo clic (rebote en extremos).
+        const frontierAfter = computeFrontier(next, roots);
+        const anyExpandedAfter = roots.some((r) => subtreeParents(r).some((id) => next.has(id)));
+        if (frontierAfter.length === 0) expandDirRef.current.set(key, "collapse");
+        else if (!anyExpandedAfter) expandDirRef.current.set(key, "expand");
+        else expandDirRef.current.set(key, dir);
+
+        return next;
+      });
+    },
+    [computeFrontier, computeDeepestExpanded, subtreeParents]
+  );
+
+  const toggleExpand = (taskId: string) => progressiveToggle([taskId], taskId);
+
+  const rootParentIds = useMemo(
+    () => taskTree.filter((t) => t.children && t.children.length > 0).map((t) => t.id),
+    [taskTree]
+  );
+
+  // Botón "Expandir/Contraer Todo": expande o colapsa TODO de una sola vez.
+  const toggleExpandAllFull = () => {
+    setExpandedTasks(allExpanded ? new Set() : new Set(allParentTaskIds));
   };
+
+  // Botón "Expandir/Comprimir Niveles": progresivo, un nivel por clic (con rebote).
+  const toggleExpandAll = () => progressiveToggle(rootParentIds, "__all__");
 
   // Bulk toggle: convert ALL task durations to business or calendar days, recalculating end_date.
   const tasksWithDuration = tasks.filter((t) => t.start_date && (t.duration_days ?? 0) > 0);
@@ -710,6 +826,22 @@ export function GanttChart({
     return { start: minStart, end: maxEnd };
   }, [tasks]);
 
+  // Igual que getEffectiveDates pero con las fechas de BASELINE (plan
+  // original, nunca tocado) — para comparar contra las fechas actuales y
+  // calcular el atraso/adelanto total del proyecto en la fila-resumen.
+  const getEffectiveBaselineDates = useCallback((task: GanttTask): { start: string | null; end: string | null } => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) return { start: task.baseline_start_date, end: task.baseline_end_date };
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const c of children) {
+      const { start, end } = getEffectiveBaselineDates(c);
+      if (start && (!minStart || start < minStart)) minStart = start;
+      if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+    }
+    return { start: minStart, end: maxEnd };
+  }, [tasks]);
+
   // Get task position - uses dragPreview for the task being dragged
   const getTaskPosition = useCallback((task: GanttTask) => {
     // Use preview state if this task is being dragged
@@ -734,26 +866,79 @@ export function GanttChart({
     };
   }, [barDragTaskId, dragPreview, resolveVisibleIndex, getEffectiveDates, DAY_WIDTH]);
 
+  // Fecha de inicio/término de TODO el cronograma (rollup de las raíces del
+  // árbol) — para la fila-resumen no editable de arriba (showSummaryRow).
+  const { overallStart, overallEnd } = useMemo(() => {
+    let minStart: string | null = null;
+    let maxEnd: string | null = null;
+    for (const t of taskTree) {
+      const eff = getEffectiveDates(t);
+      if (eff.start && (!minStart || eff.start < minStart)) minStart = eff.start;
+      if (eff.end && (!maxEnd || eff.end > maxEnd)) maxEnd = eff.end;
+    }
+    return { overallStart: minStart, overallEnd: maxEnd };
+  }, [taskTree, getEffectiveDates]);
+
+  const summaryPosition = useMemo(() => {
+    if (!overallStart || !overallEnd) return { left: 0, width: 0, visible: false };
+    const startIdx = resolveVisibleIndex(overallStart, "start");
+    const endIdx = resolveVisibleIndex(overallEnd, "end");
+    return { left: startIdx * DAY_WIDTH, width: Math.max(1, endIdx - startIdx + 1) * DAY_WIDTH, visible: true };
+  }, [overallStart, overallEnd, resolveVisibleIndex, DAY_WIDTH]);
+
   // Ancho total del bloque de columnas fijas (excluye columnas ocultas).
   const headerOffset = useMemo(() => {
     const get = (key: string, w: number) => hiddenCols.has(key) ? 0 : w;
     return 6 + get("index", INDEX_COL_WIDTH) + taskNameColWidth +
-      get("responsible", RESPONSIBLE_COL_WIDTH) + get("origin", ORIGIN_COL_WIDTH) +
-      get("start", DATE_COL_WIDTH) + get("duration", DURATION_COL_WIDTH) +
-      get("end", DATE_COL_WIDTH) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH);
-  }, [hiddenCols, taskNameColWidth]);
+      get("responsible", RESPONSIBLE_COL_WIDTH) +
+      get("start", startColWidth) + get("duration", DURATION_COL_WIDTH) +
+      get("end", endColWidth) + get("reprog", REPROG_COL_WIDTH) + get("progress", PROGRESS_COL_WIDTH) +
+      get("progressReal", PROGRESS_REAL_COL_WIDTH);
+  }, [hiddenCols, taskNameColWidth, endColWidth, startColWidth]);
 
-  // Calculate dependency arrows data
+  // Calculate dependency arrows data.
+  //
+  // Router ortogonal CON OBSTÁCULOS: cada barra visible del Gantt (no solo la
+  // barra origen/destino de la dependencia en cuestión) se trata como un
+  // rectángulo que la línea de conexión no puede atravesar. El árbol de
+  // dependencias/posiciones de las barras no cambia acá -- esto solo calcula
+  // el `pathD` (SVG) de cada flecha.
   const dependencyArrows = useMemo(() => {
-    const arrows: Array<{
+    // Un solo bar por fila (cada fila del Gantt es una tarea): mapa
+    // rowIdx -> [left, right] en el mismo espacio de coordenadas que
+    // fromX/toX (incluye headerOffset). Es la lista de "obstáculos".
+    //
+    // Las filas de tareas PADRE/resumen (con hijas) quedan afuera de la
+    // lista de obstáculos: su barra es un rollup visual de sus hijas y
+    // nunca es origen ni destino de una dependencia (las dependencias solo
+    // se muestran/crean entre tareas hoja). Suelen abarcar casi todo el
+    // ancho del cronograma, así que tratarlas como obstáculo bloqueaba
+    // CUALQUIER columna vertical para dependencias cuyo rango de filas las
+    // incluyera -- forzando siempre el fallback sin evitar obstáculos. Es
+    // una distinción estructural (tiene hijas o no), no un caso especial
+    // por ID/nombre de tarea.
+    const rowBars = new Map<number, { left: number; right: number }>();
+    visibleTasks.forEach(({ task: rowTask }, rowIdx) => {
+      if (!rowTask) return;
+      const isGroupRow = parentTaskIds.has(rowTask.id) || !!(rowTask.children && rowTask.children.length > 0);
+      if (isGroupRow) return;
+      const pos = getTaskPosition(rowTask);
+      if (!pos.visible) return;
+      rowBars.set(rowIdx, { left: headerOffset + pos.left, right: headerOffset + pos.left + pos.width });
+    });
+
+    type RawArrow = {
       id: string;
       fromX: number;
       fromY: number;
       toX: number;
       toY: number;
+      fromRow: number;
+      toRow: number;
       parentTaskId: string;
       childTaskId: string;
-    }> = [];
+    };
+    const rawArrows: RawArrow[] = [];
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task || !task.dependencies || task.dependencies.length === 0) return;
@@ -771,28 +956,142 @@ export function GanttChart({
         const parentPosition = getTaskPosition(parentTask);
         if (!parentPosition.visible) return;
 
-        // Shift the whole arrow to the RIGHT so it starts just to the right of
-        // the parent's vertical edge, and the arrowhead lands ~50% over the
-        // dependent task bar.
-        const fromX = headerOffset + parentPosition.left + parentPosition.width + 8;
-        const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const toX = headerOffset + taskPosition.left + Math.min(Math.max(taskPosition.width / 2, 10), 24);
-        const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-
-        arrows.push({
+        // Ancla EXACTA en los bordes de las barras -- nunca dentro de ellas.
+        rawArrows.push({
           id: dep.id,
-          fromX,
-          fromY,
-          toX,
-          toY,
+          fromX: headerOffset + parentPosition.left + parentPosition.width,
+          fromY: parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2,
+          toX: headerOffset + taskPosition.left,
+          toY: rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2,
+          fromRow: parentRowIdx,
+          toRow: rowIdx,
           parentTaskId: dep.depends_on_task_id,
           childTaskId: task.id,
         });
       });
     });
 
+    // Cuando varias dependencias salen de la misma barra origen, o llegan a
+    // la misma barra destino, anclarlas todas al mismo punto (centro exacto
+    // de la fila) las hace indistinguibles y genera cruces innecesarios
+    // (varias flechas entrando/saliendo del mismo lugar). Se reparte un
+    // pequeño offset vertical entre ellas, dentro del alto de la fila, según
+    // cuántas comparten ese origen/destino -- sin depender de IDs puntuales,
+    // solo de cuántas flechas comparten el punto.
+    const STAGGER_STEP = 4;
+    const MAX_STAGGER = ROW_HEIGHT / 2 - 6;
+    const outgoingTotal = new Map<string, number>();
+    const incomingTotal = new Map<string, number>();
+    rawArrows.forEach((a) => {
+      outgoingTotal.set(a.parentTaskId, (outgoingTotal.get(a.parentTaskId) ?? 0) + 1);
+      incomingTotal.set(a.childTaskId, (incomingTotal.get(a.childTaskId) ?? 0) + 1);
+    });
+    const outgoingSeen = new Map<string, number>();
+    const incomingSeen = new Map<string, number>();
+    rawArrows.forEach((a) => {
+      const outTotal = outgoingTotal.get(a.parentTaskId) ?? 1;
+      if (outTotal > 1) {
+        const idx = outgoingSeen.get(a.parentTaskId) ?? 0;
+        outgoingSeen.set(a.parentTaskId, idx + 1);
+        a.fromY += Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (outTotal - 1) / 2) * STAGGER_STEP));
+      }
+      const inTotal = incomingTotal.get(a.childTaskId) ?? 1;
+      if (inTotal > 1) {
+        const idx = incomingSeen.get(a.childTaskId) ?? 0;
+        incomingSeen.set(a.childTaskId, idx + 1);
+        a.toY += Math.max(-MAX_STAGGER, Math.min(MAX_STAGGER, (idx - (inTotal - 1) / 2) * STAGGER_STEP));
+      }
+    });
+
+    // Margen de seguridad alrededor de cada barra -- una columna "libre" debe
+    // quedar al menos MARGIN px afuera del rectángulo de cualquier barra.
+    const MARGIN = 3;
+    const LEAD = 3; // tramo horizontal de salida/llegada (2-3px, regla del spec)
+
+    // ¿La columna x está libre de obstáculos (con margen) en TODAS las filas
+    // del rango [rowFrom, rowMax]? -- es decir, ¿un segmento VERTICAL en x
+    // que atraviese esas filas cruzaría alguna barra?
+    const isColumnFree = (x: number, rowFrom: number, rowTo: number) => {
+      const lo = Math.min(rowFrom, rowTo);
+      const hi = Math.max(rowFrom, rowTo);
+      for (let r = lo; r <= hi; r++) {
+        const bar = rowBars.get(r);
+        if (bar && x > bar.left - MARGIN && x < bar.right + MARGIN) return false;
+      }
+      return true;
+    };
+
+    // Busca la primera columna libre a partir de `start`, "saltando" por
+    // encima de cada barra que bloquea (su borde derecho + margen), sin
+    // pasar de `limit`. Es un barrido genérico -- no hay coordenadas ni IDs
+    // hardcodeados, solo geometría real de las barras visibles.
+    const findFreeColumnRightward = (start: number, limit: number, rowFrom: number, rowTo: number) => {
+      let x = start;
+      for (let i = 0; i < 64; i++) {
+        const lo = Math.min(rowFrom, rowTo);
+        const hi = Math.max(rowFrom, rowTo);
+        let blocker: { left: number; right: number } | null = null;
+        for (let r = lo; r <= hi; r++) {
+          const bar = rowBars.get(r);
+          if (bar && x > bar.left - MARGIN && x < bar.right + MARGIN) {
+            if (!blocker || bar.right > blocker.right) blocker = bar;
+          }
+        }
+        if (!blocker) return x <= limit ? x : null;
+        x = blocker.right + MARGIN;
+        if (x > limit) return null;
+      }
+      return null;
+    };
+
+    const arrows = rawArrows.map((a, idx) => {
+      const exitX = a.fromX + LEAD;
+      const overshoot = 2; // el mayor overshoot posible del marker-end (ver render), para dejar la punta siempre libre
+      const tipX = a.toX - overshoot;
+      const approachX = tipX - LEAD;
+
+      let pathD: string;
+
+      if (exitX <= approachX && isColumnFree(exitX, a.fromRow, a.toRow)) {
+        // Caso simple: hay espacio entre la salida del origen y la
+        // aproximación al destino, Y la columna de salida no atraviesa
+        // ninguna barra intermedia -- un solo quiebre vertical alcanza.
+        pathD = `M ${a.fromX} ${a.fromY} L ${exitX} ${a.fromY} L ${exitX} ${a.toY} L ${approachX} ${a.toY} L ${tipX} ${a.toY}`;
+      } else {
+        // Hay que rodear: buscamos una columna "trunk" libre entre la salida
+        // del origen y la aproximación al destino, saltando cualquier barra
+        // (origen, destino, o intermedias) que la bloquee. Si no existe
+        // ninguna columna libre en ese rango (áreas muy densas), como último
+        // recurso se sale del área de barras por un carril vertical propio
+        // (offset por `idx`, sin depender de IDs de tareas) antes de bajar.
+        const trunkX = findFreeColumnRightward(exitX, approachX, a.fromRow, a.toRow);
+
+        if (trunkX !== null) {
+          pathD = `M ${a.fromX} ${a.fromY} L ${trunkX} ${a.fromY} L ${trunkX} ${a.toY} L ${approachX} ${a.toY} L ${tipX} ${a.toY}`;
+        } else {
+          const goingDown = a.toY >= a.fromY;
+          const laneOffset = (idx % 6) * 6;
+          const detourY = goingDown
+            ? a.fromY + ROW_HEIGHT / 2 + laneOffset
+            : a.fromY - ROW_HEIGHT / 2 - laneOffset;
+          pathD = `M ${a.fromX} ${a.fromY} L ${exitX} ${a.fromY} L ${exitX} ${detourY} L ${approachX} ${detourY} L ${approachX} ${a.toY} L ${tipX} ${a.toY}`;
+        }
+      }
+
+      return {
+        id: a.id,
+        fromX: a.fromX,
+        fromY: a.fromY,
+        toX: a.toX,
+        toY: a.toY,
+        parentTaskId: a.parentTaskId,
+        childTaskId: a.childTaskId,
+        pathD,
+      };
+    });
+
     return arrows;
-  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset]);
+  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition, headerOffset, parentTaskIds]);
 
   // Resolve the currently selected dependency line into its predecessor/dependent.
   const selectedDependency = useMemo(() => {
@@ -808,6 +1107,63 @@ export function GanttChart({
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
     return holidays.some((h) => h.date === dateStr);
+  };
+
+  const isNonWorkingDay = (dateStr: string | null): boolean => {
+    if (!dateStr) return false;
+    const d = parseISO(dateStr);
+    if (isWeekend(d)) return true;
+    return holidays.some((h) => h.date === dateStr);
+  };
+
+  const getNextWorkingDay = (dateStr: string): string => {
+    let d = addDays(parseISO(dateStr), 1);
+    while (isWeekend(d) || holidays.some((h) => h.date === format(d, "yyyy-MM-dd"))) {
+      d = addDays(d, 1);
+    }
+    return format(d, "yyyy-MM-dd");
+  };
+
+  const persistWarnings = (map: Map<string, { from: string; to: string }>) => {
+    if (!ganttId) return;
+    try {
+      if (map.size === 0) {
+        localStorage.removeItem(`gantt-warn-shifts-${ganttId}`);
+      } else {
+        localStorage.setItem(`gantt-warn-shifts-${ganttId}`, JSON.stringify(Object.fromEntries(map)));
+      }
+    } catch {
+      // ignore (private mode, storage full, etc.)
+    }
+  };
+
+  const handleWarningShift = async (task: GanttTask) => {
+    if (!task.start_date) return;
+    const shifted = shiftedByWarning.get(task.id);
+
+    if (shifted && task.start_date === shifted.to) {
+      // Revert to original non-working date
+      const newMap = new Map(shiftedByWarning);
+      newMap.delete(task.id);
+      setShiftedByWarning(newMap);
+      persistWarnings(newMap);
+      beginUndoGroup("Revertir traslado de inicio");
+      const endDate = calculateEndDate(shifted.from, task.duration_days ?? 1, task.duration_type as "calendar" | "business", holidays);
+      await onUpdateTask(task.id, { start_date: shifted.from, end_date: format(endDate, "yyyy-MM-dd") });
+      endUndoGroup();
+    } else if (isNonWorkingDay(task.start_date)) {
+      // Shift to next working day
+      const from = task.start_date;
+      const to = getNextWorkingDay(from);
+      const endDate = calculateEndDate(to, task.duration_days ?? 1, task.duration_type as "calendar" | "business", holidays);
+      const newMap = new Map(shiftedByWarning);
+      newMap.set(task.id, { from, to });
+      setShiftedByWarning(newMap);
+      persistWarnings(newMap);
+      beginUndoGroup("Trasladar inicio a día hábil");
+      await onUpdateTask(task.id, { start_date: to, end_date: format(endDate, "yyyy-MM-dd") });
+      endUndoGroup();
+    }
   };
 
   const handleAddNewRow = (parentId: string | null = null) => {
@@ -928,6 +1284,7 @@ export function GanttChart({
 
   // Row drag handlers for reordering
   const handleRowDragStart = (e: React.DragEvent, taskId: string) => {
+    if (!isAdmin) { e.preventDefault(); return; } // solo editores reordenan tareas
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", taskId);
     setRowDragSource(taskId);
@@ -975,10 +1332,12 @@ export function GanttChart({
     const y = e.clientY - rect.top;
     const ratio = y / rect.height;
     let pos: "above" | "into" | "below";
-    if (ratio < 0.25) pos = "above";
-    else if (ratio > 0.75) pos = "below";
+    // Zona "into" angosta (35%-65%, antes 25%-75%): reparentar por accidente
+    // al pasar por el centro de una fila era demasiado fácil.
+    if (ratio < 0.35) pos = "above";
+    else if (ratio > 0.65) pos = "below";
     else pos = "into";
-    
+
     setRowDragOverId(taskId);
     setDropPosition(pos);
   };
@@ -995,63 +1354,108 @@ export function GanttChart({
       return;
     }
 
-    // Prevent dropping into own descendant
-    const isDescendant = (potentialAncestorId: string, candidateId: string): boolean => {
-      let current = tasks.find((t) => t.id === candidateId);
-      while (current?.parent_id) {
-        if (current.parent_id === potentialAncestorId) return true;
-        current = tasks.find((t) => t.id === current!.parent_id);
-      }
-      return false;
-    };
+    // Reparentar puede disparar cascada en varios ancestros (viejo y nuevo
+    // padre) — agrupar todo el gesto en una sola entrada de undo.
+    beginUndoGroup("Mover tarea");
+    try {
+      await handleRowDropInner();
+    } finally {
+      endUndoGroup();
+    }
+  };
 
-    // REPARENTING: drop "into" => set new parent
+  // Prevent dropping into/before-after-under own descendant (evita ciclos).
+  const isDescendant = (potentialAncestorId: string, candidateId: string): boolean => {
+    let current = tasks.find((t) => t.id === candidateId);
+    while (current?.parent_id) {
+      if (current.parent_id === potentialAncestorId) return true;
+      current = tasks.find((t) => t.id === current!.parent_id);
+    }
+    return false;
+  };
+
+  const handleRowDropInner = async () => {
+    // REPARENTING: drop "into" => pide confirmación antes de aplicar (ver
+    // handleConfirmReparent). No se aplica acá directo -- es fácil soltar
+    // sin querer justo en el centro de una fila.
     if (dropPosition === "into") {
       if (isDescendant(rowDragSource, rowDragOverId)) {
         handleRowDragEnd();
         return;
       }
-      const sourceTask = tasks.find((t) => t.id === rowDragSource);
-      const newParent = tasks.find((t) => t.id === rowDragOverId);
-      if (!sourceTask || !newParent) {
-        handleRowDragEnd();
-        return;
-      }
-      const oldParentId = sourceTask.parent_id;
-      const updates: Partial<GanttTask> = { parent_id: rowDragOverId };
-      // Inherit color from new parent if source had no custom color
-      if (!sourceTask.color && newParent.color) {
-        updates.color = newParent.color;
-      }
+      setPendingReparent({ sourceId: rowDragSource, targetId: rowDragOverId });
+      handleRowDragEnd();
+      return;
+    }
+
+    // REORDER (above/below): la tarea pasa a ser hermana de la tarea
+    // objetivo, en la posición indicada. Si la objetivo pertenece a OTRO
+    // padre, esto también reparenta -- soltar entre dos filas de otra rama
+    // significa "quiero estar acá", lo que incluye esa rama. El orden se
+    // recalcula solo entre los hermanos REALES del padre resultante (nunca
+    // sobre la lista plana de todo el árbol -- eso es lo que rompía el
+    // reordenamiento al cruzar de padre).
+    const sourceTask = tasks.find((t) => t.id === rowDragSource);
+    const targetTask = tasks.find((t) => t.id === rowDragOverId);
+    if (!sourceTask || !targetTask) {
+      handleRowDragEnd();
+      return;
+    }
+    const newParentId = targetTask.parent_id;
+    if (newParentId && (newParentId === rowDragSource || isDescendant(rowDragSource, newParentId))) {
+      handleRowDragEnd();
+      return;
+    }
+    const oldParentId = sourceTask.parent_id;
+    const reparenting = oldParentId !== newParentId;
+
+    const siblingIds = tasks
+      .filter((t) => t.parent_id === newParentId && t.id !== rowDragSource)
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((t) => t.id);
+    const targetIdx = siblingIds.indexOf(rowDragOverId);
+    const insertIdx = dropPosition === "above" ? targetIdx : targetIdx + 1;
+    siblingIds.splice(insertIdx, 0, rowDragSource);
+
+    if (reparenting) {
+      const updates: Partial<GanttTask> = { parent_id: newParentId };
+      if (!sourceTask.color && targetTask.color) updates.color = targetTask.color;
       await onUpdateTask(rowDragSource, updates, { skipPropagation: true });
-      // Sync new ancestors (extend to fit) and old ancestors (shrink if needed)
-      await syncAncestorsDates(rowDragOverId);
-      if (oldParentId && oldParentId !== rowDragOverId) {
-        await syncAncestorsDates(oldParentId);
-      }
-      handleRowDragEnd();
-      return;
     }
-
-    // REORDER: drop above/below
-    const flatTaskIds = visibleTasks.filter(vt => vt.task).map(vt => vt.task!.id);
-    const sourceIdx = flatTaskIds.indexOf(rowDragSource);
-    const targetIdx = flatTaskIds.indexOf(rowDragOverId);
-    
-    if (sourceIdx === -1 || targetIdx === -1) {
-      handleRowDragEnd();
-      return;
+    await onReorderTask(rowDragSource, insertIdx, siblingIds);
+    if (reparenting) {
+      if (newParentId) await syncAncestorsDates(newParentId);
+      if (oldParentId && oldParentId !== newParentId) await syncAncestorsDates(oldParentId);
     }
-
-    const newOrder = [...flatTaskIds];
-    newOrder.splice(sourceIdx, 1);
-    const insertIdx = dropPosition === "above" 
-      ? (targetIdx > sourceIdx ? targetIdx - 1 : targetIdx)
-      : (targetIdx > sourceIdx ? targetIdx : targetIdx + 1);
-    newOrder.splice(insertIdx, 0, rowDragSource);
-
-    await onReorderTask(rowDragSource, insertIdx, newOrder);
     handleRowDragEnd();
+  };
+
+  // Confirmación del drop "into": recién acá se aplica el reparenting.
+  const handleConfirmReparent = async () => {
+    if (!pendingReparent) return;
+    const { sourceId, targetId } = pendingReparent;
+    setPendingReparent(null);
+    beginUndoGroup("Mover tarea");
+    try {
+      const sourceTask = tasks.find((t) => t.id === sourceId);
+      const newParent = tasks.find((t) => t.id === targetId);
+      if (!sourceTask || !newParent) return;
+      const oldParentId = sourceTask.parent_id;
+      const updates: Partial<GanttTask> = { parent_id: targetId };
+      if (!sourceTask.color && newParent.color) updates.color = newParent.color;
+      await onUpdateTask(sourceId, updates, { skipPropagation: true });
+      // Al final de las hermanas reales del nuevo padre (display_order limpio)
+      const newSiblingIds = tasks
+        .filter((t) => t.parent_id === targetId && t.id !== sourceId)
+        .sort((a, b) => a.display_order - b.display_order)
+        .map((t) => t.id);
+      newSiblingIds.push(sourceId);
+      await onReorderTask(sourceId, newSiblingIds.length - 1, newSiblingIds);
+      await syncAncestorsDates(targetId);
+      if (oldParentId && oldParentId !== targetId) await syncAncestorsDates(oldParentId);
+    } finally {
+      endUndoGroup();
+    }
   };
 
   const handleRowDragEnd = () => {
@@ -1068,7 +1472,8 @@ export function GanttChart({
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
+    if (!isAdmin) return; // solo editores pueden mover/redimensionar plazos
     if (!task.start_date || !task.end_date) return;
     
     setBarDragMode(mode);
@@ -1232,21 +1637,23 @@ export function GanttChart({
     }
 
     const updates: Partial<GanttTask> = { [field]: value };
-    if (field === "start_date" && value && task.duration_days) {
+    // Nota: duration_days puede ser 0 (línea que no consume tiempo), por eso se
+    // comprueba con `!= null` en vez de un chequeo booleano (0 es falsy en JS).
+    if (field === "start_date" && value && task.duration_days != null) {
       const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
-    } else if (field === "end_date" && value && task.duration_days) {
+    } else if (field === "end_date" && value && task.duration_days != null) {
       const startDate = calculateStartDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.start_date = format(startDate, "yyyy-MM-dd");
-    } else if (field === "duration_days" && task.start_date && value > 0) {
+    } else if (field === "duration_days" && task.start_date && value >= 0) {
       const endDate = calculateEndDate(task.start_date, value, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
-    } else if (field === "duration_type" && task.start_date && task.duration_days > 0) {
+    } else if (field === "duration_type" && task.start_date && task.duration_days >= 0) {
       const endDate = calculateEndDate(task.start_date, task.duration_days, value as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
     }
 
-    await onUpdateTask(taskId, updates);
+    const cascade = await onUpdateTask(taskId, updates);
 
     // Al asignar responsable a una línea madre, las hijas SIN responsable heredan
     // el mismo por defecto (cada una puede editarse después).
@@ -1264,6 +1671,47 @@ export function GanttChart({
     // onUpdateTask now rolls up ancestor (parent) dates and cascades any task that
     // depends on those parents, so an explicit syncAncestorsDates call here would
     // be redundant and could clobber the engine's result with stale data.
+    return cascade;
+  };
+
+  // Aplica el delta ingresado en la columna "Reprog." a la fecha de término de
+  // una tarea y registra, tanto para ella como para cada dependiente que se
+  // mueva en cascada, la fecha de término ANTES del cambio — para poder mostrar
+  // "(fecha antigua) ±N días" debajo de la nueva fecha en ambos casos.
+  //
+  // Llama a onUpdateTask DIRECTAMENTE (no a handleUpdateTaskField): esta última
+  // pregunta "romper/mantener" cuando la tarea tiene una dependencia entrante,
+  // porque un cambio de fecha manual vía el date-picker podría ser accidental.
+  // Reprog. es lo opuesto — una reprogramación explícita que SIEMPRE debe
+  // aplicarse y cascadear, sin preguntar.
+  const commitReprogDelta = async (task: GanttTask) => {
+    // Resguardo anti-reentrada: si por cualquier motivo este mismo commit se
+    // disparara dos veces para la misma tarea (ej. Enter y blur casi
+    // simultáneos), la segunda llamada se ignora en vez de aplicar la
+    // reprogramación por duplicado.
+    if (reprogBusyRef.current.has(task.id)) return;
+    reprogBusyRef.current.add(task.id);
+
+    const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
+    setReprogValues(prev => new Map(prev).set(task.id, "0"));
+    if (isNaN(delta) || delta === 0) {
+      reprogBusyRef.current.delete(task.id);
+      return;
+    }
+
+    try {
+      // Reprog. ya NO fija una fecha de término directamente: acumula un
+      // offset propio de esta fila (reprog_offset_days), independiente de lo
+      // que herede en cascada. Así, si su predecesora se reprograma de nuevo
+      // más adelante, este ajuste sigue sumándose encima en vez de perderse
+      // (antes se recalculaba desde cero cada vez, borrando la corrección).
+      const newOffset = (task.reprog_offset_days ?? 0) + delta;
+      await onUpdateTask(task.id, { reprog_offset_days: newOffset } as Partial<GanttTask>, { isReprogram: true });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Error al reprogramar", description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      reprogBusyRef.current.delete(task.id);
+    }
   };
 
   const toggleTaskCompleted = async (task: GanttTask) => {
@@ -1344,6 +1792,20 @@ export function GanttChart({
     return { color: null, inherited: false };
   }, [taskById]);
 
+  // Color de la RAMA: color del ancestro de más alto nivel que tenga color
+  // asignado (la fila raíz del grupo, ej. "1"). Así todas las madres anidadas
+  // (1.3, 1.3.x, …) comparten el color de su grupo de primer nivel y no el de
+  // un ancestro cercano ni un color propio mal asignado.
+  const getBranchRootColor = useCallback((task: GanttTask): string | null => {
+    let node: GanttTask | undefined = task;
+    let topColor: string | null = task.color ?? null;
+    while (node?.parent_id && taskById.has(node.parent_id)) {
+      node = taskById.get(node.parent_id);
+      if (node?.color) topColor = node.color; // el más alto gana
+    }
+    return topColor;
+  }, [taskById]);
+
   // Progreso efectivo: una línea madre muestra el progreso agregado de sus hijas
   // (promedio ponderado por duración); una hoja usa su progreso manual o automático.
   const getEffectiveProgress = useCallback((task: GanttTask): number => {
@@ -1360,6 +1822,89 @@ export function GanttChart({
     }
     return totalW > 0 ? Math.round(acc / totalW) : 0;
   }, [tasks]);
+
+  // "% Avance Prog.": progreso según el PLAN ORIGINAL (fechas de baseline,
+  // que nunca cambian). Rollup ponderado por duración para líneas madre.
+  // Siempre de solo lectura — no se edita manualmente.
+  const getEffectiveScheduledProgress = useCallback((task: GanttTask): number => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return computeBaselineProgress(task);
+    }
+    let totalW = 0;
+    let acc = 0;
+    for (const c of children) {
+      const w = c.duration_days && c.duration_days > 0 ? c.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveScheduledProgress(c);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [tasks]);
+
+  // "% Avance Real": progreso según las fechas ACTUALES (las que cambian con
+  // Reprog., arrastre de barra o cascada de dependencias). También de solo
+  // lectura — refleja directamente el estado vigente del cronograma.
+  const getEffectiveCurrentProgress = useCallback((task: GanttTask): number => {
+    const children = tasks.filter((t) => t.parent_id === task.id);
+    if (children.length === 0) {
+      return computeAutoProgress(task);
+    }
+    let totalW = 0;
+    let acc = 0;
+    for (const c of children) {
+      const w = c.duration_days && c.duration_days > 0 ? c.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveCurrentProgress(c);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [tasks]);
+
+  // Término de TODO el cronograma según el plan ORIGINAL (baseline) — se
+  // compara contra overallEnd (fechas actuales) para saber cuántos días de
+  // atraso/adelanto acumula el proyecto completo.
+  const overallBaselineEnd = useMemo(() => {
+    let maxEnd: string | null = null;
+    for (const t of taskTree) {
+      const eff = getEffectiveBaselineDates(t);
+      if (eff.end && (!maxEnd || eff.end > maxEnd)) maxEnd = eff.end;
+    }
+    return maxEnd;
+  }, [taskTree, getEffectiveBaselineDates]);
+
+  // Días de reprogramación TOTALES del proyecto: diferencia entre el término
+  // actual y el término del plan original. Positivo = atraso, negativo =
+  // adelanto. A diferencia del indicador por fila (que es de la sesión y se
+  // resetea al recargar), este es persistente porque sale de fechas guardadas.
+  const overallReprogDays = useMemo(() => {
+    if (!overallEnd || !overallBaselineEnd) return 0;
+    return differenceInDays(parseISO(overallEnd), parseISO(overallBaselineEnd));
+  }, [overallEnd, overallBaselineEnd]);
+
+  // % Avance Prog./Real de TODO el proyecto — mismo criterio de ponderación
+  // por duración que usa cada línea madre, aplicado a las raíces del árbol.
+  const overallScheduledProgress = useMemo(() => {
+    if (taskTree.length === 0) return 0;
+    let totalW = 0;
+    let acc = 0;
+    for (const t of taskTree) {
+      const w = t.duration_days && t.duration_days > 0 ? t.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveScheduledProgress(t);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [taskTree, getEffectiveScheduledProgress]);
+
+  const overallCurrentProgress = useMemo(() => {
+    if (taskTree.length === 0) return 0;
+    let totalW = 0;
+    let acc = 0;
+    for (const t of taskTree) {
+      const w = t.duration_days && t.duration_days > 0 ? t.duration_days : 1;
+      totalW += w;
+      acc += w * getEffectiveCurrentProgress(t);
+    }
+    return totalW > 0 ? Math.round(acc / totalW) : 0;
+  }, [taskTree, getEffectiveCurrentProgress]);
 
   const handleSetColor = async (taskId: string, color: string | null) => {
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
@@ -1489,18 +2034,33 @@ export function GanttChart({
                 <div className="flex items-center gap-2">
                   <span>Cronograma</span>
                   {allParentTaskIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={toggleExpandAll}
-                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
-                    >
-                      {allExpanded ? (
-                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
-                      ) : (
-                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
-                      )}
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                        onClick={toggleExpandAllFull}
+                        title={allExpanded ? "Contraer todo (todos los niveles)" : "Expandir todo (todos los niveles)"}
+                      >
+                        {allExpanded ? (
+                          <><ChevronsDownUp className="h-3 w-3 mr-1" />Contraer Todo</>
+                        ) : (
+                          <><ChevronsUpDown className="h-3 w-3 mr-1" />Expandir Todo</>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs"
+                        onClick={toggleExpandAll}
+                        title={allExpanded ? "Comprimir un nivel por clic" : "Expandir un nivel por clic"}
+                      >
+                        {allExpanded ? (
+                          <><ChevronDown className="h-3 w-3 mr-1" />Comprimir Niveles</>
+                        ) : (
+                          <><ChevronRight className="h-3 w-3 mr-1" />Expandir Niveles</>
+                        )}
+                      </Button>
+                    </>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
@@ -1590,20 +2150,6 @@ export function GanttChart({
                       <ZoomIn className="h-3 w-3" />
                     </button>
                   </div>
-                  {allParentTaskIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={toggleExpandAll}
-                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
-                    >
-                      {allExpanded ? (
-                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
-                      ) : (
-                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
-                      )}
-                    </Button>
-                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1704,27 +2250,9 @@ export function GanttChart({
             </div>
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
-              style={{ width: cw("origin", ORIGIN_COL_WIDTH) }}
+              style={{ width: cw("start", startColWidth) }}
             >
-              {cw("origin", ORIGIN_COL_WIDTH) > 0 && (
-                colSelectMode ? (
-                  <div
-                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
-                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("origin") ? n.delete("origin") : n.add("origin"); return n; })}
-                  >
-                    <Checkbox checked={colPending.has("origin")} className="h-3 w-3 pointer-events-none" />
-                    <span>Origen</span>
-                  </div>
-                ) : (
-                  <div className="text-center px-2 py-2">Origen</div>
-                )
-              )}
-            </div>
-            <div
-              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
-              style={{ width: cw("start", DATE_COL_WIDTH) }}
-            >
-              {cw("start", DATE_COL_WIDTH) > 0 && (
+              {cw("start", startColWidth) > 0 && (
                 colSelectMode ? (
                   <div
                     className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
@@ -1758,9 +2286,9 @@ export function GanttChart({
             </div>
             <div
               className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
-              style={{ width: cw("end", DATE_COL_WIDTH) }}
+              style={{ width: cw("end", endColWidth) }}
             >
-              {cw("end", DATE_COL_WIDTH) > 0 && (
+              {cw("end", endColWidth) > 0 && (
                 colSelectMode ? (
                   <div
                     className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
@@ -1785,10 +2313,10 @@ export function GanttChart({
                     onClick={() => setColPending(prev => { const n = new Set(prev); n.has("reprog") ? n.delete("reprog") : n.add("reprog"); return n; })}
                   >
                     <Checkbox checked={colPending.has("reprog")} className="h-3 w-3 pointer-events-none" />
-                    <span>Reprog</span>
+                    <span title="Reprogramación">Reprog.</span>
                   </div>
                 ) : (
-                  <div className="text-center px-2 py-2">Reprog</div>
+                  <div className="text-center px-2 py-2" title="Reprogramación">Reprog.</div>
                 )
               )}
             </div>
@@ -1803,10 +2331,28 @@ export function GanttChart({
                     onClick={() => setColPending(prev => { const n = new Set(prev); n.has("progress") ? n.delete("progress") : n.add("progress"); return n; })}
                   >
                     <Checkbox checked={colPending.has("progress")} className="h-3 w-3 pointer-events-none" />
-                    <span>% Avance</span>
+                    <span>% Avance Prog.</span>
                   </div>
                 ) : (
-                  <div className="text-center px-2 py-2">% Avance</div>
+                  <div className="text-center px-2 py-2">% Avance Prog.</div>
+                )
+              )}
+            </div>
+            <div
+              className="flex-shrink-0 border-r overflow-hidden font-medium text-xs"
+              style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}
+            >
+              {cw("progressReal", PROGRESS_REAL_COL_WIDTH) > 0 && (
+                colSelectMode ? (
+                  <div
+                    className="flex items-center justify-center h-full gap-1 px-2 py-2 cursor-pointer select-none"
+                    onClick={() => setColPending(prev => { const n = new Set(prev); n.has("progressReal") ? n.delete("progressReal") : n.add("progressReal"); return n; })}
+                  >
+                    <Checkbox checked={colPending.has("progressReal")} className="h-3 w-3 pointer-events-none" />
+                    <span>% Avance Real</span>
+                  </div>
+                ) : (
+                  <div className="text-center px-2 py-2">% Avance Real</div>
                 )
               )}
             </div>
@@ -1969,39 +2515,13 @@ export function GanttChart({
                   </marker>
                 </defs>
                 {dependencyArrows.map((arrow) => {
-                  // The arrow must ALWAYS arrive at the left edge of the dependent task
-                  // pointing forward (→). If the child starts before the parent ends,
-                  // the path loops vertically and around so the arrow still enters from the left.
-                  // Routing guarantees:
-                  //  1) Always exits the parent bar with a horizontal segment to the RIGHT (SOURCE_LEAD).
-                  //  2) Always arrives at the arrow tip with a horizontal segment from the LEFT (HORIZ_LEAD).
-                  const SOURCE_LEAD = 24; // forced horizontal exit to the right of parent (50% of previous)
-                  const HORIZ_LEAD = 28;  // forced horizontal lead-in to the arrow tip (50% of previous)
-                  const VERT_GAP = ROW_HEIGHT / 2 - 2;
-
-                  const exitX = arrow.fromX + SOURCE_LEAD;
-                  const approachX = arrow.toX - HORIZ_LEAD;
-
-                  let pathD: string;
-                  if (approachX >= exitX) {
-                    // Normal forward case: exit right, drop, then approach left → tip
-                    pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${exitX} ${arrow.fromY}
-                             L ${exitX} ${arrow.toY}
-                             L ${arrow.toX} ${arrow.toY}`;
-                  } else {
-                    // Tight/backward case: exit right, detour vertically, come back left to approachX, then approach → tip
-                    const goingDown = arrow.toY >= arrow.fromY;
-                    const detourY = goingDown ? arrow.fromY + VERT_GAP : arrow.fromY - VERT_GAP;
-                    pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${exitX} ${arrow.fromY}
-                             L ${exitX} ${detourY}
-                             L ${approachX} ${detourY}
-                             L ${approachX} ${arrow.toY}
-                             L ${arrow.toX} ${arrow.toY}`;
-                  }
-                  
                   const isSelected = selectedDependencyId === arrow.id;
+                  // El trazado (pathD) ya viene calculado en dependencyArrows,
+                  // considerando TODAS las barras visibles como obstáculos
+                  // (ver el useMemo de dependencyArrows para el detalle del
+                  // ruteo). Acá solo se define el estilo/interacción.
+                  const pathD = arrow.pathD;
+
                   const midX = (arrow.fromX + arrow.toX) / 2;
                   const midY = (arrow.fromY + arrow.toY) / 2;
                   return (
@@ -2071,6 +2591,60 @@ export function GanttChart({
               </svg>
             )}
 
+            {/* Fila-resumen no editable: fecha de inicio/término de todo el
+                cronograma, arriba de todas las tareas (solo cronogramas
+                "general" — no aplica a Cronogramas de Mantenciones). */}
+            {showSummaryRow && (
+              <div className="flex border-b-2 border-border bg-muted/40" style={{ height: ROW_HEIGHT }}>
+                <div className="flex sticky left-0 z-[15] bg-muted/40 flex-shrink-0">
+                  <div className="flex-shrink-0 w-6" />
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("index", INDEX_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r px-2 flex items-center font-semibold text-xs truncate" style={{ width: taskNameColWidth }}>
+                    Cronograma completo
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("start", startColWidth) }}>
+                    {overallStart ? format(parseISO(overallStart), "dd/MM/yy") : "—"}
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("duration", DURATION_COL_WIDTH) }} />
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("end", endColWidth) }}>
+                    {overallEnd ? format(parseISO(overallEnd), "dd/MM/yy") : "—"}
+                  </div>
+                  <div
+                    className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-semibold text-xs"
+                    style={{ width: cw("reprog", REPROG_COL_WIDTH) }}
+                    title="Días de atraso (+) o adelanto (-) totales del proyecto vs. su plan original"
+                  >
+                    {overallReprogDays !== 0 && (
+                      <span className={overallReprogDays > 0 ? "text-red-500" : "text-emerald-600"}>
+                        {overallReprogDays > 0 ? "+" : ""}{overallReprogDays}d
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}>
+                    {overallScheduledProgress}%
+                  </div>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center font-medium text-xs" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}>
+                    {overallCurrentProgress}%
+                  </div>
+                </div>
+                <div className="relative flex-1" style={{ width: totalDays * DAY_WIDTH }}>
+                  <div className="absolute inset-0 flex pointer-events-none">
+                    {days.map((day, idx) => (
+                      <div key={idx} className="flex-shrink-0 border-r h-full" style={{ width: DAY_WIDTH }} />
+                    ))}
+                  </div>
+                  {summaryPosition.visible && (
+                    <div
+                      className="absolute top-3 h-3.5 rounded-full bg-foreground/60 pointer-events-none"
+                      style={{ left: summaryPosition.left, width: Math.max(summaryPosition.width - 4, 8) }}
+                      title={`${overallStart ? format(parseISO(overallStart), "dd/MM/yyyy") : ""} → ${overallEnd ? format(parseISO(overallEnd), "dd/MM/yyyy") : ""}`}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Task rows */}
             {visibleTasks.map((entry, rowIdx) => {
               if (entry.isNewRow) {
@@ -2096,7 +2670,6 @@ export function GanttChart({
                       />
                     </div>
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("responsible", RESPONSIBLE_COL_WIDTH) }} />
-                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("origin", ORIGIN_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
                       <DatePickerCell
                         value={newTaskRow!.start_date || null}
@@ -2127,7 +2700,7 @@ export function GanttChart({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", DATE_COL_WIDTH) }}>
+                    <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", endColWidth) }}>
                       <DatePickerCell
                         value={newTaskRow!.end_date || null}
                         onChange={(date) => handleNewTaskChange("end_date", date)}
@@ -2138,6 +2711,7 @@ export function GanttChart({
                     </div>
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("reprog", REPROG_COL_WIDTH) }} />
                     <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }} />
+                    <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }} />
                     </div>
                     <div className="flex items-center px-2 gap-2">
                       <Button size="sm" className="h-7 text-xs" onClick={handleSaveNewTask} disabled={!newTaskRow!.name.trim() || isSaving}>
@@ -2156,10 +2730,17 @@ export function GanttChart({
               // Así su inicio/plazo/término siempre se derivan de las hijas y un duration_days
               // corrupto nunca vuelve a dibujarla como hoja (2013/2050).
               const hasChildren = parentTaskIds.has(task.id) || !!(task.children && task.children.length > 0);
+              const isDiscarded = task.status === "discarded";
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
               const rowNumber = rowIdx + 1;
+              // Solo las líneas madre (las que muestran chevron, es decir, con hijas)
+              // se colorean: fondo con el color de SU GRUPO de primer nivel (raíz de
+              // la rama) al 70% de transparencia (mezcla con blanco → lightenHex 0.7)
+              // y texto en negrita, desde "#" hasta "% Avance". Las hojas NO se colorean.
+              const branchColor = hasChildren ? getBranchRootColor(task) : null;
+              const depBg = branchColor ? lightenHex(branchColor, 0.7) : null;
 
               return (
                 <ContextMenu key={task.id}>
@@ -2177,12 +2758,17 @@ export function GanttChart({
                         rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
                         rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
                         rowDragOverId === task.id && dropPosition === "into" && "ring-2 ring-inset ring-primary bg-primary/10",
-                        task.status === "completed" && "bg-muted/30"
+                        task.status === "completed" && "bg-muted/30",
+                        isDiscarded && "bg-muted/20 opacity-60",
+                        hasChildren && "font-bold"
                       )}
                       style={{ height: ROW_HEIGHT }}
                     >
                   {/* Columnas fijas congeladas en el scroll horizontal */}
-                  <div className="flex sticky left-0 z-[15] flex-shrink-0 bg-background">
+                  <div
+                    className="flex sticky left-0 z-[15] flex-shrink-0 bg-background"
+                    style={depBg ? { backgroundColor: depBg } : undefined}
+                  >
                   {/* Drag handle */}
                   <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -2224,12 +2810,25 @@ export function GanttChart({
                     ) : (
                       <span className="w-4 flex-shrink-0" />
                     )}
-                    <TaskNameInput
-                      taskId={task.id}
-                      value={task.name}
-                      completed={task.status === "completed"}
-                      onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
-                    />
+                    <StatusDot status={task.status} className="flex-shrink-0" />
+                    {isAdmin ? (
+                      <TaskNameInput
+                        taskId={task.id}
+                        value={task.name}
+                        completed={task.status === "completed" || isDiscarded}
+                        onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          "flex-1 h-7 text-xs px-1 flex items-center truncate",
+                          (task.status === "completed" || isDiscarded) && "line-through text-muted-foreground"
+                        )}
+                        title={task.name}
+                      >
+                        {task.name}
+                      </span>
+                    )}
                     {/* Red: predecessor indicator */}
                     {!hasChildren && task.dependencies && task.dependencies.length > 0 && (
                       <button
@@ -2242,116 +2841,19 @@ export function GanttChart({
                       </button>
                     )}
 
-                    {/* Chain link button (only for non-parent tasks) */}
-                    {!hasChildren && (
-                      <Popover
-                        open={depPopoverTaskId === task.id}
-                        onOpenChange={(o) => setDepPopoverTaskId(o ? task.id : null)}
+                    {/* Chain link button (only for non-parent tasks): abre el editor de dependencias (modal XL) */}
+                    {!hasChildren && isAdmin && (
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex-shrink-0 rounded hover:bg-muted p-0.5",
+                          !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
+                        )}
+                        title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
+                        onClick={(e) => { e.stopPropagation(); setDepPopoverTaskId(task.id); }}
                       >
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className={cn(
-                              "flex-shrink-0 rounded hover:bg-muted p-0.5",
-                              !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
-                            )}
-                            title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Link className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-96 p-2 z-50 bg-popover" align="start">
-                          <p className="text-xs font-medium mb-1.5">Depende de:</p>
-                          {task.dependencies && task.dependencies.length > 0 ? (
-                            <ul className="space-y-2 mb-2">
-                              {task.dependencies.map((dep) => {
-                                const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
-                                const options = tasks
-                                  .filter(
-                                    (t) =>
-                                      t.id !== task.id &&
-                                      (t.id === dep.depends_on_task_id || !currentDeps.includes(t.id))
-                                  )
-                                  .map((t) => ({ value: t.id, label: t.name }));
-                                return (
-                                  <li key={dep.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
-                                    <div className="flex items-center gap-1">
-                                      <div className="flex-1 min-w-0">
-                                        <SearchableSelect
-                                          value={dep.depends_on_task_id}
-                                          onValueChange={async (newParentId) => {
-                                            if (newParentId && newParentId !== dep.depends_on_task_id) {
-                                              await onRemoveDependency(dep.id);
-                                              await onAddDependency(task.id, newParentId, {
-                                                dep_type: (dep as any).dep_type ?? "end",
-                                                lag_days: (dep as any).lag_days ?? 0,
-                                              });
-                                            }
-                                          }}
-                                          options={options}
-                                          placeholder="Seleccionar tarea..."
-                                          searchPlaceholder="Buscar tarea..."
-                                          triggerClassName="h-7 text-xs"
-                                        />
-                                      </div>
-                                      <button
-                                        type="button"
-                                        className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
-                                        onClick={() => onRemoveDependency(dep.id)}
-                                      >
-                                        Quitar
-                                      </button>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      <Select
-                                        value={(dep as any).dep_type ?? "end"}
-                                        onValueChange={(v) =>
-                                          onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })
-                                        }
-                                      >
-                                        <SelectTrigger className="h-7 text-xs w-32">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="end">al término</SelectItem>
-                                          <SelectItem value="start">al inicio</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      <Input
-                                        type="number"
-                                        className="h-7 text-xs w-20"
-                                        defaultValue={(dep as any).lag_days ?? 0}
-                                        onBlur={(e) => {
-                                          const val = parseInt(e.target.value) || 0;
-                                          if (val !== ((dep as any).lag_days ?? 0)) {
-                                            onUpdateDependency?.(dep.id, { lag_days: val });
-                                          }
-                                        }}
-                                        title="Días de desfase (+ retrasa, − adelanta)"
-                                      />
-                                      <span className="text-[10px] text-muted-foreground">días</span>
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          ) : (
-                            <p className="text-[11px] text-muted-foreground mb-2">Sin dependencias</p>
-                          )}
-                          <div className="border-t pt-2">
-                            <p className="text-[11px] font-medium mb-1">Agregar dependencia:</p>
-                            <ChartAddDependencyForm
-                              task={task}
-                              allTasks={tasks}
-                              onAdd={(parentId, dep_type, lag_days) =>
-                                onAddDependency(task.id, parentId, { dep_type, lag_days })
-                              }
-                              onCancel={() => setDepPopoverTaskId(null)}
-                            />
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                        <Link className="h-3 w-3 text-muted-foreground" />
+                      </button>
                     )}
 
                     {/* Green: successor indicator */}
@@ -2365,20 +2867,19 @@ export function GanttChart({
                         <ArrowRight className="h-3 w-3 text-green-500" />
                       </button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 flex-shrink-0"
-                      onClick={() => toggleTaskCompleted(task)}
-                      title={task.status === "completed" ? "Marcar como pendiente" : "Marcar como completada"}
-                    >
-                      <CheckCircle2
-                        className={cn(
-                          "h-3.5 w-3.5",
-                          task.status === "completed" ? "text-primary" : "text-muted-foreground"
-                        )}
+                    {(isAdmin || canComplete) && (
+                      <TaskStatusActions
+                        task={task}
+                        canComplete={isAdmin || canComplete}
+                        canDiscard={isAdmin && !!onDiscardTask && !!onRestoreTask}
+                        onToggleComplete={toggleTaskCompleted}
+                        onDiscard={(id) => onDiscardTask!(id)}
+                        onRestore={(id) => onRestoreTask!(id)}
+                        descendantCount={getDescendantCount?.(task.id) ?? 0}
+                        size="sm"
                       />
-                    </Button>
+                    )}
+                    {isAdmin && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -2388,7 +2889,8 @@ export function GanttChart({
                     >
                       <Plus className="h-3 w-3 text-primary" />
                     </Button>
-                    {task.parent_id && (
+                    )}
+                    {isAdmin && task.parent_id && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -2410,6 +2912,7 @@ export function GanttChart({
                         <CornerLeftUp className="h-3 w-3 text-primary" />
                       </Button>
                     )}
+                    {isAdmin && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -2436,6 +2939,7 @@ export function GanttChart({
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
+                    )}
                   </div>
 
                   {/* Responsable */}
@@ -2467,45 +2971,74 @@ export function GanttChart({
                     )}
                   </div>
 
-                  {/* Origen */}
-                  <div
-                    className="flex-shrink-0 border-r overflow-hidden flex items-center px-1"
-                    style={{ width: cw("origin", ORIGIN_COL_WIDTH) }}
-                  >
-                    {isAdmin ? (
-                      <SearchableSelect
-                        value={(task as any).origin ?? ""}
-                        onValueChange={(v) =>
-                          handleUpdateTaskField(task.id, "origin" as any, v || null)
-                        }
-                        options={[
-                          { value: "", label: "—" },
-                          { value: "nuevo", label: "Nuevo" },
-                          { value: "traslado", label: "Traslado" },
-                        ]}
-                        placeholder="—"
-                        searchPlaceholder="Buscar..."
-                        triggerClassName="h-7 text-xs"
-                      />
-                    ) : (
-                      <span className="text-xs text-muted-foreground truncate px-1">
-                        {(task as any).origin === "nuevo"
-                          ? "Nuevo"
-                          : (task as any).origin === "traslado"
-                            ? "Traslado"
-                            : "—"}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("start", DATE_COL_WIDTH) }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center relative" style={{ width: cw("start", startColWidth) }}>
                     {/* Líneas madre: inicio/plazo/término se calculan desde las hijas (no editables) */}
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).start : task.start_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
                       placeholder="Inicio"
                       editable={isAdmin && !hasChildren}
+                      suffix={hasChildren ? null : (() => {
+                        // Origen del cambio: el Inicio de una hoja NUNCA se mueve por
+                        // su propio Reprog. (eso solo corre el Término) — si difiere de
+                        // su baseline, es 100% porque una dependencia la desplazó en
+                        // cascada (lo que incluye, transitivamente, cualquier Reprog.
+                        // que haya aplicado una predecesora). Coexiste con el indicador
+                        // de Término (esa sí es la reprogramación manual de esta fila).
+                        if (!task.start_date || !task.baseline_start_date) return null;
+                        const cascadeDelta = differenceInDays(parseISO(task.start_date), parseISO(task.baseline_start_date));
+                        if (cascadeDelta === 0) return null;
+                        return (
+                          <span className="text-[10px] font-bold text-blue-500 leading-none whitespace-nowrap" title="Se movió porque una tarea de la que depende cambió de fecha">
+                            ({format(parseISO(task.baseline_start_date), "dd/MM/yy")}) {cascadeDelta > 0 ? "+" : ""}{cascadeDelta} días
+                          </span>
+                        );
+                      })()}
                     />
+                    {/* Non-working day warning: only for leaf tasks with a start date on weekend/holiday */}
+                    {!hasChildren && (() => {
+                      const startStr = task.start_date;
+                      if (!startStr) return null;
+                      const shifted = shiftedByWarning.get(task.id);
+                      const isDimmed = !!(shifted && startStr === shifted.to);
+                      const isWarning = !isDimmed && isNonWorkingDay(startStr);
+                      if (!isWarning && !isDimmed) return null;
+                      const dayLabel = isWarning
+                        ? (isWeekend(parseISO(startStr)) ? "fin de semana" : "feriado")
+                        : "fin de semana o feriado";
+                      const tooltip = isWarning
+                        ? `El inicio cae en ${dayLabel}. Haz clic para mover al día hábil siguiente.`
+                        : `Inicio trasladado desde ${dayLabel}. Haz clic para revertir (o usa Ctrl+Z).`;
+                      return (
+                        <TooltipProvider delayDuration={300}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleWarningShift(task); }}
+                                className={cn(
+                                  "absolute right-1 top-1/2 -translate-y-1/2 z-10 rounded p-0.5 transition-opacity",
+                                  isDimmed
+                                    ? "opacity-30 hover:opacity-60"
+                                    : "opacity-100 hover:opacity-80"
+                                )}
+                                title={tooltip}
+                              >
+                                <TriangleAlert
+                                  className={cn(
+                                    "h-3.5 w-3.5",
+                                    isDimmed ? "text-amber-400" : "text-amber-500"
+                                  )}
+                                />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-48 text-xs">
+                              {tooltip}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })()}
                   </div>
 
                   {/* Duration */}
@@ -2521,29 +3054,62 @@ export function GanttChart({
                       </span>
                     ) : (
                       <DurationInput
-                        value={task.duration_days || 1}
+                        value={task.duration_days ?? 1}
                         onCommit={(n) => handleUpdateTaskField(task.id, "duration_days", n)}
+                        editable={isAdmin}
                       />
                     )}
-                    <span className="text-[10px] text-muted-foreground">
-                      {task.duration_type === "business" ? "háb" : "días"}
+                    <span
+                      className={cn(
+                        "text-[10px]",
+                        !hasChildren && task.duration_days === 0 ? "text-amber-600 font-medium" : "text-muted-foreground"
+                      )}
+                      title={!hasChildren && task.duration_days === 0 ? "Sin plazo: no consume tiempo" : undefined}
+                    >
+                      {!hasChildren && task.duration_days === 0 ? "sin plazo" : (task.duration_type === "business" ? "háb" : "días")}
                     </span>
                   </div>
 
                   {/* End date */}
-                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", DATE_COL_WIDTH) }}>
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center" style={{ width: cw("end", endColWidth) }}>
                     <DatePickerCell
                       value={hasChildren ? getEffectiveDates(task).end : task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
                       editable={isAdmin && !hasChildren}
-                      suffix={(() => { const d = reprogDeltas.get(task.id) ?? 0; return d !== 0 ? <span className="text-[10px] font-bold text-red-500 leading-none">({d > 0 ? "+" : ""}{d})</span> : null; })()}
+                      suffix={hasChildren ? (() => {
+                        // Línea madre: agrega el total vs. baseline igual que antes
+                        // (rollup de varias hojas, no tiene un origen único que separar).
+                        const currentEnd = getEffectiveDates(task).end;
+                        const baselineEnd = getEffectiveBaselineDates(task).end;
+                        if (!currentEnd || !baselineEnd) return null;
+                        const delta = differenceInDays(parseISO(currentEnd), parseISO(baselineEnd));
+                        if (delta === 0) return null;
+                        return (
+                          <span className="text-[10px] font-bold text-red-500 leading-none whitespace-nowrap">
+                            ({format(parseISO(baselineEnd), "dd/MM/yy")}) {delta > 0 ? "+" : ""}{delta} días
+                          </span>
+                        );
+                      })() : (() => {
+                        // Origen del cambio: acá solo se muestra la reprogramación
+                        // MANUAL propia de esta fila (su reprog_offset_days) — el
+                        // desplazamiento heredado de una dependencia ya se muestra
+                        // en Inicio, para no atribuir a esta fila un motivo que no
+                        // le pertenece. Ambos indicadores coexisten sin pisarse.
+                        const ownOffset = task.reprog_offset_days ?? 0;
+                        if (ownOffset === 0) return null;
+                        return (
+                          <span className="text-[10px] font-bold text-red-500 leading-none whitespace-nowrap" title="Reprogramación manual aplicada directamente en esta fila">
+                            Reprog. {ownOffset > 0 ? "+" : ""}{ownOffset} días
+                          </span>
+                        );
+                      })()}
                     />
                   </div>
 
                   {/* Reprog */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("reprog", REPROG_COL_WIDTH) }}>
-                    {!hasChildren && isAdmin && (
+                    {!hasChildren && (isAdmin || canReprogram) && (
                       <input
                         type="number"
                         value={reprogValues.get(task.id) ?? "0"}
@@ -2551,65 +3117,35 @@ export function GanttChart({
                           const v = e.target.value;
                           setReprogValues(prev => new Map(prev).set(task.id, v));
                         }}
-                        onKeyDown={async (e) => {
-                          if (e.key === "Enter") {
-                            const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
-                            if (!isNaN(delta) && delta !== 0 && task.end_date) {
-                              const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-                              setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                              setReprogDeltas(prev => { const n = new Map(prev); n.set(task.id, (n.get(task.id) ?? 0) + delta); return n; });
-                              await handleUpdateTaskField(task.id, "end_date", newEnd);
-                            } else {
-                              setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                            }
-                          }
+                        onKeyDown={(e) => {
+                          // Enter dispara blur (único punto de commit) en vez de
+                          // llamar a commitReprogDelta acá también — así nunca se
+                          // puede aplicar la misma reprogramación dos veces si el
+                          // Enter también dispara blur.
+                          if (e.key === "Enter") e.currentTarget.blur();
                         }}
-                        onBlur={async () => {
-                          const delta = parseInt(reprogValues.get(task.id) ?? "0", 10);
-                          if (!isNaN(delta) && delta !== 0 && task.end_date) {
-                            const newEnd = format(addDays(parseISO(task.end_date), delta), "yyyy-MM-dd");
-                            setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                            setReprogDeltas(prev => { const n = new Map(prev); n.set(task.id, (n.get(task.id) ?? 0) + delta); return n; });
-                            await handleUpdateTaskField(task.id, "end_date", newEnd);
-                          } else {
-                            setReprogValues(prev => new Map(prev).set(task.id, "0"));
-                          }
-                        }}
+                        onBlur={async () => { await commitReprogDelta(task); }}
                         className="h-7 text-xs w-14 text-center border border-gray-200 rounded px-1 focus:outline-none focus:border-amber-400"
                         title="Días de reprogramación (positivo = atrasa, negativo = adelanta). Arrastra dependientes en cascada."
                       />
                     )}
                   </div>
 
-                  {/* Progress % */}
+                  {/* % Avance Prog. — de solo lectura: según el PLAN ORIGINAL (fechas
+                      de baseline, fijas desde que la tarea nació). */}
                   <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progress", PROGRESS_COL_WIDTH) }}>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={hasChildren
-                        ? getEffectiveProgress(task)
-                        : (task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task))}
-                      onChange={(e) => {
-                        const str = e.target.value;
-                        if (str === "") {
-                          onUpdateTask(task.id, { progress: null as any }, { skipPropagation: true });
-                          return;
-                        }
-                        const raw = parseInt(str);
-                        const value = isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
-                        const updates: Partial<GanttTask> = { progress: value };
-                        if (value === 100) updates.status = "completed";
-                        else if (task.status === "completed") updates.status = "in_progress";
-                        onUpdateTask(task.id, updates, { skipPropagation: true });
-                      }}
-                      disabled={!isAdmin || hasChildren}
-                      className="h-7 text-xs w-16 text-center px-1"
-                      title={hasChildren
-                        ? "Progreso agregado de las líneas hijas (no editable)."
-                        : "Se calcula automáticamente según la fecha actual. Escribe un valor para fijarlo manualmente."}
-                    />
-                    <span className="text-xs text-muted-foreground ml-1">%</span>
+                    <span className="text-xs text-muted-foreground" title="Avance esperado según el plan original (no editable)">
+                      {getEffectiveScheduledProgress(task)}%
+                    </span>
+                  </div>
+
+                  {/* % Avance Real — de solo lectura: según las fechas ACTUALES
+                      (las que cambian con Reprog., arrastre o cascada). Alimenta
+                      la línea real de la Curva S. */}
+                  <div className="flex-shrink-0 border-r overflow-hidden flex items-center justify-center px-1" style={{ width: cw("progressReal", PROGRESS_REAL_COL_WIDTH) }}>
+                    <span className="text-xs text-muted-foreground" title="Avance según las fechas vigentes hoy (no editable) — cambia con Reprog.">
+                      {getEffectiveCurrentProgress(task)}%
+                    </span>
                   </div>
                   </div>
 
@@ -2851,6 +3387,26 @@ export function GanttChart({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Confirmación al soltar una fila "dentro" de otra (reparenting por drag) */}
+      <AlertDialog open={!!pendingReparent} onOpenChange={(o) => { if (!o) setPendingReparent(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Convertir en tarea hija?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingReparent && (() => {
+                const source = tasks.find((t) => t.id === pendingReparent.sourceId);
+                const target = tasks.find((t) => t.id === pendingReparent.targetId);
+                return `Este movimiento convierte "${source?.name ?? "esta tarea"}" en tarea hija de "${target?.name ?? "la tarea seleccionada"}".`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingReparent(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmReparent}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Change parent dialog */}
       <Dialog open={!!parentDialogTaskId} onOpenChange={(o) => { if (!o) setParentDialogTaskId(null); }}>
         <DialogContent className="max-w-md">
@@ -2922,9 +3478,12 @@ export function GanttChart({
                 return task.dependencies.map(dep => {
                   const predTask = tasks.find(t => t.id === dep.depends_on_task_id);
                   if (!predTask) return null;
+                  const isGhost = predTask.status === "discarded";
                   return (
-                    <div key={dep.id} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
-                      <div className="flex-1 p-2 bg-red-50 border border-red-200 rounded text-sm font-medium">{predTask.name}</div>
+                    <div key={dep.id} className={cn("flex items-center gap-2 p-2 border rounded bg-muted/30", isGhost && "opacity-50 border-dashed")}>
+                      <div className={cn("flex-1 p-2 rounded text-sm font-medium", isGhost ? "bg-muted border border-dashed line-through text-muted-foreground" : "bg-red-50 border border-red-200")}>
+                        {predTask.name}{isGhost && " (descartada)"}
+                      </div>
                       <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <div className="flex-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm font-medium">{task.name}</div>
                       <span className="text-xs text-muted-foreground">{(dep as any).dep_type === "start" ? "al inicio" : "al término"}{(dep as any).lag_days ? ` +${(dep as any).lag_days}d` : ""}</span>
@@ -2934,13 +3493,16 @@ export function GanttChart({
               })()}
               {depViewMode === "successors" && (() => {
                 const task = tasks.find(t => t.id === depViewTaskId);
+                const isSourceGhost = task?.status === "discarded";
                 const successors = tasks.filter(t => t.dependencies?.some(d => d.depends_on_task_id === depViewTaskId));
                 if (!successors.length) return <p className="text-sm text-muted-foreground">Sin sucesoras</p>;
                 return successors.map(sucTask => {
                   const dep = sucTask.dependencies?.find(d => d.depends_on_task_id === depViewTaskId);
                   return (
-                    <div key={sucTask.id} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
-                      <div className="flex-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm font-medium">{task?.name}</div>
+                    <div key={sucTask.id} className={cn("flex items-center gap-2 p-2 border rounded bg-muted/30", isSourceGhost && "opacity-50 border-dashed")}>
+                      <div className={cn("flex-1 p-2 rounded text-sm font-medium", isSourceGhost ? "bg-muted border border-dashed line-through text-muted-foreground" : "bg-blue-50 border border-blue-200")}>
+                        {task?.name}{isSourceGhost && " (descartada)"}
+                      </div>
                       <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <div className="flex-1 p-2 bg-green-50 border border-green-200 rounded text-sm font-medium">{sucTask.name}</div>
                       <span className="text-xs text-muted-foreground">{(dep as any)?.dep_type === "start" ? "al inicio" : "al término"}{(dep as any)?.lag_days ? ` +${(dep as any).lag_days}d` : ""}</span>
@@ -2952,6 +3514,20 @@ export function GanttChart({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Editor de dependencias (modal XL con explorador jerárquico) */}
+      <DependencyDialog
+        open={!!depPopoverTaskId}
+        onOpenChange={(open) => setDepPopoverTaskId(open ? depPopoverTaskId : null)}
+        selectedTask={tasks.find((t) => t.id === depPopoverTaskId) ?? null}
+        allTasks={tasks}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+        onUpdateDependency={onUpdateDependency}
+        onUpdateTask={async (taskId, updates) => { await onUpdateTask(taskId, updates); }}
+        beginUndoGroup={beginUndoGroup}
+        endUndoGroup={endUndoGroup}
+      />
 
       {/* Export PDF dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
