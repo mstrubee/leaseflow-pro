@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -39,6 +39,9 @@ const GeoLocPage = lazy(() => import("./pages/GeoLocPage"));
 const MaintenanceRoutesPage = lazy(() => import("./pages/MaintenanceRoutesPage"));
 const MaintenanceSchedulesPage = lazy(() => import("./pages/MaintenanceSchedulesPage"));
 const RouteExecutionPage = lazy(() => import("./pages/RouteExecutionPage"));
+const AutoplanetLayout = lazy(() => import("./pages/autoplanet/AutoplanetLayout"));
+const AutoplanetCasesList = lazy(() => import("./pages/autoplanet/AutoplanetCasesList"));
+const AutoplanetCasePage = lazy(() => import("./pages/autoplanet/AutoplanetCasePage"));
 const ServiceContractsDashboard = lazy(() => import("./pages/ServiceContractsDashboard"));
 const ServiceContractDetail = lazy(() => import("./pages/ServiceContractDetail"));
 const TeamUsers = lazy(() => import("./pages/TeamUsers"));
@@ -117,6 +120,13 @@ const App = () => (
                   <Route path="/maintenance/routes/:id/execute" element={<ProtectedRoute resource="maintenance_ejecutar_rutas"><RouteExecutionPage /></ProtectedRoute>} />
                   <Route path="/expense-reports" element={<ProtectedRoute resource="expense_reports"><ExpenseReportsDashboard /></ProtectedRoute>} />
                   <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
+                  {/* Autoplanet Servicios — solo ADMIN, o roles con el recurso "autoplanet_servicios" habilitado */}
+                  <Route path="/autoplanet" element={<ProtectedRoute resource="autoplanet_servicios"><AutoplanetLayout /></ProtectedRoute>}>
+                    <Route index element={<Navigate to="casos-de-negocio" replace />} />
+                    <Route path="casos-de-negocio" element={<AutoplanetCasesList />} />
+                    <Route path="casos-de-negocio/:caseId" element={<AutoplanetCasePage />} />
+                  </Route>
+
                   <Route path="/service-contracts" element={<ProtectedRoute resource="service_contracts"><ServiceContractsDashboard /></ProtectedRoute>} />
                   <Route path="/service-contracts/:id" element={<ProtectedRoute resource="service_contracts"><ServiceContractDetail /></ProtectedRoute>} />
                   

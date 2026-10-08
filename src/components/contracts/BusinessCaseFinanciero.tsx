@@ -52,7 +52,7 @@ function addMonthsIso(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
+export function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { value: number; onChange: (v: number) => void; disabled?: boolean; w?: string; step?: string; decimals?: number }) {
   return (
     <DecimalInput value={value} decimals={decimals}
       onChange={(v) => { if (v !== null) onChange(v); }} disabled={disabled}
@@ -974,7 +974,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
   );
 }
 
-function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: string; good?: boolean }) {
+export function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: string; good?: boolean }) {
   return (
     <div className={`rounded-lg border p-3 ${good ? "border-green-300 bg-green-50/50" : "border-gray-200"}`}>
       <div className="text-[11px] text-muted-foreground">{label}</div>
@@ -983,7 +983,7 @@ function Kpi({ label, value, sub, good }: { label: string; value: string; sub?: 
     </div>
   );
 }
-function Card({ title, sub, action, children }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode }) {
+export function Card({ title, sub, action, children }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -994,10 +994,10 @@ function Card({ title, sub, action, children }: { title: string; sub?: string; a
     </div>
   );
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><Label className="text-xs block min-h-[2rem]">{label}</Label><div className="mt-0.5">{children}</div></div>;
 }
-function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
+export function FieldConv({ label, conv, children }: { label: string; conv: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col">
       <Label className="text-xs block min-h-[2rem]">{label}</Label>
@@ -1006,7 +1006,7 @@ function FieldConv({ label, conv, children }: { label: string; conv: string; chi
     </div>
   );
 }
-function Stat({ label, value }: { label: string; value: string }) {
+export function Stat({ label, value }: { label: string; value: string }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
 }
 function PnlRow({

@@ -201,6 +201,7 @@ const MAIN_RESOURCES = [
   { id: "patents", label: "Patentes", category: "principal" },
   { id: "special_attention", label: "Atención Especial", category: "principal" },
   { id: "geoloc", label: "GEOLOC", category: "principal" },
+  { id: "autoplanet_servicios", label: "Autoplanet Servicios", category: "principal" },
   { id: "fixed_assets", label: "Activos Fijos", category: "principal" },
 ];
 

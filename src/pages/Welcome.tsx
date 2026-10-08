@@ -11,7 +11,7 @@ import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
   BarChart3, Wrench, Shield, Users, UserCog, MapPin, ScanSearch, LogOut, KeyRound, Handshake, AlertTriangle, CalendarDays,
-  Archive,
+  Archive, Car,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -41,6 +41,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "geoloc",         label: "GEOLOC",                   desc: "Sistema de información geográfica",            icon: MapPin,      path: "/geoloc",           resource: "geoloc",          color: "text-green-600 bg-green-100" },
   { id: "service_contracts", label: "Contratos de Servicio", desc: "Contratos recurrentes con proveedores",         icon: Handshake,   path: "/service-contracts", resource: "service_contracts", color: "text-violet-600 bg-violet-100" },
   { id: "special_attention", label: "Atención Especial",     desc: "Seguimiento de contratos con atención especial", icon: AlertTriangle, path: "/special-attention", resource: "special_attention", color: "text-amber-600 bg-amber-100" },
+  { id: "autoplanet_servicios", label: "Autoplanet Servicios", desc: "Negocio de servicios automotrices B2C", icon: Car, path: "/autoplanet", resource: "autoplanet_servicios", color: "text-sky-600 bg-sky-100" },
   { id: "contract_review",label: "Revisor de Contratos (IA)",desc: "Analiza riesgos de un contrato Word con IA",   icon: ScanSearch,  path: "",                  resource: null,              color: "text-fuchsia-600 bg-fuchsia-100", external: true },
 ];
 
