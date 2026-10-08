@@ -141,8 +141,23 @@ export function IngresosYCostosDirectos({ inputs, result, ro, mutate }: { inputs
           <div className="space-y-2 p-2">
             {otrosLines.length === 0 && <p className="text-xs text-muted-foreground px-1">Sin líneas.</p>}
             {otrosLines.map((l) => (
-              <PnlLineCard key={l.id} line={l} ro={ro} mutate={mutate} className="ml-4" />
+              <PnlLineCard key={l.id} line={l} ro={ro} mutate={mutate} className="ml-4" year1Only
+                projection={otrosNode ? findById(otrosNode.children, l.id)?.total : undefined} />
             ))}
+            {otrosLines.length > 0 && (
+              <div className="ml-4 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Crec. anual % (aplica a las líneas en MM/año):</span>
+                {inputs.otrosCostosCrec.map((r, i) => (
+                  <Labeled key={i} label={`Año ${i + 2}`}>
+                    <NumCell value={r} disabled={ro} w="w-16" onChange={(v) => mutate(`otrosCostosCrec.${i}`, (p) => {
+                      const a = [...p.otrosCostosCrec];
+                      a[i] = v;
+                      return { ...p, otrosCostosCrec: a };
+                    })} />
+                  </Labeled>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -191,8 +206,12 @@ function SummaryRow({ title, detail, node }: { title: string; detail: string; no
 }
 
 // ─────────────────── Líneas de costo: tarjeta editable de una PnlLine ───────────────────
-function PnlLineCard({ line: l, ro, mutate, className = "", parentSelect, depth = 0 }: {
+function PnlLineCard({ line: l, ro, mutate, className = "", parentSelect, depth = 0, year1Only = false, projection }: {
   line: PnlLine; ro: boolean; mutate: Mutate; className?: string;
+  /** Solo año 1 (el resto crece con la tasa anual), como las ventas. */
+  year1Only?: boolean;
+  /** Proyección calculada (con signo) de los años 0..5, para mostrarla bajo el año 1. */
+  projection?: number[];
   /** Si se entrega, se muestra el selector «Hija de» y el botón «Hija». */
   parentSelect?: { options: { value: string; label: string }[]; onAddChild: () => void; hasChildren: boolean };
   depth?: number;
@@ -207,6 +226,7 @@ function PnlLineCard({ line: l, ro, mutate, className = "", parentSelect, depth 
   };
   const remove = () => mutate(`pnl.rm.${l.id}`, (p) => ({ ...p, pnlLines: removeLineCascade(p.pnlLines, l.id) }));
   const isGroup = parentSelect?.hasChildren ?? false;
+  const years = year1Only ? [1, 2, 3, 4, 5] : YEARS_0_5;
 
   return (
     <div className={`rounded-md border p-2 space-y-2 ${className}`} style={depth ? { marginLeft: depth * 20 } : undefined}>
@@ -244,15 +264,23 @@ function PnlLineCard({ line: l, ro, mutate, className = "", parentSelect, depth 
           <table className="text-xs">
             <thead><tr className="text-muted-foreground">
               <th className="text-left pr-3 font-normal" />
-              {YEARS_0_5.map((y) => <th key={y} className="px-1 font-normal text-center">{y === 0 ? "Año 0" : `Año ${y}`}</th>)}
+              {years.map((y) => <th key={y} className="px-1 font-normal text-center">{y === 0 ? "Año 0" : `Año ${y}`}</th>)}
             </tr></thead>
             <tbody>
               <tr>
-                <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">{l.modo === "pct" ? "% de Ingresos" : "MM CLP / año"}</td>
-                {YEARS_0_5.map((i) => (
-                  <td key={i} className="px-1 text-center"><NumCell value={l.valores?.[i] ?? 0} disabled={ro} w="w-16" onChange={(v) => setYear(i, v)} /></td>
+                <td className="pr-3 py-1 whitespace-nowrap text-muted-foreground">{l.modo === "pct" ? "% de Ingresos" : year1Only ? "MM CLP año 1" : "MM CLP / año"}</td>
+                {years.map((i) => (
+                  <td key={i} className="px-1 text-center">
+                    {(!year1Only || i === 1) && <NumCell value={l.valores?.[i] ?? 0} disabled={ro} w="w-16" onChange={(v) => setYear(i, v)} />}
+                  </td>
                 ))}
               </tr>
+              {projection && (
+                <tr>
+                  <td className="pr-3 py-0.5 text-[10px] text-muted-foreground">Proyección (MM/año)</td>
+                  {[1, 2, 3, 4, 5].map((y) => <td key={y} className="px-1 text-center text-[10px] text-muted-foreground">{fmtMM(Math.abs(projection[y] ?? 0))}</td>)}
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

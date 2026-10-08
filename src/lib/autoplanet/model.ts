@@ -74,6 +74,7 @@ export const BLOCK_LABEL: Record<PnlBlock, string> = {
  * Proyecciones solo la muestra). Los montos se ingresan en positivo y siempre restan.
  *  - modo "monto": `valores` = MM CLP por año (índices 0..5).
  *  - modo "pct":   `valores` = % del total de Ingresos por año (índices 0..5).
+ *  - En «Otros costos directos» solo se usa el año 1 (`valores[1]`); los años 2..5 crecen con `otrosCostosCrec`.
  * `parentId` = clave de una línea base (no "ingresos"), id de otra línea, o null (raíz del bloque).
  * Una línea con hijas es un subtotal: sus valores propios se ignoran.
  */
@@ -124,6 +125,8 @@ export interface AutoplanetInputs extends BCInputs {
   pnlLines: PnlLine[];
   /** Crecimiento anual de las ventas en % para los años 2..5 (el año 1 sale de las líneas de ingreso). */
   ventaCrec: number[];
+  /** Crecimiento anual en % de las líneas de «Otros costos directos» (modo monto) para los años 2..5. */
+  otrosCostosCrec: number[];
 }
 
 export interface AutoplanetResult {
@@ -232,7 +235,7 @@ export function buildDefaultAutoplanetInputs(seed: BCSeed = {}): AutoplanetInput
     { id: "gar", categoria: "garantia", nombre: "Garantía", metodo: "total", valor: 0 },
     { id: "inv", categoria: "inventario", nombre: "Inventario", metodo: "total", valor: 0 },
   ];
-  return { ...base, invLines, ingresoLines: [], pnlLines: [], ventaCrec: [0, 0, 0, 0] };
+  return { ...base, invLines, ingresoLines: [], pnlLines: [], ventaCrec: [0, 0, 0, 0], otrosCostosCrec: [0, 0, 0, 0] };
 }
 
 /** Mezcla lo guardado con los defaults (tolera casos guardados con una versión anterior). */
@@ -246,6 +249,7 @@ export function mergeAutoplanetInputs(stored: Partial<AutoplanetInputs> | null |
     ingresoLines: normalizeIngresoLines(stored.ingresoLines),
     pnlLines: normalizePnlLines(stored.pnlLines),
     ventaCrec: Array.isArray(stored.ventaCrec) ? stored.ventaCrec : defaults.ventaCrec,
+    otrosCostosCrec: Array.isArray(stored.otrosCostosCrec) ? stored.otrosCostosCrec : defaults.otrosCostosCrec,
   };
 }
 
@@ -366,13 +370,25 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
       rootsByBlock[l.bloque].push(l);
     }
   }
+  // Líneas de «Otros costos directos»: año 1 + crecimiento anual (como las ventas). Son un monto MM/año o un % de
+  // los Ingresos (este último ya crece con las ventas, por eso no lleva crecimiento propio). Año 0 = 0.
+  // Líneas de Gastos Operacionales: valor por año (años 0..5).
+  const costGrowth = [0, 1];
+  for (let i = 2; i <= 5; i++) costGrowth.push(costGrowth[i - 1] * (1 + (inputs.otrosCostosCrec?.[i - 2] || 0) / 100));
+  const ownOfLine = (l: PnlLine, i: number): number => {
+    if (l.bloque === "directos") {
+      if (i === 0) return 0;
+      const v = l.valores[1] || 0;
+      return round(-(l.modo === "pct" ? (ing[i] * v) / 100 : v * costGrowth[i]), 2);
+    }
+    const v = l.valores[i] || 0;
+    return round(-(l.modo === "pct" ? (ing[i] * v) / 100 : v), 2);
+  };
   const visited = new Set<string>();
   const buildCustom = (l: PnlLine): PnlNode => {
     visited.add(l.id);
     const kids = (childrenOf.get(l.id) ?? []).filter((k) => !visited.has(k.id)).map(buildCustom);
-    const own = kids.length > 0
-      ? zeros()
-      : yearCols().map((i) => round(-(l.modo === "pct" ? ing[i] * (l.valores[i] || 0) / 100 : l.valores[i] || 0), 2));
+    const own = kids.length > 0 ? zeros() : yearCols().map((i) => ownOfLine(l, i));
     return { id: l.id, label: l.nombre, base: false, sign: -1, own, children: kids, total: sumArrays(own, kids.map((k) => k.total)) };
   };
 
