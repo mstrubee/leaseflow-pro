@@ -4027,7 +4027,16 @@ const PurchaseOrdersDashboard = () => {
           <TabsContent value="requests">
             {/* OC Requests Summary */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequestStatusFilter("todos")}
+                onKeyDown={(e) => e.key === "Enter" && setRequestStatusFilter("todos")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requestStatusFilter === "todos" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <ClipboardList className="h-4 w-4" />
@@ -4039,7 +4048,16 @@ const PurchaseOrdersDashboard = () => {
                   <p className="text-xs text-muted-foreground">{formatUF(requestSummary.totalAmount)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequestStatusFilter(requestStatusFilter === "pending" ? "todos" : "pending")}
+                onKeyDown={(e) => e.key === "Enter" && setRequestStatusFilter(requestStatusFilter === "pending" ? "todos" : "pending")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requestStatusFilter === "pending" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
@@ -4051,7 +4069,16 @@ const PurchaseOrdersDashboard = () => {
                   <p className="text-xs text-muted-foreground">{formatUF(requestSummary.pendingAmount)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequestStatusFilter(requestStatusFilter === "converted" ? "todos" : "converted")}
+                onKeyDown={(e) => e.key === "Enter" && setRequestStatusFilter(requestStatusFilter === "converted" ? "todos" : "converted")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requestStatusFilter === "converted" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" />
@@ -4330,7 +4357,16 @@ const PurchaseOrdersDashboard = () => {
           <TabsContent value="requeridas">
             {/* Requerimientos de OC Summary */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequeridasStatusFilter("todos")}
+                onKeyDown={(e) => e.key === "Enter" && setRequeridasStatusFilter("todos")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requeridasStatusFilter === "todos" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <ClipboardList className="h-4 w-4" />
@@ -4342,7 +4378,16 @@ const PurchaseOrdersDashboard = () => {
                   <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.totalAmount)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequeridasStatusFilter(requeridasStatusFilter === "pending" ? "todos" : "pending")}
+                onKeyDown={(e) => e.key === "Enter" && setRequeridasStatusFilter(requeridasStatusFilter === "pending" ? "todos" : "pending")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requeridasStatusFilter === "pending" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
@@ -4354,7 +4399,16 @@ const PurchaseOrdersDashboard = () => {
                   <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.pendingAmount)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequeridasStatusFilter(requeridasStatusFilter === "converted" ? "todos" : "converted")}
+                onKeyDown={(e) => e.key === "Enter" && setRequeridasStatusFilter(requeridasStatusFilter === "converted" ? "todos" : "converted")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requeridasStatusFilter === "converted" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" />
