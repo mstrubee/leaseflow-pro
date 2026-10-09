@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ChevronDown, ChevronRight, Pencil, Trash2, ArrowRightCircle, Download, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { resolveFileUrl } from "@/lib/storageUtils";
 import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
@@ -25,6 +26,8 @@ interface OCRequiredListProps {
   onConvert: (draft: OCRequestPrefillDraft) => void;
   refreshKey?: number;
   onRefresh?: () => void;
+  /** Búsqueda compartida con OCRequestsList y PurchaseOrdersModule (ver BudgetDashboard). */
+  searchTerm?: string;
 }
 
 /**
@@ -33,7 +36,7 @@ interface OCRequiredListProps {
  * CapexOCRequiredDialog.tsx). Primer eslabón del flujo Requerimiento de OC →
  * Solicitud de OC → OC.
  */
-export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, onConvert, refreshKey, onRefresh }: OCRequiredListProps) {
+export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, onConvert, refreshKey, onRefresh, searchTerm = "" }: OCRequiredListProps) {
   const [groups, setGroups] = useState<OCRequiredGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -172,102 +175,15 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
     }
   };
 
-  const pending = groups.filter((g) => !g.converted);
-  const converted = groups.filter((g) => g.converted);
-
-  const renderTable = (items: OCRequiredGroup[], isConverted: boolean) => (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead></TableHead>
-          <TableHead>Requerimiento</TableHead>
-          <TableHead>Fecha</TableHead>
-          <TableHead>Monto</TableHead>
-          <TableHead>Líneas</TableHead>
-          <TableHead className="w-[160px]">Acciones</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map((group) => {
-          const isOpen = expanded.has(group.quotationNumber);
-          return (
-            <Fragment key={group.quotationNumber}>
-              <TableRow
-                className={isConverted ? "opacity-60 cursor-pointer" : "cursor-pointer"}
-                onClick={() => toggleExpand(group.quotationNumber)}
-              >
-                <TableCell className="w-8">
-                  {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </TableCell>
-                <TableCell className="font-mono text-xs">{group.quotationNumber}</TableCell>
-                <TableCell className="text-xs">{format(parseISO(group.quotationDate), "dd/MM/yyyy")}</TableCell>
-                <TableCell className="text-sm">{formatCLP(group.amountClp)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{group.lines.length}</TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center gap-1">
-                    {!isConverted && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        title="Convertir a Solicitud de OC"
-                        onClick={() => handleConvert(group)}
-                      >
-                        <ArrowRightCircle className="h-4 w-4 text-primary" />
-                      </Button>
-                    )}
-                    {!isConverted && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Editar" onClick={() => setEditingGroup(group)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {!isConverted && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Eliminar" onClick={() => setDeleteTarget(group)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    )}
-                    {isConverted && <Badge variant="secondary" className="text-[10px]">Convertida</Badge>}
-                  </div>
-                </TableCell>
-              </TableRow>
-              {isOpen && (
-                <TableRow key={`${group.quotationNumber}-detail`}>
-                  <TableCell colSpan={6} className="bg-muted/30">
-                    <div className="py-2 px-2 space-y-2">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Proyecto: {group.projectName}</span>
-                        {group.filePath && (
-                          <Button variant="outline" size="sm" className="h-6 px-2 gap-1" onClick={() => openFile(group.filePath)}>
-                            <Download className="h-3 w-3" />
-                            {group.fileName || "Ver archivo"}
-                          </Button>
-                        )}
-                      </div>
-                      <div className="rounded-md border divide-y bg-background">
-                        {group.lines.map((line) => (
-                          <div key={line.budgetLineId} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                            <span className="truncate">{line.lineName}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-xs text-muted-foreground">
-                                UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                              <span className="text-[10px] uppercase text-muted-foreground">
-                                {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </Fragment>
-          );
-        })}
-      </TableBody>
-    </Table>
-  );
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredGroups = !normalizedSearch
+    ? groups
+    : groups.filter((g) =>
+        g.quotationNumber.toLowerCase().includes(normalizedSearch) ||
+        g.projectName.toLowerCase().includes(normalizedSearch) ||
+        (g.supplierName || "").toLowerCase().includes(normalizedSearch) ||
+        g.lines.some((l) => l.lineName.toLowerCase().includes(normalizedSearch))
+      );
 
   if (loading) {
     return <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -279,17 +195,113 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
 
   return (
     <div className="space-y-4">
-      {pending.length > 0 && (
-        <div className="space-y-1.5">
-          <h4 className="text-sm font-medium text-muted-foreground">Pendientes ({pending.length})</h4>
-          {renderTable(pending, false)}
-        </div>
-      )}
-      {converted.length > 0 && (
-        <div className="space-y-1.5">
-          <h4 className="text-sm font-medium text-muted-foreground">Convertidas ({converted.length})</h4>
-          {renderTable(converted, true)}
-        </div>
+      {filteredGroups.length === 0 ? (
+        <div className="text-center py-6 text-sm text-muted-foreground">No hay OC Requeridas para la búsqueda aplicada</div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead></TableHead>
+              <TableHead>Requerimiento</TableHead>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Línea</TableHead>
+              <TableHead>Proveedor</TableHead>
+              <TableHead>Monto</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead className="w-[160px]">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredGroups.map((group) => {
+              const isOpen = expanded.has(group.quotationNumber);
+              const isConverted = group.converted;
+              const firstLineName = group.lines[0]?.lineName || "-";
+              const lineSummary = group.lines.length > 1 ? `${firstLineName} (+${group.lines.length - 1})` : firstLineName;
+              const allLineNames = group.lines.map((l) => l.lineName).join(", ");
+              return (
+                <Fragment key={group.quotationNumber}>
+                  <TableRow
+                    className={isConverted ? "opacity-60 cursor-pointer" : "cursor-pointer"}
+                    onClick={() => toggleExpand(group.quotationNumber)}
+                  >
+                    <TableCell className="w-8">
+                      {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{group.quotationNumber}</TableCell>
+                    <TableCell className="text-xs">{format(parseISO(group.quotationDate), "dd MMM yyyy", { locale: es })}</TableCell>
+                    <TableCell className="text-xs truncate max-w-[150px]" title={allLineNames}>{lineSummary}</TableCell>
+                    <TableCell className="text-xs truncate max-w-[120px]">{group.supplierName || "-"}</TableCell>
+                    <TableCell className="text-sm">{formatCLP(group.amountClp)}</TableCell>
+                    <TableCell>
+                      {isConverted ? (
+                        <Badge variant="secondary" className="text-[10px]">Convertida</Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300 text-[10px]">Pendiente</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        {!isConverted && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Convertir a Solicitud de OC"
+                            onClick={() => handleConvert(group)}
+                          >
+                            <ArrowRightCircle className="h-4 w-4 text-primary" />
+                          </Button>
+                        )}
+                        {!isConverted && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Editar" onClick={() => setEditingGroup(group)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {!isConverted && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Eliminar" onClick={() => setDeleteTarget(group)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {isOpen && (
+                    <TableRow key={`${group.quotationNumber}-detail`}>
+                      <TableCell colSpan={8} className="bg-muted/30">
+                        <div className="py-2 px-2 space-y-2">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Proyecto: {group.projectName}</span>
+                            {group.filePath && (
+                              <Button variant="outline" size="sm" className="h-6 px-2 gap-1" onClick={() => openFile(group.filePath)}>
+                                <Download className="h-3 w-3" />
+                                {group.fileName || "Ver archivo"}
+                              </Button>
+                            )}
+                          </div>
+                          <div className="rounded-md border divide-y bg-background">
+                            {group.lines.map((line) => (
+                              <div key={line.budgetLineId} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                                <span className="truncate">{line.lineName}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">
+                                    UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span className="text-[10px] uppercase text-muted-foreground">
+                                    {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
 
       {editingGroup && (

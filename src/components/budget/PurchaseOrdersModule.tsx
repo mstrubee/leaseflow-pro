@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Pencil, ArrowLeft, Upload } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, X, Pencil, ArrowLeft, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
@@ -55,6 +56,12 @@ interface PurchaseOrdersModuleProps {
   initialYear?: number;
   refreshKey?: number;
   onRefresh?: () => void;
+  /** Búsqueda y filtro de tipo compartidos con OCRequiredList/OCRequestsList (ver BudgetDashboard). */
+  searchTerm?: string;
+  typeFilter?: "all" | "capex" | "opex";
+  /** Estado colapsado controlado desde BudgetDashboard, para expandir las 3 secciones juntas al buscar. */
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 interface Budget {
@@ -93,7 +100,23 @@ interface OpexBudgetData {
   amount_uf: number;
 }
 
-export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRefresh }: PurchaseOrdersModuleProps) => {
+export const PurchaseOrdersModule = ({
+  contractId,
+  initialYear,
+  refreshKey,
+  onRefresh,
+  searchTerm = "",
+  typeFilter = "all",
+  collapsed,
+  onCollapsedChange,
+}: PurchaseOrdersModuleProps) => {
+  const [internalCollapsed, setInternalCollapsed] = useState(true);
+  const isCollapsed = collapsed ?? internalCollapsed;
+  const setIsCollapsed = (value: boolean) => {
+    if (onCollapsedChange) onCollapsedChange(value);
+    else setInternalCollapsed(value);
+  };
+
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -122,12 +145,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [budgetWarning, setBudgetWarning] = useState<string | null>(null);
   
-  // Sorting and filtering state
+  // Sorting state
   const [sortColumn, setSortColumn] = useState<string>("order_date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  
+
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
     const today = new Date();
@@ -1164,31 +1185,20 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   const filteredAndSortedOrders = React.useMemo(() => {
     let result = [...orders];
 
-    // Apply filters
-    Object.entries(filters).forEach(([key, value]) => {
-      if (!value) return;
-      const lowerValue = value.toLowerCase();
-      result = result.filter(order => {
-        switch (key) {
-          case "order_number":
-            return order.order_number.toLowerCase().includes(lowerValue);
-          case "order_date":
-            return new Date(order.order_date).toLocaleDateString("es-CL").includes(lowerValue);
-          case "supplier_name":
-            return (order.supplier_name || "").toLowerCase().includes(lowerValue);
-          case "type":
-            return getBudgetTypeForOrder(order).toLowerCase().includes(lowerValue);
-          case "description":
-            return (order.description || "").toLowerCase().includes(lowerValue);
-          case "amount":
-            return order.amount_uf.toString().includes(lowerValue);
-          case "status":
-            return order.status.toLowerCase().includes(lowerValue);
-          default:
-            return true;
-        }
-      });
-    });
+    // Filtro de tipo compartido (ver BudgetDashboard)
+    if (typeFilter !== "all") {
+      result = result.filter(order => getBudgetTypeForOrder(order).toLowerCase() === typeFilter);
+    }
+
+    // Búsqueda libre compartida (ver BudgetDashboard)
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    if (normalizedSearch) {
+      result = result.filter(order =>
+        order.order_number.toLowerCase().includes(normalizedSearch) ||
+        (order.supplier_name || "").toLowerCase().includes(normalizedSearch) ||
+        (order.description || "").toLowerCase().includes(normalizedSearch)
+      );
+    }
 
     // Apply sorting
     result.sort((a, b) => {
@@ -1235,14 +1245,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     });
 
     return result;
-  }, [orders, filters, sortColumn, sortDirection, budgets]);
-
-  // Clear all filters
-  const clearAllFilters = () => {
-    setFilters({});
-  };
-
-  const hasActiveFilters = Object.values(filters).some(v => v);
+  }, [orders, searchTerm, typeFilter, sortColumn, sortDirection, budgets]);
 
   // Column header with sort only
   const ColumnHeader = ({ column, label, className }: { column: string; label: string; className?: string }) => (
@@ -1270,18 +1273,23 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <FileText className="h-5 w-5" />
-          Órdenes de Compra y Facturas - {selectedYear}
-        </CardTitle>
-        <Button size="sm" onClick={() => setShowNewDialog(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nueva OC
-        </Button>
-      </CardHeader>
-      <CardContent>
+    <Collapsible open={!isCollapsed} onOpenChange={(open) => setIsCollapsed(!open)}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 cursor-pointer hover:bg-muted/50 transition-colors">
+            <CardTitle className="text-lg flex items-center gap-2">
+              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              <FileText className="h-5 w-5" />
+              Órdenes de Compra y Facturas - {selectedYear}
+            </CardTitle>
+            <Button size="sm" onClick={(e) => { e.stopPropagation(); setShowNewDialog(true); }}>
+              <Plus className="h-4 w-4 mr-1" />
+              Nueva OC
+            </Button>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+        <CardContent>
         <div className="mb-4 p-3 bg-muted/30 rounded-lg flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Total OC {selectedYear}</span>
           <div className="text-right">
@@ -1290,104 +1298,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
           </div>
         </div>
 
-        {/* Filter bar */}
-        <div className="mb-4 p-3 bg-muted/20 rounded-lg border">
-          <div className="flex items-center gap-2 mb-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Filtros</span>
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={clearAllFilters}>
-                <X className="h-3 w-3 mr-1" />
-                Limpiar filtros
-              </Button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Nº OC</label>
-              <Input
-                placeholder="Buscar..."
-                className="h-8 text-sm"
-                value={filters.order_number || ""}
-                onChange={(e) => setFilters({ ...filters, order_number: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Fecha</label>
-              <Input
-                placeholder="Buscar..."
-                className="h-8 text-sm"
-                value={filters.order_date || ""}
-                onChange={(e) => setFilters({ ...filters, order_date: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Proveedor</label>
-              <Input
-                placeholder="Buscar..."
-                className="h-8 text-sm"
-                value={filters.supplier_name || ""}
-                onChange={(e) => setFilters({ ...filters, supplier_name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Tipo</label>
-              <Select
-                value={filters.type || "all"}
-                onValueChange={(v) => setFilters({ ...filters, type: v === "all" ? "" : v })}
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los tipos</SelectItem>
-                  <SelectItem value="capex">Capex</SelectItem>
-                  <SelectItem value="opex">Opex</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Descripción</label>
-              <Input
-                placeholder="Buscar..."
-                className="h-8 text-sm"
-                value={filters.description || ""}
-                onChange={(e) => setFilters({ ...filters, description: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Monto</label>
-              <Input
-                placeholder="Buscar..."
-                className="h-8 text-sm"
-                value={filters.amount || ""}
-                onChange={(e) => setFilters({ ...filters, amount: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Estado</label>
-              <Select
-                value={filters.status || "all"}
-                onValueChange={(v) => setFilters({ ...filters, status: v === "all" ? "" : v })}
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="abierta">OK</SelectItem>
-                  <SelectItem value="cerrada">Cerrada</SelectItem>
-                  <SelectItem value="descuadrada">Sobrepasado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
         {orders.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">No hay órdenes de compra para {selectedYear}</p>
         ) : filteredAndSortedOrders.length === 0 ? (
-          <p className="text-center text-muted-foreground py-8">No hay resultados para los filtros aplicados</p>
+          <p className="text-center text-muted-foreground py-8">No hay resultados para la búsqueda o el filtro aplicado</p>
         ) : (
           <Table>
             <TableHeader>
@@ -1502,7 +1416,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             </TableBody>
           </Table>
         )}
-      </CardContent>
+        </CardContent>
 
       <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) { setBudgetWarning(null); setCreateLineSearch(""); } }}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
@@ -2346,6 +2260,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
           </ScrollArea>
         </DialogContent>
       </Dialog>
-    </Card>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 };

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet } from "lucide-react";
+import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -41,6 +41,9 @@ interface OCRequest {
   budget_type?: string; // Derived from fields or contract_budgets
   quotation_url?: string | null;
   quotation_file_name?: string | null;
+  // Requerimiento de OC de origen (ver OCRequiredList.tsx) -- si existe y la
+  // solicitud sigue "pending", permite "Revertir a Requerimiento".
+  source_quotation_number?: string | null;
   // Multi-contract allocation info
   is_multi_contract?: boolean;
   allocated_amount_uf?: number;
@@ -92,6 +95,9 @@ interface OCRequestsListProps {
   allowCreate?: boolean;
   prefillDraft?: OCRequestPrefillDraft | null;
   onPrefillConsumed?: () => void;
+  /** Búsqueda y filtro de tipo compartidos con OCRequiredList y PurchaseOrdersModule (ver BudgetDashboard). */
+  searchTerm?: string;
+  typeFilter?: "all" | "capex" | "opex";
 }
 
 export const OCRequestsList = ({
@@ -108,13 +114,17 @@ export const OCRequestsList = ({
   budgetLineId,
   allowCreate = true,
   prefillDraft,
-  onPrefillConsumed
+  onPrefillConsumed,
+  searchTerm = "",
+  typeFilter = "all"
 }: OCRequestsListProps) => {
   const [requests, setRequests] = useState<OCRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<OCRequest | null>(null);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRevertDialog, setShowRevertDialog] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [viewRequestId, setViewRequestId] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
@@ -122,10 +132,7 @@ export const OCRequestsList = ({
     order_number: "",
     supplier_name: ""
   });
-  
-  // Filter state
-  const [budgetTypeFilter, setBudgetTypeFilter] = useState<"all" | "capex" | "opex">("all");
-  
+
   // New request dialog state
   const [showNewRequestDialog, setShowNewRequestDialog] = useState(false);
   const [newRequestTab, setNewRequestTab] = useState("basic");
@@ -193,7 +200,8 @@ export const OCRequestsList = ({
           oc_requests!inner(
             id, request_number, request_date, line_name, project_name,
             description, amount_uf, amount_clp, supplier_name, status,
-            purchase_order_id, created_at, budget_id, budget_line_id, opex_master_id, quotation_url, quotation_file_name
+            purchase_order_id, created_at, budget_id, budget_line_id, opex_master_id, quotation_url, quotation_file_name,
+            source_quotation_number
           )
         `)
         .eq("contract_id", contractId);
@@ -358,8 +366,43 @@ export const OCRequestsList = ({
       setShowDeleteDialog(false);
       setSelectedRequest(null);
       loadRequests();
+      onRefresh?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  // "Volver atrás": una Solicitud de OC pendiente que vino de un Requerimiento
+  // (ver OCRequiredList.tsx) se puede reconvertir en Requerimiento eliminando
+  // la solicitud -- source_quotation_number ya no tendrá ninguna solicitud
+  // que lo marque "Convertida", así que OCRequiredList vuelve a mostrarlo
+  // como pendiente. RLS solo permite el delete a admins: si la respuesta no
+  // trae filas eliminadas, no se reventó por error sino que no tenía permiso.
+  const handleRevertToRequired = async () => {
+    if (!selectedRequest) return;
+
+    setReverting(true);
+    try {
+      const { data, error } = await supabase
+        .from("oc_requests")
+        .delete()
+        .eq("id", selectedRequest.id)
+        .select("id");
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
+      }
+
+      toast({ title: "Solicitud revertida", description: "Vuelve a estar disponible como Requerimiento de OC pendiente" });
+      setShowRevertDialog(false);
+      setSelectedRequest(null);
+      loadRequests();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setReverting(false);
     }
   };
 
@@ -769,15 +812,21 @@ export const OCRequestsList = ({
     }
   };
 
-  // Filter requests by budget type — converted requests are always visible
-  const visibleRequests = requests;
-    
-  const filteredRequests = budgetTypeFilter === "all" 
-    ? visibleRequests 
-    : visibleRequests.filter(r => r.budget_type === budgetTypeFilter);
-  
-  const pendingRequests = filteredRequests.filter(r => r.status === "pending");
-  const convertedRequests = filteredRequests.filter(r => r.status === "converted");
+  // Filtro de tipo y búsqueda compartidos con OCRequiredList/PurchaseOrdersModule
+  // (ver BudgetDashboard) — se aplican sobre las solicitudes ya cargadas.
+  const typeFiltered = typeFilter === "all"
+    ? requests
+    : requests.filter(r => r.budget_type === typeFilter);
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredRequests = !normalizedSearch
+    ? typeFiltered
+    : typeFiltered.filter(r =>
+        r.request_number.toLowerCase().includes(normalizedSearch) ||
+        (r.description || "").toLowerCase().includes(normalizedSearch) ||
+        r.line_name.toLowerCase().includes(normalizedSearch) ||
+        (r.supplier_name || "").toLowerCase().includes(normalizedSearch)
+      );
 
   const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   // totalSelected in same currency as form input
@@ -785,10 +834,6 @@ export const OCRequestsList = ({
 
   const capexBudget = availableBudgets.find(b => b.type === "capex");
   const opexBudget = availableBudgets.find(b => b.type === "opex");
-
-  // Count by type for filter badges (only visible requests)
-  const capexCount = visibleRequests.filter(r => r.budget_type === "capex").length;
-  const opexCount = visibleRequests.filter(r => r.budget_type === "opex").length;
 
   const handleImportOCRequest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -836,115 +881,77 @@ export const OCRequestsList = ({
 
   return (
     <div className="space-y-4">
-      {/* Header with filters and New Request button */}
-      <div className="flex items-center justify-between gap-4">
-        {/* Budget type filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Filtrar:</span>
-          <div className="flex gap-1">
-            <Button
-              size="sm"
-              variant={budgetTypeFilter === "all" ? "default" : "outline"}
-              onClick={() => setBudgetTypeFilter("all")}
-              className="h-7 text-xs"
-            >
-              Todos ({visibleRequests.length})
-            </Button>
-            <Button
-              size="sm"
-              variant={budgetTypeFilter === "capex" ? "default" : "outline"}
-              onClick={() => setBudgetTypeFilter("capex")}
-              className="h-7 text-xs"
-              disabled={capexCount === 0}
-            >
-              CAPEX ({capexCount})
-            </Button>
-            <Button
-              size="sm"
-              variant={budgetTypeFilter === "opex" ? "default" : "outline"}
-              onClick={() => setBudgetTypeFilter("opex")}
-              className="h-7 text-xs"
-              disabled={opexCount === 0}
-            >
-              OPEX ({opexCount})
-            </Button>
-          </div>
-        </div>
-        
-        {allowCreate && (
-          <div className="flex items-center gap-2">
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={() => generateOCRequestTemplate(contractName)}
-              title="Descargar plantilla Excel"
-              className="gap-1"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Plantilla</span>
-            </Button>
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={() => importFileRef.current?.click()}
-              disabled={importingFile}
-              title="Importar solicitud desde Excel"
-              className="gap-1"
-            >
-              {importingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              <span className="hidden sm:inline">Importar</span>
-            </Button>
-            <input
-              ref={importFileRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImportOCRequest}
-            />
-            <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nueva Solicitud
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {filteredRequests.length === 0 && (
-        <div className="text-center py-6 text-muted-foreground text-sm">
-          {requests.length === 0 
-            ? "No hay solicitudes de OC para este año"
-            : `No hay solicitudes de OC ${budgetTypeFilter.toUpperCase()}`
-          }
+      {/* Nueva Solicitud / Plantilla / Importar — la búsqueda y el filtro de
+          tipo ahora viven en BudgetDashboard, compartidos con OCRequiredList
+          y PurchaseOrdersModule. */}
+      {allowCreate && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => generateOCRequestTemplate(contractName)}
+            title="Descargar plantilla Excel"
+            className="gap-1"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Plantilla</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => importFileRef.current?.click()}
+            disabled={importingFile}
+            title="Importar solicitud desde Excel"
+            className="gap-1"
+          >
+            {importingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            <span className="hidden sm:inline">Importar</span>
+          </Button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleImportOCRequest}
+          />
+          <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nueva Solicitud
+          </Button>
         </div>
       )}
-      
-      {/* Pending Requests */}
-      {pendingRequests.length > 0 && (
-        <div>
-          <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-              Pendientes ({pendingRequests.length})
-            </Badge>
-          </h4>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Número</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Línea</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pendingRequests.map((request) => (
-                <TableRow key={request.id}>
+
+      {filteredRequests.length === 0 ? (
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          {requests.length === 0
+            ? "No hay solicitudes de OC para este año"
+            : "No hay solicitudes de OC para la búsqueda o el filtro aplicado"
+          }
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Nº Solicitud</TableHead>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Línea</TableHead>
+              <TableHead>Titulo</TableHead>
+              <TableHead>Proveedor</TableHead>
+              <TableHead className="text-right">Monto</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredRequests.map((request) => {
+              const isConverted = request.status === "converted";
+              return (
+                <TableRow key={request.id} className={isConverted ? "opacity-60" : undefined}>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Badge variant="outline" className={request.budget_type === "capex" 
-                        ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
+                      <Badge variant="outline" className={request.budget_type === "capex"
+                        ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]"
                         : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
                       }>
                         {request.budget_type?.toUpperCase() || "N/A"}
@@ -957,8 +964,10 @@ export const OCRequestsList = ({
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
-                  <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
+                  <TableCell className="text-xs">{format(new Date(request.request_date), 'dd MMM yyyy', { locale: es })}</TableCell>
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
+                  <TableCell className="truncate max-w-[150px] text-muted-foreground">{request.description || "-"}</TableCell>
+                  <TableCell className="truncate max-w-[120px]">{request.supplier_name || '-'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-col items-end">
                       <span>{formatCLP(request.amount_clp || Math.round(request.amount_uf * ufValue))}</span>
@@ -970,7 +979,13 @@ export const OCRequestsList = ({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="truncate max-w-[120px]">{request.supplier_name || '-'}</TableCell>
+                  <TableCell>
+                    {isConverted ? (
+                      <Badge variant="default" className="bg-green-500">Convertida a OC</Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Pendiente</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button
@@ -994,93 +1009,61 @@ export const OCRequestsList = ({
                       >
                         <Download className="h-3 w-3" />
                       </Button>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedRequest(request);
-                          setConvertForm({ 
-                            order_number: "", 
-                            supplier_name: request.supplier_name || "" 
-                          });
-                          setShowConvertDialog(true);
-                        }}
-                        className="h-7 px-2 gap-1"
-                      >
-                        <Upload className="h-3 w-3" />
-                        Cargar OC
-                      </Button>
-                      {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedRequest(request);
-                            setShowDeleteDialog(true);
-                          }}
-                          className="h-7 px-2 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                      {!isConverted && (
+                        <>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setConvertForm({
+                                order_number: "",
+                                supplier_name: request.supplier_name || ""
+                              });
+                              setShowConvertDialog(true);
+                            }}
+                            className="h-7 px-2 gap-1"
+                          >
+                            <Upload className="h-3 w-3" />
+                            Cargar OC
+                          </Button>
+                          {isAdmin && request.source_quotation_number && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedRequest(request);
+                                setShowRevertDialog(true);
+                              }}
+                              className="h-7 px-2"
+                              title="Revertir a Requerimiento de OC"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedRequest(request);
+                                setShowDeleteDialog(true);
+                              }}
+                              className="h-7 px-2 text-destructive hover:text-destructive"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {/* Converted Requests */}
-      {convertedRequests.length > 0 && (
-        <div>
-          <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-              Convertidas ({convertedRequests.length})
-            </Badge>
-          </h4>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Número Solicitud</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Línea</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {convertedRequests.map((request) => (
-                <TableRow key={request.id} className="opacity-60">
-                  <TableCell>
-                    <Badge variant="outline" className={request.budget_type === "capex" 
-                      ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
-                      : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
-                    }>
-                      {request.budget_type?.toUpperCase() || "N/A"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
-                  <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
-                  <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex flex-col items-end">
-                      <span>{formatCLP(request.amount_clp || Math.round(request.amount_uf * ufValue))}</span>
-                      <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="default" className="bg-green-500">
-                      Convertida a OC
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
 
       {/* Convert to OC Dialog */}
@@ -1153,6 +1136,26 @@ export const OCRequestsList = ({
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Revert to Requerimiento Confirmation */}
+      <AlertDialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Revertir a Requerimiento de OC?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La solicitud {selectedRequest?.request_number} se eliminará y el requerimiento de OC de origen volverá a
+              quedar pendiente, disponible para editar o volver a convertir. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reverting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRevertToRequired} disabled={reverting}>
+              {reverting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Revertir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

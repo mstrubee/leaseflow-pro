@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock, Edit2, Building2 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock, Edit2, Building2, Search, ChevronDown, ChevronRight } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
@@ -114,6 +115,27 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   // Draft para "Convertir a Solicitud" desde OCRequiredList -- se lo pasa a
   // OCRequestsList, que abre su propio diálogo de "Nueva Solicitud" prellenado.
   const [ocRequiredConvertDraft, setOcRequiredConvertDraft] = useState<OCRequestPrefillDraft | null>(null);
+
+  // Búsqueda y filtro de tipo compartidos por las 3 secciones de la pestaña
+  // "Órdenes de Compra" (OC Requeridas, Solicitudes de OC, Órdenes y Facturas).
+  const [ocSearchTerm, setOcSearchTerm] = useState("");
+  const [ocTypeFilter, setOcTypeFilter] = useState<"all" | "capex" | "opex">("all");
+  const [ocRequeridasOpen, setOcRequeridasOpen] = useState(false);
+  const [ocSolicitudesOpen, setOcSolicitudesOpen] = useState(false);
+  const [ocOrdenesOpen, setOcOrdenesOpen] = useState(false);
+  // Al ejecutar una búsqueda (de vacío a no-vacío) se amplían las 3 secciones
+  // automáticamente -- pero nunca se auto-colapsan, y el usuario puede
+  // volver a colapsar cualquiera manualmente aunque la búsqueda siga activa.
+  const ocSearchWasActiveRef = useRef(false);
+  useEffect(() => {
+    const isActive = ocSearchTerm.trim().length > 0;
+    if (isActive && !ocSearchWasActiveRef.current) {
+      setOcRequeridasOpen(true);
+      setOcSolicitudesOpen(true);
+      setOcOrdenesOpen(true);
+    }
+    ocSearchWasActiveRef.current = isActive;
+  }, [ocSearchTerm]);
 
   useEffect(() => {
     loadAvailableYears();
@@ -999,61 +1021,106 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4 space-y-6">
-          {/* OC Requeridas Section -- primer eslabón: Requerimiento de OC → Solicitud de OC → OC */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-4 w-4 text-indigo-500" />
-                OC Requeridas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <OCRequiredList
-                key={`oc-req-${refreshKey}`}
-                contractId={contractId}
-                contractName={contractName}
-                ufValue={ufValue}
-                formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
-                onConvert={(draft) => setOcRequiredConvertDraft(draft)}
-                refreshKey={refreshKey}
-                onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+          {/* Búsqueda y filtro de tipo compartidos por las 3 secciones de abajo */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por N°, título, línea o proveedor..."
+                value={ocSearchTerm}
+                onChange={(e) => setOcSearchTerm(e.target.value)}
+                className="pl-8"
               />
-            </CardContent>
-          </Card>
+            </div>
+            <div className="flex gap-1">
+              <Button size="sm" variant={ocTypeFilter === "all" ? "default" : "outline"} onClick={() => setOcTypeFilter("all")}>
+                Todos
+              </Button>
+              <Button size="sm" variant={ocTypeFilter === "capex" ? "default" : "outline"} onClick={() => setOcTypeFilter("capex")}>
+                Capex
+              </Button>
+              <Button size="sm" variant={ocTypeFilter === "opex" ? "default" : "outline"} onClick={() => setOcTypeFilter("opex")}>
+                Opex
+              </Button>
+            </div>
+          </div>
+
+          {/* OC Requeridas Section -- primer eslabón: Requerimiento de OC → Solicitud de OC → OC */}
+          <Collapsible open={ocRequeridasOpen} onOpenChange={setOcRequeridasOpen}>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="pb-2 cursor-pointer hover:bg-muted/50 transition-colors">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    {ocRequeridasOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <FileText className="h-4 w-4 text-indigo-500" />
+                    OC Requeridas
+                  </CardTitle>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <OCRequiredList
+                    key={`oc-req-${refreshKey}`}
+                    contractId={contractId}
+                    contractName={contractName}
+                    ufValue={ufValue}
+                    formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
+                    onConvert={(draft) => setOcRequiredConvertDraft(draft)}
+                    refreshKey={refreshKey}
+                    onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+                    searchTerm={ocSearchTerm}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
 
           {/* OC Requests Section */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-4 w-4 text-purple-500" />
-                Solicitudes de OC
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <OCRequestsList
-                contractId={contractId}
-                contractName={contractName}
-                contractCebe={contractCebe}
-                year={selectedYear}
-                ufValue={ufValue}
-                formatUF={formatUF}
-                formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
-                onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
-                isAdmin={isAdmin}
-                allowCreate={isAdmin || hasPermission("budget_ordenes_compra", "edit")}
-                prefillDraft={ocRequiredConvertDraft}
-                onPrefillConsumed={() => setOcRequiredConvertDraft(null)}
-              />
-            </CardContent>
-          </Card>
-          
+          <Collapsible open={ocSolicitudesOpen} onOpenChange={setOcSolicitudesOpen}>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="pb-2 cursor-pointer hover:bg-muted/50 transition-colors">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    {ocSolicitudesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <FileText className="h-4 w-4 text-purple-500" />
+                    Solicitudes de OC
+                  </CardTitle>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <OCRequestsList
+                    contractId={contractId}
+                    contractName={contractName}
+                    contractCebe={contractCebe}
+                    year={selectedYear}
+                    ufValue={ufValue}
+                    formatUF={formatUF}
+                    formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
+                    onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+                    isAdmin={isAdmin}
+                    allowCreate={isAdmin || hasPermission("budget_ordenes_compra", "edit")}
+                    prefillDraft={ocRequiredConvertDraft}
+                    onPrefillConsumed={() => setOcRequiredConvertDraft(null)}
+                    searchTerm={ocSearchTerm}
+                    typeFilter={ocTypeFilter}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
           {/* Purchase Orders Section */}
-          <PurchaseOrdersModule 
+          <PurchaseOrdersModule
             key={`po-${selectedYear}-${refreshKey}`}
-            contractId={contractId} 
-            initialYear={selectedYear} 
+            contractId={contractId}
+            initialYear={selectedYear}
             refreshKey={refreshKey}
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+            searchTerm={ocSearchTerm}
+            typeFilter={ocTypeFilter}
+            collapsed={!ocOrdenesOpen}
+            onCollapsedChange={(collapsed) => setOcOrdenesOpen(!collapsed)}
           />
           <DeletedOrdersModule
             contractId={contractId}
