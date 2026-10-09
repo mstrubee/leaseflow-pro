@@ -223,7 +223,13 @@ export function CapexOCRequiredDialog({
     .filter((l) => l.status === "autorizado")
     .reduce((sum, l) => sum + (l.amount_uf || 0), 0);
   const authorizedTotalClp = convertUFToPesos(authorizedTotalUf);
-  const sufficient = authorizedTotalClp >= montoClp;
+  // Comparar en UF (con la misma tolerancia que ya usa OCRequestDialog.tsx
+  // para este mismo tipo de bug) en vez de comparar los CLP ya redondeados:
+  // convertUFToPesos redondea cada lado por separado, así que un monto
+  // realmente IGUAL al autorizado podía quedar 1 peso por debajo después del
+  // redondeo y marcarse como insuficiente sin serlo.
+  const montoUf = ufValue > 0 ? montoClp / ufValue : 0;
+  const sufficient = authorizedTotalUf >= montoUf - 0.01;
 
   const handleSave = async (mode: "final" | "temp") => {
     if (!file) return;
