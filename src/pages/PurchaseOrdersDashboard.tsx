@@ -203,6 +203,8 @@ interface OCRequiredGroup {
   fileName: string | null;
   lines: OCRequiredGroupLine[];
   converted: boolean;
+  supplierId: string | null;
+  supplierName: string | null;
 }
 
 interface OpexCategory {
@@ -306,7 +308,6 @@ const PurchaseOrdersDashboard = () => {
   const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
   const [ocRequiredGroups, setOcRequiredGroups] = useState<OCRequiredGroup[]>([]);
   const [expandedRequired, setExpandedRequired] = useState<Set<string>>(new Set());
-  const [requeridasSearchTerm, setRequeridasSearchTerm] = useState("");
   const [requeridasContractFilter, setRequeridasContractFilter] = useState("todos");
   const [requeridasStatusFilter, setRequeridasStatusFilter] = useState("todos");
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -717,6 +718,8 @@ const PurchaseOrdersDashboard = () => {
               fileName: r.file_name,
               lines: [],
               converted: convertedSet.has(r.quotation_number),
+              supplierId: r.supplier_id ?? null,
+              supplierName: r.supplier_name ?? null,
             };
             groupsByNumber.set(r.quotation_number, group);
           }
@@ -1286,11 +1289,12 @@ const PurchaseOrdersDashboard = () => {
     const yearNum = parseInt(yearFilter);
     let filtered = ocRequiredGroups.filter((g) => parseISO(g.quotationDate).getFullYear() === yearNum);
 
-    if (requeridasSearchTerm) {
-      const term = requeridasSearchTerm.toLowerCase();
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter((g) =>
         g.quotationNumber.toLowerCase().includes(term) ||
         g.projectName?.toLowerCase().includes(term) ||
+        g.supplierName?.toLowerCase().includes(term) ||
         g.lines.some((l) => l.lineName.toLowerCase().includes(term))
       );
     }
@@ -1305,7 +1309,7 @@ const PurchaseOrdersDashboard = () => {
     }
 
     return filtered;
-  }, [ocRequiredGroups, yearFilter, requeridasSearchTerm, requeridasContractFilter, requeridasStatusFilter]);
+  }, [ocRequiredGroups, yearFilter, searchTerm, requeridasContractFilter, requeridasStatusFilter]);
 
   // OC Request summary - only count pending for display (converted are hidden)
   const requestSummary = useMemo(() => {
@@ -2906,7 +2910,7 @@ const PurchaseOrdersDashboard = () => {
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por OC, titulo, local o proveedor..."
+                  placeholder="Buscar por OC, título, local o proveedor..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -3984,7 +3988,7 @@ const PurchaseOrdersDashboard = () => {
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Buscar por número, titulo o proyecto..."
+                      placeholder="Buscar por OC, título, local o proveedor..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"
@@ -4226,9 +4230,9 @@ const PurchaseOrdersDashboard = () => {
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Buscar por requerimiento, proyecto o línea..."
-                      value={requeridasSearchTerm}
-                      onChange={(e) => setRequeridasSearchTerm(e.target.value)}
+                      placeholder="Buscar por OC, título, local o proveedor..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"
                     />
                   </div>
@@ -4277,7 +4281,8 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead>Requerimiento</TableHead>
                         <TableHead>Fecha</TableHead>
                         <TableHead>Proyecto</TableHead>
-                        <TableHead>Líneas</TableHead>
+                        <TableHead>Línea</TableHead>
+                        <TableHead>Proveedor</TableHead>
                         <TableHead className="text-right">Monto</TableHead>
                         <TableHead>Estado</TableHead>
                         <TableHead>Acciones</TableHead>
@@ -4307,7 +4312,12 @@ const PurchaseOrdersDashboard = () => {
                                 {format(parseISO(group.quotationDate), "dd MMM yyyy", { locale: es })}
                               </TableCell>
                               <TableCell className="max-w-[160px] truncate">{group.projectName}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{group.lines.length}</TableCell>
+                              <TableCell className="max-w-[160px] truncate" title={group.lines.map((l) => l.lineName).join(", ")}>
+                                {group.lines.length > 1
+                                  ? `${group.lines[0].lineName} (+${group.lines.length - 1})`
+                                  : group.lines[0]?.lineName ?? "-"}
+                              </TableCell>
+                              <TableCell className="max-w-[140px] truncate">{group.supplierName || "-"}</TableCell>
                               <TableCell className="text-right font-medium">{formatCLP(group.amountClp)}</TableCell>
                               <TableCell>
                                 <Badge variant={group.converted ? "default" : "secondary"}>
