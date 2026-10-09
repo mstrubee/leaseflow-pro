@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical, Pencil } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -135,7 +135,7 @@ export interface BudgetLine {
   children?: BudgetLine[];
 }
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, editOcRequiredReadOnly, isParent, lineStatus, onOcRequired, onEditOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; editOcRequiredReadOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired, onEditOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -173,12 +173,20 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, editOcRequired
     else toast.success("Estado actualizado");
   };
 
-  // "OC Requerida" no se aplica directo: el padre (CAPEX) pide la cotización
-  // PDF primero -- si el usuario cancela ese diálogo, el badge no cambia.
+  // Esta línea ya tiene un requerimiento de OC creado (ver onEditOcRequired).
+  const isOcRequerida = current?.name?.trim().toLowerCase() === "oc requerida";
+
+  // Al elegir "OC Requerida" de la lista: si la línea YA está en ese estado
+  // (ya tiene un requerimiento asociado, aunque se haya creado junto con
+  // otra línea del mismo grupo), se abre ESE requerimiento para editarlo en
+  // vez de intentar crear uno nuevo. Si todavía no tiene uno, se sigue el
+  // flujo normal de creación (el padre pide la cotización PDF primero -- si
+  // el usuario cancela ese diálogo, el badge no cambia).
   const handleSelect = (s: { id: string; name: string }) => {
-    if (onOcRequired && s.name.trim().toLowerCase() === "oc requerida") {
+    if (s.name.trim().toLowerCase() === "oc requerida") {
       setOpen(false);
-      onOcRequired(lineId, s.id);
+      if (isOcRequerida && onEditOcRequired) onEditOcRequired(lineId);
+      else if (onOcRequired) onOcRequired(lineId, s.id);
     } else {
       handleChange(s.id);
     }
@@ -190,26 +198,9 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, editOcRequired
     </Badge>
   );
 
-  // Editar un requerimiento ya creado (monto, archivo, líneas asociadas) es una
-  // acción propia, separada del permiso para CAMBIAR el estado de avance --
-  // se muestra para cualquiera que pueda ver esta línea, igual que el botón
-  // "Editar" (sin restricción propia) de la sección "OC Requeridas".
-  const isOcRequerida = current?.name?.trim().toLowerCase() === "oc requerida";
-  const editButton = isOcRequerida && onEditOcRequired && !editOcRequiredReadOnly && (
-    <button
-      type="button"
-      onClick={(e) => { e.stopPropagation(); onEditOcRequired(lineId); }}
-      className="text-muted-foreground hover:text-primary shrink-0"
-      title="Editar requerimiento de OC (monto, archivo, líneas asociadas)"
-    >
-      <Pencil className="h-3 w-3" />
-    </button>
-  );
-
-  if (readOnly) return <div className="flex items-center gap-1">{badge}{editButton}</div>;
+  if (readOnly) return badge;
 
   return (
-    <div className="flex items-center gap-1">
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild><button type="button" onClick={e => e.stopPropagation()}>{badge}</button></PopoverTrigger>
       <PopoverContent className="w-56 p-2" align="end">
@@ -224,8 +215,6 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, editOcRequired
         </div>
       </PopoverContent>
     </Popover>
-    {editButton}
-    </div>
   );
 };
 
@@ -1756,12 +1745,6 @@ const BudgetLineItemInner = ({
               // tenga ese permiso, sin los otros dos, igual debe poder
               // cambiar el estado de avance de una línea autorizada.
               readOnly={estadoReadOnly || !canEditEstado}
-              // Editar un requerimiento ya creado es un permiso propio, SIN el
-              // chequeo adicional de canEditEstado (ver onEditOcRequired) --
-              // pero sigue respetando estadoReadOnly (presupuesto cerrado,
-              // forceReadOnly, modo selección), que no es un permiso sino un
-              // estado real del presupuesto.
-              editOcRequiredReadOnly={estadoReadOnly}
               isParent={isParent}
               lineStatus={line.status}
               onOcRequired={onOcRequired}
