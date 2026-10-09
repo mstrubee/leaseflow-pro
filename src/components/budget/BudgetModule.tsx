@@ -10,7 +10,7 @@ import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
-import { BudgetLineTree, BudgetLineTreeWithDrag, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
+import { BudgetLineTree, BudgetLineTreeWithDrag, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, calculateLineLiveAmount, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -430,13 +430,19 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // tildados, pero acá solo interesan las líneas hoja -- si no, la madre
   // aparecía duplicada junto a su única hija en el resumen.
   const handleFinishCapexLineSelection = useCallback(() => {
-    const chosen = flattenLines(lines)
+    const allFlat = flattenLines(lines);
+    const linesById = new Map(allFlat.map((l) => [l.id, l]));
+    const chosen = allFlat
       .filter((l) => selectedLineIds.has(l.id) && l.id !== ocRequiredPrompt?.lineId && !l.children?.length)
-      .map((l) => ({ id: l.id, name: l.name, amount_uf: l.amount_uf, status: l.status }));
+      // Monto en vivo, no el amount_uf guardado -- para una línea "%" (Gastos
+      // Generales/Utilidades) ese valor queda obsoleto salvo que se haya
+      // editado monto/cantidad/precio/moneda directamente (ver
+      // recalcPercentageLinesLocally), aunque el árbol ya muestre el correcto.
+      .map((l) => ({ id: l.id, name: l.name, amount_uf: calculateLineLiveAmount(l, linesById, templatePricesMap, ufValue), status: l.status }));
     setCapexAdditionalLines(chosen);
     setCapexAdditionalLinesVersion((v) => v + 1);
     handleExitSelectionMode();
-  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt]);
+  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt, templatePricesMap, ufValue]);
 
   // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
   // sin tener que expandir el árbol completo y marcarlas una por una.
@@ -2349,10 +2355,17 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                   const line = findLine(lines);
                   setCapexAdditionalLines([]);
                   setCapexAdditionalLinesVersion(0);
+                  // Monto en vivo, no el amount_uf guardado -- una línea "%" (Gastos
+                  // Generales/Utilidades) puede mostrar el monto correcto en el árbol
+                  // (vía livePercentageAmount) mientras su amount_uf guardado sigue
+                  // obsoleto, si nadie editó monto/cantidad/precio/moneda directamente
+                  // desde que cambió su base (ver recalcPercentageLinesLocally).
+                  const linesById = new Map(flattenLines(lines).map((l) => [l.id, l]));
+                  const liveAmountUf = line ? calculateLineLiveAmount(line, linesById, templatePricesMap, ufValue) : 0;
                   setOcRequiredPrompt({
                     lineId,
                     lineName: line?.name ?? "",
-                    lineAmountUf: line?.amount_uf ?? 0,
+                    lineAmountUf: liveAmountUf,
                     lineStatus: line?.status ?? "no_autorizado",
                     newStatusId,
                     supplierId: line?.supplier_id ?? null,

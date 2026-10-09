@@ -2143,6 +2143,38 @@ const calculateLineTotal = (
   return getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds);
 };
 
+// Live amount of a SINGLE line, for callers outside the tree render (e.g. BudgetModule's
+// "Marcar OC Requerida" flow) that only have one line, not its parent's full children list.
+// calculateLineTotal alone can't resolve a percentage line by itself — called directly on a
+// % line (a leaf, no children of its own) it falls through to getEffectiveAmount, which trusts
+// the line's STORED amount_uf. That stored value only gets refreshed by
+// recalcPercentageLinesLocally on direct amount/quantity/price/currency edits elsewhere in the
+// tree — not guaranteed fresh — so a % line like "Utilidades" could show its correct live total
+// in the tree (via livePercentageAmount in BudgetLineItemInner) while every OTHER consumer that
+// reads line.amount_uf directly sees a stale/zero value. This mirrors livePercentageAmount's
+// formula instead: resolve the source via linesById, compute ITS non-% children live, apply the
+// source's own multiplier, then the percentage.
+export const calculateLineLiveAmount = (
+  line: BudgetLine,
+  linesById: Map<string, BudgetLine>,
+  templatePricesMap?: Record<string, number>,
+  ufValue?: number,
+  internalTransferSupplierIds?: Set<string>,
+): number => {
+  if (line.calc_type === "percentage" && line.calc_source_line_id) {
+    const source = linesById.get(line.calc_source_line_id);
+    if (!source) return line.amount_uf || 0;
+    const nonPctChildren = (source.children || []).filter((c) => c.calc_type !== "percentage");
+    const base =
+      nonPctChildren.reduce(
+        (sum, c) => sum + calculateLineTotal(c, templatePricesMap, ufValue, internalTransferSupplierIds),
+        0,
+      ) * (source.quantity || 1);
+    return (base * (line.calc_percentage || 0)) / 100;
+  }
+  return calculateLineTotal(line, templatePricesMap, ufValue, internalTransferSupplierIds);
+};
+
 // Same shape as calculateLineTotal, but only counts the portion of the total whose OWN
 // status matches wantedStatus — still sizing percentage surcharges off the FULL (status-
 // agnostic) base, since a % line is always a percentage of the whole subtree, not just its
