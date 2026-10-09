@@ -23,6 +23,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
 import { CapexOCRequiredDialog } from "./CapexOCRequiredDialog";
+import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
+import { loadOCRequiredGroupForLine, type OCRequiredGroup } from "@/lib/ocRequiredGroups";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -68,7 +70,13 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
   // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
   const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null } | null>(null);
-  
+
+  // Editar un requerimiento "OC Requerida" ya creado, directamente desde el
+  // badge del árbol (ver onEditOcRequired más abajo) -- mismo diálogo que usa
+  // la sección "OC Requeridas" (pestaña "Órdenes de Compra"), sin pasar por ahí.
+  const [editOcRequiredGroup, setEditOcRequiredGroup] = useState<OCRequiredGroup | null>(null);
+  const [loadingEditOcRequired, setLoadingEditOcRequired] = useState(false);
+
   // Update template state
   const [showUpdateTemplateDialog, setShowUpdateTemplateDialog] = useState(false);
   const [showUpdateTemplateConfirm, setShowUpdateTemplateConfirm] = useState(false);
@@ -443,6 +451,35 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     setCapexAdditionalLinesVersion((v) => v + 1);
     handleExitSelectionMode();
   }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt, templatePricesMap, ufValue]);
+
+  // Editar un requerimiento "OC Requerida" ya creado, directamente desde su
+  // badge en el árbol -- sin restricción de permiso propia (ver
+  // onEditOcRequired en BudgetLineTree), para que cualquiera que vea la línea
+  // pueda hacerlo, igual que el botón "Editar" (sin permiso propio) de la
+  // sección "OC Requeridas".
+  const handleEditOcRequired = useCallback(async (lineId: string) => {
+    if (!contractId || loadingEditOcRequired) return;
+    setLoadingEditOcRequired(true);
+    try {
+      const group = await loadOCRequiredGroupForLine(contractId, lineId, ufValue);
+      if (!group) {
+        toast({ variant: "destructive", title: "Sin requerimiento", description: "No se encontró ningún requerimiento de OC para esta línea." });
+        return;
+      }
+      if (group.converted) {
+        toast({
+          title: "Ya convertida a Solicitud de OC",
+          description: "Este requerimiento ya se convirtió en una Solicitud de OC -- edítalo desde la pestaña \"Órdenes de Compra\" > \"Solicitudes de OC\".",
+        });
+        return;
+      }
+      setEditOcRequiredGroup(group);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo cargar el requerimiento de OC." });
+    } finally {
+      setLoadingEditOcRequired(false);
+    }
+  }, [contractId, ufValue, toast, loadingEditOcRequired]);
 
   // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
   // sin tener que expandir el árbol completo y marcarlas una por una.
@@ -2372,6 +2409,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     supplierName: line?.supplier_name ?? null,
                   });
                 } : undefined}
+                onEditOcRequired={budgetType === "capex" ? handleEditOcRequired : undefined}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
                 readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
                 // El badge de Estado de Avance usa su propio permiso
@@ -2999,6 +3037,20 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           onComplete={() => {
             setOcRequiredPrompt(null);
             loadLines(currentBudget.id);
+          }}
+        />
+      )}
+
+      {editOcRequiredGroup && contractId && (
+        <EditOCRequiredDialog
+          open={!!editOcRequiredGroup}
+          onOpenChange={(open) => { if (!open) setEditOcRequiredGroup(null); }}
+          contractId={contractId}
+          projectName={contractName}
+          group={editOcRequiredGroup}
+          onSaved={() => {
+            setEditOcRequiredGroup(null);
+            if (currentBudget) loadLines(currentBudget.id);
           }}
         />
       )}

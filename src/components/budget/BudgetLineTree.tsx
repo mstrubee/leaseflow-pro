@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -135,7 +135,7 @@ export interface BudgetLine {
   children?: BudgetLine[];
 }
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, editOcRequiredReadOnly, isParent, lineStatus, onOcRequired, onEditOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; editOcRequiredReadOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -190,9 +190,26 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, line
     </Badge>
   );
 
-  if (readOnly) return badge;
+  // Editar un requerimiento ya creado (monto, archivo, líneas asociadas) es una
+  // acción propia, separada del permiso para CAMBIAR el estado de avance --
+  // se muestra para cualquiera que pueda ver esta línea, igual que el botón
+  // "Editar" (sin restricción propia) de la sección "OC Requeridas".
+  const isOcRequerida = current?.name?.trim().toLowerCase() === "oc requerida";
+  const editButton = isOcRequerida && onEditOcRequired && !editOcRequiredReadOnly && (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onEditOcRequired(lineId); }}
+      className="text-muted-foreground hover:text-primary shrink-0"
+      title="Editar requerimiento de OC (monto, archivo, líneas asociadas)"
+    >
+      <Pencil className="h-3 w-3" />
+    </button>
+  );
+
+  if (readOnly) return <div className="flex items-center gap-1">{badge}{editButton}</div>;
 
   return (
+    <div className="flex items-center gap-1">
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild><button type="button" onClick={e => e.stopPropagation()}>{badge}</button></PopoverTrigger>
       <PopoverContent className="w-56 p-2" align="end">
@@ -207,6 +224,8 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, line
         </div>
       </PopoverContent>
     </Popover>
+    {editButton}
+    </div>
   );
 };
 
@@ -289,6 +308,12 @@ interface BudgetLineTreeProps {
    *  Requerida" -- el padre debe abrir el diálogo de cotización antes de
    *  aplicar el cambio. Solo se pasa desde presupuestos CAPEX. */
   onOcRequired?: (lineId: string, newStatusId: string) => void;
+  /** Editar un requerimiento de OC YA creado (monto, archivo, líneas
+   *  asociadas) directamente desde el badge "OC Requerida" del árbol, sin
+   *  pasar por la pestaña "Órdenes de Compra". Visible para cualquiera que
+   *  pueda ver la línea -- sin restricción propia, igual que el botón
+   *  "Editar" de OCRequiredList. */
+  onEditOcRequired?: (lineId: string) => void;
   /** Ids de líneas que tienen algo que mostrar en "Ver Ppto/OC/Factura"
    *  (cotización, OC/solicitud o factura asociada) -- controla si el botón
    *  está habilitado. */
@@ -346,6 +371,7 @@ export const BudgetLineTree = ({
   onCreateInvoice,
   onViewLineDetails,
   onOcRequired,
+  onEditOcRequired,
   linesWithDetails,
   level = 0,
   readOnly = false,
@@ -445,6 +471,7 @@ export const BudgetLineTree = ({
       onCreateInvoice={onCreateInvoice}
       onViewLineDetails={onViewLineDetails}
       onOcRequired={onOcRequired}
+      onEditOcRequired={onEditOcRequired}
       linesWithDetails={linesWithDetails}
       readOnly={readOnly}
       estadoReadOnly={estadoReadOnly}
@@ -496,6 +523,7 @@ interface BudgetLineItemProps {
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   onOcRequired?: (lineId: string, newStatusId: string) => void;
+  onEditOcRequired?: (lineId: string) => void;
   linesWithDetails?: Set<string>;
   readOnly?: boolean;
   estadoReadOnly?: boolean;
@@ -537,6 +565,7 @@ const BudgetLineItemInner = ({
   onCreateInvoice,
   onViewLineDetails,
   onOcRequired,
+  onEditOcRequired,
   linesWithDetails,
   readOnly = false,
   estadoReadOnly = readOnly,
@@ -1727,9 +1756,16 @@ const BudgetLineItemInner = ({
               // tenga ese permiso, sin los otros dos, igual debe poder
               // cambiar el estado de avance de una línea autorizada.
               readOnly={estadoReadOnly || !canEditEstado}
+              // Editar un requerimiento ya creado es un permiso propio, SIN el
+              // chequeo adicional de canEditEstado (ver onEditOcRequired) --
+              // pero sigue respetando estadoReadOnly (presupuesto cerrado,
+              // forceReadOnly, modo selección), que no es un permiso sino un
+              // estado real del presupuesto.
+              editOcRequiredReadOnly={estadoReadOnly}
               isParent={isParent}
               lineStatus={line.status}
               onOcRequired={onOcRequired}
+              onEditOcRequired={onEditOcRequired}
             />
           )}
 
@@ -1884,7 +1920,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} onEditOcRequired={onEditOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (

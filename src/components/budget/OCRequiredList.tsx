@@ -10,32 +10,12 @@ import { toast } from "sonner";
 import { resolveFileUrl } from "@/lib/storageUtils";
 import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
 import type { OCRequestPrefillDraft } from "./OCRequestsList";
+import type { OCRequiredGroup, OCRequiredGroupLine } from "@/lib/ocRequiredGroups";
 
-export interface OCRequiredGroupLine {
-  budgetLineId: string;
-  lineName: string;
-  amountUf: number;
-  status: string;
-}
-
-export interface OCRequiredGroup {
-  quotationNumber: string;
-  quotationDate: string;
-  amountClp: number;
-  amountUf: number;
-  filePath: string | null;
-  fileName: string | null;
-  /** Referencia storage:// del archivo en Supabase Storage -- se limpia (queda
-   *  null) a los 30 días o al convertirse en Solicitud de OC; el archivo sigue
-   *  disponible siempre en Drive vía filePath. */
-  storagePath: string | null;
-  projectName: string;
-  ufValue: number;
-  supplierId: string | null;
-  supplierName: string | null;
-  lines: OCRequiredGroupLine[];
-  converted: boolean;
-}
+// Re-exportados para no romper a los demás archivos que ya los importan desde
+// acá -- la fuente de verdad ahora es lib/ocRequiredGroups.ts (compartida con
+// el punto de edición directo desde el árbol de presupuesto).
+export type { OCRequiredGroup, OCRequiredGroupLine };
 
 interface OCRequiredListProps {
   contractId: string;
