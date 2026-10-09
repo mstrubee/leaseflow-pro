@@ -90,20 +90,18 @@ export interface PnlLine {
 /**
  * Línea de ingreso (Supuestos → Ingresos y Costos Directos). Es hija de la única línea «Ingresos»
  * y trae su propio «Costo de venta» mediante su margen.
- *  - `origen`: de dónde viene el ingreso (texto libre con sugerencias: Servicios, Repuestos…).
- *  - modo "directo": `ventaMes` = MM CLP por mes en el año 1.
- *  - modo "volumen": `unidades` (atenciones/mes) × `ticket` (CLP por atención) en el año 1.
+ *  - `categoria`: tipo de ingreso (texto libre con sugerencias: Servicios, Repuestos y productos…).
+ *  - `valorUnitario` (CLP) × `unidadesDia` → ventas del año 1. Las unidades mensuales salen de
+ *    `unidadesDia` × `diasOperacionMes` (supuesto global).
  *  - Los años 2..5 salen de aplicar la tasa de crecimiento anual de «Ventas y Crecimiento UF anual».
  *  - `margen`: % de margen directo de la línea; null = usa el margen ponderado de las demás líneas.
  */
 export interface IngresoLine {
   id: string;
+  categoria: string;
   nombre: string;
-  origen: string;
-  modo: "directo" | "volumen";
-  ventaMes: number;
-  unidades: number;
-  ticket: number;
+  valorUnitario: number;
+  unidadesDia: number;
   margen: number | null;
 }
 
@@ -112,7 +110,7 @@ export interface PnlNode {
   label: string;
   base: boolean;
   sign: 1 | -1;
-  origen?: string; // solo líneas de ingreso
+  categoria?: string; // solo líneas de ingreso
   margen?: number | null; // % propio de la línea de ingreso (null = ponderado)
   own: number[];
   total: number[]; // propio + hijas
@@ -127,6 +125,8 @@ export interface AutoplanetInputs extends BCInputs {
   ventaCrec: number[];
   /** Crecimiento anual en % de las líneas de «Otros costos directos» (modo monto) para los años 2..5. */
   otrosCostosCrec: number[];
+  /** Días de operación al mes: convierte «Unidades/día» en unidades mensuales. */
+  diasOperacionMes: number;
 }
 
 export interface AutoplanetResult {
@@ -179,8 +179,8 @@ export function newPnlLine(bloque: PnlBlock, parentId: string | null, nombre = "
   return { id: newId("ln"), nombre, bloque, parentId, modo: "monto", valores: zeros() };
 }
 
-export function newIngresoLine(nombre = "Nueva línea de ingreso"): IngresoLine {
-  return { id: newId("ing"), nombre, origen: "", modo: "directo", margen: null, ventaMes: 0, unidades: 0, ticket: 0 };
+export function newIngresoLine(nombre = ""): IngresoLine {
+  return { id: newId("ing"), categoria: "", nombre, valorUnitario: 0, unidadesDia: 0, margen: null };
 }
 
 export function newInvLine(categoria: AutoInvCategory, nombre = "Nueva línea"): AutoInvLine {
@@ -235,7 +235,7 @@ export function buildDefaultAutoplanetInputs(seed: BCSeed = {}): AutoplanetInput
     { id: "gar", categoria: "garantia", nombre: "Garantía", metodo: "total", valor: 0 },
     { id: "inv", categoria: "inventario", nombre: "Inventario", metodo: "total", valor: 0 },
   ];
-  return { ...base, invLines, ingresoLines: [], pnlLines: [], ventaCrec: [0, 0, 0, 0], otrosCostosCrec: [0, 0, 0, 0] };
+  return { ...base, invLines, ingresoLines: [], pnlLines: [], ventaCrec: [0, 0, 0, 0], otrosCostosCrec: [0, 0, 0, 0], diasOperacionMes: 30 };
 }
 
 /** Mezcla lo guardado con los defaults (tolera casos guardados con una versión anterior). */
@@ -246,31 +246,40 @@ export function mergeAutoplanetInputs(stored: Partial<AutoplanetInputs> | null |
     ...defaults,
     ...stored,
     invLines: Array.isArray(stored.invLines) ? stored.invLines : defaults.invLines,
-    ingresoLines: normalizeIngresoLines(stored.ingresoLines),
+    ingresoLines: normalizeIngresoLines(stored.ingresoLines, stored.diasOperacionMes || defaults.diasOperacionMes),
     pnlLines: normalizePnlLines(stored.pnlLines),
     ventaCrec: Array.isArray(stored.ventaCrec) ? stored.ventaCrec : defaults.ventaCrec,
     otrosCostosCrec: Array.isArray(stored.otrosCostosCrec) ? stored.otrosCostosCrec : defaults.otrosCostosCrec,
+    diasOperacionMes: stored.diasOperacionMes || defaults.diasOperacionMes,
   };
 }
 
 const firstOf = (v: unknown): number => (Array.isArray(v) ? Number(v[0]) || 0 : Number(v) || 0);
 
 /**
- * Versiones anteriores guardaban las líneas de ingreso con valores por año y con jerarquía.
- * Ahora son planas y con valores del año 1: se toma el año 1 y se descartan las líneas que solo eran
- * subtotales de otras (sus hijas quedan como líneas de ingreso).
+ * Versiones anteriores guardaban las líneas de ingreso con jerarquía y como «venta mensual» o «volumen × ticket».
+ * Ahora son planas: valor unitario × unidades/día. Se conserva la venta mensual del año 1 de cada línea:
+ *  - venta mensual (MM/mes) → 1 unidad/día con valor unitario = MM/mes ÷ días de operación;
+ *  - volumen × ticket → unidades/día = unidades/mes ÷ días de operación, valor unitario = ticket.
+ * Las líneas que solo eran subtotales de otras se descartan (sus hijas quedan como líneas de ingreso).
  */
-function normalizeIngresoLines(raw: unknown): IngresoLine[] {
+function normalizeIngresoLines(raw: unknown, dias: number): IngresoLine[] {
   if (!Array.isArray(raw)) return [];
   const parents = new Set<string>(raw.map((l: { parentId?: string | null }) => l.parentId).filter((x): x is string => !!x));
   return raw
     .filter((l: { id: string }) => !parents.has(l.id))
-    .map((l: Partial<IngresoLine> & { id: string }) => ({
-      id: l.id, nombre: l.nombre ?? "", origen: l.origen ?? "",
-      modo: l.modo === "volumen" ? "volumen" : "directo",
-      ventaMes: firstOf(l.ventaMes), unidades: firstOf(l.unidades), ticket: firstOf(l.ticket),
-      margen: typeof l.margen === "number" ? l.margen : null,
-    }));
+    .map((l: Record<string, unknown> & { id: string }) => {
+      const margen = typeof l.margen === "number" ? l.margen : null;
+      const categoria = String(l.categoria ?? l.origen ?? "");
+      const nombre = String(l.nombre ?? "");
+      if (l.valorUnitario !== undefined || l.unidadesDia !== undefined) {
+        return { id: l.id, categoria, nombre, valorUnitario: Number(l.valorUnitario) || 0, unidadesDia: Number(l.unidadesDia) || 0, margen };
+      }
+      if (l.modo === "volumen") {
+        return { id: l.id, categoria, nombre, valorUnitario: firstOf(l.ticket), unidadesDia: firstOf(l.unidades) / dias, margen };
+      }
+      return { id: l.id, categoria, nombre, valorUnitario: (firstOf(l.ventaMes) * 1e6) / dias, unidadesDia: 1, margen };
+    });
 }
 
 /**
@@ -298,7 +307,10 @@ function normalizePnlLines(raw: unknown): PnlLine[] {
 
 // ---------- cálculo ----------
 export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
-  const base = computeBC({ ...inputs, categoria: "Nuevo", invOverrides: {} }, BASE_ADMIN);
+  // Año 1 = primeros 12 meses de operación (no el resto del año calendario como en contratos): se normaliza el
+  // inicio y la apertura al 1 de enero para que ningún año se prorratee. La gracia sigue restando meses de canon.
+  const anio = (inputs.inicio || "").slice(0, 4) || String(new Date().getFullYear());
+  const base = computeBC({ ...inputs, inicio: `${anio}-01-01`, apertura: `${anio}-01-01`, categoria: "Nuevo", invOverrides: {} }, BASE_ADMIN);
   const superficie = inputs.superficie || 0;
   const ufBase = inputs.ufBase || 39485.65;
 
@@ -328,8 +340,8 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   //    (por su margen). El año 1 sale de la línea; los años 2..5 crecen con la tasa anual de Supuestos.
   const growth = [0, 1];
   for (let i = 2; i <= 5; i++) growth.push(growth[i - 1] * (1 + (inputs.ventaCrec?.[i - 2] || 0) / 100));
-  const monthly1 = (l: IngresoLine) => (l.modo === "volumen" ? ((l.unidades || 0) * (l.ticket || 0)) / 1e6 : l.ventaMes || 0);
-  const revOf = (l: IngresoLine) => yearCols().map((i) => (i === 0 ? 0 : round(monthly1(l) * growth[i] * base.mesesArr[i] * sf, 2)));
+  const monthly1 = (l: IngresoLine) => ((l.unidadesDia || 0) * (inputs.diasOperacionMes || 30) * (l.valorUnitario || 0)) / 1e6;
+  const revOf = (l: IngresoLine) => yearCols().map((i) => (i === 0 ? 0 : round(monthly1(l) * growth[i] * 12 * sf, 2)));
   const sumY15 = (a: number[]) => a.slice(1).reduce((x, y) => x + y, 0);
   const ventaMes = [1, 2, 3, 4, 5].map((i) => inputs.ingresoLines.reduce((a, l) => a + monthly1(l), 0) * growth[i]);
 
@@ -346,7 +358,7 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
     const rev = revOf(l);
     const margen = l.margen ?? margenPonderado;
     const costOwn = rev.map((v) => round(-v * (1 - (margen || 0) / 100), 2));
-    const revNode: PnlNode = { id: l.id, label: l.nombre, base: false, sign: 1, origen: l.origen, margen: l.margen, own: rev, children: [], total: rev };
+    const revNode: PnlNode = { id: l.id, label: l.nombre, base: false, sign: 1, categoria: l.categoria, margen: l.margen, own: rev, children: [], total: rev };
     const costNode: PnlNode = { id: `cv_${l.id}`, label: l.nombre, base: false, sign: -1, own: costOwn, children: [], total: costOwn };
     return { rev: revNode, cost: costNode };
   });
@@ -450,7 +462,7 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   for (let i = 1; i < YEARS; i++) payback.push(round(payback[i - 1] + flujoOp[i], 2));
 
   return {
-    canonUF: base.canonUF, garantiaUF: base.garantiaUF, mesesY1: base.mesesY1,
+    canonUF: base.canonUF, garantiaUF: base.garantiaUF, mesesY1: 12, // meses de operación del año 1 (todos los años son de 12 meses)
     inv: { groups: invGroups, total: invTotal, fisica, inventario },
     directos, operacionales,
     ingresos: ing, costosDirectos, margenCtrib, ventaMes, margenDirecto, margenDirectoProm, gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, flujoOp, payback,

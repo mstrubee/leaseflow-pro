@@ -78,7 +78,7 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
             <Stat label="Ingresos Año 1 (MM)" value={fmtMM(result.ingresos[1])} />
             <Stat label="EBITDA Año 1 (MM)" value={fmtMM(result.ebitda[1])} />
-            <Stat label="Meses año 1" value={`${result.mesesY1}`} />
+            <Stat label="Meses de operación año 1" value={`${result.mesesY1}`} />
             <Stat label="EBITDA Margin Año 5" value={fmtPct(result.ebitdaMargin5)} />
           </div>
         </Card>
@@ -214,7 +214,6 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
             <Field label="Gasto común (UF/mes)"><NumCell value={inputs.gastoComunUf} disabled={ro} w="w-full" onChange={(v) => update("gastoComunUf", v)} /></Field>
             <Field label="Gracia (meses)"><NumCell value={inputs.graciaMeses} disabled={ro} w="w-full" onChange={(v) => update("graciaMeses", v)} /></Field>
             <Field label="Duración (años)"><NumCell value={inputs.durContratoAnios} disabled={ro} w="w-full" onChange={(v) => update("durContratoAnios", v)} /></Field>
-            <Field label="Inicio"><Input type="date" value={inputs.inicio} disabled={ro} onChange={(e) => update("inicio", e.target.value)} className="h-8 text-sm" /></Field>
           </div>
         </Card>
 
@@ -421,7 +420,7 @@ function PnlNodeRows({ node, depth }: { node: PnlNode; depth: number }) {
           <span className="inline-flex items-center gap-1">
             {depth > 0 && <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0" />}
             {node.label}
-            {node.origen && <span className="text-[10px] text-muted-foreground">· {node.origen}</span>}
+            {node.categoria && <span className="text-[10px] text-muted-foreground">· {node.categoria}</span>}
             {node.margen != null && <span className="text-[10px] text-muted-foreground">· margen {node.margen}%</span>}
           </span>
         </td>

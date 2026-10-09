@@ -12,7 +12,7 @@ import {
 type Mutate = (key: string, fn: (p: AutoplanetInputs) => AutoplanetInputs) => void;
 
 const ROOT = "__root";
-const ORIGEN_SUGGESTIONS = ["Servicios", "Repuestos y productos", "Convenios / flota", "Seguros y garantías", "Otros"];
+const CATEGORIA_SUGGESTIONS = ["Servicios", "Repuestos y productos", "Convenios / flota", "Seguros y garantías", "Otros"];
 const YEARS_0_5 = [0, 1, 2, 3, 4, 5];
 
 function findById(nodes: PnlNode[], id: string): PnlNode | undefined {
@@ -56,71 +56,80 @@ export function IngresosYCostosDirectos({ inputs, result, ro, mutate }: { inputs
 
   return (
     <Card title="Ingresos y Costos Directos"
-      sub="Único lugar donde se ingresan los ingresos y los costos directos. Los ingresos del año 1 se ingresan aquí; los años siguientes crecen con la tasa de «Ventas y Crecimiento UF anual». Proyecciones se calcula desde aquí.">
-      <datalist id="autoplanet-origenes">{ORIGEN_SUGGESTIONS.map((o) => <option key={o} value={o} />)}</datalist>
+      sub="Único lugar donde se ingresan los ingresos y los costos directos. Los ingresos del año 1 (12 meses de operación) se ingresan aquí; los años siguientes crecen con la tasa de «Ventas y Crecimiento UF anual». Proyecciones se calcula desde aquí.">
+      <datalist id="autoplanet-categorias">{CATEGORIA_SUGGESTIONS.map((o) => <option key={o} value={o} />)}</datalist>
 
-      {/* ───── Ingresos: una sola línea, con líneas hijas ───── */}
+      {/* ───── Ingresos: una sola línea, con una línea hija por ingreso ───── */}
       <div className="rounded-md border">
-        <div className="flex items-center gap-3 bg-muted/40 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-3 bg-muted/40 px-3 py-2">
           <span className="text-sm font-semibold">Ingresos</span>
           <span className="text-xs text-muted-foreground">Año 1: ${fmtMM(ingresosNode?.total[1] ?? 0)} MM · {fmtMM(result.ventaMes[0])} MM/mes</span>
+          <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+            Días de operación al mes
+            <NumCell value={inputs.diasOperacionMes} disabled={ro} w="w-14" onChange={(v) => mutate("diasOperacionMes", (p) => ({ ...p, diasOperacionMes: v }))} />
+          </label>
           {!ro && (
-            <Button variant="outline" size="sm" className="ml-auto h-7 gap-1 text-xs" onClick={add}>
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={add}>
               <Plus className="h-3.5 w-3.5" /> Agregar línea de ingreso
             </Button>
           )}
         </div>
-        <div className="space-y-2 p-2">
-          {lines.length === 0 && <p className="text-xs text-muted-foreground px-1">Sin líneas de ingreso. Agrega una para comenzar.</p>}
-          {lines.map((l) => {
-            const rev = ingresosNode ? findById(ingresosNode.children, l.id) : undefined;
-            const cost = costoVentasNode ? findById(costoVentasNode.children, `cv_${l.id}`) : undefined;
-            return (
-              <div key={l.id} className="rounded-md border p-2 space-y-2 ml-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  <Input value={l.nombre} disabled={ro} onChange={(e) => patch(l.id, "nombre", { nombre: e.target.value })} className="h-7 w-44 text-xs" placeholder="Nombre" />
-                  <Input value={l.origen} disabled={ro} list="autoplanet-origenes" onChange={(e) => patch(l.id, "origen", { origen: e.target.value })} className="h-7 w-44 text-xs" placeholder="Origen (ej: Servicios)" />
-                  <Select value={l.modo} disabled={ro} onValueChange={(v) => patch(l.id, "modo", { modo: v as IngresoLine["modo"] })}>
-                    <SelectTrigger className="h-7 w-44 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="directo">Venta directa (MM/mes)</SelectItem>
-                      <SelectItem value="volumen">Volumen × ticket</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {!ro && (
-                    <Button variant="ghost" size="icon" className="ml-auto h-7 w-7" title="Eliminar línea de ingreso" onClick={() => remove(l.id)}>
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-end gap-4 text-xs">
-                  {l.modo === "directo" ? (
-                    <Labeled label="Venta año 1 (MM/mes)"><NumCell value={l.ventaMes} disabled={ro} w="w-24" onChange={(v) => patch(l.id, "ventaMes", { ventaMes: v })} /></Labeled>
-                  ) : (
-                    <>
-                      <Labeled label="Atenciones/mes (año 1)"><NumCell value={l.unidades} disabled={ro} w="w-24" onChange={(v) => patch(l.id, "unidades", { unidades: v })} /></Labeled>
-                      <Labeled label="Ticket promedio (CLP)"><NumCell value={l.ticket} disabled={ro} w="w-28" onChange={(v) => patch(l.id, "ticket", { ticket: v })} /></Labeled>
-                    </>
-                  )}
-                  <span className="pb-1 text-muted-foreground">Ingresos año 1: <b className="text-foreground">${fmtMM(rev?.total[1] ?? 0)} MM</b></span>
-                </div>
-
-                {/* Costo de venta de esta línea: se despliega según el margen ingresado */}
-                <div className="flex flex-wrap items-end gap-4 text-xs rounded bg-muted/30 px-2 py-1.5">
-                  <span className="pb-1 font-medium">Costo de venta</span>
-                  <Labeled label="Margen %">
-                    <Input type="number" step="any" disabled={ro} className="h-7 w-36 text-xs text-right px-1"
-                      value={l.margen ?? ""} placeholder={`= ${fmtPct(result.margenDirectoProm)} ponderado`}
-                      onChange={(e) => patch(l.id, "margen", { margen: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })} />
-                  </Labeled>
-                  <span className="pb-1 text-muted-foreground">Año 1: <b className="text-foreground">${fmtMM(Math.abs(cost?.total[1] ?? 0))} MM</b></span>
-                  <span className="pb-1 text-muted-foreground">Año 5: <b className="text-foreground">${fmtMM(Math.abs(cost?.total[5] ?? 0))} MM</b></span>
-                </div>
-              </div>
-            );
-          })}
+        <div className="overflow-x-auto p-2">
+          <table className="w-full text-xs whitespace-nowrap">
+            <thead>
+              <tr className="text-left text-muted-foreground">
+                <th className="px-1 pb-1 font-normal">Categoría</th>
+                <th className="px-1 pb-1 font-normal">Nombre</th>
+                <th className="px-1 pb-1 font-normal text-right">Valor unitario (CLP)</th>
+                <th className="px-1 pb-1 font-normal text-right">Unidades/día</th>
+                <th className="px-1 pb-1 font-normal text-right">Unidades/mes</th>
+                <th className="px-1 pb-1 font-normal text-right">Margen %</th>
+                <th className="px-1 pb-1 font-normal text-right">Ingresos año 1 (MM)</th>
+                <th className="px-1 pb-1 font-normal text-right">Costo de venta año 1 (MM)</th>
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.length === 0 && (
+                <tr><td colSpan={9} className="px-1 py-2 text-muted-foreground">Sin líneas de ingreso. Agrega una para comenzar.</td></tr>
+              )}
+              {lines.map((l) => {
+                const rev = ingresosNode ? findById(ingresosNode.children, l.id) : undefined;
+                const cost = costoVentasNode ? findById(costoVentasNode.children, `cv_${l.id}`) : undefined;
+                return (
+                  <tr key={l.id} className="border-t">
+                    <td className="px-1 py-1">
+                      <Input value={l.categoria} disabled={ro} list="autoplanet-categorias" onChange={(e) => patch(l.id, "categoria", { categoria: e.target.value })} className="h-7 w-40 text-xs" placeholder="Categoría" />
+                    </td>
+                    <td className="px-1 py-1">
+                      <Input value={l.nombre} disabled={ro} onChange={(e) => patch(l.id, "nombre", { nombre: e.target.value })} className="h-7 w-40 text-xs" placeholder="Nombre" />
+                    </td>
+                    <td className="px-1 py-1 text-right"><NumCell value={l.valorUnitario} disabled={ro} w="w-28" onChange={(v) => patch(l.id, "valorUnitario", { valorUnitario: v })} /></td>
+                    <td className="px-1 py-1 text-right"><NumCell value={l.unidadesDia} disabled={ro} w="w-20" onChange={(v) => patch(l.id, "unidadesDia", { unidadesDia: v })} /></td>
+                    <td className="px-1 py-1 text-right text-muted-foreground">{fmtMM((l.unidadesDia || 0) * (inputs.diasOperacionMes || 0), 0)}</td>
+                    <td className="px-1 py-1 text-right">
+                      <Input type="number" step="any" disabled={ro} className="h-7 w-28 text-xs text-right px-1"
+                        value={l.margen ?? ""} placeholder={fmtPct(result.margenDirectoProm)}
+                        title="Si se deja vacío usa el margen ponderado de las demás líneas"
+                        onChange={(e) => patch(l.id, "margen", { margen: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })} />
+                    </td>
+                    <td className="px-1 py-1 text-right font-medium">{fmtMM(rev?.total[1] ?? 0)}</td>
+                    <td className="px-1 py-1 text-right">{fmtMM(Math.abs(cost?.total[1] ?? 0))}</td>
+                    <td className="px-1 py-1 text-right">
+                      {!ro && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Eliminar línea de ingreso" onClick={() => remove(l.id)}>
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="px-1 pt-2 text-[11px] text-muted-foreground">
+            Unidades/mes = Unidades/día × días de operación al mes. Ingresos año 1 = Valor unitario × Unidades/mes × 12 meses. Si el margen se deja vacío, se usa el margen ponderado de las demás líneas (el que aparece en gris).
+          </p>
         </div>
       </div>
 
