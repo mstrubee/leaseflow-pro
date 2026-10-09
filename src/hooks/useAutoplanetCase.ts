@@ -120,7 +120,7 @@ export function useAutoplanetCase(caseId: string) {
     mutate(String(key), (p) => ({ ...p, [key]: value }));
   }, [mutate]);
 
-  const updateArr = useCallback((key: "ventaMes" | "ufRates", idx: number, value: number) => {
+  const updateArr = useCallback((key: "ventaCrec" | "ufRates", idx: number, value: number) => {
     mutate(`${key}.${idx}`, (p) => {
       const a = [...(p[key] || [])];
       a[idx] = value;

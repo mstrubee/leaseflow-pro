@@ -74,6 +74,7 @@ export const BLOCK_LABEL: Record<PnlBlock, string> = {
  * Proyecciones solo la muestra). Los montos se ingresan en positivo y siempre restan.
  *  - modo "monto": `valores` = MM CLP por año (índices 0..5).
  *  - modo "pct":   `valores` = % del total de Ingresos por año (índices 0..5).
+ *  - En «Otros costos directos» solo se usa el año 1 (`valores[1]`); los años 2..5 crecen con `otrosCostosCrec`.
  * `parentId` = clave de una línea base (no "ingresos"), id de otra línea, o null (raíz del bloque).
  * Una línea con hijas es un subtotal: sus valores propios se ignoran.
  */
@@ -87,23 +88,22 @@ export interface PnlLine {
 }
 
 /**
- * Fuente de ingreso (Supuestos → Origen y margen de los ingresos). Se suma a la "Venta base".
+ * Línea de ingreso (Supuestos → Ingresos y Costos Directos). Es hija de la única línea «Ingresos»
+ * y trae su propio «Costo de venta» mediante su margen.
  *  - `origen`: de dónde viene el ingreso (texto libre con sugerencias: Servicios, Repuestos…).
- *  - modo "directo": `ventaMes` = MM CLP/mes por año 1..5.
- *  - modo "volumen": `unidades` (atenciones/mes) × `ticket` (CLP por atención) por año 1..5.
- *  - `margen`: % de margen directo propio; null = usa el "Margen directo %" global.
- *  - `parentId`: otra fuente (la hija suma a su padre) o null (cuelga de "Ingresos").
- * Una fuente con hijas es un subtotal: sus valores propios se ignoran.
+ *  - modo "directo": `ventaMes` = MM CLP por mes en el año 1.
+ *  - modo "volumen": `unidades` (atenciones/mes) × `ticket` (CLP por atención) en el año 1.
+ *  - Los años 2..5 salen de aplicar la tasa de crecimiento anual de «Ventas y Crecimiento UF anual».
+ *  - `margen`: % de margen directo de la línea; null = usa el margen ponderado de las demás líneas.
  */
 export interface IngresoLine {
   id: string;
   nombre: string;
   origen: string;
-  parentId: string | null;
   modo: "directo" | "volumen";
-  ventaMes: number[];
-  unidades: number[];
-  ticket: number[];
+  ventaMes: number;
+  unidades: number;
+  ticket: number;
   margen: number | null;
 }
 
@@ -112,8 +112,8 @@ export interface PnlNode {
   label: string;
   base: boolean;
   sign: 1 | -1;
-  origen?: string; // solo fuentes de ingreso
-  margen?: number | null; // % propio de la fuente (null = global); solo fuentes de ingreso
+  origen?: string; // solo líneas de ingreso
+  margen?: number | null; // % propio de la línea de ingreso (null = ponderado)
   own: number[];
   total: number[]; // propio + hijas
   children: PnlNode[];
@@ -123,6 +123,10 @@ export interface AutoplanetInputs extends BCInputs {
   invLines: AutoInvLine[];
   ingresoLines: IngresoLine[];
   pnlLines: PnlLine[];
+  /** Crecimiento anual de las ventas en % para los años 2..5 (el año 1 sale de las líneas de ingreso). */
+  ventaCrec: number[];
+  /** Crecimiento anual en % de las líneas de «Otros costos directos» (modo monto) para los años 2..5. */
+  otrosCostosCrec: number[];
 }
 
 export interface AutoplanetResult {
@@ -135,6 +139,7 @@ export interface AutoplanetResult {
   ingresos: number[];
   costosDirectos: number[];
   margenCtrib: number[];
+  ventaMes: number[]; // venta mensual total (MM CLP/mes) de los años 1..5, derivada de las líneas de ingreso
   margenDirecto: number[]; // (Ingresos − costo de ventas) / Ingresos, ponderado por fuente
   margenDirectoProm: number; // fracción 0..1: margen ponderado de la venta (Márgenes y costos; default de fuentes sin margen propio)
   gavs: number[];
@@ -174,11 +179,8 @@ export function newPnlLine(bloque: PnlBlock, parentId: string | null, nombre = "
   return { id: newId("ln"), nombre, bloque, parentId, modo: "monto", valores: zeros() };
 }
 
-export function newIngresoLine(parentId: string | null = null, nombre = "Nueva fuente"): IngresoLine {
-  return {
-    id: newId("ing"), nombre, origen: "", parentId, modo: "directo", margen: null,
-    ventaMes: new Array(5).fill(0), unidades: new Array(5).fill(0), ticket: new Array(5).fill(0),
-  };
+export function newIngresoLine(nombre = "Nueva línea de ingreso"): IngresoLine {
+  return { id: newId("ing"), nombre, origen: "", modo: "directo", margen: null, ventaMes: 0, unidades: 0, ticket: 0 };
 }
 
 export function newInvLine(categoria: AutoInvCategory, nombre = "Nueva línea"): AutoInvLine {
@@ -233,7 +235,7 @@ export function buildDefaultAutoplanetInputs(seed: BCSeed = {}): AutoplanetInput
     { id: "gar", categoria: "garantia", nombre: "Garantía", metodo: "total", valor: 0 },
     { id: "inv", categoria: "inventario", nombre: "Inventario", metodo: "total", valor: 0 },
   ];
-  return { ...base, invLines, ingresoLines: [], pnlLines: [] };
+  return { ...base, invLines, ingresoLines: [], pnlLines: [], ventaCrec: [0, 0, 0, 0], otrosCostosCrec: [0, 0, 0, 0] };
 }
 
 /** Mezcla lo guardado con los defaults (tolera casos guardados con una versión anterior). */
@@ -244,23 +246,54 @@ export function mergeAutoplanetInputs(stored: Partial<AutoplanetInputs> | null |
     ...defaults,
     ...stored,
     invLines: Array.isArray(stored.invLines) ? stored.invLines : defaults.invLines,
-    ingresoLines: Array.isArray(stored.ingresoLines) ? stored.ingresoLines : [],
-    // Versión anterior permitía líneas bajo "Ingresos" en Proyecciones: ahora los ingresos se
-    // definen en Supuestos, así que esas líneas (y sus hijas) se descartan en lugar de sumarse como costos.
-    pnlLines: dropIngresoSubtree(Array.isArray(stored.pnlLines) ? stored.pnlLines : []),
+    ingresoLines: normalizeIngresoLines(stored.ingresoLines),
+    pnlLines: normalizePnlLines(stored.pnlLines),
+    ventaCrec: Array.isArray(stored.ventaCrec) ? stored.ventaCrec : defaults.ventaCrec,
+    otrosCostosCrec: Array.isArray(stored.otrosCostosCrec) ? stored.otrosCostosCrec : defaults.otrosCostosCrec,
   };
 }
 
-function dropIngresoSubtree(lines: PnlLine[]): PnlLine[] {
+const firstOf = (v: unknown): number => (Array.isArray(v) ? Number(v[0]) || 0 : Number(v) || 0);
+
+/**
+ * Versiones anteriores guardaban las líneas de ingreso con valores por año y con jerarquía.
+ * Ahora son planas y con valores del año 1: se toma el año 1 y se descartan las líneas que solo eran
+ * subtotales de otras (sus hijas quedan como líneas de ingreso).
+ */
+function normalizeIngresoLines(raw: unknown): IngresoLine[] {
+  if (!Array.isArray(raw)) return [];
+  const parents = new Set<string>(raw.map((l: { parentId?: string | null }) => l.parentId).filter((x): x is string => !!x));
+  return raw
+    .filter((l: { id: string }) => !parents.has(l.id))
+    .map((l: Partial<IngresoLine> & { id: string }) => ({
+      id: l.id, nombre: l.nombre ?? "", origen: l.origen ?? "",
+      modo: l.modo === "volumen" ? "volumen" : "directo",
+      ventaMes: firstOf(l.ventaMes), unidades: firstOf(l.unidades), ticket: firstOf(l.ticket),
+      margen: typeof l.margen === "number" ? l.margen : null,
+    }));
+}
+
+/**
+ * - Las líneas bajo «Ingresos» ya no existen en Proyecciones (los ingresos se definen en Supuestos): se descartan.
+ * - En Ingresos y Costos Directos solo se agregan líneas bajo «Otros costos directos»: las líneas de ese bloque
+ *   que colgaban de otra línea (o eran propias) pasan a colgar de «Otros costos directos».
+ */
+function normalizePnlLines(raw: unknown): PnlLine[] {
+  if (!Array.isArray(raw)) return [];
   const doomed = new Set<string>(["ingresos"]);
   let grew = true;
   while (grew) {
     grew = false;
-    for (const l of lines) {
+    for (const l of raw as PnlLine[]) {
       if (l.parentId && doomed.has(l.parentId) && !doomed.has(l.id)) { doomed.add(l.id); grew = true; }
     }
   }
-  return lines.filter((l) => !doomed.has(l.id));
+  const lines = (raw as PnlLine[]).filter((l) => !doomed.has(l.id));
+  const ids = new Set(lines.map((l) => l.id));
+  return lines.map((l) =>
+    l.bloque === "directos" && (l.parentId === null || !(ids.has(l.parentId) || l.parentId === "otrosCostos"))
+      ? { ...l, parentId: "otrosCostos" }
+      : l);
 }
 
 // ---------- cálculo ----------
@@ -290,56 +323,36 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
 
   // ----- Proyecciones: árbol de líneas (todo se deriva de Supuestos) -----
   const sf = inputs.scenario === "opt" ? 1.1 : inputs.scenario === "cons" ? 0.85 : 1.0;
-  const ventaBase = base.ingresos; // venta base de Supuestos (ya incluye escenario)
-  const mDir = (inputs.margenDir || 0) / 100;
 
-  // 1) Ingresos: venta base + fuentes de ingreso (cada una con su origen y margen).
-  const ingById = new Map(inputs.ingresoLines.map((l) => [l.id, l]));
-  const ingKids = new Map<string | null, IngresoLine[]>();
-  for (const l of inputs.ingresoLines) {
-    const key = l.parentId !== null && l.parentId !== l.id && ingById.has(l.parentId) ? l.parentId : null;
-    ingKids.set(key, [...(ingKids.get(key) ?? []), l]);
-  }
-  const monthly = (l: IngresoLine, y: number) =>
-    l.modo === "volumen" ? ((l.unidades[y] || 0) * (l.ticket[y] || 0)) / 1e6 : l.ventaMes[y] || 0;
-  const isLeaf = (l: IngresoLine) => !(ingKids.get(l.id)?.length);
-  const leafRev = (l: IngresoLine) =>
-    yearCols().map((i) => (i === 0 ? 0 : round(monthly(l, i - 1) * base.mesesArr[i] * sf, 2)));
+  // 1) Ingresos: una sola línea «Ingresos» con una hija por línea de ingreso. Cada una trae su costo de venta
+  //    (por su margen). El año 1 sale de la línea; los años 2..5 crecen con la tasa anual de Supuestos.
+  const growth = [0, 1];
+  for (let i = 2; i <= 5; i++) growth.push(growth[i - 1] * (1 + (inputs.ventaCrec?.[i - 2] || 0) / 100));
+  const monthly1 = (l: IngresoLine) => (l.modo === "volumen" ? ((l.unidades || 0) * (l.ticket || 0)) / 1e6 : l.ventaMes || 0);
+  const revOf = (l: IngresoLine) => yearCols().map((i) => (i === 0 ? 0 : round(monthly1(l) * growth[i] * base.mesesArr[i] * sf, 2)));
   const sumY15 = (a: number[]) => a.slice(1).reduce((x, y) => x + y, 0);
-  // Margen ponderado de la venta: promedio, ponderado por ingresos (años 1..5), de los márgenes ingresados
-  // explícitamente (venta base + fuentes con margen propio). Las fuentes sin margen propio usan este valor,
-  // por lo que el promedio final de todo el negocio coincide con él. Sin ingresos aún: promedio simple.
-  const explicit = [
-    { rev: sumY15(ventaBase), m: inputs.margenDir || 0 },
-    ...inputs.ingresoLines.filter((l) => isLeaf(l) && l.margen !== null).map((l) => ({ rev: sumY15(leafRev(l)), m: l.margen as number })),
-  ];
+  const ventaMes = [1, 2, 3, 4, 5].map((i) => inputs.ingresoLines.reduce((a, l) => a + monthly1(l), 0) * growth[i]);
+
+  // Margen ponderado de la venta: promedio, ponderado por ingresos (años 1..5), de los márgenes ingresados en
+  // cada línea. Una línea sin margen propio usa este valor (el promedio final coincide con él).
+  // Sin ingresos todavía: promedio simple de los márgenes ingresados.
+  const explicit = inputs.ingresoLines.filter((l) => l.margen !== null).map((l) => ({ rev: sumY15(revOf(l)), m: l.margen as number }));
   const explicitRev = explicit.reduce((a, e) => a + e.rev, 0);
   const margenPonderado = explicitRev > 0
     ? explicit.reduce((a, e) => a + e.m * e.rev, 0) / explicitRev
-    : explicit.reduce((a, e) => a + e.m, 0) / explicit.length;
-  const ingVisited = new Set<string>();
-  // Devuelve el nodo de ingreso y su espejo en Costo de Ventas (mismo árbol, con signo negativo).
-  const buildIngreso = (l: IngresoLine): { rev: PnlNode; cost: PnlNode } => {
-    ingVisited.add(l.id);
-    const kids = (ingKids.get(l.id) ?? []).filter((k) => !ingVisited.has(k.id)).map(buildIngreso);
+    : explicit.length ? explicit.reduce((a, e) => a + e.m, 0) / explicit.length : 0;
+
+  const ingresoTrees = inputs.ingresoLines.map((l) => {
+    const rev = revOf(l);
     const margen = l.margen ?? margenPonderado;
-    const isGroup = kids.length > 0;
-    const revOwn = isGroup ? zeros() : leafRev(l);
-    const costOwn = revOwn.map((v) => round(-v * (1 - (margen || 0) / 100), 2));
-    const rev: PnlNode = {
-      id: l.id, label: l.nombre, base: false, sign: 1, origen: l.origen, margen: l.margen,
-      own: revOwn, children: kids.map((k) => k.rev), total: sumArrays(revOwn, kids.map((k) => k.rev.total)),
-    };
-    const cost: PnlNode = {
-      id: `cv_${l.id}`, label: l.nombre, base: false, sign: -1,
-      own: costOwn, children: kids.map((k) => k.cost), total: sumArrays(costOwn, kids.map((k) => k.cost.total)),
-    };
-    return { rev, cost };
-  };
-  const ingresoTrees = (ingKids.get(null) ?? []).map(buildIngreso);
+    const costOwn = rev.map((v) => round(-v * (1 - (margen || 0) / 100), 2));
+    const revNode: PnlNode = { id: l.id, label: l.nombre, base: false, sign: 1, origen: l.origen, margen: l.margen, own: rev, children: [], total: rev };
+    const costNode: PnlNode = { id: `cv_${l.id}`, label: l.nombre, base: false, sign: -1, own: costOwn, children: [], total: costOwn };
+    return { rev: revNode, cost: costNode };
+  });
   const ingresosNode: PnlNode = {
-    id: "ingresos", label: "Ingresos", base: true, sign: 1, own: ventaBase, children: ingresoTrees.map((t) => t.rev),
-    total: sumArrays(ventaBase, ingresoTrees.map((t) => t.rev.total)),
+    id: "ingresos", label: "Ingresos", base: true, sign: 1, own: zeros(), children: ingresoTrees.map((t) => t.rev),
+    total: sumArrays(zeros(), ingresoTrees.map((t) => t.rev.total)),
   };
   const ing = ingresosNode.total;
 
@@ -357,26 +370,37 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
       rootsByBlock[l.bloque].push(l);
     }
   }
+  // Líneas de «Otros costos directos»: año 1 + crecimiento anual (como las ventas). Son un monto MM/año o un % de
+  // los Ingresos (este último ya crece con las ventas, por eso no lleva crecimiento propio). Año 0 = 0.
+  // Líneas de Gastos Operacionales: valor por año (años 0..5).
+  const costGrowth = [0, 1];
+  for (let i = 2; i <= 5; i++) costGrowth.push(costGrowth[i - 1] * (1 + (inputs.otrosCostosCrec?.[i - 2] || 0) / 100));
+  const ownOfLine = (l: PnlLine, i: number): number => {
+    if (l.bloque === "directos") {
+      if (i === 0) return 0;
+      const v = l.valores[1] || 0;
+      return round(-(l.modo === "pct" ? (ing[i] * v) / 100 : v * costGrowth[i]), 2);
+    }
+    const v = l.valores[i] || 0;
+    return round(-(l.modo === "pct" ? (ing[i] * v) / 100 : v), 2);
+  };
   const visited = new Set<string>();
   const buildCustom = (l: PnlLine): PnlNode => {
     visited.add(l.id);
     const kids = (childrenOf.get(l.id) ?? []).filter((k) => !visited.has(k.id)).map(buildCustom);
-    const own = kids.length > 0
-      ? zeros()
-      : yearCols().map((i) => round(-(l.modo === "pct" ? ing[i] * (l.valores[i] || 0) / 100 : l.valores[i] || 0), 2));
+    const own = kids.length > 0 ? zeros() : yearCols().map((i) => ownOfLine(l, i));
     return { id: l.id, label: l.nombre, base: false, sign: -1, own, children: kids, total: sumArrays(own, kids.map((k) => k.total)) };
   };
 
   // 3) Resto de líneas base: mismas fórmulas que contratos, sobre el ingreso total.
-  //    Costo de ventas: venta base con el margen global + cada fuente con su margen.
-  const oDir = (inputs.otrosCostosDir || 0) / 100;
+  //    Costo de ventas: solo las hijas (una por línea de ingreso). Otros costos directos: solo líneas hijas.
   const cVar = (inputs.costosVar || 0) / 100;
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
   const ocupPct = (inputs.ocupPct || 0) / 100;
   const baseOwn: Record<Exclude<PnlBaseKey, "ingresos">, number[]> = {
-    costoVentas: ventaBase.map((x) => round(-x * (1 - mDir), 2)),
-    otrosCostos: ing.map((x) => round(-x * oDir, 2)),
+    costoVentas: zeros(), // se compone de las líneas de ingreso (cada una con su margen)
+    otrosCostos: zeros(), // solo líneas hijas
     costosVar: ing.map((x) => round(-x * cVar, 2)),
     personal: base.personal,
     publicidad: base.publicidad,
@@ -429,7 +453,7 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
     canonUF: base.canonUF, garantiaUF: base.garantiaUF, mesesY1: base.mesesY1,
     inv: { groups: invGroups, total: invTotal, fisica, inventario },
     directos, operacionales,
-    ingresos: ing, costosDirectos, margenCtrib, margenDirecto, margenDirectoProm, gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, flujoOp, payback,
+    ingresos: ing, costosDirectos, margenCtrib, ventaMes, margenDirecto, margenDirectoProm, gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, flujoOp, payback,
     totalCapex: invTotal,
     tir: calcIRR(flujoOp),
     van: round(calcNPV(flujoOp, (inputs.waccRate || 0) / 100), 1),
