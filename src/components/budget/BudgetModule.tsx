@@ -64,6 +64,14 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  // Movidos acá arriba (antes vivían más abajo, junto al resto de hooks de
+  // contexto) porque handleFinishCapexLineSelection/handleEditOcRequired los
+  // usan en su arreglo de dependencias de useCallback -- ese arreglo se evalúa
+  // de inmediato durante el render (no es parte del cuerpo de la función), así
+  // que referenciarlos antes de su declaración original tiraba
+  // "ReferenceError: Cannot access before initialization" en producción.
+  const { toast } = useToast();
+  const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
 
   // "Ver Ppto/OC/Factura": líneas CAPEX con cotización/OC/factura asociada
   const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
@@ -552,9 +560,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [ocRequestLineBudget, setOcRequestLineBudget] = useState(0);
   const [ocRequestLineSupplierId, setOcRequestLineSupplierId] = useState<string | null>(null);
   const [ocRequestLineSupplierName, setOcRequestLineSupplierName] = useState<string | null>(null);
-  
-  const { toast } = useToast();
-  const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
+
   const { isAdmin, hasPermission } = useAuth();
 
   // Budget granular permissions — parent grant (contract_budget:edit) covers all sub-actions
