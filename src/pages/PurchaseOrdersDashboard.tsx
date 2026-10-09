@@ -457,6 +457,10 @@ const PurchaseOrdersDashboard = () => {
   // Selection for deletion
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
+  // Selección (por quotationNumber) para acotar la exportación de
+  // "Requerimientos de OC" -- mismo patrón que selectedRequests, pero acá
+  // solo se usa para exportar (no hay borrado masivo en esta pestaña).
+  const [selectedRequired, setSelectedRequired] = useState<Set<string>>(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
   /** Distingue qué flujo disparó el diálogo: "orders" o "requests" */
@@ -1344,6 +1348,24 @@ const PurchaseOrdersDashboard = () => {
     };
   }, [ocRequests, yearFilter, isAdmin]);
 
+  // Requerimientos de OC summary -- misma forma que requestSummary
+  const requiredSummary = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const yearRequired = ocRequiredGroups.filter((g) => parseISO(g.quotationDate).getFullYear() === yearNum);
+
+    const pending = yearRequired.filter((g) => !g.converted);
+    const converted = yearRequired.filter((g) => g.converted);
+
+    return {
+      total: yearRequired.length,
+      totalAmount: yearRequired.reduce((sum, g) => sum + (g.amountUf || 0), 0),
+      pending: pending.length,
+      pendingAmount: pending.reduce((sum, g) => sum + (g.amountUf || 0), 0),
+      converted: converted.length,
+      convertedAmount: converted.reduce((sum, g) => sum + (g.amountUf || 0), 0),
+    };
+  }, [ocRequiredGroups, yearFilter]);
+
   // OC PDF Viewer dialog state
   const [showOCViewerDialog, setShowOCViewerDialog] = useState(false);
   const [viewerOCData, setViewerOCData] = useState<{
@@ -1409,6 +1431,18 @@ const PurchaseOrdersDashboard = () => {
     });
   };
 
+  const toggleRequiredSelection = (quotationNumber: string) => {
+    setSelectedRequired(prev => {
+      const next = new Set(prev);
+      if (next.has(quotationNumber)) {
+        next.delete(quotationNumber);
+      } else {
+        next.add(quotationNumber);
+      }
+      return next;
+    });
+  };
+
   // Delete selected requests
   const handleDeleteSelectedRequests = async () => {
     if (selectedRequests.size === 0) return;
@@ -1438,7 +1472,10 @@ const PurchaseOrdersDashboard = () => {
   // Export requests to Excel
   const exportRequestsToExcel = () => {
     const yearNum = parseInt(yearFilter);
-    const data = filteredRequests.map(r => ({
+    const sourceRequests = selectedRequests.size > 0
+      ? filteredRequests.filter(r => selectedRequests.has(r.id))
+      : filteredRequests;
+    const data = sourceRequests.map(r => ({
       "Número Solicitud": r.request_number,
       "Fecha": r.request_date,
       "Proyecto": r.project_name,
@@ -1464,6 +1501,38 @@ const PurchaseOrdersDashboard = () => {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Solicitudes exportadas a Excel");
+  };
+
+  // Export required (Requerimientos de OC) to Excel
+  const exportRequiredToExcel = () => {
+    const yearNum = parseInt(yearFilter);
+    const sourceRequired = selectedRequired.size > 0
+      ? filteredRequired.filter(g => selectedRequired.has(g.quotationNumber))
+      : filteredRequired;
+    const data = sourceRequired.map(g => ({
+      "Requerimiento": g.quotationNumber,
+      "Fecha": g.quotationDate,
+      "Proyecto": g.projectName,
+      "Línea": g.lines.map(l => l.lineName).join(", "),
+      "Proveedor": g.supplierName || "",
+      "Monto UF": g.amountUf.toFixed(2),
+      "Estado": g.converted ? "Convertida" : "Pendiente",
+    }));
+
+    const headers = Object.keys(data[0] || {});
+    const csvContent = [
+      headers.join(","),
+      ...data.map(row => headers.map(h => `"${(row as any)[h] || ""}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `requerimientos_oc_${yearNum}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Requerimientos exportados a Excel");
   };
 
   // Selection handlers
@@ -2903,124 +2972,6 @@ const PurchaseOrdersDashboard = () => {
           </div>
         </div>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-3 items-center">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por OC, título, local o proveedor..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              <ContractSearchSelect
-                value={contractFilter}
-                onValueChange={setContractFilter}
-                contracts={contracts}
-                placeholder="Local"
-                showAllOption
-                allOptionLabel="Todos los locales"
-                allOptionValue="todos"
-                triggerClassName="w-[180px]"
-              />
-
-              <SearchableSelect
-                value={classificationFilter}
-                onValueChange={setClassificationFilter}
-                options={[
-                  { value: "todos", label: "Todos" },
-                  { value: "CAPEX", label: "CAPEX" },
-                  { value: "OPEX", label: "OPEX" },
-                ]}
-                placeholder="Tipo"
-                triggerClassName="w-[140px]"
-              />
-
-              <SearchableSelect
-                value={categoryFilter}
-                onValueChange={setCategoryFilter}
-                options={[
-                  { value: "todos", label: "Todas las categorías" },
-                  ...opexCategories.map((c) => ({ value: c.id, label: c.name })),
-                ]}
-                placeholder="Categoría"
-                triggerClassName="w-[180px]"
-              />
-
-              <SearchableSelect
-                value={amountFilter}
-                onValueChange={setAmountFilter}
-                options={[
-                  { value: "todos", label: "Todos los montos" },
-                  { value: "0-100", label: "0 - 100 UF" },
-                  { value: "100-500", label: "100 - 500 UF" },
-                  { value: "500-1000", label: "500 - 1.000 UF" },
-                  { value: "1000+", label: "+1.000 UF" },
-                ]}
-                placeholder="Monto"
-                triggerClassName="w-[150px]"
-              />
-
-              <SearchableSelect
-                value={originFilter}
-                onValueChange={setOriginFilter}
-                options={[
-                  { value: "todos", label: "Todos los orígenes" },
-                  { value: "importada", label: "Importada (I)" },
-                  { value: "digitada", label: "Digitada (D)" },
-                ]}
-                placeholder="Origen"
-                triggerClassName="w-[140px]"
-              />
-
-              <SearchableSelect
-                value={attachmentFilter}
-                onValueChange={setAttachmentFilter}
-                options={[
-                  { value: "todos", label: "Todas (PDF)" },
-                  { value: "con_pdf", label: "Con PDF" },
-                  { value: "sin_pdf", label: "Sin PDF" },
-                ]}
-                placeholder="PDF"
-                triggerClassName="w-[130px]"
-              />
-
-              {hasActiveFilters && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="h-4 w-4 mr-1" />
-                  Limpiar
-                </Button>
-              )}
-            </div>
-            
-            {(chartContractFilter || chartCategoryFilter) && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Filtro del gráfico:</span>
-                {chartContractFilter && (
-                  <Badge variant="secondary">
-                    Local: {contracts.find(c => c.id === chartContractFilter)?.name}
-                    <button className="ml-1" onClick={() => setChartContractFilter(null)}>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
-                {chartCategoryFilter && (
-                  <Badge variant="secondary">
-                    Categoría: {opexCategories.find(c => c.id === chartCategoryFilter)?.name}
-                    <button className="ml-1" onClick={() => setChartCategoryFilter(null)}>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Tabs for OC and Requests */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3 mb-4">
@@ -3039,6 +2990,147 @@ const PurchaseOrdersDashboard = () => {
           </TabsList>
 
           <TabsContent value="oc">
+            {/* Filters -- antes vivía arriba de las pestañas y se mostraba
+                siempre, duplicando el buscador con el de las otras pestañas
+                (cada una tiene el suyo propio, dentro de su TabsContent). */}
+            <Card className="mb-4">
+              <CardContent className="pt-4">
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="OC, título, local o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Local</Label>
+                    <ContractSearchSelect
+                      value={contractFilter}
+                      onValueChange={setContractFilter}
+                      contracts={contracts}
+                      placeholder="Local"
+                      showAllOption
+                      allOptionLabel="Todos los locales"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Tipo</Label>
+                    <SearchableSelect
+                      value={classificationFilter}
+                      onValueChange={setClassificationFilter}
+                      options={[
+                        { value: "todos", label: "Todos" },
+                        { value: "CAPEX", label: "CAPEX" },
+                        { value: "OPEX", label: "OPEX" },
+                      ]}
+                      placeholder="Tipo"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Categoría</Label>
+                    <SearchableSelect
+                      value={categoryFilter}
+                      onValueChange={setCategoryFilter}
+                      options={[
+                        { value: "todos", label: "Todas las categorías" },
+                        ...opexCategories.map((c) => ({ value: c.id, label: c.name })),
+                      ]}
+                      placeholder="Categoría"
+                      triggerClassName="w-[180px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Monto</Label>
+                    <SearchableSelect
+                      value={amountFilter}
+                      onValueChange={setAmountFilter}
+                      options={[
+                        { value: "todos", label: "Todos los montos" },
+                        { value: "0-100", label: "0 - 100 UF" },
+                        { value: "100-500", label: "100 - 500 UF" },
+                        { value: "500-1000", label: "500 - 1.000 UF" },
+                        { value: "1000+", label: "+1.000 UF" },
+                      ]}
+                      placeholder="Monto"
+                      triggerClassName="w-[150px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Origen</Label>
+                    <SearchableSelect
+                      value={originFilter}
+                      onValueChange={setOriginFilter}
+                      options={[
+                        { value: "todos", label: "Todos los orígenes" },
+                        { value: "importada", label: "Importada (I)" },
+                        { value: "digitada", label: "Digitada (D)" },
+                      ]}
+                      placeholder="Origen"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">PDF</Label>
+                    <SearchableSelect
+                      value={attachmentFilter}
+                      onValueChange={setAttachmentFilter}
+                      options={[
+                        { value: "todos", label: "Todas (PDF)" },
+                        { value: "con_pdf", label: "Con PDF" },
+                        { value: "sin_pdf", label: "Sin PDF" },
+                      ]}
+                      placeholder="PDF"
+                      triggerClassName="w-[130px]"
+                    />
+                  </div>
+
+                  {hasActiveFilters && (
+                    <Button variant="ghost" size="sm" onClick={clearFilters} className="shrink-0">
+                      <X className="h-4 w-4 mr-1" />
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+
+                {(chartContractFilter || chartCategoryFilter) && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Filtro del gráfico:</span>
+                    {chartContractFilter && (
+                      <Badge variant="secondary">
+                        Local: {contracts.find(c => c.id === chartContractFilter)?.name}
+                        <button className="ml-1" onClick={() => setChartContractFilter(null)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {chartCategoryFilter && (
+                      <Badge variant="secondary">
+                        Categoría: {opexCategories.find(c => c.id === chartCategoryFilter)?.name}
+                        <button className="ml-1" onClick={() => setChartCategoryFilter(null)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Orders List - Grouped by order_number */}
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -3972,11 +4064,14 @@ const PurchaseOrdersDashboard = () => {
                 </CardContent>
               </Card>
               <Card className="flex items-center justify-center">
-                <CardContent className="py-4">
+                <CardContent className="py-4 flex flex-col items-center gap-1">
                   <Button onClick={exportRequestsToExcel} variant="outline" className="gap-2" disabled={filteredRequests.length === 0}>
                     <Download className="h-4 w-4" />
                     Exportar Excel
                   </Button>
+                  {selectedRequests.size > 0 && (
+                    <p className="text-xs text-muted-foreground">{selectedRequests.size} seleccionada(s)</p>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -3984,41 +4079,51 @@ const PurchaseOrdersDashboard = () => {
             {/* Status Filter for Requests */}
             <Card className="mb-4">
               <CardContent className="pt-4">
-                <div className="flex flex-wrap gap-3 items-center">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar por OC, título, local o proveedor..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9"
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="OC, título, local o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Proyecto</Label>
+                    <ContractSearchSelect
+                      value={contractFilter}
+                      onValueChange={setContractFilter}
+                      contracts={contracts}
+                      placeholder="Proyecto"
+                      showAllOption
+                      allOptionLabel="Todos los proyectos"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
                     />
                   </div>
-                  <ContractSearchSelect
-                    value={contractFilter}
-                    onValueChange={setContractFilter}
-                    contracts={contracts}
-                    placeholder="Proyecto"
-                    showAllOption
-                    allOptionLabel="Todos los proyectos"
-                    allOptionValue="todos"
-                    triggerClassName="w-[180px]"
-                  />
-                  <SearchableSelect
-                    value={requestStatusFilter}
-                    onValueChange={setRequestStatusFilter}
-                    options={[
-                      { value: "todos", label: "Todos" },
-                      { value: "pending", label: "Pendientes" },
-                      { value: "converted", label: "Convertidas" },
-                    ]}
-                    placeholder="Estado"
-                    triggerClassName="w-[140px]"
-                  />
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Estado</Label>
+                    <SearchableSelect
+                      value={requestStatusFilter}
+                      onValueChange={setRequestStatusFilter}
+                      options={[
+                        { value: "todos", label: "Todos" },
+                        { value: "pending", label: "Pendientes" },
+                        { value: "converted", label: "Convertidas" },
+                      ]}
+                      placeholder="Estado"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
                   {isAdmin && selectedRequests.size > 0 && (
                     <Button
                       variant="destructive"
                       size="sm"
+                      className="shrink-0"
                       onClick={() => { setDeleteMode("requests"); setShowDeleteDialog(true); }}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
@@ -4223,40 +4328,100 @@ const PurchaseOrdersDashboard = () => {
           </TabsContent>
 
           <TabsContent value="requeridas">
+            {/* Requerimientos de OC Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4" />
+                    Total Requerimientos
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{requiredSummary.total}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.totalAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Pendientes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-amber-600">{requiredSummary.pending}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.pendingAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Convertidas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{requiredSummary.converted}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.convertedAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card className="flex items-center justify-center">
+                <CardContent className="py-4 flex flex-col items-center gap-1">
+                  <Button onClick={exportRequiredToExcel} variant="outline" className="gap-2" disabled={filteredRequired.length === 0}>
+                    <Download className="h-4 w-4" />
+                    Exportar Excel
+                  </Button>
+                  {selectedRequired.size > 0 && (
+                    <p className="text-xs text-muted-foreground">{selectedRequired.size} seleccionada(s)</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             {/* Filtros: Buscar, Contrato, Pendientes/Convertidas -- mismo patrón que Solicitudes de OC */}
             <Card className="mb-4">
               <CardContent className="pt-4">
-                <div className="flex flex-wrap gap-3 items-center">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar por OC, título, local o proveedor..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9"
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="OC, título, local o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Proyecto</Label>
+                    <ContractSearchSelect
+                      value={requeridasContractFilter}
+                      onValueChange={setRequeridasContractFilter}
+                      contracts={contracts}
+                      placeholder="Proyecto"
+                      showAllOption
+                      allOptionLabel="Todos los proyectos"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
                     />
                   </div>
-                  <ContractSearchSelect
-                    value={requeridasContractFilter}
-                    onValueChange={setRequeridasContractFilter}
-                    contracts={contracts}
-                    placeholder="Proyecto"
-                    showAllOption
-                    allOptionLabel="Todos los proyectos"
-                    allOptionValue="todos"
-                    triggerClassName="w-[180px]"
-                  />
-                  <SearchableSelect
-                    value={requeridasStatusFilter}
-                    onValueChange={setRequeridasStatusFilter}
-                    options={[
-                      { value: "todos", label: "Todos" },
-                      { value: "pending", label: "Pendientes" },
-                      { value: "converted", label: "Convertidas" },
-                    ]}
-                    placeholder="Estado"
-                    triggerClassName="w-[140px]"
-                  />
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Estado</Label>
+                    <SearchableSelect
+                      value={requeridasStatusFilter}
+                      onValueChange={setRequeridasStatusFilter}
+                      options={[
+                        { value: "todos", label: "Todos" },
+                        { value: "pending", label: "Pendientes" },
+                        { value: "converted", label: "Convertidas" },
+                      ]}
+                      placeholder="Estado"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -4277,6 +4442,7 @@ const PurchaseOrdersDashboard = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[40px]"></TableHead>
                         <TableHead className="w-[30px]"></TableHead>
                         <TableHead>Requerimiento</TableHead>
                         <TableHead>Fecha</TableHead>
@@ -4304,6 +4470,12 @@ const PurchaseOrdersDashboard = () => {
                                 })
                               }
                             >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedRequired.has(group.quotationNumber)}
+                                  onCheckedChange={() => toggleRequiredSelection(group.quotationNumber)}
+                                />
+                              </TableCell>
                               <TableCell>
                                 {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                               </TableCell>
@@ -4339,7 +4511,7 @@ const PurchaseOrdersDashboard = () => {
                             </TableRow>
                             {isOpen && (
                               <TableRow>
-                                <TableCell colSpan={8} className="bg-muted/30">
+                                <TableCell colSpan={9} className="bg-muted/30">
                                   <div className="py-2 px-2 space-y-2">
                                     {group.filePath && (
                                       <div className="flex justify-end">
