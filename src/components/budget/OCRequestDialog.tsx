@@ -248,7 +248,10 @@ export const OCRequestDialog = ({
       return;
     }
 
-    if (!form.supplier_id) {
+    // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
+    // supplier_id (ver SupplierSelect.handleSavePublicEntity: onChange(null, name)) --
+    // exigir solo supplier_id bloqueaba la creación para ese caso legítimo.
+    if (!form.supplier_id && !form.supplier_name?.trim()) {
       toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
       return;
     }
@@ -480,9 +483,13 @@ export const OCRequestDialog = ({
   const totalPlanned = paymentPlan.reduce((sum, p, idx) => sum + resolvePaymentClp(p, idx), 0);
   const totalClpForPayments = form.currency === "CLP" ? (parseFloat(form.amount) || 0) : (parseFloat(form.amount) || 0) * ufValue;
   // Amount is always from the form
-  const currentTotal = form.currency === "CLP" && ufValue > 0 
-    ? (parseFloat(form.amount) || 0) / ufValue 
+  const currentTotal = form.currency === "CLP" && ufValue > 0
+    ? (parseFloat(form.amount) || 0) / ufValue
     : parseFloat(form.amount) || 0;
+  // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
+  // supplier_id (ver SupplierSelect.handleSavePublicEntity) -- exigir solo
+  // supplier_id bloqueaba avanzar para ese caso legítimo.
+  const hasSupplier = !!form.supplier_id || !!form.supplier_name?.trim();
 
   return (
     <>
@@ -501,7 +508,7 @@ export const OCRequestDialog = ({
             <TabsTrigger value="lines">Líneas de Presupuesto</TabsTrigger>
             <TabsTrigger value="quote">Adjuntar Presupuesto</TabsTrigger>
             <TabsTrigger value="basic" disabled={!quoteFile}>Datos Básicos</TabsTrigger>
-            <TabsTrigger value="payments" disabled={!form.supplier_id || !(parseFloat(form.amount) > 0)}>Plan de Pagos</TabsTrigger>
+            <TabsTrigger value="payments" disabled={!hasSupplier || !(parseFloat(form.amount) > 0)}>Plan de Pagos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="quote" className="space-y-4 mt-4">
@@ -659,7 +666,7 @@ export const OCRequestDialog = ({
               <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
               <Button
                 onClick={() => setActiveTab("payments")}
-                disabled={!form.supplier_id || !(parseFloat(form.amount) > 0)}
+                disabled={!hasSupplier || !(parseFloat(form.amount) > 0)}
                 className="flex-1"
               >
                 Continuar a Plan de Pagos

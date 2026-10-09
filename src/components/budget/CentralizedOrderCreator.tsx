@@ -553,7 +553,11 @@ export const CentralizedOrderCreator = ({
   
   // Parse entered amount
   const enteredAmount = parseFloat(formData.amount) || 0;
-  
+  // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
+  // supplier_id (ver SupplierSelect.handleSavePublicEntity) -- exigir solo
+  // supplier_id bloqueaba avanzar para ese caso legítimo.
+  const hasSupplier = !!formData.supplier_id || !!formData.supplier_name?.trim();
+
   // Converted amount display
   const convertedAmount = useMemo(() => {
     if (formData.currency === "CLP") {
@@ -754,7 +758,10 @@ export const CentralizedOrderCreator = ({
     // para nada, sea CAPEX u OPEX). En "order" se mantiene el criterio
     // anterior (solo CAPEX) para no cambiar ese flujo sin que se haya pedido.
     if (mode === "request" || budgetType === "capex") {
-      if (!formData.supplier_id) {
+      // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
+      // supplier_id (ver SupplierSelect.handleSavePublicEntity) -- exigir solo
+      // supplier_id bloqueaba la creación para ese caso legítimo.
+      if (!formData.supplier_id && !formData.supplier_name?.trim()) {
         toast({ title: "Falta el proveedor", description: "Debe seleccionar un proveedor para crear la solicitud.", variant: "destructive" });
         return;
       }
@@ -1258,7 +1265,7 @@ export const CentralizedOrderCreator = ({
                 <TabsTrigger value="contracts">{budgetType === "opex" ? "Categoría y Contrato" : "Líneas de Presupuesto"}</TabsTrigger>
                 <TabsTrigger value="quote">Adjuntar Presupuesto</TabsTrigger>
                 <TabsTrigger value="basic" disabled={!quotationFile}>Datos Básicos</TabsTrigger>
-                <TabsTrigger value="payments" disabled={!formData.supplier_id || !(enteredAmount > 0)}>Plan de Pagos</TabsTrigger>
+                <TabsTrigger value="payments" disabled={!hasSupplier || !(enteredAmount > 0)}>Plan de Pagos</TabsTrigger>
               </TabsList>
             ) : (
               <TabsList className="grid grid-cols-3 shrink-0">
@@ -1460,7 +1467,7 @@ export const CentralizedOrderCreator = ({
                     <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
                     <Button
                       onClick={() => setActiveTab("payments")}
-                      disabled={!formData.supplier_id || !(enteredAmount > 0)}
+                      disabled={!hasSupplier || !(enteredAmount > 0)}
                       className="flex-1"
                     >
                       Continuar a Plan de Pagos

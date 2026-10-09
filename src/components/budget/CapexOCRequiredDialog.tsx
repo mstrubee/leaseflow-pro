@@ -216,7 +216,12 @@ export function CapexOCRequiredDialog({
     paymentPlan.filter((p) => parseFloat(p.amount) > 0).map((p) => Math.round(parseFloat(p.amount) || 0)),
     montoClp
   );
-  const montoValido = montoClp > 0 && !!supplierId && paymentPlan.length > 0 && !paymentPlanError;
+  // Un "Organismo público" (Municipalidad, Serviu, MOP, etc.) u otro proveedor
+  // en texto libre se guarda SIN supplier_id (ver SupplierSelect.handleSavePublicEntity:
+  // onChange(null, name)) -- exigir solo supplierId bloqueaba "Aceptar" para
+  // siempre en ese caso, sin ningún mensaje visible.
+  const hasSupplier = !!supplierId || !!supplierName?.trim();
+  const montoValido = montoClp > 0 && hasSupplier && paymentPlan.length > 0 && !paymentPlanError;
 
   const targetLines = [originLine, ...finalAdditionalLines];
   const authorizedTotalUf = targetLines
@@ -523,7 +528,21 @@ export function CapexOCRequiredDialog({
               >
                 Seleccionar líneas adicionales
               </Button>
-              <Button disabled={!montoValido} onClick={() => { setFinalAdditionalLines([]); setStep("summary"); }}>
+              <Button
+                disabled={!montoValido}
+                onClick={() => { setFinalAdditionalLines([]); setStep("summary"); }}
+                title={
+                  montoValido
+                    ? undefined
+                    : montoClp <= 0
+                    ? "Ingresa el monto requerido de la OC"
+                    : !hasSupplier
+                    ? "Selecciona un proveedor"
+                    : paymentPlan.length === 0
+                    ? "Agrega al menos un pago al plan de pagos"
+                    : paymentPlanError || undefined
+                }
+              >
                 Aceptar
               </Button>
             </>
