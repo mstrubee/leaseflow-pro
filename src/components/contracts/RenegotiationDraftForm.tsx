@@ -64,6 +64,7 @@ export function RenegotiationDraftForm({
   // Canon arriendo
   const [hasEscalation, setHasEscalation] = useState(false);
   const [graceMonths, setGraceMonths] = useState(0);
+  const [graceGgccApplies, setGraceGgccApplies] = useState(true);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
@@ -107,7 +108,7 @@ export function RenegotiationDraftForm({
   // Avisos
   const [noticeType, setNoticeType] = useState<"meses" | "fecha" | "rangos" | "desde_mes">("meses");
   const [noticeValue, setNoticeValue] = useState("");
-  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">("unilateral_gp");
   const [noticeRanges, setNoticeRanges] = useState<NoticeRange[]>([]);
 
   useEffect(() => {
@@ -124,6 +125,7 @@ export function RenegotiationDraftForm({
       setHasEscalation(hasEsc);
       
       setGraceMonths(draft.grace_months || 0);
+      setGraceGgccApplies(draft.grace_ggcc_applies ?? true);
       setInitialRent(draft.initial_rent?.toString() || "");
       setRegimeRent(draft.regime_rent?.toString() || "");
       setVariableRentPercentage(draft.variable_rent_percentage?.toString() || "");
@@ -157,7 +159,7 @@ export function RenegotiationDraftForm({
       
       setNoticeType((draft.notice_type as "meses" | "fecha" | "rangos") || "meses");
       setNoticeValue(draft.notice_value || "");
-      setNoticeBilaterality((draft.notice_bilaterality as "unilateral_gp" | "bilateral") || "unilateral_gp");
+      setNoticeBilaterality((draft.notice_bilaterality as "unilateral_gp" | "unilateral_arrendador" | "bilateral") || "unilateral_gp");
       
       setEscalations(draft.escalations?.map(e => ({ month_number: e.month_number, amount: e.amount })) || []);
       setNoticeRanges(draft.notice_ranges?.map(r => ({ start_month: r.start_month, end_month: r.end_month })) || []);
@@ -220,6 +222,7 @@ export function RenegotiationDraftForm({
       variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
       guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
       grace_months: graceMonths || null,
+      grace_ggcc_applies: graceGgccApplies,
       has_periodic_adjustments: hasPeriodicAdjustments,
       adjustment_type: hasPeriodicAdjustments ? adjustmentType : null,
       adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
@@ -466,9 +469,12 @@ export function RenegotiationDraftForm({
                           initialRent={parseFloat(initialRent) || 0}
                           regimeRent={parseFloat(regimeRent) || 0}
                           durationMonths={parseInt(durationMonths) || 12}
+                          durationSet={parseInt(durationMonths) > 0}
                           currency={currency}
                           graceMonths={graceMonths}
                           onGraceMonthsChange={setGraceMonths}
+                          ggccAppliesInGrace={graceGgccApplies}
+                          onGgccAppliesInGraceChange={setGraceGgccApplies}
                           effectiveDate={effectiveFromSignature ? undefined : effectiveDate}
                           hasPeriodicAdjustments={hasPeriodicAdjustments}
                           adjustmentType={adjustmentType}
@@ -497,6 +503,8 @@ export function RenegotiationDraftForm({
                         value={graceMonths}
                         onChange={setGraceMonths}
                         maxMonths={parseInt(durationMonths) || 12}
+                        ggccAppliesInGrace={graceGgccApplies}
+                        onGgccAppliesInGraceChange={setGraceGgccApplies}
                       />
                     </div>
                   </>
@@ -878,12 +886,16 @@ export function RenegotiationDraftForm({
                   <Label>Bilateralidad del Aviso</Label>
                   <RadioGroup
                     value={noticeBilaterality}
-                    onValueChange={(value: "unilateral_gp" | "bilateral") => setNoticeBilaterality(value)}
-                    className="flex gap-4"
+                    onValueChange={(value: "unilateral_gp" | "unilateral_arrendador" | "bilateral") => setNoticeBilaterality(value)}
+                    className="flex flex-wrap gap-4"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="unilateral_gp" id="unilateralGp" />
                       <Label htmlFor="unilateralGp">Unilateral GP</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="unilateral_arrendador" id="unilateralArrendadorDraft" />
+                      <Label htmlFor="unilateralArrendadorDraft" className="text-destructive">Unilateral Arrendador</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="bilateral" id="bilateral" />

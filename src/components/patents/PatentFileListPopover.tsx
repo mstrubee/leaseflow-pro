@@ -5,6 +5,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { FileText, ExternalLink, Trash2, CloudOff, Cloud, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 import { toast } from "sonner";
 
 interface PatentFileListPopoverProps {
@@ -122,11 +123,11 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
       });
 
       // Detect irrecoverable (410): file lost from both storage and Drive.
-      const errMsg = String(error?.message || '');
+      const errMsg = error ? await getFunctionErrorMessage(error, '') : '';
       const isIrrecoverable =
         (data as any)?.irrecoverable === true ||
         errMsg.includes('410') ||
-        /no recuperable/i.test((data as any)?.error || '');
+        /no recuperable/i.test((data as any)?.error || errMsg);
 
       if (isIrrecoverable) {
         setFiles(prev => {
@@ -139,7 +140,7 @@ export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onR
       }
 
       if (error || !data?.id) {
-        const msg = (data as any)?.error || error?.message || 'Error';
+        const msg = (data as any)?.error || errMsg || 'Error';
         toast.error(`No se pudo reintentar: ${msg}`);
         setFiles(prev => {
           const updated = [...prev];

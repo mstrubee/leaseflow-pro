@@ -35,6 +35,10 @@ interface MultipleLinesSelectorProps {
   year?: number; // Required for OPEX master budget
   contractId?: string; // Used for OPEX local additional
   ufValue?: number; // Used for CLP conversion display in CAPEX lines
+  /** Al editar una solicitud existente, excluye su propio consumo del cálculo
+   * de disponible (si no, se restaría a sí misma y el disponible quedaría
+   * subestimado). No aplica al crear una solicitud nueva. */
+  excludeRequestId?: string;
 }
 
 export const MultipleLinesSelector = ({
@@ -46,7 +50,8 @@ export const MultipleLinesSelector = ({
   maxTotal,
   year,
   contractId,
-  ufValue
+  ufValue,
+  excludeRequestId
 }: MultipleLinesSelectorProps) => {
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +68,26 @@ export const MultipleLinesSelector = ({
       setIsOpexMaster(false);
       loadLines();
     }
-  }, [budgetId, year]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgetId, year, excludeRequestId]);
+
+  // Mantiene el maxAmount de líneas ya preseleccionadas (ej. al editar una
+  // solicitud existente, precargadas desde el padre) sincronizado con el
+  // disponible recién calculado, en vez de quedarse con el valor aproximado
+  // inicial que puso el padre.
+  useEffect(() => {
+    if (Object.keys(availableAmounts).length === 0) return;
+    const needsSync = selectedLines.some(
+      sl => availableAmounts[sl.lineId] !== undefined && availableAmounts[sl.lineId] !== sl.maxAmount
+    );
+    if (!needsSync) return;
+    onSelectionChange(
+      selectedLines.map(sl =>
+        availableAmounts[sl.lineId] !== undefined ? { ...sl, maxAmount: availableAmounts[sl.lineId] } : sl
+      )
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableAmounts]);
 
   const loadOpexMasterCategories = async () => {
     if (!year) return;
@@ -104,7 +128,7 @@ export const MultipleLinesSelector = ({
           .is("deleted_at", null),
         supabase
           .from("oc_requests")
-          .select("amount_clp, opex_master_id")
+          .select("id, amount_clp, opex_master_id")
           .in("opex_master_id", opexIds)
           .eq("status", "pending")
       ]);
@@ -115,7 +139,7 @@ export const MultipleLinesSelector = ({
           .filter(oc => oc.opex_master_id === line.id)
           .reduce((sum, oc) => sum + (oc.amount_clp || 0), 0);
         const usedByRequests = (requestsResult.data || [])
-          .filter(r => r.opex_master_id === line.id)
+          .filter(r => r.opex_master_id === line.id && r.id !== excludeRequestId)
           .reduce((sum, r) => sum + (r.amount_clp || 0), 0);
         const budgetAmount = Math.abs(line.amount_clp || 0);
         available[line.id] = Math.max(0, Math.round(budgetAmount - usedByOC - usedByRequests));
@@ -163,7 +187,7 @@ export const MultipleLinesSelector = ({
           .is("deleted_at", null),
         supabase
           .from("oc_requests")
-          .select("amount_uf, budget_line_id")
+          .select("id, amount_uf, budget_line_id")
           .in("budget_line_id", leafIds)
           .eq("status", "pending")
       ]);
@@ -174,7 +198,7 @@ export const MultipleLinesSelector = ({
           .filter(oc => oc.budget_line_id === line.id)
           .reduce((sum, oc) => sum + oc.amount_uf, 0);
         const usedByRequests = (requestsResult.data || [])
-          .filter(r => r.budget_line_id === line.id)
+          .filter(r => r.budget_line_id === line.id && r.id !== excludeRequestId)
           .reduce((sum, r) => sum + r.amount_uf, 0);
         available[line.id] = Math.max(0, Math.round((line.amount_uf - usedByOC - usedByRequests) * 10000) / 10000);
       }
@@ -289,11 +313,13 @@ export const MultipleLinesSelector = ({
 
   const handleLineToggle = (line: BudgetLine, checked: boolean) => {
     if (checked) {
-      // Add line for imputation (amount=0 since it's set in the form, maxAmount for reference)
+      // Se precarga con el disponible completo (no 0) -- así la línea queda
+      // usable de inmediato con un monto real; el usuario la reduce si
+      // corresponde. Antes quedaba en 0.00 hasta que alguien la editara a mano.
       const maxAmount = availableAmounts[line.id] || 0;
       onSelectionChange([
         ...selectedLines,
-        { lineId: line.id, lineName: line.name, amount: 0, maxAmount }
+        { lineId: line.id, lineName: line.name, amount: maxAmount, maxAmount }
       ]);
     } else {
       // Remove line
@@ -302,6 +328,35 @@ export const MultipleLinesSelector = ({
   };
 
   const isLineSelected = (lineId: string) => selectedLines.some(sl => sl.lineId === lineId);
+
+  // No se permite ingresar un monto mayor al disponible de la línea — se acota
+  // automáticamente al máximo en vez de dejar pasar un valor inválido.
+  const handleAmountChange = (lineId: string, value: string) => {
+    const parsed = parseFloat(value) || 0;
+    onSelectionChange(
+      selectedLines.map(sl =>
+        sl.lineId === lineId ? { ...sl, amount: Math.max(0, Math.min(parsed, sl.maxAmount)) } : sl
+      )
+    );
+  };
+
+  // El monto sigue guardándose en UF internamente (mismo dato que
+  // budget_lines.amount_uf) -- esto solo convierte lo que el usuario TIPEA en
+  // CLP de vuelta a UF antes de guardarlo.
+  const handleAmountChangeClp = (lineId: string, value: string) => {
+    const parsedClp = parseFloat(value) || 0;
+    const parsedUf = ufValue && ufValue > 0 ? parsedClp / ufValue : 0;
+    onSelectionChange(
+      selectedLines.map(sl =>
+        sl.lineId === lineId ? { ...sl, amount: Math.max(0, Math.min(parsedUf, sl.maxAmount)) } : sl
+      )
+    );
+  };
+
+  // CAPEX (no OPEX) con ufValue disponible: el monto se edita en CLP,
+  // mostrando la UF equivalente entre paréntesis -- para OPEX el monto ya es
+  // nativo en CLP, sin equivalencia en UF que mostrar.
+  const showClpAmounts = !isOpexMaster && !!formatCLP && !!ufValue && ufValue > 0;
 
   const renderLine = (line: BudgetLine, level: number = 0): React.ReactNode => {
     // Hide branches that have no authorized leaves (non-authorized leaves + their
@@ -380,7 +435,10 @@ export const MultipleLinesSelector = ({
 
   return (
     <div className="space-y-3">
-      <Label>Seleccionar Línea(s) de Imputación</Label>
+      {/* OPEX no tiene "línea" por contrato como CAPEX: es una categoría de
+          gasto de la empresa (opex_master_budget). Mismo componente, texto
+          distinto para no confundir los dos conceptos. */}
+      <Label>{budgetId === "opex_master" ? "Seleccionar Categoría(s) OPEX" : "Seleccionar Línea(s) de Imputación"}</Label>
 
       {/* Search input */}
       <div className="relative">
@@ -409,13 +467,56 @@ export const MultipleLinesSelector = ({
       </ScrollArea>
 
       {selectedLines.length > 0 && (
-        <div className="p-3 bg-muted/50 rounded-lg space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Líneas seleccionadas ({selectedLines.length}):</p>
-          {selectedLines.map(sl => (
-            <div key={sl.lineId} className="text-sm">
-              <span className="truncate">• {sl.lineName}</span>
+        <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+          {formatCLP && (
+            <div className="flex items-center justify-between pb-2 border-b">
+              <span className="text-xs font-medium text-muted-foreground">Total líneas seleccionadas</span>
+              <span className="text-sm font-semibold">
+                {formatCLP(
+                  showClpAmounts
+                    ? selectedLines.reduce((s, l) => s + l.amount, 0) * (ufValue as number)
+                    : selectedLines.reduce((s, l) => s + l.amount, 0)
+                )}
+              </span>
             </div>
-          ))}
+          )}
+          <p className="text-xs font-medium text-muted-foreground">Líneas seleccionadas ({selectedLines.length}):</p>
+          {selectedLines.map(sl => {
+            const atMax = sl.maxAmount > 0 && sl.amount >= sl.maxAmount;
+            return (
+              <div key={sl.lineId} className="flex items-center gap-2">
+                <span className="text-sm flex-1 truncate">{sl.lineName}</span>
+                <div className="flex flex-col items-end shrink-0">
+                  {showClpAmounts ? (
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={sl.amount ? Math.round(sl.amount * (ufValue as number)).toLocaleString("es-CL") : ""}
+                      onChange={(e) => handleAmountChangeClp(sl.lineId, e.target.value.replace(/\D/g, ""))}
+                      className={cn("h-7 text-right font-mono w-[130px] text-xs", atMax && "border-amber-400")}
+                      placeholder="$0"
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={sl.maxAmount}
+                      value={sl.amount || ""}
+                      onChange={(e) => handleAmountChange(sl.lineId, e.target.value)}
+                      className={cn("h-7 text-right font-mono w-[110px] text-xs", atMax && "border-amber-400")}
+                      placeholder="0.00"
+                    />
+                  )}
+                  <span className={cn("text-[10px]", atMax ? "text-amber-600" : "text-muted-foreground")}>
+                    {showClpAmounts
+                      ? `(UF ${sl.amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) · Disp: ${formatCLP!(Math.round(sl.maxAmount * (ufValue as number)))}`
+                      : `Disp: ${formatUF(sl.maxAmount)}`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -57,6 +57,7 @@ import {
   ChevronsUpDown,
   X,
   FileText,
+  FileX,
   Receipt,
   Trash2,
   ExternalLink,
@@ -81,20 +82,25 @@ import {
   ArrowUp,
   ArrowDown,
   FileSpreadsheet,
+  Wrench,
+  Eye,
+  Paperclip,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
+import { OCBulkAttachDialog } from "@/components/budget/OCBulkAttachDialog";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
+import { CentralizedOrderCreator, buildHierarchicalCapexLines, loadCapexLineUsage, filterCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
 import { Building2, Store } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
@@ -143,6 +149,7 @@ interface PurchaseOrder {
   is_multi_contract?: boolean;
   allocations?: ContractAllocation[];
   import_batch_id?: string | null;
+  attachment_url?: string | null;
 }
 
 interface OCRequest {
@@ -172,6 +179,32 @@ interface Contract {
   id: string;
   name: string;
   company_names?: string[];
+}
+
+interface OCRequiredGroupLine {
+  budgetLineId: string;
+  lineName: string;
+  amountUf: number;
+  status: string;
+}
+
+/** Un requerimiento de OC = un quotation_number en oc_quotations, agrupando
+ *  todas las líneas CAPEX que comparten esa cotización. Ver también
+ *  src/components/budget/OCRequiredList.tsx (misma agrupación, pero acotada a
+ *  un solo contrato) -- acá es la vista cross-contrato de /purchase-orders. */
+interface OCRequiredGroup {
+  quotationNumber: string;
+  contractId: string;
+  projectName: string;
+  quotationDate: string;
+  amountClp: number;
+  amountUf: number;
+  filePath: string | null;
+  fileName: string | null;
+  lines: OCRequiredGroupLine[];
+  converted: boolean;
+  supplierId: string | null;
+  supplierName: string | null;
 }
 
 interface OpexCategory {
@@ -204,8 +237,26 @@ interface GroupedOrder {
   year: number;
   is_multi_contract: boolean;
   is_imported: boolean;
+  /** true solo si TODAS las filas del grupo tienen PDF adjunto — en una OC
+   *  multi-contrato, si falta en cualquiera, se considera incompleta. */
+  has_attachment: boolean;
   orders: PurchaseOrder[]; // Individual orders that make up this group
   contracts: { contract_id: string; contract_name: string; amount_uf: number; order_id: string }[];
+}
+
+interface MaintenanceFormOption {
+  id: string;
+  form_number: string;
+  general_description: string | null;
+  electrical_description: string | null;
+  civil_description: string | null;
+  hvac_description: string | null;
+  fixed_assets_description: string | null;
+  created_date: string | null;
+}
+
+function getFormDescription(f: MaintenanceFormOption): string {
+  return f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-";
 }
 
 const COLORS = [
@@ -227,7 +278,12 @@ type OCSortField = "local" | "order_number" | "description" | "supplier" | "type
 
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
-  const { user, loading: authLoading, isAdmin } = useAuth();
+  const { user, loading: authLoading, isAdmin, hasPermission } = useAuth();
+  // Mismo criterio que ya usan las políticas RLS de purchase_orders
+  // (hasPermission ya cubre "all" internamente, no solo "edit"): cualquier
+  // perfil con ese permiso asignado desde Admin > Roles (p. ej. "Equipo
+  // Desarrollo") queda habilitado acá, sin hardcodear el nombre del rol.
+  const canManagePurchaseOrders = hasPermission("purchase_orders", "edit");
   const { ufValue } = useEconomicIndicators();
   const { openFile, getSecureUrl } = useSecureFileAccess();
   const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
@@ -242,14 +298,21 @@ const PurchaseOrdersDashboard = () => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   
   // CAPEX budgets assigned by admin
-  const [capexBudgets, setCapexBudgets] = useState<{ contract_id: string; contract_name: string; amount_uf: number; year: number }[]>([]);
+  const [capexBudgets, setCapexBudgets] = useState<{ budget_id: string; contract_id: string; contract_name: string; amount_uf: number; year: number }[]>([]);
+  // Total autorizado por presupuesto (solo líneas status="autorizado"); null = aún no calculado
+  const [capexAuthorizedByBudget, setCapexAuthorizedByBudget] = useState<Record<string, number> | null>(null);
   
   // Centralized creator dialogs
   const [showRequestCreator, setShowRequestCreator] = useState(false);
   const [showOrderCreator, setShowOrderCreator] = useState(false);
   const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
+  const [ocRequiredGroups, setOcRequiredGroups] = useState<OCRequiredGroup[]>([]);
+  const [expandedRequired, setExpandedRequired] = useState<Set<string>>(new Set());
+  const [requeridasContractFilter, setRequeridasContractFilter] = useState("todos");
+  const [requeridasStatusFilter, setRequeridasStatusFilter] = useState("todos");
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string; is_generic: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("oc");
 
@@ -300,6 +363,7 @@ const PurchaseOrdersDashboard = () => {
 
   // Edit OC dialog states
   const [showEditOCDialog, setShowEditOCDialog] = useState(false);
+  const [showBulkAttachDialog, setShowBulkAttachDialog] = useState(false);
   const [editingOCData, setEditingOCData] = useState({
     order_number: "",
     description: "",
@@ -309,10 +373,30 @@ const PurchaseOrdersDashboard = () => {
     attachment_url: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
-  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_clp: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string }[]>([]);
+  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_clp: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string; maintenance_form_ids: string[] }[]>([]);
   const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
+  // Maintenance form assignment (per contract) for the Editar OC dialog
+  const [editingOCContractForms, setEditingOCContractForms] = useState<Record<string, MaintenanceFormOption[]>>({});
+  const [editingOCFormsSortAsc, setEditingOCFormsSortAsc] = useState(false);
+  const [editingOCViewingForm, setEditingOCViewingForm] = useState<MaintenanceFormOption | null>(null);
+  // Original maintenance_form_ids per order.id, captured when the dialog opens — used to diff on save
+  const [editingOCInitialFormIdsByOrderId, setEditingOCInitialFormIdsByOrderId] = useState<Record<string, string[]>>({});
   const [updatingOC, setUpdatingOC] = useState(false);
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
+
+  // CAPEX budget-line editing for the Edit OC dialog. Permite corregir a mano
+  // las OCs antiguas de CAPEX que quedaron sin líneas — sin bloquear el guardado.
+  const [editOCIsCapex, setEditOCIsCapex] = useState(false);
+  const [editOCCapexYear, setEditOCCapexYear] = useState<number>(new Date().getFullYear());
+  const [editCapexLinesByContract, setEditCapexLinesByContract] = useState<Record<string, CapexBudgetLine[]>>({});
+  const [editCapexBudgetIdByContract, setEditCapexBudgetIdByContract] = useState<Record<string, string | null>>({});
+  const [editCapexSelections, setEditCapexSelections] = useState<Record<string, string[]>>({});
+  const [editCapexInitialSelections, setEditCapexInitialSelections] = useState<Record<string, string[]>>({});
+  const [editCapexLineUsage, setEditCapexLineUsage] = useState<Record<string, number>>({});
+  const [editCapexLineSearch, setEditCapexLineSearch] = useState<Record<string, string>>({});
+  // Order ids of the OC being edited — excluded from line usage so the OC
+  // doesn't count against its own available budget
+  const editCapexExcludeOrderIdsRef = useRef<string[]>([]);
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
   const invoiceFileInputRef = useRef<HTMLInputElement>(null);
@@ -343,6 +427,8 @@ const PurchaseOrdersDashboard = () => {
   const [categoryFilter, setCategoryFilter] = useState("todos");
   const [classificationFilter, setClassificationFilter] = useState("todos");
   const [amountFilter, setAmountFilter] = useState("todos");
+  const [originFilter, setOriginFilter] = useState("todos");
+  const [attachmentFilter, setAttachmentFilter] = useState("todos");
   const [requestStatusFilter, setRequestStatusFilter] = useState("todos");
 
   // Chart-based filters
@@ -371,6 +457,10 @@ const PurchaseOrdersDashboard = () => {
   // Selection for deletion
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
+  // Selección (por quotationNumber) para acotar la exportación de
+  // "Requerimientos de OC" -- mismo patrón que selectedRequests, pero acá
+  // solo se usa para exportar (no hay borrado masivo en esta pestaña).
+  const [selectedRequired, setSelectedRequired] = useState<Set<string>>(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
   /** Distingue qué flujo disparó el diálogo: "orders" o "requests" */
@@ -411,6 +501,7 @@ const PurchaseOrdersDashboard = () => {
     if (supplierParam) {
       setSearchTerm(supplierParam);
       // Clean the URL param after applying
+      if (window.location.pathname !== "/purchase-orders") return;
       searchParams.delete("supplier");
       setSearchParams(searchParams, { replace: true });
     }
@@ -438,6 +529,13 @@ const PurchaseOrdersDashboard = () => {
         .eq("is_active", true)
         .order("display_order");
       setOpexCategories(categoriesData || []);
+
+      // Load suppliers (for the searchable supplier selector in the edit dialog)
+      const { data: suppliersData } = await supabase
+        .from("suppliers")
+        .select("id, name, is_generic")
+        .order("name", { ascending: true });
+      setSuppliers(suppliersData || []);
 
       // Load contract-company relationships
       const { data: contractCompaniesData } = await supabase
@@ -474,10 +572,11 @@ const PurchaseOrdersDashboard = () => {
           supplier_name,
           is_multi_contract,
           import_batch_id,
+          attachment_url,
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
-          invoices(id, invoice_number, invoice_date, amount_uf, reception_status, deleted_at, attachment_url)
+          invoices(id, invoice_number, invoice_date, amount_uf, amount_clp, uf_value_at_entry, reception_status, deleted_at, attachment_url)
         `)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
@@ -571,17 +670,74 @@ const PurchaseOrdersDashboard = () => {
       // Load CAPEX budgets assigned by admin (from contract_budgets table)
       const { data: capexBudgetsData } = await supabase
         .from("contract_budgets")
-        .select("contract_id, amount_uf, year, contracts(name)")
+        .select("id, contract_id, amount_uf, year, contracts(name)")
         .eq("budget_type", "capex")
         .gt("amount_uf", 0);
 
       const processedCapexBudgets = (capexBudgetsData || []).map((budget: any) => ({
+        budget_id: budget.id,
         contract_id: budget.contract_id,
         contract_name: budget.contracts?.name || "Sin contrato",
         amount_uf: budget.amount_uf || 0,
         year: budget.year,
       }));
       setCapexBudgets(processedCapexBudgets);
+
+      // Load "OC Requeridas" (requerimientos de OC) -- oc_quotations agrupadas
+      // por quotation_number, igual que en OCRequiredList.tsx pero sin filtrar
+      // por contrato (esta vista es cross-contrato).
+      const { data: quotationsData } = await supabase
+        .from("oc_quotations")
+        .select("*")
+        .order("quotation_date", { ascending: false });
+      const quotationRows = (quotationsData || []) as any[];
+
+      if (quotationRows.length > 0) {
+        const lineIds = [...new Set(quotationRows.map((r) => r.budget_line_id))];
+        const { data: linesData } = await supabase
+          .from("budget_lines")
+          .select("id, status")
+          .in("id", lineIds);
+        const statusByLine = new Map((linesData || []).map((l: any) => [l.id, l.status as string]));
+
+        const quotationNumbers = [...new Set(quotationRows.map((r) => r.quotation_number))];
+        const { data: convertedReqsData } = await supabase
+          .from("oc_requests")
+          .select("source_quotation_number")
+          .in("source_quotation_number", quotationNumbers);
+        const convertedSet = new Set((convertedReqsData || []).map((r: any) => r.source_quotation_number).filter(Boolean));
+
+        const groupsByNumber = new Map<string, OCRequiredGroup>();
+        for (const r of quotationRows) {
+          let group = groupsByNumber.get(r.quotation_number);
+          if (!group) {
+            group = {
+              quotationNumber: r.quotation_number,
+              contractId: r.contract_id,
+              projectName: r.project_name,
+              quotationDate: r.quotation_date,
+              amountClp: r.amount_clp || 0,
+              amountUf: r.amount_uf || 0,
+              filePath: r.file_path,
+              fileName: r.file_name,
+              lines: [],
+              converted: convertedSet.has(r.quotation_number),
+              supplierId: r.supplier_id ?? null,
+              supplierName: r.supplier_name ?? null,
+            };
+            groupsByNumber.set(r.quotation_number, group);
+          }
+          group.lines.push({
+            budgetLineId: r.budget_line_id,
+            lineName: r.line_name,
+            amountUf: Number(r.amount_uf) || 0,
+            status: statusByLine.get(r.budget_line_id) || "no_autorizado",
+          });
+        }
+        setOcRequiredGroups(Array.from(groupsByNumber.values()));
+      } else {
+        setOcRequiredGroups([]);
+      }
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -626,22 +782,46 @@ const PurchaseOrdersDashboard = () => {
     setShowConvertDialog(true);
   };
 
-  // Chart data for CAPEX budgets assigned by admin (from contract_budgets)
-  const capexLocalChartData = useMemo(() => {
+  // Total CAPEX autorizado por presupuesto: suma solo líneas status="autorizado",
+  // usando la misma cañería que el módulo de presupuestos (loadBudgetTotals)
+  useEffect(() => {
     const yearNum = parseInt(yearFilter);
-    // Filter CAPEX budgets by year
-    const filtered = capexBudgets.filter(b => b.year === yearNum && b.amount_uf > 0);
-    
-    return filtered
-      .map((budget, index) => ({
+    const budgetIds = capexBudgets.filter(b => b.year === yearNum).map(b => b.budget_id);
+    if (budgetIds.length === 0) {
+      setCapexAuthorizedByBudget({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
+        if (cancelled) return;
+        const map: Record<string, number> = {};
+        totals.forEach((t, id) => { map[id] = t.authorized; });
+        setCapexAuthorizedByBudget(map);
+      } catch {
+        if (!cancelled) setCapexAuthorizedByBudget({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [capexBudgets, yearFilter, ufValue]);
+
+  // Chart data for CAPEX autorizado por local
+  const capexLocalChartData = useMemo(() => {
+    if (!capexAuthorizedByBudget) return [];
+    const yearNum = parseInt(yearFilter);
+    return capexBudgets
+      .filter(b => b.year === yearNum)
+      .map(budget => ({
         id: budget.contract_id,
         name: budget.contract_name,
-        value: budget.amount_uf,
-        color: COLORS[index % COLORS.length],
+        value: capexAuthorizedByBudget[budget.budget_id] ?? 0,
       }))
+      .filter(d => d.value > 0)
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10);
-  }, [capexBudgets, yearFilter]);
+      .slice(0, 10)
+      .map((d, index) => ({ ...d, color: COLORS[index % COLORS.length] }));
+  }, [capexBudgets, capexAuthorizedByBudget, yearFilter]);
 
   // Chart data for OPEX by local
   const opexLocalChartData = useMemo(() => {
@@ -947,14 +1127,29 @@ const PurchaseOrdersDashboard = () => {
         year: firstOrder.year || yearNum,
         is_multi_contract: isMulti,
         is_imported: !!firstOrder.import_batch_id,
+        has_attachment: ordersList.every((o) => !!o.attachment_url),
         orders: ordersList,
         contracts,
       });
     });
 
+    // Filtro de Origen: se aplica sobre el resultado YA agrupado, no fila por
+    // fila — is_imported se calcula recién al agrupar (una OC multi-contrato
+    // podría tener filas mezcladas), así que filtrar antes podría no
+    // coincidir con lo que la columna "Origen" muestra en pantalla.
+    const originFiltered = originFilter === "todos"
+      ? result
+      : result.filter((g) => (originFilter === "importada" ? g.is_imported : !g.is_imported));
+
+    // Mismo criterio que el filtro de Origen: se aplica sobre el resultado ya
+    // agrupado, porque has_attachment también se calcula recién al agrupar.
+    const attachmentFiltered = attachmentFilter === "todos"
+      ? originFiltered
+      : originFiltered.filter((g) => (attachmentFilter === "con_pdf" ? g.has_attachment : !g.has_attachment));
+
     // Sort based on current sort state
     const dir = sortDirection === "asc" ? 1 : -1;
-    return result.sort((a, b) => {
+    return attachmentFiltered.sort((a, b) => {
       switch (sortField) {
         case "local": {
           const aName = a.contracts[0]?.contract_name || "";
@@ -986,7 +1181,7 @@ const PurchaseOrdersDashboard = () => {
         }
       }
     });
-  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
+  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, originFilter, attachmentFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -1027,6 +1222,8 @@ const PurchaseOrdersDashboard = () => {
     setCategoryFilter("todos");
     setClassificationFilter("todos");
     setAmountFilter("todos");
+    setOriginFilter("todos");
+    setAttachmentFilter("todos");
     setRequestStatusFilter("todos");
     setChartContractFilter(null);
     setChartCategoryFilter(null);
@@ -1038,6 +1235,8 @@ const PurchaseOrdersDashboard = () => {
     categoryFilter !== "todos" ||
     classificationFilter !== "todos" ||
     amountFilter !== "todos" ||
+    originFilter !== "todos" ||
+    attachmentFilter !== "todos" ||
     requestStatusFilter !== "todos" ||
     chartContractFilter ||
     chartCategoryFilter;
@@ -1090,6 +1289,32 @@ const PurchaseOrdersDashboard = () => {
     return filtered;
   }, [ocRequests, yearFilter, searchTerm, contractFilter, requestStatusFilter, isAdmin]);
 
+  const filteredRequired = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    let filtered = ocRequiredGroups.filter((g) => parseISO(g.quotationDate).getFullYear() === yearNum);
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((g) =>
+        g.quotationNumber.toLowerCase().includes(term) ||
+        g.projectName?.toLowerCase().includes(term) ||
+        g.supplierName?.toLowerCase().includes(term) ||
+        g.lines.some((l) => l.lineName.toLowerCase().includes(term))
+      );
+    }
+
+    if (requeridasContractFilter !== "todos") {
+      filtered = filtered.filter((g) => g.contractId === requeridasContractFilter);
+    }
+
+    if (requeridasStatusFilter !== "todos") {
+      const wantConverted = requeridasStatusFilter === "converted";
+      filtered = filtered.filter((g) => g.converted === wantConverted);
+    }
+
+    return filtered;
+  }, [ocRequiredGroups, yearFilter, searchTerm, requeridasContractFilter, requeridasStatusFilter]);
+
   // OC Request summary - only count pending for display (converted are hidden)
   const requestSummary = useMemo(() => {
     const yearNum = parseInt(yearFilter);
@@ -1122,6 +1347,24 @@ const PurchaseOrdersDashboard = () => {
       convertedAmount: converted.reduce((sum, r) => sum + (r.amount_uf || 0), 0),
     };
   }, [ocRequests, yearFilter, isAdmin]);
+
+  // Requerimientos de OC summary -- misma forma que requestSummary
+  const requiredSummary = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const yearRequired = ocRequiredGroups.filter((g) => parseISO(g.quotationDate).getFullYear() === yearNum);
+
+    const pending = yearRequired.filter((g) => !g.converted);
+    const converted = yearRequired.filter((g) => g.converted);
+
+    return {
+      total: yearRequired.length,
+      totalAmount: yearRequired.reduce((sum, g) => sum + (g.amountUf || 0), 0),
+      pending: pending.length,
+      pendingAmount: pending.reduce((sum, g) => sum + (g.amountUf || 0), 0),
+      converted: converted.length,
+      convertedAmount: converted.reduce((sum, g) => sum + (g.amountUf || 0), 0),
+    };
+  }, [ocRequiredGroups, yearFilter]);
 
   // OC PDF Viewer dialog state
   const [showOCViewerDialog, setShowOCViewerDialog] = useState(false);
@@ -1188,6 +1431,18 @@ const PurchaseOrdersDashboard = () => {
     });
   };
 
+  const toggleRequiredSelection = (quotationNumber: string) => {
+    setSelectedRequired(prev => {
+      const next = new Set(prev);
+      if (next.has(quotationNumber)) {
+        next.delete(quotationNumber);
+      } else {
+        next.add(quotationNumber);
+      }
+      return next;
+    });
+  };
+
   // Delete selected requests
   const handleDeleteSelectedRequests = async () => {
     if (selectedRequests.size === 0) return;
@@ -1217,7 +1472,10 @@ const PurchaseOrdersDashboard = () => {
   // Export requests to Excel
   const exportRequestsToExcel = () => {
     const yearNum = parseInt(yearFilter);
-    const data = filteredRequests.map(r => ({
+    const sourceRequests = selectedRequests.size > 0
+      ? filteredRequests.filter(r => selectedRequests.has(r.id))
+      : filteredRequests;
+    const data = sourceRequests.map(r => ({
       "Número Solicitud": r.request_number,
       "Fecha": r.request_date,
       "Proyecto": r.project_name,
@@ -1243,6 +1501,38 @@ const PurchaseOrdersDashboard = () => {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Solicitudes exportadas a Excel");
+  };
+
+  // Export required (Requerimientos de OC) to Excel
+  const exportRequiredToExcel = () => {
+    const yearNum = parseInt(yearFilter);
+    const sourceRequired = selectedRequired.size > 0
+      ? filteredRequired.filter(g => selectedRequired.has(g.quotationNumber))
+      : filteredRequired;
+    const data = sourceRequired.map(g => ({
+      "Requerimiento": g.quotationNumber,
+      "Fecha": g.quotationDate,
+      "Proyecto": g.projectName,
+      "Línea": g.lines.map(l => l.lineName).join(", "),
+      "Proveedor": g.supplierName || "",
+      "Monto UF": g.amountUf.toFixed(2),
+      "Estado": g.converted ? "Convertida" : "Pendiente",
+    }));
+
+    const headers = Object.keys(data[0] || {});
+    const csvContent = [
+      headers.join(","),
+      ...data.map(row => headers.map(h => `"${(row as any)[h] || ""}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `requerimientos_oc_${yearNum}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Requerimientos exportados a Excel");
   };
 
   // Selection handlers
@@ -1598,18 +1888,211 @@ const PurchaseOrdersDashboard = () => {
   };
 
   // Handle edit OC
+  // Load maintenance forms "En Proceso" for a contract, plus any already-assigned forms
+  // (even if their status has since moved on) so an existing assignment never silently disappears.
+  const loadFormsForEditOC = async (contractId: string, includeFormIds: string[] = []) => {
+    try {
+      const { data: proceso } = await supabase
+        .from("maintenance_forms")
+        .select("id, form_number, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, created_date")
+        .eq("contract_id", contractId)
+        .eq("status", "proceso")
+        .is("deleted_at", null)
+        .order("created_date", { ascending: false });
+
+      let forms = proceso || [];
+      const missingIds = includeFormIds.filter(id => !forms.some(f => f.id === id));
+      if (missingIds.length > 0) {
+        const { data: extra } = await supabase
+          .from("maintenance_forms")
+          .select("id, form_number, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, created_date")
+          .in("id", missingIds);
+        forms = [...forms, ...(extra || [])];
+      }
+
+      setEditingOCContractForms(prev => ({ ...prev, [contractId]: forms }));
+    } catch (error) {
+      console.error("Error loading forms:", error);
+    }
+  };
+
+  // Load the CAPEX budget lines of one contract (for the edit dialog picker)
+  const loadCapexLinesForEditOC = async (contractId: string, year: number) => {
+    try {
+      const { data: budgetData } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .eq("budget_type", "capex");
+      const budgetIds = (budgetData || []).map(b => b.id);
+      let lines: CapexBudgetLine[] = [];
+      if (budgetIds.length > 0) {
+        const { data: linesData } = await supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, budget_id, parent_id, display_order")
+          .in("budget_id", budgetIds)
+          .is("deleted_at", null);
+        lines = buildHierarchicalCapexLines(linesData || []);
+      }
+      setEditCapexBudgetIdByContract(prev => ({ ...prev, [contractId]: budgetIds[0] || null }));
+      setEditCapexLinesByContract(prev => ({ ...prev, [contractId]: lines }));
+      if (lines.length > 0) {
+        const usage = await loadCapexLineUsage(lines.map(l => l.id), editCapexExcludeOrderIdsRef.current);
+        setEditCapexLineUsage(prev => ({ ...prev, ...usage }));
+      }
+    } catch (error) {
+      console.error("Error loading CAPEX budget lines:", error);
+    }
+  };
+
+  const toggleEditCapexLine = (contractId: string, line: CapexBudgetLine) => {
+    const contractLines = editCapexLinesByContract[contractId] || [];
+    const descendants: string[] = [];
+    const collect = (id: string) => {
+      contractLines.forEach(l => {
+        if (l.parent_id === id) {
+          descendants.push(l.id);
+          collect(l.id);
+        }
+      });
+    };
+    collect(line.id);
+    const affected = [line.id, ...descendants];
+    setEditCapexSelections(prev => {
+      const current = prev[contractId] || [];
+      const willCheck = !current.includes(line.id);
+      const next = willCheck
+        ? Array.from(new Set([...current, ...affected]))
+        : current.filter(id => !affected.includes(id));
+      return { ...prev, [contractId]: next };
+    });
+  };
+
+  const [changingTypeOrderNumber, setChangingTypeOrderNumber] = useState<string | null>(null);
+  // Tipo original de las filas de orders antes de reflejar optimistamente un
+  // cambio de CAPEX/OPEX pendiente de completar en el diálogo. Si el diálogo
+  // se cierra sin guardar (Cancelar, X, clic afuera), se revierte con esto en
+  // vez de dejar el listado mostrando un tipo que nunca se persistió.
+  const pendingTypeRevertRef = useRef<{ orderIds: string[]; previousType: string | null } | null>(null);
+
+  const closeEditOCDialog = () => {
+    if (pendingTypeRevertRef.current) {
+      const { orderIds, previousType } = pendingTypeRevertRef.current;
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: previousType } : o
+      ));
+      pendingTypeRevertRef.current = null;
+    }
+    setShowEditOCDialog(false);
+  };
+
+  /**
+   * Cambio directo de CAPEX/OPEX desde el badge de la fila, sin pasar por el
+   * diálogo completo. Solo se permite cuando el dato adicional que exige el
+   * nuevo tipo ya existe en TODAS las filas de la OC (línea de presupuesto
+   * para CAPEX, categoría para OPEX): si falta, se abre el diálogo de edición
+   * en vez de guardar a medias, para no dejar una OC CAPEX sin línea o una
+   * OPEX sin categoría.
+   */
+  const handleChangeOCType = async (groupedOrder: GroupedOrder, newType: "CAPEX" | "OPEX") => {
+    if (groupedOrder.budget_classification === newType) return;
+
+    const missingRequiredField = newType === "CAPEX"
+      ? groupedOrder.orders.some(o => !o.budget_line_id)
+      : groupedOrder.orders.some(o => !o.opex_category_id);
+
+    const orderIds = groupedOrder.orders.map(o => o.id);
+
+    if (missingRequiredField) {
+      // El diálogo deriva "es CAPEX" leyendo orders en vivo (ver
+      // editingOCFirstOrder más abajo), así que para que abra ya con el tipo
+      // elegido hay que reflejarlo ahí ANTES de abrirlo — no existe un campo
+      // de tipo en editingOCData. El valor se persiste recién al Guardar del
+      // diálogo, así que hasta entonces sigue siendo solo un estado local.
+      pendingTypeRevertRef.current = { orderIds, previousType: groupedOrder.budget_classification };
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: newType } : o
+      ));
+      toast.info(
+        newType === "CAPEX"
+          ? "Falta asignar la línea de presupuesto: se abre el editor para completarla."
+          : "Falta asignar la categoría OPEX: se abre el editor para completarla."
+      );
+      await handleOpenEditOCDialog({ ...groupedOrder, budget_classification: newType });
+      return;
+    }
+
+    setChangingTypeOrderNumber(groupedOrder.order_number);
+    try {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ budget_classification: newType } as any)
+        .in("id", orderIds);
+
+      if (error) {
+        console.error("Error al cambiar el tipo de la OC:", error);
+        toast.error(`No se pudo cambiar el tipo: ${error.message}`);
+        return;
+      }
+
+      setOrders(prev => prev.map(o =>
+        orderIds.includes(o.id) ? { ...o, budget_classification: newType } : o
+      ));
+      toast.success(`OC ${groupedOrder.order_number} marcada como ${newType}`);
+    } finally {
+      setChangingTypeOrderNumber(null);
+    }
+  };
+
   const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
     setEditingOCFile(null);
-    
-    // Fetch full order data including amount_clp and attachment_url for each contract
+
+    // Fetch full order data including amount_clp, attachment_url and assigned forms for each contract
     const orderIds = groupedOrder.orders.map(o => o.id);
     const { data: fullOrders } = await supabase
       .from("purchase_orders")
-      .select("id, contract_id, amount_uf, amount_clp, attachment_url")
+      .select("id, contract_id, amount_uf, amount_clp, attachment_url, maintenance_form_ids")
       .in("id", orderIds);
-    
+
+    // CAPEX: load budget lines per contract and preselect the ones already linked
+    const isCapex = groupedOrder.budget_classification === "CAPEX";
+    const ocYear = groupedOrder.year || new Date().getFullYear();
+    setEditOCIsCapex(isCapex);
+    setEditOCCapexYear(ocYear);
+    setEditCapexLinesByContract({});
+    setEditCapexBudgetIdByContract({});
+    setEditCapexSelections({});
+    setEditCapexInitialSelections({});
+    setEditCapexLineUsage({});
+    setEditCapexLineSearch({});
+    editCapexExcludeOrderIdsRef.current = orderIds;
+    if (isCapex) {
+      groupedOrder.contracts.forEach(c => loadCapexLinesForEditOC(c.contract_id, ocYear));
+
+      const orderIdToContract = new Map(groupedOrder.orders.map(o => [o.id, o.contract_id]));
+      const { data: lineLinks } = await supabase
+        .from("purchase_order_budget_lines")
+        .select("purchase_order_id, budget_line_id")
+        .in("purchase_order_id", orderIds);
+      const selections: Record<string, string[]> = {};
+      (lineLinks || []).forEach(link => {
+        const cid = orderIdToContract.get(link.purchase_order_id);
+        if (!cid) return;
+        selections[cid] = [...(selections[cid] || []), link.budget_line_id];
+      });
+      // Fallback for OCs that only have the legacy single budget_line_id column
+      groupedOrder.orders.forEach(o => {
+        if (!selections[o.contract_id]?.length && o.budget_line_id) {
+          selections[o.contract_id] = [o.budget_line_id];
+        }
+      });
+      setEditCapexSelections(selections);
+      setEditCapexInitialSelections(selections);
+    }
+
     const firstOrderAttachment = fullOrders?.[0]?.attachment_url || null;
     
     setEditingOCData({
@@ -1622,10 +2105,17 @@ const PurchaseOrdersDashboard = () => {
     });
     
     const orderClpMap = new Map<string, number>();
+    const orderFormIdsMap = new Map<string, string[]>();
+    const initialFormIdsByOrderId: Record<string, string[]> = {};
     (fullOrders || []).forEach(o => {
       orderClpMap.set(o.contract_id, o.amount_clp || Math.round(o.amount_uf * ufValue));
+      const formIds = o.maintenance_form_ids || [];
+      orderFormIdsMap.set(o.contract_id, formIds);
+      initialFormIdsByOrderId[o.id] = formIds;
     });
-    
+    setEditingOCInitialFormIdsByOrderId(initialFormIdsByOrderId);
+    setEditingOCContractForms({});
+
     // Set multi-contract info with CLP as default display currency
     setEditingOCIsMulti(groupedOrder.is_multi_contract);
     setEditingOCContracts(groupedOrder.contracts.map(c => {
@@ -1638,8 +2128,12 @@ const PurchaseOrdersDashboard = () => {
         amount_input: amountClp, // Default to CLP display
         currency: "CLP" as "UF" | "CLP",
         order_id: c.order_id,
+        maintenance_form_ids: orderFormIdsMap.get(c.contract_id) || [],
       };
     }));
+    groupedOrder.contracts.forEach(c => {
+      loadFormsForEditOC(c.contract_id, orderFormIdsMap.get(c.contract_id) || []);
+    });
     setShowEditOCDialog(true);
   };
 
@@ -1661,7 +2155,19 @@ const PurchaseOrdersDashboard = () => {
       amount_clp: 0,
       amount_input: 0,
       currency: "CLP" as "UF" | "CLP",
+      maintenance_form_ids: [],
     }]);
+    loadFormsForEditOC(contractId);
+    if (editOCIsCapex) {
+      loadCapexLinesForEditOC(contractId, editOCCapexYear);
+    }
+  };
+
+  // Handle updating the assigned maintenance forms for a contract in the edit OC dialog
+  const handleUpdateContractFormsInEditOC = (contractId: string, formIds: string[]) => {
+    setEditingOCContracts(prev => prev.map(c => (
+      c.contract_id === contractId ? { ...c, maintenance_form_ids: formIds } : c
+    )));
   };
 
   // Handle removing a contract from the edit OC dialog
@@ -1768,12 +2274,21 @@ const PurchaseOrdersDashboard = () => {
         }
         await supabase.from("purchase_orders").update({ deleted_at: new Date().toISOString() }).eq("id", order.id);
         await supabase.from("purchase_order_contract_allocations").delete().eq("purchase_order_id", order.id);
+
+        // Un-link any maintenance forms that were assigned to the removed contract's order
+        const removedFormIds = editingOCInitialFormIdsByOrderId[order.id] || [];
+        if (removedFormIds.length > 0) {
+          await supabase.from("maintenance_forms")
+            .update({ purchase_order_id: null, purchase_order_number: null })
+            .eq("purchase_order_id", order.id)
+            .in("id", removedFormIds);
+        }
       }
-      
+
       for (const contractData of contractsToUpdate) {
         const existingOrder = existingOrders.find(o => o.contract_id === contractData.contract_id);
         if (!existingOrder) continue;
-        
+
         await supabase.from("purchase_orders").update({
           order_number: editingOCData.order_number,
           description: editingOCData.description || null,
@@ -1786,14 +2301,59 @@ const PurchaseOrdersDashboard = () => {
           uf_value_at_entry: ufValue,
           is_multi_contract: isMulti,
           attachment_url: newAttachmentUrl,
+          maintenance_form_ids: contractData.maintenance_form_ids,
         }).eq("id", existingOrder.id);
-        
+
+        // Sync the maintenance_forms back-reference: link newly-checked forms, un-link unchecked ones
+        const previousFormIds = editingOCInitialFormIdsByOrderId[existingOrder.id] || [];
+        const formIdsToLink = contractData.maintenance_form_ids.filter(id => !previousFormIds.includes(id));
+        const formIdsToUnlink = previousFormIds.filter(id => !contractData.maintenance_form_ids.includes(id));
+
+        if (formIdsToLink.length > 0) {
+          await supabase.from("maintenance_forms").update({
+            supplier_name: editingOCData.supplier_name || null,
+            purchase_order_id: existingOrder.id,
+            purchase_order_number: editingOCData.order_number,
+          }).in("id", formIdsToLink);
+        }
+        if (formIdsToUnlink.length > 0) {
+          await supabase.from("maintenance_forms").update({
+            purchase_order_id: null,
+            purchase_order_number: null,
+          }).eq("purchase_order_id", existingOrder.id).in("id", formIdsToUnlink);
+        }
+
         await supabase.from("purchase_order_contract_allocations").upsert({
           purchase_order_id: existingOrder.id,
           contract_id: contractData.contract_id,
           amount_uf: contractData.amount_uf,
           amount_clp: contractData.amount_clp,
         }, { onConflict: "purchase_order_id,contract_id" });
+
+        // CAPEX: rewrite budget-line links only if the user changed the selection
+        // (so untouched old OCs keep their original data intact)
+        if (editOCIsCapex) {
+          const sel = editCapexSelections[contractData.contract_id] || [];
+          const initial = editCapexInitialSelections[contractData.contract_id] || [];
+          const changed = sel.length !== initial.length || sel.some(id => !initial.includes(id));
+          if (changed) {
+            await supabase.from("purchase_order_budget_lines").delete().eq("purchase_order_id", existingOrder.id);
+            if (sel.length > 0) {
+              const amountPerLine = contractData.amount_uf / sel.length;
+              await supabase.from("purchase_order_budget_lines").insert(
+                sel.map(lineId => ({
+                  purchase_order_id: existingOrder.id,
+                  budget_line_id: lineId,
+                  amount_uf: amountPerLine,
+                }))
+              );
+            }
+            await supabase.from("purchase_orders").update({
+              budget_line_id: sel[0] || null,
+              budget_id: editCapexBudgetIdByContract[contractData.contract_id] || null,
+            }).eq("id", existingOrder.id);
+          }
+        }
       }
       
       for (const contractData of contractsToAdd) {
@@ -1813,11 +2373,12 @@ const PurchaseOrdersDashboard = () => {
           status: "abierta" as const,
           is_multi_contract: isMulti,
           attachment_url: newAttachmentUrl,
+          maintenance_form_ids: contractData.maintenance_form_ids,
         };
         const { data: newOrder, error: insertError } = await supabase.from("purchase_orders").insert(insertData).select().single();
 
         if (insertError) throw insertError;
-        
+
         if (newOrder) {
           await supabase.from("purchase_order_contract_allocations").insert({
             purchase_order_id: newOrder.id,
@@ -1825,10 +2386,38 @@ const PurchaseOrdersDashboard = () => {
             amount_uf: contractData.amount_uf,
             amount_clp: contractData.amount_clp,
           });
+
+          // CAPEX: link the selected budget lines of the newly-added contract
+          if (editOCIsCapex) {
+            const sel = editCapexSelections[contractData.contract_id] || [];
+            if (sel.length > 0) {
+              const amountPerLine = contractData.amount_uf / sel.length;
+              await supabase.from("purchase_order_budget_lines").insert(
+                sel.map(lineId => ({
+                  purchase_order_id: newOrder.id,
+                  budget_line_id: lineId,
+                  amount_uf: amountPerLine,
+                }))
+              );
+              await supabase.from("purchase_orders").update({
+                budget_line_id: sel[0],
+                budget_id: editCapexBudgetIdByContract[contractData.contract_id] || null,
+              }).eq("id", newOrder.id);
+            }
+          }
+
+          if (contractData.maintenance_form_ids.length > 0) {
+            await supabase.from("maintenance_forms").update({
+              supplier_name: editingOCData.supplier_name || null,
+              purchase_order_id: newOrder.id,
+              purchase_order_number: editingOCData.order_number,
+            }).in("id", contractData.maintenance_form_ids);
+          }
         }
       }
 
       toast.success("OC actualizada correctamente");
+      pendingTypeRevertRef.current = null;
       setShowEditOCDialog(false);
       setEditingOCId(null);
       setEditingOCOriginalOrderNumber("");
@@ -1954,6 +2543,12 @@ const PurchaseOrdersDashboard = () => {
                 <FileSpreadsheet className="h-4 w-4 mr-1" />
                 Carga Masiva de OOCC
               </Button>
+              {canManagePurchaseOrders && (
+                <Button variant="outline" size="sm" onClick={() => setShowBulkAttachDialog(true)}>
+                  <Paperclip className="h-4 w-4 mr-1" />
+                  Adjuntar PDFs
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
                 Expandir
@@ -2071,7 +2666,7 @@ const PurchaseOrdersDashboard = () => {
               </CardHeader>
               <CardContent>
                 {capexLocalChartData.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Sin presupuesto CAPEX asignado para {yearFilter}</p>
+                  <p className="text-center text-muted-foreground py-8">Sin CAPEX autorizado para {yearFilter}</p>
                 ) : (
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -2377,103 +2972,9 @@ const PurchaseOrdersDashboard = () => {
           </div>
         </div>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-3 items-center">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por OC, titulo, local o proveedor..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              <ContractSearchSelect
-                value={contractFilter}
-                onValueChange={setContractFilter}
-                contracts={contracts}
-                placeholder="Local"
-                showAllOption
-                allOptionLabel="Todos los locales"
-                allOptionValue="todos"
-                triggerClassName="w-[180px]"
-              />
-
-              <SearchableSelect
-                value={classificationFilter}
-                onValueChange={setClassificationFilter}
-                options={[
-                  { value: "todos", label: "Todos" },
-                  { value: "CAPEX", label: "CAPEX" },
-                  { value: "OPEX", label: "OPEX" },
-                ]}
-                placeholder="Tipo"
-                triggerClassName="w-[140px]"
-              />
-
-              <SearchableSelect
-                value={categoryFilter}
-                onValueChange={setCategoryFilter}
-                options={[
-                  { value: "todos", label: "Todas las categorías" },
-                  ...opexCategories.map((c) => ({ value: c.id, label: c.name })),
-                ]}
-                placeholder="Categoría"
-                triggerClassName="w-[180px]"
-              />
-
-              <SearchableSelect
-                value={amountFilter}
-                onValueChange={setAmountFilter}
-                options={[
-                  { value: "todos", label: "Todos los montos" },
-                  { value: "0-100", label: "0 - 100 UF" },
-                  { value: "100-500", label: "100 - 500 UF" },
-                  { value: "500-1000", label: "500 - 1.000 UF" },
-                  { value: "1000+", label: "+1.000 UF" },
-                ]}
-                placeholder="Monto"
-                triggerClassName="w-[150px]"
-              />
-
-              {hasActiveFilters && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="h-4 w-4 mr-1" />
-                  Limpiar
-                </Button>
-              )}
-            </div>
-            
-            {(chartContractFilter || chartCategoryFilter) && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Filtro del gráfico:</span>
-                {chartContractFilter && (
-                  <Badge variant="secondary">
-                    Local: {contracts.find(c => c.id === chartContractFilter)?.name}
-                    <button className="ml-1" onClick={() => setChartContractFilter(null)}>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
-                {chartCategoryFilter && (
-                  <Badge variant="secondary">
-                    Categoría: {opexCategories.find(c => c.id === chartCategoryFilter)?.name}
-                    <button className="ml-1" onClick={() => setChartCategoryFilter(null)}>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Tabs for OC and Requests */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsList className="grid w-full grid-cols-3 mb-4">
             <TabsTrigger value="oc" className="gap-2">
               <ShoppingCart className="h-4 w-4" />
               Órdenes de Compra ({groupedOrdersByNumber.length})
@@ -2482,9 +2983,154 @@ const PurchaseOrdersDashboard = () => {
               <ClipboardList className="h-4 w-4" />
               Solicitudes de OC ({requestSummary.total})
             </TabsTrigger>
+            <TabsTrigger value="requeridas" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Requerimientos de OC ({ocRequiredGroups.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="oc">
+            {/* Filters -- antes vivía arriba de las pestañas y se mostraba
+                siempre, duplicando el buscador con el de las otras pestañas
+                (cada una tiene el suyo propio, dentro de su TabsContent). */}
+            <Card className="mb-4">
+              <CardContent className="pt-4">
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="OC, título, local o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Local</Label>
+                    <ContractSearchSelect
+                      value={contractFilter}
+                      onValueChange={setContractFilter}
+                      contracts={contracts}
+                      placeholder="Local"
+                      showAllOption
+                      allOptionLabel="Todos los locales"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Tipo</Label>
+                    <SearchableSelect
+                      value={classificationFilter}
+                      onValueChange={setClassificationFilter}
+                      options={[
+                        { value: "todos", label: "Todos" },
+                        { value: "CAPEX", label: "CAPEX" },
+                        { value: "OPEX", label: "OPEX" },
+                      ]}
+                      placeholder="Tipo"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Categoría</Label>
+                    <SearchableSelect
+                      value={categoryFilter}
+                      onValueChange={setCategoryFilter}
+                      options={[
+                        { value: "todos", label: "Todas las categorías" },
+                        ...opexCategories.map((c) => ({ value: c.id, label: c.name })),
+                      ]}
+                      placeholder="Categoría"
+                      triggerClassName="w-[180px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Monto</Label>
+                    <SearchableSelect
+                      value={amountFilter}
+                      onValueChange={setAmountFilter}
+                      options={[
+                        { value: "todos", label: "Todos los montos" },
+                        { value: "0-100", label: "0 - 100 UF" },
+                        { value: "100-500", label: "100 - 500 UF" },
+                        { value: "500-1000", label: "500 - 1.000 UF" },
+                        { value: "1000+", label: "+1.000 UF" },
+                      ]}
+                      placeholder="Monto"
+                      triggerClassName="w-[150px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Origen</Label>
+                    <SearchableSelect
+                      value={originFilter}
+                      onValueChange={setOriginFilter}
+                      options={[
+                        { value: "todos", label: "Todos los orígenes" },
+                        { value: "importada", label: "Importada (I)" },
+                        { value: "digitada", label: "Digitada (D)" },
+                      ]}
+                      placeholder="Origen"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">PDF</Label>
+                    <SearchableSelect
+                      value={attachmentFilter}
+                      onValueChange={setAttachmentFilter}
+                      options={[
+                        { value: "todos", label: "Todas (PDF)" },
+                        { value: "con_pdf", label: "Con PDF" },
+                        { value: "sin_pdf", label: "Sin PDF" },
+                      ]}
+                      placeholder="PDF"
+                      triggerClassName="w-[130px]"
+                    />
+                  </div>
+
+                  {hasActiveFilters && (
+                    <Button variant="ghost" size="sm" onClick={clearFilters} className="shrink-0">
+                      <X className="h-4 w-4 mr-1" />
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+
+                {(chartContractFilter || chartCategoryFilter) && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Filtro del gráfico:</span>
+                    {chartContractFilter && (
+                      <Badge variant="secondary">
+                        Local: {contracts.find(c => c.id === chartContractFilter)?.name}
+                        <button className="ml-1" onClick={() => setChartContractFilter(null)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {chartCategoryFilter && (
+                      <Badge variant="secondary">
+                        Categoría: {opexCategories.find(c => c.id === chartCategoryFilter)?.name}
+                        <button className="ml-1" onClick={() => setChartCategoryFilter(null)}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Orders List - Grouped by order_number */}
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -2606,10 +3252,14 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell
                                 className="font-medium cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => handleOpenOCViewer(groupedOrder)}
-                                title="Ver PDF de OC"
+                                title={groupedOrder.has_attachment ? "Ver PDF de OC" : "Sin PDF adjunto"}
                               >
                                 <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  {groupedOrder.has_attachment ? (
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                  ) : (
+                                    <FileX className="h-4 w-4 text-destructive" />
+                                  )}
                                   {groupedOrder.order_number}
                                   {groupedOrder.is_multi_contract && (
                                     <Badge variant="outline" className="text-[10px] gap-1">
@@ -2627,14 +3277,34 @@ const PurchaseOrdersDashboard = () => {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
-                                  {groupedOrder.budget_classification ? (
+                                  {canManagePurchaseOrders && groupedOrder.is_imported ? (
+                                    <Select
+                                      value={groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
+                                      disabled={changingTypeOrderNumber === groupedOrder.order_number}
+                                      onValueChange={(v) => handleChangeOCType(groupedOrder, v as "CAPEX" | "OPEX")}
+                                    >
+                                      <SelectTrigger
+                                        className="h-6 w-[90px] px-2 border-none shadow-none focus:ring-0 [&>svg]:opacity-50"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Badge
+                                          variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                          className="pointer-events-none"
+                                        >
+                                          {groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
+                                        </Badge>
+                                      </SelectTrigger>
+                                      <SelectContent onClick={(e) => e.stopPropagation()}>
+                                        <SelectItem value="OPEX">OPEX</SelectItem>
+                                        <SelectItem value="CAPEX">CAPEX</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
                                     <Badge
                                       variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
                                     >
-                                      {groupedOrder.budget_classification}
+                                      {groupedOrder.budget_classification === "CAPEX" ? "CAPEX" : "OPEX"}
                                     </Badge>
-                                  ) : (
-                                    <Badge variant="secondary">OPEX</Badge>
                                   )}
                                   {groupedOrder.budget_classification === "CAPEX" && !groupedOrder.budget_line_name && (
                                     <span className="text-[10px] text-destructive font-medium">sin línea</span>
@@ -2706,7 +3376,7 @@ const PurchaseOrdersDashboard = () => {
                                 {groupedOrder.is_imported ? (
                                   <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px] px-1.5 font-mono" title="Importada desde Excel">I</Badge>
                                 ) : (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 font-mono text-muted-foreground" title="Digitada manualmente">D</Badge>
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 text-[10px] px-1.5 font-mono" title="Digitada manualmente">D</Badge>
                                 )}
                               </TableCell>
                               <TableCell>
@@ -3357,7 +4027,16 @@ const PurchaseOrdersDashboard = () => {
           <TabsContent value="requests">
             {/* OC Requests Summary */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequestStatusFilter("todos")}
+                onKeyDown={(e) => e.key === "Enter" && setRequestStatusFilter("todos")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requestStatusFilter === "todos" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <ClipboardList className="h-4 w-4" />
@@ -3369,7 +4048,16 @@ const PurchaseOrdersDashboard = () => {
                   <p className="text-xs text-muted-foreground">{formatUF(requestSummary.totalAmount)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequestStatusFilter(requestStatusFilter === "pending" ? "todos" : "pending")}
+                onKeyDown={(e) => e.key === "Enter" && setRequestStatusFilter(requestStatusFilter === "pending" ? "todos" : "pending")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requestStatusFilter === "pending" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
@@ -3381,7 +4069,16 @@ const PurchaseOrdersDashboard = () => {
                   <p className="text-xs text-muted-foreground">{formatUF(requestSummary.pendingAmount)}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequestStatusFilter(requestStatusFilter === "converted" ? "todos" : "converted")}
+                onKeyDown={(e) => e.key === "Enter" && setRequestStatusFilter(requestStatusFilter === "converted" ? "todos" : "converted")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requestStatusFilter === "converted" && "border-primary ring-1 ring-primary"
+                )}
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" />
@@ -3394,11 +4091,14 @@ const PurchaseOrdersDashboard = () => {
                 </CardContent>
               </Card>
               <Card className="flex items-center justify-center">
-                <CardContent className="py-4">
+                <CardContent className="py-4 flex flex-col items-center gap-1">
                   <Button onClick={exportRequestsToExcel} variant="outline" className="gap-2" disabled={filteredRequests.length === 0}>
                     <Download className="h-4 w-4" />
                     Exportar Excel
                   </Button>
+                  {selectedRequests.size > 0 && (
+                    <p className="text-xs text-muted-foreground">{selectedRequests.size} seleccionada(s)</p>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -3406,41 +4106,51 @@ const PurchaseOrdersDashboard = () => {
             {/* Status Filter for Requests */}
             <Card className="mb-4">
               <CardContent className="pt-4">
-                <div className="flex flex-wrap gap-3 items-center">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar por número, titulo o proyecto..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9"
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="OC, título, local o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Proyecto</Label>
+                    <ContractSearchSelect
+                      value={contractFilter}
+                      onValueChange={setContractFilter}
+                      contracts={contracts}
+                      placeholder="Proyecto"
+                      showAllOption
+                      allOptionLabel="Todos los proyectos"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
                     />
                   </div>
-                  <ContractSearchSelect
-                    value={contractFilter}
-                    onValueChange={setContractFilter}
-                    contracts={contracts}
-                    placeholder="Proyecto"
-                    showAllOption
-                    allOptionLabel="Todos los proyectos"
-                    allOptionValue="todos"
-                    triggerClassName="w-[180px]"
-                  />
-                  <SearchableSelect
-                    value={requestStatusFilter}
-                    onValueChange={setRequestStatusFilter}
-                    options={[
-                      { value: "todos", label: "Todos" },
-                      { value: "pending", label: "Pendientes" },
-                      { value: "converted", label: "Convertidas" },
-                    ]}
-                    placeholder="Estado"
-                    triggerClassName="w-[140px]"
-                  />
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Estado</Label>
+                    <SearchableSelect
+                      value={requestStatusFilter}
+                      onValueChange={setRequestStatusFilter}
+                      options={[
+                        { value: "todos", label: "Todos" },
+                        { value: "pending", label: "Pendientes" },
+                        { value: "converted", label: "Convertidas" },
+                      ]}
+                      placeholder="Estado"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
                   {isAdmin && selectedRequests.size > 0 && (
                     <Button
                       variant="destructive"
                       size="sm"
+                      className="shrink-0"
                       onClick={() => { setDeleteMode("requests"); setShowDeleteDialog(true); }}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
@@ -3635,6 +4345,261 @@ const PurchaseOrdersDashboard = () => {
                               </TableRow>
                             )}
                           </>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="requeridas">
+            {/* Requerimientos de OC Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequeridasStatusFilter("todos")}
+                onKeyDown={(e) => e.key === "Enter" && setRequeridasStatusFilter("todos")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requeridasStatusFilter === "todos" && "border-primary ring-1 ring-primary"
+                )}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4" />
+                    Total Requerimientos
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{requiredSummary.total}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.totalAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequeridasStatusFilter(requeridasStatusFilter === "pending" ? "todos" : "pending")}
+                onKeyDown={(e) => e.key === "Enter" && setRequeridasStatusFilter(requeridasStatusFilter === "pending" ? "todos" : "pending")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requeridasStatusFilter === "pending" && "border-primary ring-1 ring-primary"
+                )}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Pendientes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-amber-600">{requiredSummary.pending}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.pendingAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => setRequeridasStatusFilter(requeridasStatusFilter === "converted" ? "todos" : "converted")}
+                onKeyDown={(e) => e.key === "Enter" && setRequeridasStatusFilter(requeridasStatusFilter === "converted" ? "todos" : "converted")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  requeridasStatusFilter === "converted" && "border-primary ring-1 ring-primary"
+                )}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Convertidas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{requiredSummary.converted}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requiredSummary.convertedAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card className="flex items-center justify-center">
+                <CardContent className="py-4 flex flex-col items-center gap-1">
+                  <Button onClick={exportRequiredToExcel} variant="outline" className="gap-2" disabled={filteredRequired.length === 0}>
+                    <Download className="h-4 w-4" />
+                    Exportar Excel
+                  </Button>
+                  {selectedRequired.size > 0 && (
+                    <p className="text-xs text-muted-foreground">{selectedRequired.size} seleccionada(s)</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Filtros: Buscar, Contrato, Pendientes/Convertidas -- mismo patrón que Solicitudes de OC */}
+            <Card className="mb-4">
+              <CardContent className="pt-4">
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="OC, título, local o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Proyecto</Label>
+                    <ContractSearchSelect
+                      value={requeridasContractFilter}
+                      onValueChange={setRequeridasContractFilter}
+                      contracts={contracts}
+                      placeholder="Proyecto"
+                      showAllOption
+                      allOptionLabel="Todos los proyectos"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Estado</Label>
+                    <SearchableSelect
+                      value={requeridasStatusFilter}
+                      onValueChange={setRequeridasStatusFilter}
+                      options={[
+                        { value: "todos", label: "Todos" },
+                        { value: "pending", label: "Pendientes" },
+                        { value: "converted", label: "Convertidas" },
+                      ]}
+                      placeholder="Estado"
+                      triggerClassName="w-[140px]"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : filteredRequired.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  No se encontraron requerimientos de OC para el año {yearFilter}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[40px]"></TableHead>
+                        <TableHead className="w-[30px]"></TableHead>
+                        <TableHead>Requerimiento</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Proyecto</TableHead>
+                        <TableHead>Línea</TableHead>
+                        <TableHead>Proveedor</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRequired.map((group) => {
+                        const isOpen = expandedRequired.has(group.quotationNumber);
+                        return (
+                          <React.Fragment key={group.quotationNumber}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-muted/30"
+                              onClick={() =>
+                                setExpandedRequired((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(group.quotationNumber)) next.delete(group.quotationNumber);
+                                  else next.add(group.quotationNumber);
+                                  return next;
+                                })
+                              }
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedRequired.has(group.quotationNumber)}
+                                  onCheckedChange={() => toggleRequiredSelection(group.quotationNumber)}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">{group.quotationNumber}</TableCell>
+                              <TableCell className="text-sm">
+                                {format(parseISO(group.quotationDate), "dd MMM yyyy", { locale: es })}
+                              </TableCell>
+                              <TableCell className="max-w-[160px] truncate">{group.projectName}</TableCell>
+                              <TableCell className="max-w-[160px] truncate" title={group.lines.map((l) => l.lineName).join(", ")}>
+                                {group.lines.length > 1
+                                  ? `${group.lines[0].lineName} (+${group.lines.length - 1})`
+                                  : group.lines[0]?.lineName ?? "-"}
+                              </TableCell>
+                              <TableCell className="max-w-[140px] truncate">{group.supplierName || "-"}</TableCell>
+                              <TableCell className="text-right font-medium">{formatCLP(group.amountClp)}</TableCell>
+                              <TableCell>
+                                <Badge variant={group.converted ? "default" : "secondary"}>
+                                  {group.converted ? "Convertida" : "Pendiente"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 gap-1"
+                                  onClick={() => navigate(`/contracts/${group.contractId}?section=ordenes-compra&returnTo=purchase-orders`)}
+                                  title="Ir al proyecto"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  Ir al proyecto
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                            {isOpen && (
+                              <TableRow>
+                                <TableCell colSpan={9} className="bg-muted/30">
+                                  <div className="py-2 px-2 space-y-2">
+                                    {group.filePath && (
+                                      <div className="flex justify-end">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-6 px-2 gap-1"
+                                          onClick={() => void openFile(group.filePath!)}
+                                        >
+                                          <Download className="h-3 w-3" />
+                                          {group.fileName || "Ver archivo"}
+                                        </Button>
+                                      </div>
+                                    )}
+                                    <div className="rounded-md border divide-y bg-background">
+                                      {group.lines.map((line) => (
+                                        <div key={line.budgetLineId} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                                          <span className="truncate">{line.lineName}</span>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-xs text-muted-foreground">
+                                              UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                            <span className="text-[10px] uppercase text-muted-foreground">
+                                              {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </TableBody>
@@ -3972,8 +4937,14 @@ const PurchaseOrdersDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <OCBulkAttachDialog
+        open={showBulkAttachDialog}
+        onOpenChange={setShowBulkAttachDialog}
+        onComplete={loadData}
+      />
+
       {/* Edit OC Dialog */}
-      <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
+      <Dialog open={showEditOCDialog} onOpenChange={(o) => { if (!o) closeEditOCDialog(); }}>
         <DialogContent className={cn(
           // NOTE: `h-[90vh]` (not only `max-h`) is required so the internal ScrollArea
           // gets a real height to scroll within.
@@ -4020,10 +4991,20 @@ const PurchaseOrdersDashboard = () => {
 
             <div className="space-y-1.5">
               <Label htmlFor="oc_supplier">Proveedor</Label>
-              <Input
-                id="oc_supplier"
-                value={editingOCData.supplier_name}
-                onChange={(e) => setEditingOCData({ ...editingOCData, supplier_name: e.target.value })}
+              {/* Listado desplegable con búsqueda. Si la OC antigua tiene un
+                  proveedor escrito a mano que no existe en el listado, se
+                  muestra su nombre original como placeholder y se conserva
+                  al guardar si no se elige otro. */}
+              <SearchableSelect
+                value={suppliers.find(s => s.name === editingOCData.supplier_name)?.id || ""}
+                onValueChange={(v) => {
+                  const supplier = suppliers.find(s => s.id === v);
+                  setEditingOCData({ ...editingOCData, supplier_name: supplier?.name || "" });
+                }}
+                options={suppliers.map(s => ({ value: s.id, label: `${s.name}${s.is_generic ? " (Genérico)" : ""}`, searchValue: s.name }))}
+                placeholder={editingOCData.supplier_name || "Seleccione un proveedor"}
+                searchPlaceholder="Buscar proveedor..."
+                emptyMessage="No hay proveedores."
               />
             </div>
 
@@ -4173,7 +5154,10 @@ const PurchaseOrdersDashboard = () => {
               </div>
 
               {/* Contracts table */}
-              {editingOCContracts.length > 0 && (
+              {editingOCContracts.length > 0 && (() => {
+                const editingOCFirstOrder = orders.find(o => o.order_number === editingOCOriginalOrderNumber);
+                const editingOCIsCapex = editingOCFirstOrder?.budget_classification === "CAPEX";
+                return (
                 <div className="border rounded-lg overflow-hidden max-h-[250px] overflow-y-auto">
                   <Table>
                     <TableHeader>
@@ -4182,6 +5166,7 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead className="text-xs w-[80px]">Moneda</TableHead>
                         <TableHead className="text-xs text-right w-[130px]">Monto</TableHead>
                         <TableHead className="text-xs text-right w-[100px]">Equiv. UF</TableHead>
+                        {!editingOCIsCapex && <TableHead className="text-xs">Form de Mantención</TableHead>}
                         <TableHead className="text-xs w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -4220,6 +5205,49 @@ const PurchaseOrdersDashboard = () => {
                               <span className="text-foreground">{c.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             )}
                           </TableCell>
+                          {!editingOCIsCapex && (
+                            <TableCell className="py-1.5 align-top">
+                              {(() => {
+                                const forms = editingOCContractForms[c.contract_id] || [];
+                                if (forms.length === 0) {
+                                  return <span className="text-xs text-muted-foreground">Sin Forms en proceso</span>;
+                                }
+                                return (
+                                  <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
+                                    {[...forms].sort((a, b) => {
+                                      const da = a.created_date ? new Date(a.created_date).getTime() : 0;
+                                      const db = b.created_date ? new Date(b.created_date).getTime() : 0;
+                                      return editingOCFormsSortAsc ? da - db : db - da;
+                                    }).map(f => (
+                                      <label key={f.id} className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                        <Checkbox
+                                          className="h-3.5 w-3.5"
+                                          checked={c.maintenance_form_ids.includes(f.id)}
+                                          onCheckedChange={(checked) => {
+                                            const newIds = checked
+                                              ? [...c.maintenance_form_ids, f.id]
+                                              : c.maintenance_form_ids.filter(id => id !== f.id);
+                                            handleUpdateContractFormsInEditOC(c.contract_id, newIds);
+                                          }}
+                                        />
+                                        <span className="whitespace-nowrap">FORM {f.form_number}</span>
+                                        <span className="text-muted-foreground">{f.created_date || ""}</span>
+                                        <span className="text-muted-foreground truncate max-w-[140px]">{getFormDescription(f).slice(0, 40)}</span>
+                                        <button
+                                          type="button"
+                                          className="ml-auto p-0.5 rounded hover:bg-muted"
+                                          title="Ver detalle del Form"
+                                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingOCViewingForm(f); }}
+                                        >
+                                          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                        </button>
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+                          )}
                           <TableCell className="py-1.5">
                             <Button
                               variant="ghost"
@@ -4236,8 +5264,9 @@ const PurchaseOrdersDashboard = () => {
                     </TableBody>
                   </Table>
                 </div>
-              )}
-              
+                );
+              })()}
+
               {/* Total */}
               <div className="flex justify-between items-center text-sm pt-1">
                 <span className="text-muted-foreground">Total:</span>
@@ -4250,12 +5279,89 @@ const PurchaseOrdersDashboard = () => {
                   </div>
                 </div>
               </div>
+
+              {/* CAPEX budget lines per contract — permite corregir a mano OCs
+                  antiguas sin líneas; el guardado no se bloquea si quedan vacías */}
+              {editOCIsCapex && editingOCContracts.map(c => {
+                const lines = editCapexLinesByContract[c.contract_id];
+                const selected = editCapexSelections[c.contract_id] || [];
+                const search = editCapexLineSearch[c.contract_id] || "";
+                // Las líneas madre son solo agrupadores (visibles, no
+                // seleccionables, sin monto); las hijas con monto $0 se ocultan.
+                const visibleLines = lines
+                  ? filterCapexLines(lines, search).filter(l => l.hasChildren || l.amount_uf > 0)
+                  : [];
+                return (
+                  <div key={c.contract_id} className="space-y-1.5 pt-2 border-t">
+                    <Label className="text-sm">
+                      Líneas de Presupuesto CAPEX ({editOCCapexYear})
+                      {editingOCContracts.length > 1 && ` — ${c.contract_name}`}
+                    </Label>
+                    {lines === undefined ? (
+                      <p className="text-xs text-muted-foreground p-2">Cargando líneas CAPEX...</p>
+                    ) : lines.length === 0 ? (
+                      <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {editOCCapexYear}.</p>
+                    ) : (
+                      <>
+                        <Input
+                          value={search}
+                          onChange={(e) => setEditCapexLineSearch(prev => ({ ...prev, [c.contract_id]: e.target.value }))}
+                          placeholder="Buscar línea..."
+                          className="h-8 text-sm"
+                        />
+                        <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
+                          {visibleLines.length === 0 ? (
+                            <p className="text-xs text-muted-foreground p-2">Sin resultados para "{search}".</p>
+                          ) : visibleLines.map(line => {
+                            if (line.hasChildren) {
+                              return (
+                                <div
+                                  key={line.id}
+                                  className="flex items-center gap-2 p-1.5 rounded select-none text-sm font-medium text-muted-foreground"
+                                  style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                                >
+                                  <span className="flex-1 truncate">{line.name}</span>
+                                </div>
+                              );
+                            }
+                            const isSelected = selected.includes(line.id);
+                            const available = line.amount_uf - (editCapexLineUsage[line.id] || 0);
+                            return (
+                              <div
+                                key={line.id}
+                                role="checkbox"
+                                aria-checked={isSelected}
+                                tabIndex={0}
+                                onClick={() => toggleEditCapexLine(c.contract_id, line)}
+                                className={cn(
+                                  "flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm",
+                                  isSelected && "bg-accent"
+                                )}
+                                style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                              >
+                                <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
+                                <span className="flex-1 truncate">{line.name}</span>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  (Disp: {formatCLP(available * ufValue)})
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {selected.length > 0 && (
+                      <p className="text-xs text-muted-foreground">{selected.length} línea(s) seleccionada(s)</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             </div>
           </div>
 
           <DialogFooter className="flex-shrink-0 gap-2 sm:gap-0 pt-4 border-t">
-            <Button variant="outline" onClick={() => setShowEditOCDialog(false)} disabled={updatingOC}>
+            <Button variant="outline" onClick={closeEditOCDialog} disabled={updatingOC}>
               Cancelar
             </Button>
             <Button onClick={handleUpdateOC} disabled={updatingOC || !editingOCData.order_number}>
@@ -4264,6 +5370,53 @@ const PurchaseOrdersDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Maintenance Form detail dialog (from the Editar OC "Contratos asignados" table) */}
+      <Dialog open={!!editingOCViewingForm} onOpenChange={(v) => { if (!v) setEditingOCViewingForm(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Detalle FORM {editingOCViewingForm?.form_number}</DialogTitle>
+          </DialogHeader>
+          {editingOCViewingForm && (
+            <div className="space-y-3 text-sm max-h-[60vh] overflow-y-auto">
+              <div>
+                <span className="font-medium">Fecha:</span> {editingOCViewingForm.created_date || "—"}
+              </div>
+              {editingOCViewingForm.general_description && (
+                <div>
+                  <span className="font-medium">Descripción General:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.general_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.electrical_description && (
+                <div>
+                  <span className="font-medium">Eléctrico:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.electrical_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.civil_description && (
+                <div>
+                  <span className="font-medium">Obra Civil:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.civil_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.hvac_description && (
+                <div>
+                  <span className="font-medium">Climatización:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.hvac_description}</p>
+                </div>
+              )}
+              {editingOCViewingForm.fixed_assets_description && (
+                <div>
+                  <span className="font-medium">Activos Fijos:</span>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{editingOCViewingForm.fixed_assets_description}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* File Destination Settings Dialog */}
       <Dialog open={showFileDestDialog} onOpenChange={setShowFileDestDialog}>
         <DialogContent className="sm:max-w-md">

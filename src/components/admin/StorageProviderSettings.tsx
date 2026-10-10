@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2, Pencil, Save, X } from "lucide-react";
 import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface StorageSettings {
   id: string;
@@ -151,7 +152,8 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       // Refresh OAuth status
       await checkOAuthStatus();
     } catch (error: any) {
-      toast.error("Error al guardar credenciales", { description: error.message });
+      const message = await getFunctionErrorMessage(error, "No se pudieron guardar las credenciales.");
+      toast.error("Error al guardar credenciales", { description: message });
     } finally {
       setSavingCredentials(false);
     }
@@ -216,8 +218,9 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       });
     } catch (error: any) {
       setConnectionStatus(prev => ({ ...prev, [providerId]: false }));
+      const message = await getFunctionErrorMessage(error, "No se pudo conectar con el proveedor.");
       toast.error("Error de conexión", {
-        description: error.message || "No se pudo conectar con el proveedor"
+        description: message
       });
     } finally {
       setTesting(null);
@@ -259,7 +262,8 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
         }, 300000);
       }
     } catch (error: any) {
-      toast.error("Error al iniciar OAuth", { description: error.message });
+      const message = await getFunctionErrorMessage(error, "No se pudo iniciar la autorización OAuth.");
+      toast.error("Error al iniciar OAuth", { description: message });
       setConnectingOAuth(false);
     }
   };
