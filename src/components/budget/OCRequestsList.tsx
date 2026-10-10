@@ -21,6 +21,7 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 
 interface OCRequest {
   id: string;
@@ -372,12 +373,15 @@ export const OCRequestsList = ({
     }
   };
 
-  // "Volver atrás": una Solicitud de OC pendiente que vino de un Requerimiento
-  // (ver OCRequiredList.tsx) se puede reconvertir en Requerimiento eliminando
-  // la solicitud -- source_quotation_number ya no tendrá ninguna solicitud
-  // que lo marque "Convertida", así que OCRequiredList vuelve a mostrarlo
-  // como pendiente. RLS solo permite el delete a admins: si la respuesta no
-  // trae filas eliminadas, no se reventó por error sino que no tenía permiso.
+  // "Volver atrás": una Solicitud de OC que vino de un Requerimiento (ver
+  // OCRequiredList.tsx) se puede reconvertir en Requerimiento eliminando la
+  // solicitud -- source_quotation_number ya no tendrá ninguna solicitud que
+  // lo marque "Convertida", así que OCRequiredList vuelve a mostrarlo como
+  // pendiente. Si la solicitud ya estaba "Convertida a OC", la OC creada en
+  // esa conversión se manda a eliminados también (salvo que ya la hubieran
+  // borrado manualmente antes). RLS solo permite el delete a admins: si la
+  // respuesta no trae filas eliminadas, no se reventó por error sino que no
+  // tenía permiso.
   const handleRevertToRequired = async () => {
     if (!selectedRequest) return;
 
@@ -394,7 +398,21 @@ export const OCRequestsList = ({
         throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
       }
 
-      toast({ title: "Solicitud revertida", description: "Vuelve a estar disponible como Requerimiento de OC pendiente" });
+      let ocDeleteWarning: string | null = null;
+      if (selectedRequest.status === "converted" && selectedRequest.purchase_order_id) {
+        try {
+          await softDeletePurchaseOrder(selectedRequest.purchase_order_id);
+        } catch (ocError: any) {
+          console.error("Error al eliminar la OC asociada al revertir:", ocError);
+          ocDeleteWarning = ocError.message || "No se pudo eliminar automáticamente la OC asociada";
+        }
+      }
+
+      toast(
+        ocDeleteWarning
+          ? { variant: "destructive", title: "Solicitud revertida con advertencia", description: `${ocDeleteWarning}. Elimínela manualmente desde "Órdenes de Compra y Facturas".` }
+          : { title: "Solicitud revertida", description: "Vuelve a estar disponible como Requerimiento de OC pendiente" }
+      );
       setShowRevertDialog(false);
       setSelectedRequest(null);
       loadRequests();
@@ -980,7 +998,23 @@ export const OCRequestsList = ({
                     </div>
                   </TableCell>
                   <TableCell>
-                    {isConverted ? (
+                    {isAdmin && request.source_quotation_number ? (
+                      <Badge
+                        variant={isConverted ? "default" : "outline"}
+                        className={`cursor-pointer gap-1 ${isConverted
+                          ? "bg-green-500 hover:bg-green-600"
+                          : "bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100"
+                        }`}
+                        title="Revertir a Requerimiento de OC"
+                        onClick={() => {
+                          setSelectedRequest(request);
+                          setShowRevertDialog(true);
+                        }}
+                      >
+                        {isConverted ? "Convertida a OC" : "Pendiente"}
+                        <RotateCcw className="h-3 w-3" />
+                      </Badge>
+                    ) : isConverted ? (
                       <Badge variant="default" className="bg-green-500">Convertida a OC</Badge>
                     ) : (
                       <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Pendiente</Badge>
@@ -1027,20 +1061,6 @@ export const OCRequestsList = ({
                             <Upload className="h-3 w-3" />
                             Cargar OC
                           </Button>
-                          {isAdmin && request.source_quotation_number && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedRequest(request);
-                                setShowRevertDialog(true);
-                              }}
-                              className="h-7 px-2"
-                              title="Revertir a Requerimiento de OC"
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                            </Button>
-                          )}
                           {isAdmin && (
                             <Button
                               variant="ghost"
@@ -1148,7 +1168,11 @@ export const OCRequestsList = ({
             <AlertDialogTitle>¿Revertir a Requerimiento de OC?</AlertDialogTitle>
             <AlertDialogDescription>
               La solicitud {selectedRequest?.request_number} se eliminará y el requerimiento de OC de origen volverá a
-              quedar pendiente, disponible para editar o volver a convertir. Esta acción no se puede deshacer.
+              quedar pendiente, disponible para editar o volver a convertir.
+              {selectedRequest?.status === "converted" && selectedRequest?.purchase_order_id && (
+                <> La orden de compra que se había creado a partir de esta solicitud también se enviará a eliminados.</>
+              )}{" "}
+              Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

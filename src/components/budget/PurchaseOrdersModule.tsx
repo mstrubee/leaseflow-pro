@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { backupOCFileToRepository } from "@/lib/repositoryBackup";
 import { syncOCRequestLinesFromPurchaseOrder } from "@/lib/ocRequestLines";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
+import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 
 interface PurchaseOrder {
@@ -1084,57 +1085,7 @@ export const PurchaseOrdersModule = ({
     if (!deleteOrder) return;
 
     try {
-      const now = new Date().toISOString();
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id || null;
-
-      // Líneas CAPEX asociadas -- se resetea su badge si quedan sin ninguna OC.
-      const { data: deletedOrderLines } = await supabase
-        .from("purchase_order_budget_lines")
-        .select("budget_line_id")
-        .eq("purchase_order_id", deleteOrder.id);
-      const linkedLineIds = deletedOrderLines?.length
-        ? deletedOrderLines.map((l) => l.budget_line_id)
-        : (deleteOrder.budget_line_id ? [deleteOrder.budget_line_id] : []);
-
-      // Soft delete all credit notes for this order
-      const { error: creditNoteError } = await supabase
-        .from("credit_notes")
-        .update({ deleted_at: now, deleted_by: userId })
-        .eq("purchase_order_id", deleteOrder.id)
-        .is("deleted_at", null);
-      
-      if (creditNoteError) {
-        console.error("Error soft deleting credit notes:", creditNoteError);
-        throw creditNoteError;
-      }
-
-      // Soft delete all invoices for this order
-      const { error: invoiceError } = await supabase
-        .from("invoices")
-        .update({ deleted_at: now, deleted_by: userId })
-        .eq("purchase_order_id", deleteOrder.id)
-        .is("deleted_at", null);
-      
-      if (invoiceError) {
-        console.error("Error soft deleting invoices:", invoiceError);
-        throw invoiceError;
-      }
-      
-      // Soft delete the order
-      const { error } = await supabase
-        .from("purchase_orders")
-        .update({ deleted_at: now, deleted_by: userId })
-        .eq("id", deleteOrder.id);
-      
-      if (error) {
-        console.error("Error soft deleting purchase order:", error);
-        throw error;
-      }
-
-      if (linkedLineIds.length > 0) {
-        await syncBudgetLineOcStatus({ removedLineIds: linkedLineIds });
-      }
+      await softDeletePurchaseOrder(deleteOrder.id);
 
       toast({ title: "OC enviada a eliminados", description: `Orden de compra ${deleteOrder.order_number} movida a eliminados` });
       setDeleteOrder(null);
