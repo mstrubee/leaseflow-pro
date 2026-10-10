@@ -729,12 +729,22 @@ export const OCRequestsList = ({
       if (error) throw error;
 
       // Viene de "Convertir a Solicitud" en OCRequiredList -- marca el
-      // requerimiento de origen como convertido.
+      // requerimiento de origen como convertido. Si esto falla la solicitud
+      // igual queda creada, pero sin este vínculo no se podrá "Revertir" más
+      // adelante -- de ahí que se registre y avise en vez de ignorarlo.
       if (requestData && conversionQuotationNumber) {
-        await supabase
+        const { error: linkError } = await supabase
           .from("oc_requests")
           .update({ source_quotation_number: conversionQuotationNumber } as any)
           .eq("id", requestData.id);
+        if (linkError) {
+          console.error("Error al vincular la solicitud con su Requerimiento de origen:", linkError);
+          toast({
+            variant: "destructive",
+            title: "Solicitud creada con advertencia",
+            description: "No se pudo vincular con el Requerimiento de OC de origen; no podrá revertirse más adelante.",
+          });
+        }
       }
 
       // Create budget line assignments
