@@ -207,6 +207,10 @@ export const OCRequestsList = ({
         `)
         .eq("contract_id", contractId);
 
+      if (allocError) {
+        console.error("Error loading oc_request_contract_allocations:", allocError);
+      }
+
       // Build a map of allocations by request ID for this contract
       const allocationsByRequestId: Record<string, { amount_uf: number; amount_clp: number }> = {};
       for (const alloc of (allocationsData || [])) {
@@ -998,7 +1002,7 @@ export const OCRequestsList = ({
                     </div>
                   </TableCell>
                   <TableCell>
-                    {isAdmin && request.source_quotation_number ? (
+                    {isAdmin ? (
                       <Badge
                         variant={isConverted ? "default" : "outline"}
                         className={`cursor-pointer gap-1 ${isConverted
@@ -1007,6 +1011,14 @@ export const OCRequestsList = ({
                         }`}
                         title="Revertir a Requerimiento de OC"
                         onClick={() => {
+                          if (!request.source_quotation_number) {
+                            toast({
+                              variant: "destructive",
+                              title: "No se puede revertir",
+                              description: "Esta solicitud no proviene de un Requerimiento de OC convertido.",
+                            });
+                            return;
+                          }
                           setSelectedRequest(request);
                           setShowRevertDialog(true);
                         }}
