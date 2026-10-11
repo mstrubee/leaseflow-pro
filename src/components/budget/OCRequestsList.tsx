@@ -381,25 +381,50 @@ export const OCRequestsList = ({
   // OCRequiredList.tsx) se puede reconvertir en Requerimiento eliminando la
   // solicitud -- source_quotation_number ya no tendrá ninguna solicitud que
   // lo marque "Convertida", así que OCRequiredList vuelve a mostrarlo como
-  // pendiente. Si la solicitud ya estaba "Convertida a OC", la OC creada en
-  // esa conversión se manda a eliminados también (salvo que ya la hubieran
-  // borrado manualmente antes). RLS solo permite el delete a admins: si la
-  // respuesta no trae filas eliminadas, no se reventó por error sino que no
-  // tenía permiso.
+  // pendiente.
+  //
+  // Una Solicitud "Convertida a OC" que NO viene de un Requerimiento (se
+  // creó directo con "Nueva Solicitud") también se puede revertir -- no hay
+  // ningún Requerimiento al que volver, así que en ese caso la solicitud no
+  // se elimina: vuelve a quedar "pending" (desvinculada de la OC), lista
+  // para cargarle una OC de nuevo. Este es el caso típico de una OC que se
+  // eliminó manualmente desde "Órdenes de Compra y Facturas" dejando la
+  // solicitud "huérfana", apuntando a una OC que ya no existe.
+  //
+  // En ambos casos, si la solicitud estaba "Convertida a OC", la OC creada
+  // en esa conversión se manda a eliminados también (salvo que ya la
+  // hubieran borrado manualmente antes -- softDeletePurchaseOrder no hace
+  // nada si ya estaba eliminada). RLS solo permite el delete/update a
+  // admins: si la respuesta no trae filas afectadas, no se reventó por
+  // error sino que no tenía permiso.
   const handleRevertToRequired = async () => {
     if (!selectedRequest) return;
+    const hasRequerimientoOrigin = !!selectedRequest.source_quotation_number;
 
     setReverting(true);
     try {
-      const { data, error } = await supabase
-        .from("oc_requests")
-        .delete()
-        .eq("id", selectedRequest.id)
-        .select("id");
+      if (hasRequerimientoOrigin) {
+        const { data, error } = await supabase
+          .from("oc_requests")
+          .delete()
+          .eq("id", selectedRequest.id)
+          .select("id");
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("oc_requests")
+          .update({ status: "pending", purchase_order_id: null })
+          .eq("id", selectedRequest.id)
+          .select("id");
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
+        }
       }
 
       let ocDeleteWarning: string | null = null;
@@ -415,7 +440,12 @@ export const OCRequestsList = ({
       toast(
         ocDeleteWarning
           ? { variant: "destructive", title: "Solicitud revertida con advertencia", description: `${ocDeleteWarning}. Elimínela manualmente desde "Órdenes de Compra y Facturas".` }
-          : { title: "Solicitud revertida", description: "Vuelve a estar disponible como Requerimiento de OC pendiente" }
+          : {
+              title: "Solicitud revertida",
+              description: hasRequerimientoOrigin
+                ? "Vuelve a estar disponible como Requerimiento de OC pendiente"
+                : "La solicitud vuelve a estado Pendiente",
+            }
       );
       setShowRevertDialog(false);
       setSelectedRequest(null);
@@ -1019,9 +1049,14 @@ export const OCRequestsList = ({
                           ? "bg-green-500 hover:bg-green-600"
                           : "bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100"
                         }`}
-                        title="Revertir a Requerimiento de OC"
+                        title={request.source_quotation_number ? "Revertir a Requerimiento de OC" : "Revertir a Pendiente"}
                         onClick={() => {
-                          if (!request.source_quotation_number) {
+                          // Pendiente sin Requerimiento de origen: no hay nada que revertir.
+                          // Convertida a OC sí se puede revertir aunque no tenga Requerimiento
+                          // de origen -- típicamente porque la OC asociada ya se eliminó
+                          // manualmente y la solicitud quedó "huérfana".
+                          const canRevert = !!request.source_quotation_number || isConverted;
+                          if (!canRevert) {
                             toast({
                               variant: "destructive",
                               title: "No se puede revertir",
@@ -1183,14 +1218,25 @@ export const OCRequestsList = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Revert to Requerimiento Confirmation */}
+      {/* Revert Confirmation */}
       <AlertDialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Revertir a Requerimiento de OC?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {selectedRequest?.source_quotation_number ? "¿Revertir a Requerimiento de OC?" : "¿Revertir solicitud a Pendiente?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              La solicitud {selectedRequest?.request_number} se eliminará y el requerimiento de OC de origen volverá a
-              quedar pendiente, disponible para editar o volver a convertir.
+              {selectedRequest?.source_quotation_number ? (
+                <>
+                  La solicitud {selectedRequest?.request_number} se eliminará y el requerimiento de OC de origen volverá a
+                  quedar pendiente, disponible para editar o volver a convertir.
+                </>
+              ) : (
+                <>
+                  La solicitud {selectedRequest?.request_number} no viene de un Requerimiento de OC, así que volverá a
+                  quedar en estado "Pendiente" (no se elimina) para poder cargarle una OC nuevamente.
+                </>
+              )}{" "}
               {selectedRequest?.status === "converted" && selectedRequest?.purchase_order_id && (
                 <> La orden de compra que se había creado a partir de esta solicitud también se enviará a eliminados.</>
               )}{" "}
