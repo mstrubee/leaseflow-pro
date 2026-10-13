@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
+import * as XLSX from "xlsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SuppliersReturnButton } from "@/components/suppliers/SuppliersReturnButton";
 import { supabase } from "@/integrations/supabase/client";
@@ -1481,23 +1482,25 @@ const PurchaseOrdersDashboard = () => {
       "Proyecto": r.project_name,
       "Línea": r.line_name,
       "Descripción": r.description || "",
-      "Monto UF": r.amount_uf.toFixed(2),
+      "Monto UF": r.amount_uf,
       "Proveedor": r.supplier_name || "",
       "Estado": r.status === "pending" ? "Pendiente" : "Convertida",
     }));
 
-    // Build CSV
-    const headers = Object.keys(data[0] || {});
-    const csvContent = [
-      headers.join(","),
-      ...data.map(row => headers.map(h => `"${(row as any)[h] || ""}"`).join(","))
-    ].join("\n");
+    const sheet = XLSX.utils.json_to_sheet(data);
+    sheet['!cols'] = [
+      { wch: 30 }, { wch: 12 }, { wch: 25 }, { wch: 25 }, { wch: 30 },
+      { wch: 12 }, { wch: 25 }, { wch: 12 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Solicitudes de OC");
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
 
-    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `solicitudes_oc_${yearNum}.csv`;
+    a.download = `solicitudes_oc_${yearNum}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Solicitudes exportadas a Excel");
@@ -1515,21 +1518,23 @@ const PurchaseOrdersDashboard = () => {
       "Proyecto": g.projectName,
       "Línea": g.lines.map(l => l.lineName).join(", "),
       "Proveedor": g.supplierName || "",
-      "Monto UF": g.amountUf.toFixed(2),
+      "Monto UF": g.amountUf,
       "Estado": g.converted ? "Convertida" : "Pendiente",
     }));
 
-    const headers = Object.keys(data[0] || {});
-    const csvContent = [
-      headers.join(","),
-      ...data.map(row => headers.map(h => `"${(row as any)[h] || ""}"`).join(","))
-    ].join("\n");
+    const sheet = XLSX.utils.json_to_sheet(data);
+    sheet['!cols'] = [
+      { wch: 30 }, { wch: 12 }, { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 12 }, { wch: 12 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Requerimientos de OC");
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
 
-    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `requerimientos_oc_${yearNum}.csv`;
+    a.download = `requerimientos_oc_${yearNum}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Requerimientos exportados a Excel");
