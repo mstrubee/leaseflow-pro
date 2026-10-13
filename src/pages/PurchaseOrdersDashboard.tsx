@@ -1470,19 +1470,19 @@ const PurchaseOrdersDashboard = () => {
     }
   };
 
-  // Export requests to Excel
+  // Export requests to Excel -- siempre exporta filteredRequests (lo que
+  // reflejan los filtros activos: búsqueda, proyecto, estado, año), nunca
+  // una selección de checkboxes que pueda haber quedado de otro filtro --
+  // esos checkboxes son solo para el borrado masivo, una acción aparte.
   const exportRequestsToExcel = () => {
     const yearNum = parseInt(yearFilter);
-    const sourceRequests = selectedRequests.size > 0
-      ? filteredRequests.filter(r => selectedRequests.has(r.id))
-      : filteredRequests;
-    const data = sourceRequests.map(r => ({
+    const data = filteredRequests.map(r => ({
       "Número Solicitud": r.request_number,
       "Fecha": r.request_date,
       "Proyecto": r.project_name,
       "Línea": r.line_name,
       "Descripción": r.description || "",
-      "Monto UF": r.amount_uf,
+      "Monto": r.amount_clp || Math.round(r.amount_uf * ufValue),
       "Proveedor": r.supplier_name || "",
       "Estado": r.status === "pending" ? "Pendiente" : "Convertida",
     }));
@@ -1506,19 +1506,18 @@ const PurchaseOrdersDashboard = () => {
     toast.success("Solicitudes exportadas a Excel");
   };
 
-  // Export required (Requerimientos de OC) to Excel
+  // Export required (Requerimientos de OC) to Excel -- mismo criterio que
+  // exportRequestsToExcel: siempre filteredRequired, nunca una selección de
+  // checkboxes que pueda haber quedado de otro filtro.
   const exportRequiredToExcel = () => {
     const yearNum = parseInt(yearFilter);
-    const sourceRequired = selectedRequired.size > 0
-      ? filteredRequired.filter(g => selectedRequired.has(g.quotationNumber))
-      : filteredRequired;
-    const data = sourceRequired.map(g => ({
+    const data = filteredRequired.map(g => ({
       "Requerimiento": g.quotationNumber,
       "Fecha": g.quotationDate,
       "Proyecto": g.projectName,
       "Línea": g.lines.map(l => l.lineName).join(", "),
       "Proveedor": g.supplierName || "",
-      "Monto UF": g.amountUf,
+      "Monto": g.amountClp,
       "Estado": g.converted ? "Convertida" : "Pendiente",
     }));
 
@@ -4190,7 +4189,7 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead>Línea</TableHead>
                         <TableHead>Titulo</TableHead>
                         <TableHead>Proveedor</TableHead>
-                        <TableHead className="text-right">Monto (UF)</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
                         <TableHead>Estado</TableHead>
                         <TableHead>Acciones</TableHead>
                       </TableRow>
@@ -4240,7 +4239,9 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell className="max-w-[120px] truncate">{req.line_name}</TableCell>
                               <TableCell className="max-w-[150px] truncate">{req.description || "-"}</TableCell>
                               <TableCell className="max-w-[100px] truncate">{req.supplier_name || "-"}</TableCell>
-                              <TableCell className="text-right font-medium">{formatUF(req.amount_uf)}</TableCell>
+                              <TableCell className="text-right font-medium">
+                                {formatCLP(req.amount_clp || Math.round(req.amount_uf * ufValue))}
+                              </TableCell>
                               <TableCell>
                                 <Badge variant={req.status === "pending" ? "secondary" : "default"}>
                                   {req.status === "pending" ? "Pendiente" : "Convertida"}
