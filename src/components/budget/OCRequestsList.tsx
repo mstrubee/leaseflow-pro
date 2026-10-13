@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 // Card component removed - not in use currently
 import { Button } from "@/components/ui/button";
@@ -459,8 +460,6 @@ export const OCRequestsList = ({
   };
 
   const exportToExcel = (request: OCRequest) => {
-    // Generate CSV content
-    const BOM = '\uFEFF';
     const headers = ['Número Solicitud', 'Fecha', 'Línea', 'Proyecto', 'Descripción', 'Monto UF', 'Monto CLP', 'Proveedor', 'Estado'];
     const row = [
       request.request_number,
@@ -468,22 +467,27 @@ export const OCRequestsList = ({
       request.line_name,
       request.project_name,
       request.description || '',
-      request.amount_uf.toFixed(2),
-      Math.round(request.amount_clp).toString(),
+      request.amount_uf,
+      Math.round(request.amount_clp),
       request.supplier_name || '',
       request.status === 'pending' ? 'Pendiente' : 'Convertida'
     ];
 
-    const csvContent = BOM + [
-      headers.join(';'),
-      row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(';')
-    ].join('\n');
+    const sheet = XLSX.utils.aoa_to_sheet([headers, row]);
+    sheet['!cols'] = [
+      { wch: 30 }, { wch: 12 }, { wch: 25 }, { wch: 25 }, { wch: 30 },
+      { wch: 12 }, { wch: 14 }, { wch: 25 }, { wch: 12 },
+    ];
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Solicitud de OC");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `${request.request_number}.csv`);
+    link.setAttribute('download', `${request.request_number}.xlsx`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
