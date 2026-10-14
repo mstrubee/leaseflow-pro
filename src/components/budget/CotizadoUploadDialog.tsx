@@ -6,6 +6,7 @@ import { FileUp, Loader2, X, ExternalLink, ArrowRightCircle } from "lucide-react
 import { toast } from "sonner";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 import { sanitizeFileName } from "@/lib/fileValidation";
+import { extractStoragePath } from "@/lib/storageUtils";
 import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
 
 // Mismas extensiones aceptadas que CapexOCRequiredDialog.
@@ -37,9 +38,15 @@ interface CotizadoUploadDialogProps {
    *  previsualización en vez del selector de archivo. */
   existingFileUrl?: string | null;
   existingFileName?: string | null;
+  /** Ruta en Supabase Storage de la misma cotización (ver handleSave) -- se
+   *  usa para recuperar el archivo sin pedírselo de nuevo al avanzar a "OC
+   *  Requerida". Si es null (cotización subida antes de que existiera esta
+   *  columna, o ya vencida), se avanza igual pero pidiendo el archivo de nuevo. */
+  existingStoragePath?: string | null;
   /** El padre abre el flujo completo de "OC Requerida" (CapexOCRequiredDialog)
-   *  para esta misma línea, con el id del estado "OC Requerida" ya resuelto. */
-  onAdvanceToOcRequerida: (ocRequeridaStatusId: string) => void;
+   *  para esta misma línea, con el id del estado "OC Requerida" ya resuelto y,
+   *  si se pudo recuperar, el mismo archivo ya adjunto. */
+  onAdvanceToOcRequerida: (ocRequeridaStatusId: string, initialFile: File | null) => void;
   onComplete: () => void;
 }
 
@@ -66,6 +73,7 @@ export function CotizadoUploadDialog({
   cotizadoStatusId,
   existingFileUrl,
   existingFileName,
+  existingStoragePath,
   onAdvanceToOcRequerida,
   onComplete,
 }: CotizadoUploadDialogProps) {
@@ -74,6 +82,7 @@ export function CotizadoUploadDialog({
 
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
   // "view": muestra la cotización ya subida. "upload": selector de archivo
   // (primera subida, o reemplazo de la existente).
   const [mode, setMode] = useState<"view" | "upload">(existingFileUrl ? "view" : "upload");
@@ -121,6 +130,7 @@ export function CotizadoUploadDialog({
           progress_status_id: cotizadoStatusId,
           quotation_file_url: upload.driveUrl,
           quotation_file_name: driveFileName,
+          quotation_storage_path: upload.storagePath ?? null,
         })
         .eq("id", lineId);
       if (error) throw error;
@@ -136,12 +146,34 @@ export function CotizadoUploadDialog({
     }
   };
 
-  const handleAdvance = () => {
+  // Intenta recuperar el mismo archivo ya subido (desde Supabase Storage,
+  // donde queda una copia además de la que se sube a Drive) para no
+  // pedírselo de nuevo al usuario en el flujo de "OC Requerida". Si no se
+  // puede (cotización subida antes de esta columna, o ya vencida), igual se
+  // avanza pero pidiendo el archivo de nuevo.
+  const handleAdvance = async () => {
     if (!ocRequeridaStatusId) {
       toast.error("No se encontró el estado \"OC Requerida\"");
       return;
     }
-    onAdvanceToOcRequerida(ocRequeridaStatusId);
+    const storagePath = existingStoragePath ? extractStoragePath(existingStoragePath) : null;
+    if (!storagePath) {
+      onAdvanceToOcRequerida(ocRequeridaStatusId, null);
+      return;
+    }
+    setAdvancing(true);
+    try {
+      const { data: blob, error } = await supabase.storage.from("repository-files").download(storagePath);
+      if (error || !blob) throw error || new Error("Archivo no encontrado");
+      const recoveredFile = new File([blob], existingFileName || "cotizacion", { type: blob.type });
+      onAdvanceToOcRequerida(ocRequeridaStatusId, recoveredFile);
+    } catch (error: any) {
+      console.error("No se pudo recuperar el archivo original:", error);
+      toast.error("No se encontró el archivo original de la cotización -- deberá adjuntarlo nuevamente");
+      onAdvanceToOcRequerida(ocRequeridaStatusId, null);
+    } finally {
+      setAdvancing(false);
+    }
   };
 
   const previewUrl = getDrivePreviewUrl(existingFileUrl);
@@ -206,15 +238,15 @@ export function CotizadoUploadDialog({
         <DialogFooter className="gap-2 sm:gap-2">
           {mode === "view" ? (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={advancing}>
                 Cerrar
               </Button>
-              <Button variant="outline" onClick={() => setMode("upload")} className="gap-1">
+              <Button variant="outline" onClick={() => setMode("upload")} className="gap-1" disabled={advancing}>
                 <FileUp className="h-4 w-4" />
                 Reemplazar archivo
               </Button>
-              <Button onClick={handleAdvance} className="gap-1">
-                <ArrowRightCircle className="h-4 w-4" />
+              <Button onClick={handleAdvance} className="gap-1" disabled={advancing}>
+                {advancing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightCircle className="h-4 w-4" />}
                 Avanzar a Requerimiento de OC
               </Button>
             </>

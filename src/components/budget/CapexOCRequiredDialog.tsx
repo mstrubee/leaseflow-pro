@@ -48,6 +48,10 @@ interface CapexOCRequiredDialogProps {
    *  ninguna. */
   additionalLines: CapexLineRef[];
   additionalLinesVersion: number;
+  /** Cotización ya subida previamente (ver CotizadoUploadDialog.tsx > "Avanzar
+   *  a Requerimiento de OC") -- si viene, se pre-carga y el diálogo arranca
+   *  directo en el paso "amount" en vez de pedir el archivo de nuevo. */
+  initialFile?: File | null;
   onComplete: () => void;
 }
 
@@ -95,6 +99,7 @@ export function CapexOCRequiredDialog({
   onRequestLineSelection,
   additionalLines,
   additionalLinesVersion,
+  initialFile,
   onComplete,
 }: CapexOCRequiredDialogProps) {
   const { statuses } = useBudgetProgressStatuses();
@@ -211,6 +216,16 @@ export function CapexOCRequiredDialog({
     setPreviewUrl(URL.createObjectURL(f));
     setStep("amount");
   };
+
+  // Viene de "Avanzar a Requerimiento de OC" en CotizadoUploadDialog con la
+  // cotización ya subida antes -- se precarga y se salta directo al paso
+  // "amount" en vez de pedir el archivo de nuevo.
+  useEffect(() => {
+    if (open && initialFile) {
+      handleFileChange(initialFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
 
   const paymentPlanError = validatePaymentPlanTotal(
     paymentPlan.filter((p) => parseFloat(p.amount) > 0).map((p) => Math.round(parseFloat(p.amount) || 0)),

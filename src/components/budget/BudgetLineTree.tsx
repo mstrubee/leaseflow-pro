@@ -128,6 +128,7 @@ export interface BudgetLine {
    *  en la carpeta "Cotizaciones" del contrato en Drive. */
   quotation_file_url?: string | null;
   quotation_file_name?: string | null;
+  quotation_storage_path?: string | null;
   is_surcharge?: boolean;
   surcharge_parent_line_id?: string | null;
   surcharge_reason?: string | null;

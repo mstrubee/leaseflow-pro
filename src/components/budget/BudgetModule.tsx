@@ -78,7 +78,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
 
   // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
-  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null } | null>(null);
+  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null; initialFile: File | null } | null>(null);
 
   // Diálogo liviano de subida de cotización al marcar una línea CAPEX como "Cotizado"
   const [cotizadoPrompt, setCotizadoPrompt] = useState<{
@@ -91,6 +91,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     supplierName: string | null;
     existingFileUrl: string | null;
     existingFileName: string | null;
+    existingStoragePath: string | null;
   } | null>(null);
 
   // Editar un requerimiento "OC Requerida" ya creado, directamente desde el
@@ -507,7 +508,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // CotizadoUploadDialog.tsx) -- reutiliza el mismo flujo completo de
   // CapexOCRequiredDialog que ya usa el badge "OC Requerida", solo que
   // entrando desde "Cotizado" en vez de desde el popover de estados.
-  const handleAdvanceToOcRequerida = (ocRequeridaStatusId: string) => {
+  const handleAdvanceToOcRequerida = (ocRequeridaStatusId: string, initialFile: File | null) => {
     if (!cotizadoPrompt) return;
     setCapexAdditionalLines([]);
     setCapexAdditionalLinesVersion(0);
@@ -519,6 +520,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       newStatusId: ocRequeridaStatusId,
       supplierId: cotizadoPrompt.supplierId,
       supplierName: cotizadoPrompt.supplierName,
+      initialFile,
     });
     setCotizadoPrompt(null);
   };
@@ -2447,6 +2449,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     newStatusId,
                     supplierId: line?.supplier_id ?? null,
                     supplierName: line?.supplier_name ?? null,
+                    initialFile: null,
                   });
                 } : undefined}
                 onEditOcRequired={budgetType === "capex" ? handleEditOcRequired : undefined}
@@ -2474,6 +2477,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     supplierName: line?.supplier_name ?? null,
                     existingFileUrl: line?.quotation_file_url ?? null,
                     existingFileName: line?.quotation_file_name ?? null,
+                    existingStoragePath: line?.quotation_storage_path ?? null,
                   });
                 } : undefined}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
@@ -3100,6 +3104,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           onRequestLineSelection={handleEnterCapexLineSelection}
           additionalLines={capexAdditionalLines}
           additionalLinesVersion={capexAdditionalLinesVersion}
+          initialFile={ocRequiredPrompt.initialFile}
           onComplete={() => {
             setOcRequiredPrompt(null);
             loadLines(currentBudget.id);
@@ -3118,6 +3123,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           cotizadoStatusId={cotizadoPrompt.newStatusId}
           existingFileUrl={cotizadoPrompt.existingFileUrl}
           existingFileName={cotizadoPrompt.existingFileName}
+          existingStoragePath={cotizadoPrompt.existingStoragePath}
           onAdvanceToOcRequerida={handleAdvanceToOcRequerida}
           onComplete={() => {
             setCotizadoPrompt(null);
