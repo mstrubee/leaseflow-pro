@@ -123,6 +123,11 @@ export interface BudgetLine {
   calc_source_line_id?: string | null;
   calc_percentage?: number | null;
   progress_status_id?: string | null;
+  /** Cotización adjunta al marcar la línea como "Cotizado" directamente
+   *  desde el badge (ver CotizadoUploadDialog.tsx) -- referencia al archivo
+   *  en la carpeta "Cotizaciones" del contrato en Drive. */
+  quotation_file_url?: string | null;
+  quotation_file_name?: string | null;
   is_surcharge?: boolean;
   surcharge_parent_line_id?: string | null;
   surcharge_reason?: string | null;

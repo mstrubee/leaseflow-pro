@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { FileUp, Loader2, X } from "lucide-react";
+import { FileUp, Loader2, X, ExternalLink, ArrowRightCircle } from "lucide-react";
 import { toast } from "sonner";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 import { sanitizeFileName } from "@/lib/fileValidation";
+import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
 
 // Mismas extensiones aceptadas que CapexOCRequiredDialog.
 const ACCEPTED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".xls", ".xlsx", ".doc", ".docx"];
@@ -15,6 +16,16 @@ const ACCEPT_ATTR =
   "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
   "application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+// Convierte el link de Drive guardado (.../file/d/<ID>/view...) al formato
+// embebible del visor de Drive (.../file/d/<ID>/preview), que soporta PDF,
+// imágenes, Word y Excel sin descargar nada.
+function getDrivePreviewUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([^/]+)/);
+  if (!match) return null;
+  return `https://drive.google.com/file/d/${match[1]}/preview`;
+}
+
 interface CotizadoUploadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -22,11 +33,18 @@ interface CotizadoUploadDialogProps {
   lineId: string;
   lineName: string;
   cotizadoStatusId: string;
+  /** Cotización ya subida (si la línea ya está "Cotizado") -- se muestra con
+   *  previsualización en vez del selector de archivo. */
+  existingFileUrl?: string | null;
+  existingFileName?: string | null;
+  /** El padre abre el flujo completo de "OC Requerida" (CapexOCRequiredDialog)
+   *  para esta misma línea, con el id del estado "OC Requerida" ya resuelto. */
+  onAdvanceToOcRequerida: (ocRequeridaStatusId: string) => void;
   onComplete: () => void;
 }
 
 /**
- * Se abre al marcar una línea CAPEX como "Cotizado" directamente desde el
+ * Se abre al marcar (o reabrir) una línea CAPEX como "Cotizado" desde el
  * badge de Estado de Avance (ver BudgetLineTree.tsx > ProgressStatusBadge).
  * A diferencia de "OC Requerida" (CapexOCRequiredDialog), acá no se pide
  * monto ni proveedor -- solo adjuntar la cotización. El archivo se sube a la
@@ -34,6 +52,10 @@ interface CotizadoUploadDialogProps {
  * repositoryBackup.ts), renombrado a "aaaa-mm-dd_NombreDeLaLinea.<ext>". El
  * estado de la línea solo cambia si la subida termina bien -- si se cancela
  * el diálogo, el badge no cambia.
+ *
+ * Si la línea ya tiene una cotización subida, se abre en modo "ver" con
+ * previsualización embebida (visor de Drive) en vez del selector de
+ * archivo, con opción de reemplazarla o de avanzar directo a "OC Requerida".
  */
 export function CotizadoUploadDialog({
   open,
@@ -42,10 +64,27 @@ export function CotizadoUploadDialog({
   lineId,
   lineName,
   cotizadoStatusId,
+  existingFileUrl,
+  existingFileName,
+  onAdvanceToOcRequerida,
   onComplete,
 }: CotizadoUploadDialogProps) {
+  const { statuses } = useBudgetProgressStatuses();
+  const ocRequeridaStatusId = statuses.find((s) => s.name.trim().toLowerCase() === "oc requerida")?.id ?? null;
+
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  // "view": muestra la cotización ya subida. "upload": selector de archivo
+  // (primera subida, o reemplazo de la existente).
+  const [mode, setMode] = useState<"view" | "upload">(existingFileUrl ? "view" : "upload");
+
+  useEffect(() => {
+    if (open) {
+      setMode(existingFileUrl ? "view" : "upload");
+      setFile(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lineId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -97,42 +136,103 @@ export function CotizadoUploadDialog({
     }
   };
 
+  const handleAdvance = () => {
+    if (!ocRequeridaStatusId) {
+      toast.error("No se encontró el estado \"OC Requerida\"");
+      return;
+    }
+    onAdvanceToOcRequerida(ocRequeridaStatusId);
+  };
+
+  const previewUrl = getDrivePreviewUrl(existingFileUrl);
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) setFile(null); onOpenChange(o); }}>
-      <DialogContent>
+      <DialogContent className={mode === "view" ? "max-w-2xl" : undefined}>
         <DialogHeader>
-          <DialogTitle>Marcar como Cotizado</DialogTitle>
+          <DialogTitle>{mode === "view" ? "Cotización" : "Marcar como Cotizado"}</DialogTitle>
           <DialogDescription>
-            Línea: <strong>{lineName}</strong>. Adjunte la cotización (PDF, Word, Excel o imagen) -- se guarda en la
-            carpeta "Cotizaciones" del contrato en Drive.
+            Línea: <strong>{lineName}</strong>.{" "}
+            {mode === "view"
+              ? "Esta es la cotización adjunta."
+              : "Adjunte la cotización (PDF, Word, Excel o imagen) -- se guarda en la carpeta \"Cotizaciones\" del contrato en Drive."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          {!file ? (
-            <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-8 cursor-pointer hover:bg-muted/50 transition-colors">
-              <FileUp className="h-8 w-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Haga clic para elegir un archivo</span>
-              <input type="file" accept={ACCEPT_ATTR} className="hidden" onChange={handleFileChange} />
-            </label>
-          ) : (
-            <div className="flex items-center justify-between p-3 rounded-md border bg-muted/30 text-sm">
-              <span className="truncate">{file.name}</span>
-              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setFile(null)} disabled={saving}>
-                <X className="h-3 w-3" />
-              </Button>
+        {mode === "view" ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="truncate font-medium">{existingFileName}</span>
+              {existingFileUrl && (
+                <Button variant="outline" size="sm" className="shrink-0 gap-1" asChild>
+                  <a href={existingFileUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-3 w-3" />
+                    Abrir en Drive
+                  </a>
+                </Button>
+              )}
             </div>
-          )}
-        </div>
+            {previewUrl ? (
+              <iframe
+                src={previewUrl}
+                title="Vista previa de la cotización"
+                className="w-full h-[420px] rounded-md border"
+              />
+            ) : (
+              <div className="py-10 text-center text-sm text-muted-foreground border rounded-md">
+                No se pudo generar la vista previa. Use "Abrir en Drive" para verla.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {!file ? (
+              <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-8 cursor-pointer hover:bg-muted/50 transition-colors">
+                <FileUp className="h-8 w-8 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Haga clic para elegir un archivo</span>
+                <input type="file" accept={ACCEPT_ATTR} className="hidden" onChange={handleFileChange} />
+              </label>
+            ) : (
+              <div className="flex items-center justify-between p-3 rounded-md border bg-muted/30 text-sm">
+                <span className="truncate">{file.name}</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setFile(null)} disabled={saving}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSave} disabled={saving || !file}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Guardar
-          </Button>
+        <DialogFooter className="gap-2 sm:gap-2">
+          {mode === "view" ? (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cerrar
+              </Button>
+              <Button variant="outline" onClick={() => setMode("upload")} className="gap-1">
+                <FileUp className="h-4 w-4" />
+                Reemplazar archivo
+              </Button>
+              <Button onClick={handleAdvance} className="gap-1">
+                <ArrowRightCircle className="h-4 w-4" />
+                Avanzar a Requerimiento de OC
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => (existingFileUrl ? setMode("view") : onOpenChange(false))}
+                disabled={saving}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={handleSave} disabled={saving || !file}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Guardar
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

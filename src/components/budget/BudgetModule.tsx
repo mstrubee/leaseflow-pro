@@ -81,7 +81,17 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null } | null>(null);
 
   // Diálogo liviano de subida de cotización al marcar una línea CAPEX como "Cotizado"
-  const [cotizadoPrompt, setCotizadoPrompt] = useState<{ lineId: string; lineName: string; newStatusId: string } | null>(null);
+  const [cotizadoPrompt, setCotizadoPrompt] = useState<{
+    lineId: string;
+    lineName: string;
+    lineAmountUf: number;
+    lineStatus: string;
+    newStatusId: string;
+    supplierId: string | null;
+    supplierName: string | null;
+    existingFileUrl: string | null;
+    existingFileName: string | null;
+  } | null>(null);
 
   // Editar un requerimiento "OC Requerida" ya creado, directamente desde el
   // badge del árbol (ver onEditOcRequired más abajo) -- mismo diálogo que usa
@@ -492,6 +502,26 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       setLoadingEditOcRequired(false);
     }
   }, [contractId, ufValue, toast, loadingEditOcRequired]);
+
+  // "Avanzar a Requerimiento de OC" desde el diálogo de "Cotizado" (ver
+  // CotizadoUploadDialog.tsx) -- reutiliza el mismo flujo completo de
+  // CapexOCRequiredDialog que ya usa el badge "OC Requerida", solo que
+  // entrando desde "Cotizado" en vez de desde el popover de estados.
+  const handleAdvanceToOcRequerida = (ocRequeridaStatusId: string) => {
+    if (!cotizadoPrompt) return;
+    setCapexAdditionalLines([]);
+    setCapexAdditionalLinesVersion(0);
+    setOcRequiredPrompt({
+      lineId: cotizadoPrompt.lineId,
+      lineName: cotizadoPrompt.lineName,
+      lineAmountUf: cotizadoPrompt.lineAmountUf,
+      lineStatus: cotizadoPrompt.lineStatus,
+      newStatusId: ocRequeridaStatusId,
+      supplierId: cotizadoPrompt.supplierId,
+      supplierName: cotizadoPrompt.supplierName,
+    });
+    setCotizadoPrompt(null);
+  };
 
   // Selecciona de una sola vez todas las marcas de líneas movidas (is_ghost),
   // sin tener que expandir el árbol completo y marcarlas una por una.
@@ -2432,7 +2462,19 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     return null;
                   };
                   const line = findLine(lines);
-                  setCotizadoPrompt({ lineId, lineName: line?.name ?? "", newStatusId });
+                  const linesById = new Map(flattenLines(lines).map((l) => [l.id, l]));
+                  const liveAmountUf = line ? calculateLineLiveAmount(line, linesById, templatePricesMap, ufValue) : 0;
+                  setCotizadoPrompt({
+                    lineId,
+                    lineName: line?.name ?? "",
+                    lineAmountUf: liveAmountUf,
+                    lineStatus: line?.status ?? "no_autorizado",
+                    newStatusId,
+                    supplierId: line?.supplier_id ?? null,
+                    supplierName: line?.supplier_name ?? null,
+                    existingFileUrl: line?.quotation_file_url ?? null,
+                    existingFileName: line?.quotation_file_name ?? null,
+                  });
                 } : undefined}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
                 readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
@@ -3074,6 +3116,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           lineId={cotizadoPrompt.lineId}
           lineName={cotizadoPrompt.lineName}
           cotizadoStatusId={cotizadoPrompt.newStatusId}
+          existingFileUrl={cotizadoPrompt.existingFileUrl}
+          existingFileName={cotizadoPrompt.existingFileName}
+          onAdvanceToOcRequerida={handleAdvanceToOcRequerida}
           onComplete={() => {
             setCotizadoPrompt(null);
             loadLines(currentBudget.id);
