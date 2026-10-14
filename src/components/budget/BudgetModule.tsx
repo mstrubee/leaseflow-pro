@@ -24,6 +24,7 @@ import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
 import { CapexOCRequiredDialog } from "./CapexOCRequiredDialog";
 import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
+import { CotizadoUploadDialog } from "./CotizadoUploadDialog";
 import { loadOCRequiredGroupForLine, type OCRequiredGroup } from "@/lib/ocRequiredGroups";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
@@ -78,6 +79,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
 
   // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
   const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null } | null>(null);
+
+  // Diálogo liviano de subida de cotización al marcar una línea CAPEX como "Cotizado"
+  const [cotizadoPrompt, setCotizadoPrompt] = useState<{ lineId: string; lineName: string; newStatusId: string } | null>(null);
 
   // Editar un requerimiento "OC Requerida" ya creado, directamente desde el
   // badge del árbol (ver onEditOcRequired más abajo) -- mismo diálogo que usa
@@ -2416,6 +2420,20 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                   });
                 } : undefined}
                 onEditOcRequired={budgetType === "capex" ? handleEditOcRequired : undefined}
+                onCotizado={budgetType === "capex" ? (lineId, newStatusId) => {
+                  const findLine = (items: BudgetLine[]): BudgetLine | null => {
+                    for (const item of items) {
+                      if (item.id === lineId) return item;
+                      if (item.children?.length) {
+                        const found = findLine(item.children);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+                  const line = findLine(lines);
+                  setCotizadoPrompt({ lineId, lineName: line?.name ?? "", newStatusId });
+                } : undefined}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
                 readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
                 // El badge de Estado de Avance usa su propio permiso
@@ -3042,6 +3060,22 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           additionalLinesVersion={capexAdditionalLinesVersion}
           onComplete={() => {
             setOcRequiredPrompt(null);
+            loadLines(currentBudget.id);
+          }}
+        />
+      )}
+
+      {/* Diálogo liviano de subida de cotización al marcar una línea CAPEX como "Cotizado" */}
+      {cotizadoPrompt && currentBudget && (
+        <CotizadoUploadDialog
+          open={!!cotizadoPrompt}
+          onOpenChange={(open) => { if (!open) setCotizadoPrompt(null); }}
+          contractId={contractId}
+          lineId={cotizadoPrompt.lineId}
+          lineName={cotizadoPrompt.lineName}
+          cotizadoStatusId={cotizadoPrompt.newStatusId}
+          onComplete={() => {
+            setCotizadoPrompt(null);
             loadLines(currentBudget.id);
           }}
         />

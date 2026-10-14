@@ -135,7 +135,7 @@ export interface BudgetLine {
   children?: BudgetLine[];
 }
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired, onEditOcRequired }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired, onEditOcRequired, onCotizado }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void; onCotizado?: (lineId: string, newStatusId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -187,6 +187,13 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, line
       setOpen(false);
       if (isOcRequerida && onEditOcRequired) onEditOcRequired(lineId);
       else if (onOcRequired) onOcRequired(lineId, s.id);
+    } else if (s.name.trim().toLowerCase() === "cotizado" && onCotizado) {
+      // Al elegir "Cotizado": el padre abre un diálogo liviano para adjuntar
+      // la cotización (PDF/Word/Excel/imagen) antes de aplicar el cambio --
+      // igual que con "OC Requerida", si el usuario cancela ese diálogo el
+      // badge no cambia.
+      setOpen(false);
+      onCotizado(lineId, s.id);
     } else {
       handleChange(s.id);
     }
@@ -303,6 +310,11 @@ interface BudgetLineTreeProps {
    *  pueda ver la línea -- sin restricción propia, igual que el botón
    *  "Editar" de OCRequiredList. */
   onEditOcRequired?: (lineId: string) => void;
+  /** Se llama en vez de cambiar el estado directo cuando el usuario elige
+   *  "Cotizado" -- el padre debe abrir el diálogo liviano de subida de
+   *  cotización antes de aplicar el cambio. Solo se pasa desde presupuestos
+   *  CAPEX. */
+  onCotizado?: (lineId: string, newStatusId: string) => void;
   /** Ids de líneas que tienen algo que mostrar en "Ver Ppto/OC/Factura"
    *  (cotización, OC/solicitud o factura asociada) -- controla si el botón
    *  está habilitado. */
@@ -361,6 +373,7 @@ export const BudgetLineTree = ({
   onViewLineDetails,
   onOcRequired,
   onEditOcRequired,
+  onCotizado,
   linesWithDetails,
   level = 0,
   readOnly = false,
@@ -461,6 +474,7 @@ export const BudgetLineTree = ({
       onViewLineDetails={onViewLineDetails}
       onOcRequired={onOcRequired}
       onEditOcRequired={onEditOcRequired}
+      onCotizado={onCotizado}
       linesWithDetails={linesWithDetails}
       readOnly={readOnly}
       estadoReadOnly={estadoReadOnly}
@@ -513,6 +527,7 @@ interface BudgetLineItemProps {
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   onOcRequired?: (lineId: string, newStatusId: string) => void;
   onEditOcRequired?: (lineId: string) => void;
+  onCotizado?: (lineId: string, newStatusId: string) => void;
   linesWithDetails?: Set<string>;
   readOnly?: boolean;
   estadoReadOnly?: boolean;
@@ -555,6 +570,7 @@ const BudgetLineItemInner = ({
   onViewLineDetails,
   onOcRequired,
   onEditOcRequired,
+  onCotizado,
   linesWithDetails,
   readOnly = false,
   estadoReadOnly = readOnly,
@@ -1749,6 +1765,7 @@ const BudgetLineItemInner = ({
               lineStatus={line.status}
               onOcRequired={onOcRequired}
               onEditOcRequired={onEditOcRequired}
+              onCotizado={onCotizado}
             />
           )}
 
@@ -1903,7 +1920,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} onEditOcRequired={onEditOcRequired} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} onEditOcRequired={onEditOcRequired} onCotizado={onCotizado} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
