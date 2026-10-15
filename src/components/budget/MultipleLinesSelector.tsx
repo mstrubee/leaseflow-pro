@@ -14,7 +14,7 @@ interface BudgetLine {
   parent_id: string | null;
   amount_uf: number;
   amount_clp?: number; // For OPEX lines in CLP
-  status: "autorizado" | "no_autorizado";
+  status: "autorizado" | "no_autorizado" | "solicita_autorizar";
   children?: BudgetLine[];
 }
 

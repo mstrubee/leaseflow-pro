@@ -494,7 +494,7 @@ export function CapexOCRequiredDialog({
                       </span>
                     </span>
                     <span className="text-[10px] uppercase text-muted-foreground">
-                      {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
+                      {line.status === "autorizado" ? "Autorizado" : line.status === "solicita_autorizar" ? "Solicita Autorizar" : "No autorizado"}
                     </span>
                   </div>
                 </div>

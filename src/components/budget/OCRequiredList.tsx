@@ -287,7 +287,7 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
                                     UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                   <span className="text-[10px] uppercase text-muted-foreground">
-                                    {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
+                                    {line.status === "autorizado" ? "Autorizado" : line.status === "solicita_autorizar" ? "Solicita Autorizar" : "No autorizado"}
                                   </span>
                                 </div>
                               </div>

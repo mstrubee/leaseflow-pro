@@ -86,6 +86,8 @@ import {
   Wrench,
   Eye,
   Paperclip,
+  Hourglass,
+  Check,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -180,6 +182,21 @@ interface Contract {
   id: string;
   name: string;
   company_names?: string[];
+}
+
+/** Una línea de presupuesto (CAPEX u OPEX) en estado "Solicita Autorizar",
+ *  o ya "Autorizado" mientras siga dentro de la ventana de 24hs de
+ *  "Aprobadas" (ver loadData > solicitaLines y la pestaña homónima). */
+interface SolicitaAutorizacionLine {
+  id: string;
+  name: string;
+  amount_uf: number;
+  status: "solicita_autorizar" | "autorizado";
+  authorized_at: string | null;
+  budget_id: string;
+  contract_id: string;
+  year: number;
+  budget_type: string;
 }
 
 interface OCRequiredGroupLine {
@@ -311,6 +328,9 @@ const PurchaseOrdersDashboard = () => {
   const [expandedRequired, setExpandedRequired] = useState<Set<string>>(new Set());
   const [requeridasContractFilter, setRequeridasContractFilter] = useState("todos");
   const [requeridasStatusFilter, setRequeridasStatusFilter] = useState("todos");
+  const [solicitaLines, setSolicitaLines] = useState<SolicitaAutorizacionLine[]>([]);
+  const [solicitaContractFilter, setSolicitaContractFilter] = useState("todos");
+  const [approvingLineId, setApprovingLineId] = useState<string | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; is_generic: boolean }[]>([]);
@@ -739,6 +759,40 @@ const PurchaseOrdersDashboard = () => {
       } else {
         setOcRequiredGroups([]);
       }
+
+      // Load "Solicita Autorización" (líneas CAPEX/OPEX pidiendo autorización,
+      // + ya autorizadas hace menos de 24hs -- ver pestaña homónima). Cross-
+      // contrato, igual que Requerimientos de OC arriba.
+      const authorizedCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedLinesData, error: approvedLinesError }] = await Promise.all([
+        supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, status, authorized_at, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+          .is("deleted_at", null)
+          .eq("status", "solicita_autorizar"),
+        supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, status, authorized_at, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+          .is("deleted_at", null)
+          .eq("status", "autorizado")
+          .gte("authorized_at", authorizedCutoffIso),
+      ]);
+      if (pendingLinesError) console.error("Error loading solicita_autorizar lines:", pendingLinesError);
+      if (approvedLinesError) console.error("Error loading recently approved lines:", approvedLinesError);
+      const solicitaRows = [...(pendingLinesData || []), ...(approvedLinesData || [])];
+      setSolicitaLines(
+        solicitaRows.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          amount_uf: r.amount_uf || 0,
+          status: r.status,
+          authorized_at: r.authorized_at,
+          budget_id: r.budget_id,
+          contract_id: r.contract_budgets?.contract_id,
+          year: r.contract_budgets?.year,
+          budget_type: r.contract_budgets?.budget_type,
+        }))
+      );
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -1315,6 +1369,43 @@ const PurchaseOrdersDashboard = () => {
 
     return filtered;
   }, [ocRequiredGroups, yearFilter, searchTerm, requeridasContractFilter, requeridasStatusFilter]);
+
+  const filteredSolicitaLines = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    let filtered = solicitaLines.filter((l) => l.year === yearNum);
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((l) => {
+        const contractName = contracts.find((c) => c.id === l.contract_id)?.name || "";
+        return l.name.toLowerCase().includes(term) || contractName.toLowerCase().includes(term);
+      });
+    }
+
+    if (solicitaContractFilter !== "todos") {
+      filtered = filtered.filter((l) => l.contract_id === solicitaContractFilter);
+    }
+
+    return filtered;
+  }, [solicitaLines, yearFilter, searchTerm, solicitaContractFilter, contracts]);
+
+  const solicitaPending = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "solicita_autorizar"), [filteredSolicitaLines]);
+  const solicitaApproved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "autorizado"), [filteredSolicitaLines]);
+
+  const handleApproveSolicitaLine = async (lineId: string) => {
+    setApprovingLineId(lineId);
+    try {
+      const { error } = await supabase.from("budget_lines").update({ status: "autorizado" }).eq("id", lineId);
+      if (error) throw error;
+      toast.success("Línea autorizada");
+      await loadData();
+    } catch (error: any) {
+      console.error("Error approving line:", error);
+      toast.error(error.message || "No se pudo autorizar la línea");
+    } finally {
+      setApprovingLineId(null);
+    }
+  };
 
   // OC Request summary - only count pending for display (converted are hidden)
   const requestSummary = useMemo(() => {
@@ -2978,7 +3069,7 @@ const PurchaseOrdersDashboard = () => {
 
         {/* Tabs for OC and Requests */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 mb-4">
+          <TabsList className="grid w-full grid-cols-4 mb-4">
             <TabsTrigger value="oc" className="gap-2">
               <ShoppingCart className="h-4 w-4" />
               Órdenes de Compra ({groupedOrdersByNumber.length})
@@ -2990,6 +3081,10 @@ const PurchaseOrdersDashboard = () => {
             <TabsTrigger value="requeridas" className="gap-2">
               <FileText className="h-4 w-4" />
               Requerimientos de OC ({ocRequiredGroups.length})
+            </TabsTrigger>
+            <TabsTrigger value="solicita" className="gap-2">
+              <Hourglass className="h-4 w-4" />
+              Solicita Autorización ({solicitaPending.length})
             </TabsTrigger>
           </TabsList>
 
@@ -4595,7 +4690,7 @@ const PurchaseOrdersDashboard = () => {
                                               UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                             <span className="text-[10px] uppercase text-muted-foreground">
-                                              {line.status === "autorizado" ? "Autorizado" : "No autorizado"}
+                                              {line.status === "autorizado" ? "Autorizado" : line.status === "solicita_autorizar" ? "Solicita Autorizar" : "No autorizado"}
                                             </span>
                                           </div>
                                         </div>
@@ -4612,6 +4707,191 @@ const PurchaseOrdersDashboard = () => {
                   </Table>
                 </CardContent>
               </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="solicita">
+            {/* Solicita Autorización Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <Hourglass className="h-4 w-4" />
+                    Pendientes de Autorización
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-orange-600">{solicitaPending.length}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatCLP(solicitaPending.reduce((sum, l) => sum + l.amount_uf * ufValue, 0))}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Aprobadas (últimas 24 horas)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{solicitaApproved.length}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatCLP(solicitaApproved.reduce((sum, l) => sum + l.amount_uf * ufValue, 0))}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Filtros: Buscar (compartido), Proyecto */}
+            <Card className="mb-4">
+              <CardContent className="pt-4">
+                <div className="flex gap-3 items-end overflow-x-auto pb-1">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[200px] shrink-0">
+                    <Label className="text-xs text-muted-foreground">Buscar</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Línea o proyecto..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Label className="text-xs text-muted-foreground">Proyecto</Label>
+                    <ContractSearchSelect
+                      value={solicitaContractFilter}
+                      onValueChange={setSolicitaContractFilter}
+                      contracts={contracts}
+                      placeholder="Proyecto"
+                      showAllOption
+                      allOptionLabel="Todos los proyectos"
+                      allOptionValue="todos"
+                      triggerClassName="w-[180px]"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : filteredSolicitaLines.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  No hay líneas pidiendo autorización para el año {yearFilter}
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {solicitaPending.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Pendientes ({solicitaPending.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Proyecto</TableHead>
+                            <TableHead>Línea</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                            <TableHead>Estado</TableHead>
+                            <TableHead className="text-right">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {solicitaPending.map((l) => {
+                            const contractName = contracts.find((c) => c.id === l.contract_id)?.name || "Sin contrato";
+                            return (
+                              <TableRow key={l.id}>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <CompanyLogo companyNames={[contractCompanyMap.get(l.contract_id) || ""].filter(Boolean)} size="sm" />
+                                    <span className="truncate max-w-[160px]">{contractName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="truncate max-w-[180px]">{l.name}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={l.budget_type === "capex" ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"}>
+                                    {l.budget_type?.toUpperCase() || "N/A"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">{formatCLP(l.amount_uf * ufValue)}</TableCell>
+                                <TableCell>
+                                  <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-[10px]">Solicita Autorizar</Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="sm"
+                                    className="gap-1"
+                                    onClick={() => handleApproveSolicitaLine(l.id)}
+                                    disabled={approvingLineId === l.id}
+                                  >
+                                    <Check className="h-3 w-3" />
+                                    Autorizar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {solicitaApproved.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Aprobadas ({solicitaApproved.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Proyecto</TableHead>
+                            <TableHead>Línea</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                            <TableHead>Estado</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {solicitaApproved.map((l) => {
+                            const contractName = contracts.find((c) => c.id === l.contract_id)?.name || "Sin contrato";
+                            return (
+                              <TableRow key={l.id} className="opacity-80">
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <CompanyLogo companyNames={[contractCompanyMap.get(l.contract_id) || ""].filter(Boolean)} size="sm" />
+                                    <span className="truncate max-w-[160px]">{contractName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="truncate max-w-[180px]">{l.name}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={l.budget_type === "capex" ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"}>
+                                    {l.budget_type?.toUpperCase() || "N/A"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">{formatCLP(l.amount_uf * ufValue)}</TableCell>
+                                <TableCell>
+                                  <Badge className="bg-green-500 text-[10px]">Autorizado</Badge>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             )}
           </TabsContent>
         </Tabs>

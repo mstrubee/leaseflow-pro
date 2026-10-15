@@ -108,7 +108,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   
   // State propagation dialog
   const [showStatePropagation, setShowStatePropagation] = useState(false);
-  const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado" | "solicita_autorizar"; hasChildren: boolean } | null>(null);
 
   // Bulk-move (line selection) state -- también se reutiliza para "OC
   // Requerida" > seleccionar líneas adicionales (selectionPurpose distingue
@@ -2583,7 +2583,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           <AlertDialogHeader>
             <AlertDialogTitle>Cambiar estado de línea</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta línea tiene sublíneas dependientes. ¿Desea aplicar el estado "{pendingStatusChange?.newStatus === "autorizado" ? "Autorizado" : "No Autorizado"}" a todas las subcategorías?
+              Esta línea tiene sublíneas dependientes. ¿Desea aplicar el estado "{pendingStatusChange?.newStatus === "autorizado" ? "Autorizado" : pendingStatusChange?.newStatus === "solicita_autorizar" ? "Solicita Autorizar" : "No Autorizado"}" a todas las subcategorías?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

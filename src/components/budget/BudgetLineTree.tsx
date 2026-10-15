@@ -109,7 +109,7 @@ export interface BudgetLine {
   name: string;
   description: string | null;
   amount_uf: number;
-  status: "autorizado" | "no_autorizado";
+  status: "autorizado" | "no_autorizado" | "solicita_autorizar";
   display_order: number;
   quantity?: number;
   unit_type?: string;
@@ -140,6 +140,20 @@ export interface BudgetLine {
   moved_by?: string | null;
   children?: BudgetLine[];
 }
+
+// Badge de "status" (Autorizado / No Autorizado / Solicita Autorizar) -- no
+// confundir con ProgressStatusBadge más abajo, que es el "Estado de Avance"
+// (Cotizado, OC Requerida, etc.), un concepto totalmente aparte.
+const STATUS_BADGE_LABEL: Record<BudgetLine["status"], string> = {
+  autorizado: "Autorizado",
+  no_autorizado: "No Autorizado",
+  solicita_autorizar: "Solicita Autorizar",
+};
+const STATUS_BADGE_CLASS: Record<BudgetLine["status"], string> = {
+  autorizado: "bg-green-500 hover:bg-green-600",
+  no_autorizado: "bg-yellow-500 hover:bg-yellow-600 text-white",
+  solicita_autorizar: "bg-orange-500 hover:bg-orange-600 text-white",
+};
 
 const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired, onEditOcRequired, onCotizado }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void; onCotizado?: (lineId: string, newStatusId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
@@ -437,10 +451,10 @@ export const BudgetLineTree = ({
       const bIsPct = b.calc_type === "percentage";
       if (aIsPct && !bIsPct) return 1;
       if (!aIsPct && bIsPct) return -1;
-      // "No Autorizado" always at end within each parent
+      // "No Autorizado" / "Solicita Autorizar" always at end within each parent
       if (a.status !== b.status) {
-        if (a.status === "no_autorizado") return 1;
-        if (b.status === "no_autorizado") return -1;
+        if (a.status !== "autorizado") return 1;
+        if (b.status !== "autorizado") return -1;
       }
       // In compact view, sort alphabetically; otherwise preserve display_order
       if (compactView) return a.name.localeCompare(b.name, "es");
@@ -455,8 +469,8 @@ export const BudgetLineTree = ({
   // drop parecía funcionar, pero el orden se revertía en silencio al
   // re-renderizar; ahora esa combinación no es un destino de drop válido.
   const { authorizedSiblings, unauthorizedSiblings, authorizedIds, unauthorizedIds } = useMemo(() => {
-    const authorizedSiblings = sortedLines.filter(l => l.status !== "no_autorizado");
-    const unauthorizedSiblings = sortedLines.filter(l => l.status === "no_autorizado");
+    const authorizedSiblings = sortedLines.filter(l => l.status === "autorizado");
+    const unauthorizedSiblings = sortedLines.filter(l => l.status !== "autorizado");
     return {
       authorizedSiblings,
       unauthorizedSiblings,
@@ -1121,13 +1135,13 @@ const BudgetLineItemInner = ({
     }
   };
 
-  const toggleStatus = () => {
-    if (readOnly || !canAutorizar) return;
-    onUpdateLine(line.id, {
-      status: line.status === "autorizado" ? "no_autorizado" : "autorizado"
-    });
+  const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
+  const handleStatusSelect = (status: BudgetLine["status"]) => {
+    setStatusPopoverOpen(false);
+    if (readOnly || !canAutorizar || status === line.status) return;
+    onUpdateLine(line.id, { status });
   };
-  const isNotAuthorized = line.status === "no_autorizado";
+  const isNotAuthorized = line.status !== "autorizado";
 
   // Ghost placeholder: line was moved elsewhere; show a non-editable marker at the original position.
   if (line.is_ghost) {
@@ -1676,18 +1690,40 @@ const BudgetLineItemInner = ({
               )}
             </div>
           ) : (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", isAdmin && "cursor-pointer", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
-                    {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {!isAdmin ? "Solo administradores pueden cambiar el estado" : line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Popover open={statusPopoverOpen} onOpenChange={(o) => canAutorizar && !readOnly && setStatusPopoverOpen(o)}>
+              <PopoverTrigger asChild>
+                <button type="button" onClick={(e) => e.stopPropagation()}>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          variant={line.status === "autorizado" ? "default" : "secondary"}
+                          className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", canAutorizar && "cursor-pointer", STATUS_BADGE_CLASS[line.status])}
+                        >
+                          {STATUS_BADGE_LABEL[line.status]}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {!canAutorizar ? "Solo administradores pueden cambiar el estado" : line.status !== "autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </button>
+              </PopoverTrigger>
+              {canAutorizar && (
+                <PopoverContent className="w-48 p-2" align="end" onClick={(e) => e.stopPropagation()}>
+                  <div className="space-y-1">
+                    {(["no_autorizado", "solicita_autorizar", "autorizado"] as const).map((s) => (
+                      <button key={s} type="button" onClick={() => handleStatusSelect(s)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
+                        <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", STATUS_BADGE_CLASS[s])}>
+                          {STATUS_BADGE_LABEL[s]}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              )}
+            </Popover>
           )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
@@ -2244,15 +2280,21 @@ const calculateStatusFilteredTotal = (
         0,
       ) * mult;
     const filteredSurcharges = pctChildren.reduce((sum, c) => {
-      if (c.status !== wantedStatus) return sum;
+      if (!statusMatchesBucket(c.status, wantedStatus)) return sum;
       return sum + (fullBase * (c.calc_percentage || 0)) / 100;
     }, 0);
     return filteredBase + filteredSurcharges;
   }
-  return item.status === wantedStatus
+  return statusMatchesBucket(item.status, wantedStatus)
     ? getEffectiveAmount(item, templatePricesMap, ufValue, internalTransferSupplierIds)
     : 0;
 };
+
+// "no_autorizado" agrupa tanto "no_autorizado" como "solicita_autorizar" --
+// ninguna de las dos es presupuesto comprometido todavía, así que para
+// todos los totales/arrastres se tratan igual que "no autorizado".
+const statusMatchesBucket = (status: BudgetLine["status"], wantedStatus: "autorizado" | "no_autorizado"): boolean =>
+  wantedStatus === "autorizado" ? status === "autorizado" : status !== "autorizado";
 
 export const calculateGrandTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
   return items.reduce((sum, item) => sum + calculateLineTotal(item, templatePricesMap, ufValue, internalTransferSupplierIds), 0);
@@ -2267,7 +2309,7 @@ export const calculateUnauthorizedTotal = (items: BudgetLine[], templatePricesMa
 export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {
   const result: BudgetLine[] = [];
   items.forEach(item => {
-    if (item.status === "no_autorizado") {
+    if (item.status !== "autorizado") {
       result.push(item);
     }
     if (item.children && item.children.length > 0) {
