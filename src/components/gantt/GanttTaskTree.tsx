@@ -19,6 +19,8 @@ import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/gan
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import { GanttExportColumnsPicker } from "./GanttExportColumnsPicker";
+import type { GanttExportColumnKey } from "./ganttExportColumns";
 
 function AddDependencyForm({
   selectedTask,
@@ -104,7 +106,12 @@ interface GanttTaskTreeProps {
   onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
-  onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
+  onExportPDF?: (
+    hideCompleted: boolean,
+    mode: "all" | "separate" | "selected",
+    selectedParentIds?: string[],
+    excludedColumns?: GanttExportColumnKey[]
+  ) => void;
 }
 
 export function GanttTaskTree({
@@ -169,6 +176,7 @@ export function GanttTaskTree({
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
+  const [exportExcludedColumns, setExportExcludedColumns] = useState<Set<GanttExportColumnKey>>(new Set());
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<GanttTask | null>(null);
   const [newTaskName, setNewTaskName] = useState("");
@@ -823,7 +831,7 @@ export function GanttTaskTree({
 
       {/* Export PDF dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Exportar cronograma PDF</DialogTitle>
           </DialogHeader>
@@ -874,6 +882,8 @@ export function GanttTaskTree({
             </div>
           )}
 
+          <GanttExportColumnsPicker excluded={exportExcludedColumns} onChange={setExportExcludedColumns} />
+
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(false)}>Cancelar</Button>
             <Button
@@ -881,7 +891,12 @@ export function GanttTaskTree({
               disabled={exportMode === "selected" && exportSelectedIds.size === 0}
               onClick={() => {
                 setExportDialogOpen(false);
-                onExportPDF?.(hideCompleted, exportMode, exportMode === "selected" ? Array.from(exportSelectedIds) : undefined);
+                onExportPDF?.(
+                  hideCompleted,
+                  exportMode,
+                  exportMode === "selected" ? Array.from(exportSelectedIds) : undefined,
+                  Array.from(exportExcludedColumns)
+                );
               }}
             >
               <FileDown className="h-3.5 w-3.5 mr-1.5" />
