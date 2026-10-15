@@ -47,6 +47,13 @@ La migración está completa, Lovable retirado:
 - **NUNCA** hacer `git push` a `main` sin confirmación explícita de Matias
 - Todo el trabajo va en rama `migration`
 
+### Merge a `migration`: autorización permanente (Matias, 2026-10-15)
+- Cuando una sesión trabaja en una rama propia (p. ej. `claude/...`), al terminar y verificar un cambio Claude **hace el merge a `migration` y lo pushea sin pedir confirmación**. Vercel despliega desde `migration`.
+- Condiciones previas: pipeline de revisión sin alertas pendientes, `npx tsc --noEmit` sin errores nuevos respecto a `migration`, `git fetch` hecho y conflictos resueltos conservando lo que ya tiene `migration`.
+- **No cubre `main`**: sigue requiriendo confirmación explícita de Matias.
+- **No cubre `supabase/migrations/` ni `supabase/config.toml`** (ni SQL sobre ninguna DB): si un cambio los toca, confirmar antes.
+- Si el pipeline da `PLATFORM ⚠️`, esperar confirmación antes de mergear.
+
 ### DB: solo operar sobre `ilcumthwzhmtumaklgvo`
 - **NUNCA** correr SQL en `tgxiqvfpirwvhktgqqfa` (DB de Lovable, legacy) sin confirmación explícita de Matias — aunque esté retirada, no se debe tocar por default
 - Para SQL en DB oficial: usar Management API con PAT disponible en memoria
