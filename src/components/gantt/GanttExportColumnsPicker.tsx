@@ -41,7 +41,7 @@ export function GanttExportColumnsPicker({ excluded, onChange }: GanttExportColu
         ))}
       </div>
       <p className="px-3 pb-2 text-[11px] text-muted-foreground">
-        La columna «Tarea» siempre se incluye. «Estado» y «Progreso» solo aparecen en la página de detalle.
+        La columna «Tarea» siempre se incluye.
       </p>
     </div>
   );

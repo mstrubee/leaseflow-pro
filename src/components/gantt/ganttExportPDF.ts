@@ -1,5 +1,4 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday, OrgMember } from "@/hooks/useGantt";
@@ -450,140 +449,15 @@ export async function exportGanttToPDF(
     doc.line(todayX, chartTop, todayX, y);
   }
 
-  // ===== Page 2: full table, no Gantt, larger text =====
-  doc.addPage();
-  if (logoData) drawLogo(doc, logoData, 10, 6, 40, 14);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(0);
-  doc.text("Detalle de Tareas", pageWidth / 2, 14, { align: "center" });
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100);
-  doc.text(contractName, pageWidth / 2, 20, { align: "center" });
-  doc.setTextColor(0);
-
-  const statusLabel: Record<string, string> = {
-    pending: "Pendiente",
-    in_progress: "En curso",
-    completed: "Completada",
-    delayed: "Atrasada",
-  };
-
-  if (hasCompleted) drawCompletedLegend(doc, pageWidth - 10, 20);
-
-  const detailColumns: Array<{
-    key: GanttExportColumnKey;
-    label: string;
-    width: number;
-    align: "left" | "center";
-    value: (task: GanttTask) => string;
-  }> = [
-    {
-      key: "responsible",
-      label: "Responsable",
-      width: 50,
-      align: "left",
-      value: (t) => (t.responsible_member_id ? memberById.get(t.responsible_member_id)?.name ?? "—" : "—"),
-    },
-    {
-      key: "start",
-      label: "Inicio",
-      width: 34,
-      align: "center",
-      value: (t) => {
-        const eff = getEffectiveDates(t);
-        return eff.start ? format(parseISO(eff.start), "dd/MM/yyyy") + (eff.adjusted ? " (*)" : "") : "—";
-      },
-    },
-    {
-      key: "duration",
-      label: "Plazo",
-      width: 24,
-      align: "center",
-      value: (t) => `${t.duration_days} ${t.duration_type === "business" ? "háb." : "días"}`,
-    },
-    {
-      key: "end",
-      label: "Término",
-      width: 28,
-      align: "center",
-      value: (t) => {
-        const eff = getEffectiveDates(t);
-        return eff.end ? format(parseISO(eff.end), "dd/MM/yyyy") : "—";
-      },
-    },
-    {
-      key: "status",
-      label: "Estado",
-      width: 28,
-      align: "center",
-      value: (t) => statusLabel[t.status] || t.status,
-    },
-    {
-      key: "progress",
-      label: "Progreso",
-      width: 26,
-      align: "center",
-      value: (t) => `${t.progress || 0}%`,
-    },
-  ];
-  const visibleDetailColumns = detailColumns.filter((c) => !excluded.has(c.key));
-
-  // "#" and "Tarea" are always present; the task name takes whatever width the other columns leave free.
-  const INDEX_COL_WIDTH = 12;
-  const detailTableWidth = pageWidth - 20;
-  const detailNameWidth = Math.max(
-    60,
-    detailTableWidth - INDEX_COL_WIDTH - visibleDetailColumns.reduce((sum, c) => sum + c.width, 0)
-  );
-
-  const tableRows = flat.map(({ task, level }, idx) => [
-    String(idx + 1),
-    "  ".repeat(level) + task.name,
-    ...visibleDetailColumns.map((c) => c.value(task)),
-  ]);
-
-  const columnStyles: Record<number, { cellWidth: number; halign?: "center" }> = {
-    0: { cellWidth: INDEX_COL_WIDTH, halign: "center" },
-    1: { cellWidth: detailNameWidth },
-  };
-  visibleDetailColumns.forEach((c, i) => {
-    columnStyles[i + 2] = c.align === "center" ? { cellWidth: c.width, halign: "center" } : { cellWidth: c.width };
-  });
-
-  autoTable(doc, {
-    startY: 26,
-    head: [["#", "Tarea", ...visibleDetailColumns.map((c) => c.label)]],
-    body: tableRows,
-    styles: { fontSize: 11, cellPadding: 3 },
-    headStyles: { fillColor: [59, 130, 246], textColor: 255, fontSize: 11 },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles,
-    margin: { left: 10, right: 10 },
-    // Completed tasks: green tint + green text so they are told apart even if "Estado" is excluded.
-    // Adjusted start dates ("(*)") stay orange.
-    didParseCell: (data) => {
-      if (data.section !== "body") return;
-      if (flat[data.row.index]?.task.status === "completed") {
-        data.cell.styles.fillColor = COMPLETED_ROW_TINT;
-        data.cell.styles.textColor = COMPLETED_GREEN_DARK;
-      }
-      if (String(data.cell.raw ?? "").endsWith(" (*)")) {
-        data.cell.styles.textColor = ADJUSTED_ORANGE;
-      }
-    },
-  });
-
-  // The footnote only makes sense when the "Inicio" column is part of the export
+  // Footnote for start dates shifted to the next working day (only if "Inicio" is exported)
   if (effectiveDateMap.size > 0 && !excluded.has("start")) {
-    const autoTableFinalY: number = (doc as any).lastAutoTable?.finalY ?? 200;
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(...ADJUSTED_ORANGE);
     doc.text(
-      "(*) Inicio ajustado al siguiente dia habil (la fecha original caia en fin de semana o feriado)",
-      10,
-      Math.min(autoTableFinalY + 5, pageHeight - 12)
+      "Inicio en naranja: ajustado al siguiente día hábil (la fecha original caía en fin de semana o feriado)",
+      chartLeft,
+      Math.min(y + 5, pageHeight - 12)
     );
     doc.setTextColor(0);
   }
