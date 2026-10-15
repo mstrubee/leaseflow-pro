@@ -1135,10 +1135,17 @@ const BudgetLineItemInner = ({
     }
   };
 
+  // Autorizar/des-autorizar (Autorizado <-> No Autorizado) sigue siendo
+  // privativo de canAutorizar. "Solicita Autorizar" es más abierto: además
+  // de canAutorizar, también lo puede elegir quien solo tenga permiso de
+  // editar líneas (ej. rol "Equipo Desarrollo") -- puede pedir autorización,
+  // pero no autorizar/rechazar directamente.
+  const canRequestAuthorization = canAutorizar || canEditLineas;
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
   const handleStatusSelect = (status: BudgetLine["status"]) => {
     setStatusPopoverOpen(false);
-    if (readOnly || !canAutorizar || status === line.status) return;
+    if (readOnly || status === line.status) return;
+    if (status === "solicita_autorizar" ? !canRequestAuthorization : !canAutorizar) return;
     onUpdateLine(line.id, { status });
   };
   const isNotAuthorized = line.status !== "autorizado";
@@ -1690,7 +1697,7 @@ const BudgetLineItemInner = ({
               )}
             </div>
           ) : (
-            <Popover open={statusPopoverOpen} onOpenChange={(o) => canAutorizar && !readOnly && setStatusPopoverOpen(o)}>
+            <Popover open={statusPopoverOpen} onOpenChange={(o) => canRequestAuthorization && !readOnly && setStatusPopoverOpen(o)}>
               <PopoverTrigger asChild>
                 <button type="button" onClick={(e) => e.stopPropagation()}>
                   <TooltipProvider>
@@ -1698,22 +1705,28 @@ const BudgetLineItemInner = ({
                       <TooltipTrigger asChild>
                         <Badge
                           variant={line.status === "autorizado" ? "default" : "secondary"}
-                          className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", canAutorizar && "cursor-pointer", STATUS_BADGE_CLASS[line.status])}
+                          className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", canRequestAuthorization && "cursor-pointer", STATUS_BADGE_CLASS[line.status])}
                         >
                           {STATUS_BADGE_LABEL[line.status]}
                         </Badge>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {!canAutorizar ? "Solo administradores pueden cambiar el estado" : line.status !== "autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
+                        {!canRequestAuthorization
+                          ? "Solo administradores pueden cambiar el estado"
+                          : !canAutorizar
+                          ? "Solo puedes solicitar autorización -- un administrador debe aprobarla"
+                          : line.status !== "autorizado"
+                          ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado"
+                          : "Click para cambiar estado"}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </button>
               </PopoverTrigger>
-              {canAutorizar && (
+              {canRequestAuthorization && (
                 <PopoverContent className="w-48 p-2" align="end" onClick={(e) => e.stopPropagation()}>
                   <div className="space-y-1">
-                    {(["no_autorizado", "solicita_autorizar", "autorizado"] as const).map((s) => (
+                    {(canAutorizar ? (["no_autorizado", "solicita_autorizar", "autorizado"] as const) : (["solicita_autorizar"] as const)).map((s) => (
                       <button key={s} type="button" onClick={() => handleStatusSelect(s)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
                         <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", STATUS_BADGE_CLASS[s])}>
                           {STATUS_BADGE_LABEL[s]}
