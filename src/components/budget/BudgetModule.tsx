@@ -25,6 +25,7 @@ import { QuotationsManager } from "./QuotationsManager";
 import { CapexOCRequiredDialog } from "./CapexOCRequiredDialog";
 import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
 import { CotizadoUploadDialog } from "./CotizadoUploadDialog";
+import { SolicitaAutorizarDialog } from "./SolicitaAutorizarDialog";
 import { loadOCRequiredGroupForLine, type OCRequiredGroup } from "@/lib/ocRequiredGroups";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
@@ -94,6 +95,17 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     existingStoragePath: string | null;
   } | null>(null);
 
+  // Diálogo de cotización al marcar una línea (CAPEX u OPEX) como "Solicita
+  // Autorizar" -- pide el archivo del presupuesto antes de aplicar el
+  // cambio, igual que "OC Requerida"; también permite elegir otras líneas
+  // para que tomen el mismo estado + archivo al terminar.
+  const [solicitaAutorizarPrompt, setSolicitaAutorizarPrompt] = useState<{
+    lineId: string;
+    lineName: string;
+    lineAmountUf: number;
+    lineStatus: string;
+  } | null>(null);
+
   // Editar un requerimiento "OC Requerida" ya creado, directamente desde el
   // badge del árbol (ver onEditOcRequired más abajo) -- mismo diálogo que usa
   // la sección "OC Requeridas" (pestaña "Órdenes de Compra"), sin pasar por ahí.
@@ -114,7 +126,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // Requerida" > seleccionar líneas adicionales (selectionPurpose distingue
   // qué hacer al confirmar).
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selectionPurpose, setSelectionPurpose] = useState<"move" | "capexOc" | null>(null);
+  const [selectionPurpose, setSelectionPurpose] = useState<"move" | "capexOc" | "solicitaAutorizar" | null>(null);
+  // Ambas reutilizan la misma selección de líneas en la página -- difieren en
+  // que "capexOc" restringe a líneas "Autorizado" (se va a pedir una OC
+  // contra presupuesto ya aprobado) y "solicitaAutorizar" no (son justo las
+  // líneas sin autorizar las que se quiere pedir autorización).
+  const inCapexLineSelectionMode = selectionPurpose === "capexOc" || selectionPurpose === "solicitaAutorizar";
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const { setActive: setCapexLineSelectionActive } = useCapexLineSelection();
@@ -445,9 +462,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // desde el resumen). initialIds siempre incluye la línea de origen (queda
   // marcada y bloqueada, ver lockedLineId) más lo ya elegido si se está
   // reeditando una selección previa.
-  const handleEnterCapexLineSelection = useCallback((initialIds: string[]) => {
+  const handleEnterCapexLineSelection = useCallback((initialIds: string[], purpose: "capexOc" | "solicitaAutorizar" = "capexOc") => {
     setSelectedLineIds(new Set(initialIds));
-    setSelectionPurpose("capexOc");
+    setSelectionPurpose(purpose);
     setSelectionMode(true);
     setCapexLineSelectionActive(true);
   }, [setCapexLineSelectionActive]);
@@ -463,8 +480,9 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const handleFinishCapexLineSelection = useCallback(() => {
     const allFlat = flattenLines(lines);
     const linesById = new Map(allFlat.map((l) => [l.id, l]));
+    const originId = selectionPurpose === "solicitaAutorizar" ? solicitaAutorizarPrompt?.lineId : ocRequiredPrompt?.lineId;
     const chosen = allFlat
-      .filter((l) => selectedLineIds.has(l.id) && l.id !== ocRequiredPrompt?.lineId && !l.children?.length)
+      .filter((l) => selectedLineIds.has(l.id) && l.id !== originId && !l.children?.length)
       // Monto en vivo, no el amount_uf guardado -- para una línea "%" (Gastos
       // Generales/Utilidades) ese valor queda obsoleto salvo que se haya
       // editado monto/cantidad/precio/moneda directamente (ver
@@ -473,7 +491,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
     setCapexAdditionalLines(chosen);
     setCapexAdditionalLinesVersion((v) => v + 1);
     handleExitSelectionMode();
-  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt, templatePricesMap, ufValue]);
+  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt, solicitaAutorizarPrompt, selectionPurpose, templatePricesMap, ufValue]);
 
   // Editar un requerimiento "OC Requerida" ya creado, directamente desde su
   // badge en el árbol -- sin restricción de permiso propia (ver
@@ -2338,7 +2356,12 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     Selecciona líneas "Autorizado" en el árbol — usa el botón flotante para terminar
                   </span>
                 )}
-                {!isClosed && !forceReadOnly && canEditLines && selectionPurpose !== "capexOc" && (
+                {selectionPurpose === "solicitaAutorizar" && (
+                  <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
+                    Selecciona líneas en el árbol — usa el botón flotante para terminar
+                  </span>
+                )}
+                {!isClosed && !forceReadOnly && canEditLines && !inCapexLineSelectionMode && (
                   selectionMode ? (
                     <>
                       <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
@@ -2410,7 +2433,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
               </div>
             )}
 
-            <div className={cn(selectionPurpose === "capexOc" && "pointer-events-auto")}>
+            <div className={cn(inCapexLineSelectionMode && "pointer-events-auto")}>
               <BudgetLineTreeWithDrag
                 lines={displayLines}
                 onAddLine={canEditLines ? handleAddLine : undefined}
@@ -2480,13 +2503,36 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     existingStoragePath: line?.quotation_storage_path ?? null,
                   });
                 } : undefined}
+                onSolicitaAutorizar={(lineId) => {
+                  const findLine = (items: BudgetLine[]): BudgetLine | null => {
+                    for (const item of items) {
+                      if (item.id === lineId) return item;
+                      if (item.children?.length) {
+                        const found = findLine(item.children);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+                  const line = findLine(lines);
+                  setCapexAdditionalLines([]);
+                  setCapexAdditionalLinesVersion(0);
+                  const linesById = new Map(flattenLines(lines).map((l) => [l.id, l]));
+                  const liveAmountUf = line ? calculateLineLiveAmount(line, linesById, templatePricesMap, ufValue) : 0;
+                  setSolicitaAutorizarPrompt({
+                    lineId,
+                    lineName: line?.name ?? "",
+                    lineAmountUf: liveAmountUf,
+                    lineStatus: line?.status ?? "no_autorizado",
+                  });
+                }}
                 linesWithDetails={budgetType === "capex" ? linesWithDetails : undefined}
-                readOnly={isClosed || forceReadOnly || !canEditLines || selectionPurpose === "capexOc"}
+                readOnly={isClosed || forceReadOnly || !canEditLines || inCapexLineSelectionMode}
                 // El badge de Estado de Avance usa su propio permiso
                 // (budget_editar_estado, revisado dentro de BudgetLineTree)
                 // -- no debe quedar bloqueado solo porque el usuario no
                 // tiene además budget_editar_lineas.
-                estadoReadOnly={isClosed || forceReadOnly || selectionPurpose === "capexOc"}
+                estadoReadOnly={isClosed || forceReadOnly || inCapexLineSelectionMode}
                 compactView={forceReadOnly || !canEditLines}
                 focusNewLineId={focusNewLineId}
                 globalExpandState={globalExpandState}
@@ -2496,7 +2542,13 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 superficieEdificada={superficieEdificada}
                 selectionMode={selectionMode}
                 restrictSelectionToAuthorized={selectionPurpose === "capexOc"}
-                lockedLineId={selectionPurpose === "capexOc" ? ocRequiredPrompt?.lineId : undefined}
+                lockedLineId={
+                  selectionPurpose === "capexOc"
+                    ? ocRequiredPrompt?.lineId
+                    : selectionPurpose === "solicitaAutorizar"
+                      ? solicitaAutorizarPrompt?.lineId
+                      : undefined
+                }
                 selectedIds={selectedLineIds}
                 onToggleSelect={handleToggleSelectLine}
                 onReload={() => currentBudget && loadLines(currentBudget.id)}
@@ -3132,6 +3184,33 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         />
       )}
 
+      {/* Diálogo de cotización al marcar una línea como "Solicita Autorizar" */}
+      {solicitaAutorizarPrompt && currentBudget && (
+        <SolicitaAutorizarDialog
+          open={!!solicitaAutorizarPrompt}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSolicitaAutorizarPrompt(null);
+              handleExitSelectionMode();
+            }
+          }}
+          contractId={contractId}
+          originLine={{
+            id: solicitaAutorizarPrompt.lineId,
+            name: solicitaAutorizarPrompt.lineName,
+            amount_uf: solicitaAutorizarPrompt.lineAmountUf,
+            status: solicitaAutorizarPrompt.lineStatus,
+          }}
+          onRequestLineSelection={(ids) => handleEnterCapexLineSelection(ids, "solicitaAutorizar")}
+          additionalLines={capexAdditionalLines}
+          additionalLinesVersion={capexAdditionalLinesVersion}
+          onComplete={() => {
+            setSolicitaAutorizarPrompt(null);
+            loadLines(currentBudget.id);
+          }}
+        />
+      )}
+
       {editOcRequiredGroup && contractId && (
         <EditOCRequiredDialog
           open={!!editOcRequiredGroup}
@@ -3147,7 +3226,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       )}
 
       {/* Botón flotante para terminar de seleccionar líneas adicionales CAPEX */}
-      {selectionPurpose === "capexOc" && createPortal(
+      {inCapexLineSelectionMode && createPortal(
         <Button
           onClick={handleFinishCapexLineSelection}
           className="fixed bottom-6 right-6 z-50 gap-2 shadow-lg"

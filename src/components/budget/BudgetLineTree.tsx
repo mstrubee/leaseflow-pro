@@ -335,6 +335,11 @@ interface BudgetLineTreeProps {
    *  cotización antes de aplicar el cambio. Solo se pasa desde presupuestos
    *  CAPEX. */
   onCotizado?: (lineId: string, newStatusId: string) => void;
+  /** Se llama en vez de cambiar el estado directo cuando el usuario elige
+   *  "Solicita Autorizar" -- el padre debe abrir el diálogo que exige
+   *  adjuntar la cotización (y permite elegir otras líneas) antes de aplicar
+   *  el cambio. Se pasa tanto en presupuestos CAPEX como OPEX. */
+  onSolicitaAutorizar?: (lineId: string) => void;
   /** Ids de líneas que tienen algo que mostrar en "Ver Ppto/OC/Factura"
    *  (cotización, OC/solicitud o factura asociada) -- controla si el botón
    *  está habilitado. */
@@ -394,6 +399,7 @@ export const BudgetLineTree = ({
   onOcRequired,
   onEditOcRequired,
   onCotizado,
+  onSolicitaAutorizar,
   linesWithDetails,
   level = 0,
   readOnly = false,
@@ -495,6 +501,7 @@ export const BudgetLineTree = ({
       onOcRequired={onOcRequired}
       onEditOcRequired={onEditOcRequired}
       onCotizado={onCotizado}
+      onSolicitaAutorizar={onSolicitaAutorizar}
       linesWithDetails={linesWithDetails}
       readOnly={readOnly}
       estadoReadOnly={estadoReadOnly}
@@ -548,6 +555,7 @@ interface BudgetLineItemProps {
   onOcRequired?: (lineId: string, newStatusId: string) => void;
   onEditOcRequired?: (lineId: string) => void;
   onCotizado?: (lineId: string, newStatusId: string) => void;
+  onSolicitaAutorizar?: (lineId: string) => void;
   linesWithDetails?: Set<string>;
   readOnly?: boolean;
   estadoReadOnly?: boolean;
@@ -591,6 +599,7 @@ const BudgetLineItemInner = ({
   onOcRequired,
   onEditOcRequired,
   onCotizado,
+  onSolicitaAutorizar,
   linesWithDetails,
   readOnly = false,
   estadoReadOnly = readOnly,
@@ -1146,6 +1155,10 @@ const BudgetLineItemInner = ({
     setStatusPopoverOpen(false);
     if (readOnly || status === line.status) return;
     if (status === "solicita_autorizar" ? !canRequestAuthorization : !canAutorizar) return;
+    if (status === "solicita_autorizar" && onSolicitaAutorizar) {
+      onSolicitaAutorizar(line.id);
+      return;
+    }
     onUpdateLine(line.id, { status });
   };
   const isNotAuthorized = line.status !== "autorizado";
@@ -1975,7 +1988,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} onEditOcRequired={onEditOcRequired} onCotizado={onCotizado} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} onOcRequired={onOcRequired} onEditOcRequired={onEditOcRequired} onCotizado={onCotizado} onSolicitaAutorizar={onSolicitaAutorizar} linesWithDetails={linesWithDetails} readOnly={readOnly} estadoReadOnly={estadoReadOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} restrictSelectionToAuthorized={restrictSelectionToAuthorized} lockedLineId={lockedLineId} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} consumedByLineClp={consumedByLineClp} onAddPercentageLine={onAddPercentageLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
