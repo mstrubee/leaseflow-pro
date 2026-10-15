@@ -46,6 +46,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { DependencyDialog } from "./DependencyDialog";
 import { TaskStatusActions, StatusDot } from "./TaskStatusActions";
+import { GanttExportColumnsPicker } from "./GanttExportColumnsPicker";
+import type { GanttExportColumnKey } from "./ganttExportColumns";
 
 // Local input that only commits the value on Enter or blur, allowing free typing/erasing.
 function DurationInput({
@@ -313,7 +315,12 @@ interface GanttChartProps {
   canReprogram?: boolean;
   /** Usuarios con permiso de ver: pueden marcar tareas como completadas */
   canComplete?: boolean;
-  onExportPDF?: (hideCompleted: boolean, mode: "all" | "separate" | "selected", selectedParentIds?: string[]) => void;
+  onExportPDF?: (
+    hideCompleted: boolean,
+    mode: "all" | "separate" | "selected",
+    selectedParentIds?: string[],
+    excludedColumns?: GanttExportColumnKey[]
+  ) => void;
   rentStartDate?: string | null;
   /** Fila-resumen no editable arriba de todas las tareas, con la fecha de
    *  inicio/término de todo el cronograma — solo para cronogramas "general"
@@ -470,6 +477,7 @@ export function GanttChart({
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMode, setExportMode] = useState<"all" | "separate" | "selected">("all");
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
+  const [exportExcludedColumns, setExportExcludedColumns] = useState<Set<GanttExportColumnKey>>(new Set());
   const [depViewTaskId, setDepViewTaskId] = useState<string | null>(null);
   const [depViewMode, setDepViewMode] = useState<"predecessors" | "successors">("predecessors");
   const [depPopoverTaskId, setDepPopoverTaskId] = useState<string | null>(null);
@@ -3531,7 +3539,7 @@ export function GanttChart({
 
       {/* Export PDF dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Exportar cronograma PDF</DialogTitle>
           </DialogHeader>
@@ -3594,6 +3602,8 @@ export function GanttChart({
             </div>
           )}
 
+          <GanttExportColumnsPicker excluded={exportExcludedColumns} onChange={setExportExcludedColumns} />
+
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(false)}>
               Cancelar
@@ -3603,7 +3613,12 @@ export function GanttChart({
               disabled={exportMode === "selected" && exportSelectedIds.size === 0}
               onClick={() => {
                 setExportDialogOpen(false);
-                onExportPDF?.(hideCompleted, exportMode, exportMode === "selected" ? Array.from(exportSelectedIds) : undefined);
+                onExportPDF?.(
+                  hideCompleted,
+                  exportMode,
+                  exportMode === "selected" ? Array.from(exportSelectedIds) : undefined,
+                  Array.from(exportExcludedColumns)
+                );
               }}
             >
               <FileDown className="h-3.5 w-3.5 mr-1.5" />

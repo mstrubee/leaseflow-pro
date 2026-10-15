@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { GanttCurvaS } from "./GanttCurvaS";
 import { exportGanttToPDF } from "./ganttExportPDF";
+import type { GanttExportColumnKey } from "./ganttExportColumns";
 import { downloadGanttFullExport } from "@/lib/ganttFullExport";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -502,6 +503,42 @@ export function GanttModule({ contractId, serviceContractId, category = "general
     );
   }
 
+  // Shared by the "Diagrama Gantt" and "Lista de Tareas" tabs
+  const handleExportPDF = async (
+    hideCompleted: boolean,
+    mode: "all" | "separate" | "selected",
+    selectedParentIds?: string[],
+    excludedColumns?: GanttExportColumnKey[]
+  ) => {
+    let contractName = "Contrato";
+    try {
+      const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
+      if (data?.name) contractName = data.name;
+    } catch {}
+    if (mode === "all") {
+      await exportGanttToPDF(taskTree, tasks, holidays, {
+        contractName,
+        timelineName: timeline.name,
+        hideCompleted,
+        orgMembers,
+        excludedColumns,
+      });
+    } else {
+      const parents = mode === "selected"
+        ? taskTree.filter(t => selectedParentIds?.includes(t.id))
+        : taskTree;
+      for (const parent of parents) {
+        await exportGanttToPDF([parent], tasks, holidays, {
+          contractName: `${contractName} — ${parent.name}`,
+          timelineName: timeline.name,
+          hideCompleted,
+          orgMembers,
+          excludedColumns,
+        });
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
     <Card>
@@ -866,33 +903,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               rentStartDate={rentStartDate}
               showSummaryRow={!isMaintenance}
               ganttId={timeline?.id}
-              onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
-                let contractName = "Contrato";
-                try {
-                  const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
-                  if (data?.name) contractName = data.name;
-                } catch {}
-                if (mode === "all") {
-                  await exportGanttToPDF(taskTree, tasks, holidays, {
-                    contractName,
-                    timelineName: timeline.name,
-                    hideCompleted,
-                    orgMembers,
-                  });
-                } else {
-                  const parents = mode === "selected"
-                    ? taskTree.filter(t => selectedParentIds?.includes(t.id))
-                    : taskTree;
-                  for (const parent of parents) {
-                    await exportGanttToPDF([parent], tasks, holidays, {
-                      contractName: `${contractName} — ${parent.name}`,
-                      timelineName: timeline.name,
-                      hideCompleted,
-                      orgMembers,
-                    });
-                  }
-                }
-              }}
+              onExportPDF={handleExportPDF}
             />
           </TabsContent>
 
@@ -921,33 +932,7 @@ export function GanttModule({ contractId, serviceContractId, category = "general
               canManageDeps={canEdit || hasPermission("gantt_dependencias", "edit")}
               canComplete={canInteract}
               showSummaryRow={!isMaintenance}
-              onExportPDF={async (hideCompleted, mode, selectedParentIds) => {
-                let contractName = "Contrato";
-                try {
-                  const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
-                  if (data?.name) contractName = data.name;
-                } catch {}
-                if (mode === "all") {
-                  await exportGanttToPDF(taskTree, tasks, holidays, {
-                    contractName,
-                    timelineName: timeline.name,
-                    hideCompleted,
-                    orgMembers,
-                  });
-                } else {
-                  const parents = mode === "selected"
-                    ? taskTree.filter(t => selectedParentIds?.includes(t.id))
-                    : taskTree;
-                  for (const parent of parents) {
-                    await exportGanttToPDF([parent], tasks, holidays, {
-                      contractName: `${contractName} — ${parent.name}`,
-                      timelineName: timeline.name,
-                      hideCompleted,
-                      orgMembers,
-                    });
-                  }
-                }
-              }}
+              onExportPDF={handleExportPDF}
             />
           </TabsContent>
         </Tabs>
