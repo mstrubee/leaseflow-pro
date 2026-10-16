@@ -124,24 +124,27 @@ serve(async (req) => {
     const oneYearAgo = subtractDays(today, 365);
     const sixMonthsAgo = subtractDays(today, 183);
 
-    let { ufRows, usdRows } = await readCache(supabase, today, oneYearAgo);
-    let source = "cache";
-    let refreshFailed = false;
+    const { ufRows, usdRows } = await readCache(supabase, today, oneYearAgo);
 
     // El cron (refresh-economic-indicators) es lo normal; esto cubre que no
     // esté corriendo o que mindicador haya fallado en su última ejecución.
+    // El refresco va en SEGUNDO PLANO: la respuesta nunca espera a
+    // mindicador.cl (si está caído tardaría ~10 s en cada carga del
+    // dashboard y de toda pantalla que use la UF); el próximo request ya ve
+    // los datos nuevos.
     const needs = staleness(ufRows, usdRows, today);
+    let refreshing = false;
     if ((needs.uf || needs.usd) && canAttemptRefresh(lastRefreshAttemptAt, Date.now(), MIN_REFRESH_RETRY_MS)) {
       lastRefreshAttemptAt = Date.now();
-      const ok = await refreshFromMindicador(supabase, needs);
-      refreshFailed = !ok;
-      ({ ufRows, usdRows } = await readCache(supabase, today, oneYearAgo));
-      source = ok ? "refreshed" : "cache";
+      refreshing = true;
+      const task = refreshFromMindicador(supabase, needs).catch((e: any) => console.error("Background refresh crashed:", e?.message ?? e));
+      // EdgeRuntime.waitUntil mantiene viva la tarea tras responder.
+      const runtime = (globalThis as any).EdgeRuntime;
+      if (runtime?.waitUntil) runtime.waitUntil(task);
     }
 
     const uf = selectUF(ufRows, today);
     const usd = selectUSD(usdRows, today);
-    const stillMissing = staleness(ufRows, usdRows, today);
 
     return new Response(
       JSON.stringify({
@@ -157,9 +160,10 @@ serve(async (req) => {
           oneYear: usd.series,
           date: new Date().toISOString(),
         },
-        is_stale: uf.isStale || usd.isStale || stillMissing.uf || refreshFailed,
+        is_stale: uf.isStale || usd.isStale || needs.uf,
         last_updated: uf.lastUpdated,
-        source,
+        source: "cache",
+        refreshing,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
