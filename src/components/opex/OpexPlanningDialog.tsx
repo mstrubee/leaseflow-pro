@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarRange, Plus, Search, Trash2 } from "lucide-react";
+import { CalendarRange, Globe, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
@@ -26,6 +26,8 @@ interface OpexPlanningDialogProps {
   baseYear: number;
   ufValue: number;
   categories: Array<{ id: string; name: string }>;
+  // Para que la página recargue categorías cuando el ADMIN crea una nueva.
+  onCategoriesChange?: () => void;
   // Contratos vigentes (estado "firmado"), ya cargados por la página.
   contracts: Array<{ id: string; name: string }>;
 }
@@ -43,7 +45,10 @@ const DEFAULT_INDEXATION_PCT = 3.2;
 
 const formatClp = (value: number) => `$ ${Math.round(value).toLocaleString("es-CL")}`;
 
-export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }: OpexPlanningDialogProps) => {
+const GLOBAL_KEY = "__global__";
+const NEW_CATEGORY_VALUE = "__new__";
+
+export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategories, onCategoriesChange, contracts }: OpexPlanningDialogProps) => {
   const { isAdmin, user } = useAuth();
   const planYear = baseYear + 1;
   const [open, setOpen] = useState(false);
@@ -52,13 +57,16 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
   const [items, setItems] = useState<PlanItem[]>([]);
   const [indexationPct, setIndexationPct] = useState(DEFAULT_INDEXATION_PCT);
 
-  // Formulario "Agregar OPEX desde un contrato"
+  // Formulario "Agregar OPEX": GLOBAL_KEY (sin contrato) o el id de un contrato vigente.
   const [contractSearch, setContractSearch] = useState("");
-  const [activeContractId, setActiveContractId] = useState<string | null>(null);
-  const [formCategoryId, setFormCategoryId] = useState("");
-  const [formAmount, setFormAmount] = useState("");
-  const [formNotes, setFormNotes] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [activeFormKey, setActiveFormKey] = useState<string | null>(null);
+  // Categorías creadas en esta ventana (la página las recibe recién al recargar).
+  const [createdCategories, setCreatedCategories] = useState<Array<{ id: string; name: string }>>([]);
+
+  const categories = useMemo(() => {
+    const known = new Set(propCategories.map((c) => c.id));
+    return [...propCategories, ...createdCategories.filter((c) => !known.has(c.id))];
+  }, [propCategories, createdCategories]);
 
   const months = useMemo(() => monthsElapsed(baseYear), [baseYear]);
 
@@ -134,35 +142,62 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
     return term ? contracts.filter((c) => c.name.toLowerCase().includes(term)) : contracts;
   }, [contracts, contractSearch]);
 
-  const resetForm = () => {
-    setActiveContractId(null);
-    setFormCategoryId("");
-    setFormAmount("");
-    setFormNotes("");
+  const handleCreateCategory = async (rawName: string): Promise<string | null> => {
+    const name = rawName.trim();
+    if (!name) {
+      toast.error("Ingresa un nombre para la categoría");
+      return null;
+    }
+    const existing = categories.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      toast.info("Esa categoría ya existe; quedó seleccionada");
+      return existing.id;
+    }
+    // Mismo criterio de orden que OpexCategoryManager: al final de la lista.
+    const { data: last } = await supabase
+      .from("opex_categories")
+      .select("display_order")
+      .order("display_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const { data, error } = await supabase
+      .from("opex_categories")
+      .insert({ name, display_order: (last?.display_order ?? 0) + 1 })
+      .select("id, name")
+      .single();
+    if (error || !data) {
+      console.error("Error creating OPEX category:", error);
+      toast.error(error?.code === "23505" ? "Ya existe una categoría con ese nombre" : "No se pudo crear la categoría");
+      return null;
+    }
+    setCreatedCategories((prev) => [...prev, data]);
+    toast.success("Categoría creada");
+    onCategoriesChange?.();
+    return data.id;
   };
 
-  const handleAddItem = async () => {
-    const amount = Number(formAmount.replace(/\./g, "").replace(",", "."));
-    if (!formCategoryId) return toast.error("Selecciona una categoría");
-    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Ingresa un monto en CLP mayor a 0");
-    setSaving(true);
+  // Siempre exige categoría: el contrato (si hay) es solo referencia, el monto es global.
+  const handleSaveItem = async (
+    sourceContractId: string | null,
+    input: { categoryId: string; amount: number; notes: string },
+  ): Promise<boolean> => {
     const { error } = await supabase.from("opex_budget_plan_items").insert({
       year: planYear,
-      category_id: formCategoryId,
-      amount_clp: amount,
-      source_contract_id: activeContractId,
-      notes: formNotes.trim() || null,
+      category_id: input.categoryId,
+      amount_clp: input.amount,
+      source_contract_id: sourceContractId,
+      notes: input.notes.trim() || null,
       created_by: user?.id ?? null,
     });
-    setSaving(false);
     if (error) {
       console.error("Error saving OPEX plan item:", error);
       toast.error("No se pudo guardar el OPEX");
-      return;
+      return false;
     }
     toast.success("OPEX agregado a la categoría");
-    resetForm();
+    setActiveFormKey(null);
     loadData();
+    return true;
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -322,9 +357,9 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
 
             <TabsContent value="asignar" className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Elige un contrato vigente para registrar OPEX que solo tú conoces. El monto se suma a la{" "}
-                <strong>categoría global</strong> de {planYear}; el contrato queda solo como referencia y no recibe el
-                presupuesto.
+                Registra OPEX que solo tú conoces, ya sea como OPEX global o partiendo de un contrato vigente. En ambos
+                casos debes elegir (o crear) una <strong>categoría</strong>: el monto se suma a esa categoría global de{" "}
+                {planYear} y el contrato queda solo como referencia, sin recibir el presupuesto.
               </p>
 
               {items.length > 0 && (
@@ -334,7 +369,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
                       <TableRow>
                         <TableHead>Categoría</TableHead>
                         <TableHead className="text-right">Monto CLP</TableHead>
-                        <TableHead>Contrato (referencia)</TableHead>
+                        <TableHead>Origen</TableHead>
                         <TableHead>Nota</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
@@ -344,7 +379,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
                         <TableRow key={item.id}>
                           <TableCell>{categoryName(item.category_id)}</TableCell>
                           <TableCell className="text-right">{formatClp(item.amount_clp)}</TableCell>
-                          <TableCell>{contractName(item.source_contract_id)}</TableCell>
+                          <TableCell>{item.source_contract_id ? contractName(item.source_contract_id) : "Global"}</TableCell>
                           <TableCell className="text-muted-foreground">{item.notes || "—"}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" aria-label="Eliminar OPEX" onClick={() => handleDeleteItem(item.id)}>
@@ -357,6 +392,30 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
                   </Table>
                 </div>
               )}
+
+              <div className="border rounded-md p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium flex items-center gap-1">
+                    <Globe className="h-4 w-4" />
+                    OPEX global (sin contrato)
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveFormKey(activeFormKey === GLOBAL_KEY ? null : GLOBAL_KEY)}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Agregar OPEX
+                  </Button>
+                </div>
+                {activeFormKey === GLOBAL_KEY && (
+                  <AddItemForm
+                    categories={categories}
+                    onCreateCategory={handleCreateCategory}
+                    onSave={(input) => handleSaveItem(null, input)}
+                  />
+                )}
+              </div>
 
               <div className="relative max-w-sm">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -379,39 +438,18 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories, contracts }:
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => (activeContractId === contract.id ? resetForm() : (resetForm(), setActiveContractId(contract.id)))}
+                        onClick={() => setActiveFormKey(activeFormKey === contract.id ? null : contract.id)}
                       >
                         <Plus className="h-4 w-4 mr-1" />
                         Agregar OPEX
                       </Button>
                     </div>
-                    {activeContractId === contract.id && (
-                      <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
-                        <div className="space-y-1">
-                          <Label>Categoría</Label>
-                          <Select value={formCategoryId} onValueChange={setFormCategoryId}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Categoría" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {categories.map((c) => (
-                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Monto anual (CLP)</Label>
-                          <Input inputMode="numeric" placeholder="1500000" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Nota (opcional)</Label>
-                          <Input value={formNotes} maxLength={200} onChange={(e) => setFormNotes(e.target.value)} />
-                        </div>
-                        <Button onClick={handleAddItem} disabled={saving}>
-                          {saving ? "Guardando..." : "Guardar"}
-                        </Button>
-                      </div>
+                    {activeFormKey === contract.id && (
+                      <AddItemForm
+                        categories={categories}
+                        onCreateCategory={handleCreateCategory}
+                        onSave={(input) => handleSaveItem(contract.id, input)}
+                      />
                     )}
                   </div>
                 ))}
@@ -456,3 +494,83 @@ const RankTable = ({ title, rows }: { title: string; rows: Array<{ name: string;
     </TableBody>
   </Table>
 );
+
+interface AddItemFormProps {
+  categories: Array<{ id: string; name: string }>;
+  onCreateCategory: (name: string) => Promise<string | null>;
+  onSave: (input: { categoryId: string; amount: number; notes: string }) => Promise<boolean>;
+}
+
+// Formulario compartido por el OPEX global y el que parte de un contrato:
+// la categoría es obligatoria y puede crearse en el mismo lugar.
+const AddItemForm = ({ categories, onCreateCategory, onSave }: AddItemFormProps) => {
+  const [categoryId, setCategoryId] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const creatingCategory = categoryId === NEW_CATEGORY_VALUE;
+
+  const handleCreateCategory = async () => {
+    setBusy(true);
+    const id = await onCreateCategory(newCategoryName);
+    setBusy(false);
+    if (id) {
+      setCategoryId(id);
+      setNewCategoryName("");
+    }
+  };
+
+  const handleSave = async () => {
+    const parsed = Number(amount.replace(/\./g, "").replace(",", "."));
+    if (!categoryId || creatingCategory) return toast.error("Selecciona o crea una categoría");
+    if (!Number.isFinite(parsed) || parsed <= 0) return toast.error("Ingresa un monto en CLP mayor a 0");
+    setBusy(true);
+    await onSave({ categoryId, amount: parsed, notes });
+    setBusy(false);
+  };
+
+  return (
+    <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+      <div className="space-y-1">
+        <Label>Categoría</Label>
+        <Select value={categoryId} onValueChange={setCategoryId}>
+          <SelectTrigger>
+            <SelectValue placeholder="Categoría" />
+          </SelectTrigger>
+          <SelectContent>
+            {categories.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+            <SelectItem value={NEW_CATEGORY_VALUE}>+ Nueva categoría...</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {creatingCategory ? (
+        <div className="space-y-1 md:col-span-3">
+          <Label>Nombre de la nueva categoría</Label>
+          <div className="flex gap-2">
+            <Input value={newCategoryName} maxLength={100} onChange={(e) => setNewCategoryName(e.target.value)} />
+            <Button onClick={handleCreateCategory} disabled={busy}>
+              {busy ? "Creando..." : "Crear categoría"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-1">
+            <Label>Monto anual (CLP)</Label>
+            <Input inputMode="numeric" placeholder="1500000" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Nota (opcional)</Label>
+            <Input value={notes} maxLength={200} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <Button onClick={handleSave} disabled={busy}>
+            {busy ? "Guardando..." : "Guardar"}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+};

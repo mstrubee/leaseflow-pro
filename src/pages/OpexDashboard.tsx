@@ -599,6 +599,7 @@ const OpexDashboard = () => {
                     baseYear={new Date().getFullYear()}
                     ufValue={ufValue}
                     categories={categories}
+                    onCategoriesChange={loadData}
                     contracts={contracts}
                   />
                   <OpexCategoryManager onCategoryChange={loadData} />
