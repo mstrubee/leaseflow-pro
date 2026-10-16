@@ -29,6 +29,9 @@ export interface PlanningExcelData {
 
 const CLP_FMT = '"$"#,##0;[Red]-"$"#,##0';
 const UF_FMT = "#,##0.00";
+// Inflación anual por defecto para proyectar la UF mes a mes (editable en el
+// Excel, Resumen!B4).
+const DEFAULT_ANNUAL_INFLATION = 0.034;
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const HEADER_FILL = "FF1F3A5F";
 const SECTION_FILL = "FFE8EEF5";
@@ -96,38 +99,77 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   ufRow.getCell(2).numFmt = UF_FMT;
   ufRow.getCell(2).font = { bold: true, color: { argb: "FF0000FF" } };
   ufRow.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
+  // Proyección de la UF (hoja Operativo): UF del mes = Valor UF × (1 + inflación)^(meses desde el mes base / 12).
+  const now = new Date();
+  const baseYear = now.getFullYear();
+  const baseMonth = now.getMonth() + 1; // 1-12
+  const INFL = "Resumen!$B$4";
+  const BASE = "Resumen!$B$5";
+  const inflRow = wsResumen.addRow(["Inflación anual estimada (para proyectar la UF mes a mes) — editable", DEFAULT_ANNUAL_INFLATION]);
+  inflRow.getCell(2).numFmt = "0.0%";
+  const baseRow = wsResumen.addRow(["Mes al que corresponde el Valor UF (mes base) — editable", new Date(Date.UTC(baseYear, baseMonth - 1, 1))]);
+  baseRow.getCell(2).numFmt = "mmm-yyyy";
+  [inflRow, baseRow].forEach((r) => {
+    r.getCell(2).font = { bold: true, color: { argb: "FF0000FF" } };
+    r.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
+  });
+  // UF estimada de un mes (misma fórmula que la fila "Valor UF estimado" de Operativo).
+  const estimatedUF = (year: number, month: number) =>
+    uf * Math.pow(1 + DEFAULT_ANNUAL_INFLATION, ((year - baseYear) * 12 + (month - baseMonth)) / 12);
   wsResumen.addRow([]);
+
+  // Monto de un mes de Operativo tal como lo calculan las fórmulas de la hoja
+  // (resultado precalculado, para que el archivo abra consistente).
+  type OperativoRow = (typeof data.operativoRows)[number];
+  const operativoMonthValue = (r: OperativoRow, i: number) => {
+    const m = r.months[i] || 0;
+    return !r.manual && uf > 0 && m !== 0 ? Math.round((m / uf) * 1e6) / 1e6 * estimatedUF(r.year, i + 1) : m;
+  };
+  const operativoRowTotal = (r: OperativoRow) => r.months.reduce((acc, _, i) => acc + operativoMonthValue(r, i), 0);
 
   // ───────────────────────── Hoja Operativo ─────────────────────────
   // Una tabla por año: filas = local/ítem × categoría, columnas = 12 meses +
   // total. Cada tabla cierra con fila de total por mes (fórmula SUM).
   const operativoTotalCell: Record<number, string> = {};
   title(wsOperativo, `Presupuesto Operativo de Nuevos Locales ${currentYear}-${targetYear} (CLP)`);
-  wsOperativo.addRow(["Informativo: no integra el total de CAPEX. 'Automático' = UF del mes × Valor UF (fórmula: cambia con la UF de Resumen!B3). 'Manual' = pesos ingresados a mano por falta de dato en el contrato (celdas azules, editables)."]).font = { italic: true };
+  wsOperativo.addRow(["Informativo: no integra el total de CAPEX. 'Automático' = monto en UF del mes × UF estimada de ESE mes (fila 'Valor UF estimado': Valor UF de Resumen!B3 proyectado con la inflación de Resumen!B4). 'Manual' = pesos ingresados a mano por falta de dato en el contrato (celdas azules, editables)."]).font = { italic: true };
   wsOperativo.addRow([]);
   const opCols = 6 + 12 + 1; // Tipo, Local, Empresa, Categoría, Origen, Año, 12 meses, Total
   [currentYear, targetYear].forEach((year) => {
     sectionHeader(wsOperativo, `Año ${year}`, opCols);
     tableHeader(wsOperativo, ["Tipo", "Local / Ítem", "Empresa", "Categoría", "Origen", "Año", ...MESES, "Total"]);
+    // Fila de UF estimada por mes: Valor UF × (1 + inflación)^(meses desde el mes base / 12).
+    const ufEstRow = wsOperativo.addRow(["", `Valor UF estimado (inflación ${(DEFAULT_ANNUAL_INFLATION * 100).toFixed(1).replace(".", ",")}% anual por defecto, editable en Resumen!B4)`, "", "", "", year]);
+    for (let m = 1; m <= 12; m++) {
+      ufEstRow.getCell(6 + m).value = {
+        formula: `${UF}*(1+${INFL})^((($F${ufEstRow.number}-YEAR(${BASE}))*12+(${m}-MONTH(${BASE})))/12)`,
+        result: estimatedUF(year, m),
+      };
+      ufEstRow.getCell(6 + m).numFmt = UF_FMT;
+    }
+    ufEstRow.font = { italic: true };
     const rows = data.operativoRows.filter((r) => r.year === year);
     const firstDataRow = wsOperativo.rowCount + 1;
     rows.forEach((r) => {
       const excelRow = wsOperativo.addRow([r.kind, r.name, r.company, r.category, r.manual ? "Manual" : "Automático", r.year, ...new Array(12).fill(null), null]);
       const n = excelRow.number;
       // Operativo SÍ va en función de la UF (pedido explícito): "Automático" =
-      // UF del mes × Valor UF (Resumen!B3), fórmula viva. "Manual" = pesos
-      // ingresados a mano (celda azul, editable), no depende de la UF.
+      // monto del mes en UF × UF estimada de ESE mes (fila ufEstRow, con
+      // inflación editable). "Manual" = pesos ingresados a mano (celda azul,
+      // editable), no depende de la UF. El monto en UF del mes es el monto en
+      // pesos de pantalla / Valor UF único con el que se calculó.
       r.months.forEach((m, i) => {
         const cell = excelRow.getCell(7 + i);
+        const colLetter = wsOperativo.getColumn(7 + i).letter;
         if (!r.manual && uf > 0 && m !== 0) {
-          cell.value = { formula: `${Math.round((m / uf) * 1e6) / 1e6}*${UF}`, result: m };
+          const monthlyUf = Math.round((m / uf) * 1e6) / 1e6;
+          cell.value = { formula: `${monthlyUf}*${colLetter}$${ufEstRow.number}`, result: monthlyUf * estimatedUF(year, i + 1) };
         } else {
           cell.value = m;
           if (r.manual) cell.font = INPUT_FONT;
         }
       });
-      const total = r.months.reduce((a, b) => a + b, 0);
-      excelRow.getCell(opCols).value = { formula: `SUM(G${n}:R${n})`, result: total };
+      excelRow.getCell(opCols).value = { formula: `SUM(G${n}:R${n})`, result: operativoRowTotal(r) };
       setFmt(excelRow, Array.from({ length: 13 }, (_, i) => 7 + i), CLP_FMT);
     });
     const lastDataRow = wsOperativo.rowCount;
@@ -135,7 +177,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
     const t = totalRow.number;
     for (let c = 7; c <= opCols; c++) {
       const col = wsOperativo.getColumn(c).letter;
-      const result = c === opCols ? rows.reduce((s, r) => s + r.months.reduce((a, b) => a + b, 0), 0) : rows.reduce((s, r) => s + (r.months[c - 7] || 0), 0);
+      const result = c === opCols ? rows.reduce((s, r) => s + operativoRowTotal(r), 0) : rows.reduce((s, r) => s + operativoMonthValue(r, c - 7), 0);
       totalRow.getCell(c).value = rows.length > 0 ? { formula: `SUM(${col}${firstDataRow}:${col}${lastDataRow})`, result } : 0;
     }
     setFmt(totalRow, Array.from({ length: 13 }, (_, i) => 7 + i), CLP_FMT);
@@ -331,7 +373,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   sectionHeader(wsResumen, "Operativo (Nuevos Locales) — informativo, no integra el total de CAPEX", 3);
   tableHeader(wsResumen, ["Concepto", "Monto ($)", "Ref. UF"]);
   [currentYear, targetYear].forEach((year) => {
-    const result = data.operativoRows.filter((r) => r.year === year).reduce((acc, r) => acc + r.months.reduce((a, b) => a + b, 0), 0);
+    const result = data.operativoRows.filter((r) => r.year === year).reduce((acc, r) => acc + operativoRowTotal(r), 0);
     addSummaryRow(`Presupuesto Operativo ${year}`, operativoTotalCell[year], result);
   });
   wsResumen.columns = [{ width: 56 }, { width: 22 }, { width: 18 }];
