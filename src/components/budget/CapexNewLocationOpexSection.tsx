@@ -8,6 +8,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronDown, ChevronRight, Loader2, Building2, CalendarClock } from "lucide-react";
 import { computeArriendoPeriods, type RentPeriodsVersionInput } from "@/lib/businessCase/rentPeriods";
 import { format, parseISO } from "date-fns";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -65,6 +66,8 @@ interface ItemRow {
   fondo_promocion_uf: number | null;
   otros_uf: number | null;
   contract_id: string | null;
+  /** Empresas del contrato vinculado (si lo hay) -- solo para mostrar su logo. */
+  companyNames?: string[];
 }
 
 /** Una fila (local/ítem × categoría × año) del Presupuesto Operativo, tal cual
@@ -259,7 +262,22 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         const filtered = (data || []).filter((it: ItemRow) =>
           it.contract_id ? !realContractIds.has(it.contract_id) : !realContractNames.has(it.name.trim().toLowerCase())
         );
-        setItems(filtered);
+        // Empresas de los contratos vinculados, para mostrar su logo.
+        const linkedIds = Array.from(new Set(filtered.map((it: ItemRow) => it.contract_id).filter(Boolean))) as string[];
+        const companiesByContract = new Map<string, string[]>();
+        if (linkedIds.length > 0) {
+          const { data: companyRows } = await supabase
+            .from("contract_companies")
+            .select("contract_id, companies (name)")
+            .in("contract_id", linkedIds);
+          ((companyRows || []) as unknown as { contract_id: string; companies: { name: string | null } | null }[]).forEach((cc) => {
+            const name = cc.companies?.name;
+            if (!name) return;
+            companiesByContract.set(cc.contract_id, [...(companiesByContract.get(cc.contract_id) || []), name]);
+          });
+        }
+        if (cancelled) return;
+        setItems(filtered.map((it: ItemRow) => ({ ...it, companyNames: it.contract_id ? companiesByContract.get(it.contract_id) || [] : [] })));
       } catch (err) {
         console.error(err);
         toast.error("Error al cargar los ítems de presupuesto informativos");
@@ -347,6 +365,7 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     name: string;
     date: string;
     superficie_m2: number | null;
+    companyNames: string[];
     monthly: Record<ItemCategory, { [year: number]: number[] }>;
   }
   const perItemData: ItemMonthlyData[] = useMemo(() => {
@@ -368,7 +387,7 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
           monthly.otros[year].push(otros);
         }
       });
-      return { itemId: item.id, name: item.name, date: item.date, superficie_m2: item.superficie_m2, monthly };
+      return { itemId: item.id, name: item.name, date: item.date, superficie_m2: item.superficie_m2, companyNames: item.companyNames || [], monthly };
     });
   }, [items, currentYear, targetYear, ufValue]);
 
@@ -556,7 +575,11 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                     <CollapsibleTrigger asChild>
                       <button type="button" className="w-full flex items-center gap-2 p-2 text-left hover:bg-muted/50 transition-colors">
                         {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        {c.companyNames.length > 0 ? (
+                          <CompanyLogo companyNames={c.companyNames} size="sm" className="h-5 w-5 shrink-0" />
+                        ) : (
+                          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
                         <span className="text-sm font-medium flex-1 break-words">{c.name}</span>
                         {c.noVersion && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0" title="El contrato no tiene condiciones comerciales cargadas (sin contract_versions) -- probablemente aún En Negociación.">
@@ -651,7 +674,11 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                     <CollapsibleTrigger asChild>
                       <button type="button" className="w-full flex items-center gap-2 p-2 text-left hover:bg-muted/50 transition-colors">
                         {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-                        <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        {it.companyNames.length > 0 ? (
+                          <CompanyLogo companyNames={it.companyNames} size="sm" className="h-5 w-5 shrink-0" />
+                        ) : (
+                          <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
                         <span className="text-sm font-medium flex-1 break-words">{it.name}</span>
                         <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">Informativo</Badge>
                         <span className="text-xs text-muted-foreground shrink-0">{format(parseISO(it.date), "dd/MM/yyyy")}</span>

@@ -171,7 +171,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   // cada ítem VINCULADO a un contrato (contract_id) -- ya no se ingresan a
   // mano acá, se leen directo del contrato. null si el contrato no tiene
   // uno de los dos datos cargado todavía.
-  const [contractDataByItem, setContractDataByItem] = useState<Record<string, { superficie: number | null; capexClp: number | null }>>({});
+  const [contractDataByItem, setContractDataByItem] = useState<Record<string, { superficie: number | null; capexClp: number | null; companyNames: string[] }>>({});
 
   const isClosed = draft?.status === "cerrado";
 
@@ -210,12 +210,16 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
       const linkedContractIds = Array.from(new Set(loadedItems.map((it) => it.contract_id).filter(Boolean))) as string[];
       if (linkedContractIds.length > 0) {
         const [{ data: contractRows }, { data: businessCaseRows }] = await Promise.all([
-          supabase.from("contracts").select("id, superficie_edificada_local").in("id", linkedContractIds),
+          supabase.from("contracts").select("id, superficie_edificada_local, contract_companies(companies(name))").in("id", linkedContractIds),
           supabase.from("contract_business_cases").select("contract_id, computed").in("contract_id", linkedContractIds),
         ]);
-        const byContract: Record<string, { superficie: number | null; capexClp: number | null }> = {};
+        const byContract: Record<string, { superficie: number | null; capexClp: number | null; companyNames: string[] }> = {};
         (contractRows || []).forEach((c: any) => {
-          byContract[c.id] = { superficie: c.superficie_edificada_local ?? null, capexClp: null };
+          byContract[c.id] = {
+            superficie: c.superficie_edificada_local ?? null,
+            capexClp: null,
+            companyNames: (c.contract_companies || []).map((cc: { companies: { name: string | null } | null }) => cc.companies?.name).filter(Boolean) as string[],
+          };
         });
         (businessCaseRows || []).forEach((row: any) => {
           const computed = row.computed as { inv?: { total?: number; rows?: { id: string; monto: number }[] } } | null;
@@ -223,7 +227,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
           if (total == null) return;
           const inventario = computed?.inv?.rows?.find((r) => r.id === "inv")?.monto || 0;
           const capexClp = (total - inventario) * 1_000_000;
-          byContract[row.contract_id] = { ...(byContract[row.contract_id] || { superficie: null }), capexClp };
+          byContract[row.contract_id] = { ...(byContract[row.contract_id] || { superficie: null, companyNames: [] }), capexClp };
         });
         setContractDataByItem(byContract);
       } else {
@@ -502,7 +506,10 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                       {straddlingRows.map((r, i) => (
                         <tr key={i} className="border-b last:border-0">
                           <td className="p-1.5 break-words">
-                            {r.contractName}
+                            <span className="inline-flex items-center gap-1.5">
+                              <CompanyLogo companyName={r.company} size="sm" className="h-4 w-4 shrink-0" />
+                              <span>{r.contractName}</span>
+                            </span>
                             {r.isManualNoGanttCarryover && (
                               <Badge variant="outline" className="text-[9px] ml-1">manual, sin Gantt</Badge>
                             )}
@@ -543,7 +550,12 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                     <tbody>
                       {objetivoContratosRows.map((r, i) => (
                         <tr key={i} className="border-b last:border-0">
-                          <td className="p-1.5 break-words">{r.contractName}</td>
+                          <td className="p-1.5 break-words">
+                            <span className="inline-flex items-center gap-1.5">
+                              <CompanyLogo companyName={r.company} size="sm" className="h-4 w-4 shrink-0" />
+                              <span>{r.contractName}</span>
+                            </span>
+                          </td>
                           <td className="p-1.5 whitespace-nowrap">{r.company}</td>
                           <td className="p-1.5 whitespace-nowrap">{r.avanceStatus || "-"}</td>
                           <td className="text-right p-1.5 whitespace-nowrap">{formatCLP(r.targetYearUf * (ufValue || 0))}</td>
@@ -572,6 +584,9 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                       <div key={it.id} className="flex items-center gap-3 border rounded-lg p-2">
                         <div className="flex-1 min-w-0 space-y-0.5">
                           <div className="flex items-center gap-2 flex-wrap">
+                            {it.contract_id && (contractDataByItem[it.contract_id]?.companyNames?.length ?? 0) > 0 && (
+                              <CompanyLogo companyNames={contractDataByItem[it.contract_id].companyNames} size="sm" className="h-5 w-5 shrink-0" />
+                            )}
                             <span className="text-sm font-medium break-words">{it.name}</span>
                             <Badge variant="secondary" className="text-[10px] shrink-0">Informativo, sin contrato</Badge>
                           </div>
@@ -619,6 +634,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                           <div key={r.contractId} className="flex items-center gap-3 border rounded-lg p-2">
                             <div className="flex-1 min-w-0 space-y-0.5">
                               <div className="flex items-center gap-2 flex-wrap">
+                                <CompanyLogo companyName={r.company} size="sm" className="h-5 w-5 shrink-0" />
                                 <span className="text-sm font-medium break-words">{r.contractName}</span>
                                 <span className="text-xs text-muted-foreground">{r.company}</span>
                                 {r.avanceStatus ? (

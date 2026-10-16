@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -144,7 +145,7 @@ export function GanttOverviewTimeline({
   // Comité marcado "Calendarizable" en Admin (ver ComiteGPStatusManager),
   // sin contar los que ya tienen un ítem vinculado (contract_id) para no
   // ofrecer crear un duplicado.
-  const [eligibleContracts, setEligibleContracts] = useState<{ id: string; name: string }[]>([]);
+  const [eligibleContracts, setEligibleContracts] = useState<{ id: string; name: string; companyNames: string[] }[]>([]);
   const [loadingEligible, setLoadingEligible] = useState(false);
 
   useEffect(() => {
@@ -168,7 +169,7 @@ export function GanttOverviewTimeline({
         // de ser una alternativa.
         const { data: contractsData } = await supabase
           .from("contracts")
-          .select("id, name, comite_gp_status")
+          .select("id, name, comite_gp_status, contract_companies(companies(name))")
           .eq("status", "en_negociacion")
           .is("deleted_at", null)
           .neq("comite_gp_status", "Rechazada")
@@ -182,7 +183,11 @@ export function GanttOverviewTimeline({
           setEligibleContracts(
             (contractsData || [])
               .filter((c: any) => !linkedIds.has(c.id))
-              .map((c: any) => ({ id: c.id, name: c.name }))
+              .map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                companyNames: (c.contract_companies || []).map((cc: { companies: { name: string | null } | null }) => cc.companies?.name).filter(Boolean) as string[],
+              }))
               .sort((a, b) => a.name.localeCompare(b.name))
           );
         }
@@ -848,7 +853,12 @@ export function GanttOverviewTimeline({
                       </div>
                     ) : (
                       eligibleContracts.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        <SelectItem key={c.id} value={c.id}>
+                          <span className="flex items-center gap-2">
+                            <CompanyLogo companyNames={c.companyNames} size="sm" className="flex-shrink-0" />
+                            <span>{c.name}</span>
+                          </span>
+                        </SelectItem>
                       ))
                     )}
                   </SelectContent>
