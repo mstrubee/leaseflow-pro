@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { Loader2, FileSearch, CheckCircle2, AlertCircle, FileText, MapPin, Users } from "lucide-react";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface ExtractedField {
   field: string;
@@ -98,8 +99,9 @@ export function ContractDataImportModal({
       setStep('preview');
     } catch (error: any) {
       console.error('Error extracting data:', error);
+      const message = await getFunctionErrorMessage(error, 'No se pudo procesar el documento');
       toast.error('Error al analizar el contrato', {
-        description: error.message || 'No se pudo procesar el documento'
+        description: message
       });
       onOpenChange(false);
     }

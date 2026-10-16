@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
 import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, formatContractAmount } from "@/lib/contractRent";
-import { getAvailableColumns } from "./ContractsTablePDF";
+import { getAvailableColumns, type CapexData } from "./ContractsTablePDF";
 
 interface ContractVersion {
   regime_rent: number;
@@ -116,7 +116,8 @@ export const generateContractsListExcel = (
   title: string,
   isFirmadoView: boolean,
   isNegociacionView: boolean,
-  ufValue: number = 0
+  ufValue: number = 0,
+  capexData: CapexData = { capexByContract: {}, capexEstByContract: {} }
 ) => {
   const allColumns = getAvailableColumns(isFirmadoView, isNegociacionView);
   const columns = allColumns.filter((c) => selectedColumns.includes(c.key));
@@ -141,6 +142,32 @@ export const generateContractsListExcel = (
           return address?.commune || "";
         case "direccion":
           return address ? `${address.street || ""} ${address.number || ""}`.trim() : "";
+        case "capex": {
+          const capex = capexData.capexByContract[contract.id];
+          const totalUF = (capex?.authorized || 0) + (capex?.unauthorized || 0);
+          if (totalUF <= 0) return "";
+          const superficie = contract.superficie_edificada_local || 0;
+          const perM2 = superficie > 0 ? totalUF / superficie : 0;
+          const parts = [`$${Math.round(totalUF * ufValue).toLocaleString("es-CL")}`, `${totalUF.toFixed(2)} UF`];
+          if (perM2 > 0) parts.push(`${perM2.toFixed(2)} UF/m²`);
+          return parts.join(" | ");
+        }
+        case "capex_est": {
+          const capexEstData = capexData.capexEstByContract[contract.id];
+          const capexEst = capexEstData?.capexEstMM || 0;
+          if (capexEst <= 0) return "";
+          const capitalTrabajo = capexEstData?.capitalTrabajoMM || 0;
+          const superficie = contract.superficie_edificada_local || 0;
+          const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
+          const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
+          const parts = [
+            `${Math.round(capexEst).toLocaleString("es-CL")} MM$`,
+            capitalTrabajo > 0 ? `${Math.round(capitalTrabajo).toLocaleString("es-CL")} MM$ (CT)` : "-",
+            superficie > 0 ? `${superficie} m²` : "-",
+          ];
+          if (perM2UF > 0) parts.push(`${perM2UF.toFixed(2)} UF/m²`);
+          return parts.join(" | ");
+        }
         case "costo_arriendo": {
           if (!v) return "";
           const superficie = contract.superficie_edificada_local || 0;
@@ -192,13 +219,35 @@ export const generateContractsListExcel = (
           if (!contract.venta_estimada) return "";
           const min = contract.venta_estimada;
           const max = contract.venta_estimada_max || min;
+          const superficie = contract.superficie_edificada_local || 0;
+          const metrosFrente = contract.metros_lineales_frente || 0;
           const minMM = Math.round(min / 1_000_000);
           const maxMM = Math.round(max / 1_000_000);
           const lines: string[] = [min === max ? `${minMM} MM$` : `${minMM}-${maxMM} MM$`];
+          const minUF = ufValue > 0 ? min / ufValue : 0;
+          const maxUF = ufValue > 0 ? max / ufValue : 0;
           if (ufValue > 0) {
-            const minUF = Math.round(min / ufValue);
-            const maxUF = Math.round(max / ufValue);
-            lines.push(minUF === maxUF ? `${minUF} UF` : `${minUF}-${maxUF} UF`);
+            lines.push(Math.round(minUF) === Math.round(maxUF) ? `${Math.round(minUF)} UF` : `${Math.round(minUF)}-${Math.round(maxUF)} UF`);
+          }
+          if (superficie > 0 && ufValue > 0) {
+            const minUFm2 = minUF / superficie;
+            const maxUFm2 = maxUF / superficie;
+            lines.push(minUFm2 === maxUFm2 ? `${minUFm2.toFixed(1)} UF/m²` : `${minUFm2.toFixed(1)}-${maxUFm2.toFixed(1)} UF/m²`);
+          }
+          // Arr/Vta — mismo cálculo que la pantalla (ContractsTable.tsx) y el
+          // PDF: promedio ponderado por periodo/escalación, no solo el canon
+          // vigente. Antes esta línea directamente no existía en el Excel.
+          if (ufValue > 0 && v) {
+            const { promedio: arriendoTotalMensual } = calculateWeightedAverageTotalArriendo({
+              version: v,
+              signedDate: contract.signed_date,
+              superficie,
+              metrosLinealesFrente: metrosFrente,
+            });
+            const arriendoAnual = arriendoTotalMensual * 12;
+            const ventaAnualUF = ((minUF + maxUF) / 2) * 12;
+            const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
+            if (ratioArrVta > 0) lines.push(`Arr/Vta: ${ratioArrVta.toFixed(2)}%`);
           }
           return lines.join(" | ");
         }
@@ -220,6 +269,8 @@ export const generateContractsListExcel = (
       empresa: 22,
       ubicacion: 18,
       direccion: 30,
+      capex: 30,
+      capex_est: 30,
       costo_arriendo: 42,
       duracion: 12,
       termino: 12,

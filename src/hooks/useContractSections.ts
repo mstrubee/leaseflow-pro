@@ -12,7 +12,8 @@ export type SectionKey =
   | "repository"
   | "budget"
   | "gantt"
-  | "alerts";
+  | "alerts"
+  | "fixedAssets";
 
 interface SectionConfig {
   key: SectionKey;
@@ -31,6 +32,7 @@ const DEFAULT_ORDER: SectionKey[] = [
   "budget",
   "gantt",
   "alerts",
+  "fixedAssets",
 ];
 
 const STORAGE_KEY = "contract_detail_sections";

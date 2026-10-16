@@ -21,6 +21,8 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage, extractStoragePath } from "@/lib/storageUtils";
+import { useAuth } from "@/hooks/useAuth";
+import { ReconcileImportsDialog } from "@/components/budget/ReconcileImportsDialog";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
   OCSupplier, GroupedOC, OCAllocation, OCRowStatus, DuplicateResolution,
@@ -33,6 +35,9 @@ interface FullLocation {
   id: string;
   contract_id: string | null;
   contract_name: string;
+  /** Empresa del contrato. El logo NO se puede deducir de contract_name: ese
+   *  campo es el nombre del local ("San Felipe"), no el de la empresa. */
+  company_name: string | null;
   centro_sap: string | null;
 }
 
@@ -94,6 +99,8 @@ export default function BulkOCImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { logos } = useAppLogos();
   const { ufValue } = useEconomicIndicators();
+  const { isAdmin } = useAuth();
+  const [showReconcileDialog, setShowReconcileDialog] = useState(false);
 
   // Reference data
   const [allLocations, setAllLocations] = useState<FullLocation[]>([]);
@@ -135,27 +142,82 @@ export default function BulkOCImport() {
           .in("field_id", fieldIds)
           .not("field_value", "is", null) as any;
 
-        cebeLocations = ((cebeValues || []) as any[])
-          .filter((v: any) => v.contract_id && v.field_value && v.contracts?.name)
-          .map((v: any) => ({
-            id:            v.contract_id,
-            contract_id:   v.contract_id,
-            contract_name: v.contracts.name as string,
-            centro_sap:    v.field_value as string,
-          }));
+        const rows = ((cebeValues || []) as any[])
+          .filter((v: any) => v.contract_id && v.field_value && v.contracts?.name);
+
+        // Query separada a propósito: si el join de empresas falla, se pierden
+        // los logos pero NO la lista de locales.
+        const companyByContract = new Map<string, string>();
+        const contractIds = [...new Set(rows.map((v: any) => v.contract_id as string))];
+        if (contractIds.length > 0) {
+          const { data: compRows, error: compErr } = await supabase
+            .from("contract_companies")
+            .select("contract_id, companies(name)")
+            .in("contract_id", contractIds) as any;
+          if (compErr) {
+            console.error("No se pudieron cargar las empresas de los contratos:", compErr);
+          }
+          for (const r of ((compRows || []) as any[])) {
+            const name = r.companies?.name;
+            if (r.contract_id && name) companyByContract.set(r.contract_id, name as string);
+          }
+        }
+
+        cebeLocations = rows.map((v: any) => ({
+          id:            v.contract_id,
+          contract_id:   v.contract_id,
+          contract_name: v.contracts.name as string,
+          company_name:  companyByContract.get(v.contract_id) ?? null,
+          centro_sap:    v.field_value as string,
+        }));
       }
 
-      const [supRes, batchRes] = await Promise.all([
+      const [supRes, batchRes, mapRes] = await Promise.all([
         supabase.from("suppliers").select("id, name").order("name"),
         supabase
           .from("oc_import_batches" as any)
           .select("id,filename,storage_path,imported_at,rows_total,rows_ok,rows_pending_supplier,rows_pending_local,rows_duplicate,drive_synced_at")
           .order("imported_at", { ascending: false })
           .limit(20),
+        // Mapeos código Centro → contrato guardados en cargas anteriores.
+        supabase
+          .from("oc_centro_mappings" as any)
+          .select("centro_code, contract_id") as any,
       ]);
+
+      // Los mapeos recordados se suman a los locales conocidos, así el match
+      // automático resuelve los códigos que alguna vez se asignaron a mano.
+      // Sin toast a propósito: si esto falla, la única consecuencia es que la
+      // pantalla pide el mapeo a mano, que es el comportamiento de siempre.
+      // Un aviso en cada visita sería ruido. El camino de GUARDADO sí avisa,
+      // porque ahí el usuario espera que quede persistido.
+      if ((mapRes as any)?.error) {
+        console.error("No se pudieron cargar los mapeos recordados:", (mapRes as any).error);
+      }
+      const nameByContract = new Map<string, string>();
+      for (const l of cebeLocations) {
+        if (l.contract_id) nameByContract.set(l.contract_id, l.contract_name);
+      }
+      const remembered: FullLocation[] = (((mapRes as any)?.data || []) as any[])
+        .filter(m => m.centro_code && m.contract_id)
+        .map(m => ({
+          id:            m.contract_id as string,
+          contract_id:   m.contract_id as string,
+          contract_name: nameByContract.get(m.contract_id as string) ?? "(contrato)",
+          company_name:  null,
+          centro_sap:    m.centro_code as string,
+        }));
+      // Se agregan al final: si un código ya matchea por CEBE, gana el CEBE.
+      cebeLocations = [...cebeLocations, ...remembered];
 
       setAllLocations(cebeLocations);
       setSuppliers(((supRes.data || []) as any[]) as OCSupplier[]);
+      if ((batchRes as any).error) {
+        // Antes se mostraba "Sin importaciones anteriores" aunque la lectura
+        // hubiera fallado, haciendo parecer que las cargas no existían.
+        console.error("Error al cargar el historial de importaciones:", (batchRes as any).error);
+        toast.error("No se pudo cargar el historial de importaciones. Puede haber cargas previas que no se muestran.");
+      }
       setBatches(((batchRes.data || []) as any[]) as ImportBatch[]);
       setLoadingRef(false);
     }
@@ -176,11 +238,16 @@ export default function BulkOCImport() {
     .filter(l => l.contract_id)
     .map(l => {
       const cebeCode = extractCentroCode(l.centro_sap);
-      const logoUrl  = logoForName(l.contract_name);
+      // El logo sale de la empresa, no del nombre del local. Además se muestra
+      // la empresa en la etiqueta: hay locales Agroplanet y Autoplanet en la
+      // misma ciudad y sin eso la elección es ambigua.
+      const logoUrl  = l.company_name ? logoForName(l.company_name) : null;
       return {
         value:       l.id,
-        label:       l.contract_name,
-        searchValue: cebeCode,
+        label:       l.company_name
+          ? `${l.contract_name} — ${l.company_name}`
+          : l.contract_name,
+        searchValue: [cebeCode, l.company_name].filter(Boolean).join(" "),
         icon: logoUrl
           ? <img src={logoUrl} alt="" className="h-5 w-5 rounded object-contain flex-shrink-0" />
           : undefined,
@@ -305,6 +372,33 @@ export default function BulkOCImport() {
       }));
 
     const allLocs = [...knownLocations, ...manualLocations];
+
+    // Guardar los mapeos marcados con "Recordar" para no volver a pedirlos.
+    // Va antes del resto para que un fallo se vea en el acto; no aborta la
+    // importación, que puede continuar con los mapeos en memoria.
+    const toRemember = mappings.filter(m => m.contractId && m.remember);
+    if (toRemember.length > 0) {
+      const { error: rememberErr } = await (supabase
+        .from("oc_centro_mappings" as any)
+        .upsert(
+          toRemember.map(m => ({
+            centro_code: m.centroCode.trim().toUpperCase(),
+            contract_id: m.contractId!,
+            updated_at:  new Date().toISOString(),
+          })),
+          { onConflict: "centro_code" },
+        ) as any);
+      if (rememberErr) {
+        console.error("Error al guardar los mapeos de código Centro:", rememberErr);
+        toast.error(
+          "No se pudieron guardar las asignaciones para futuras cargas. " +
+          "Esta importación sigue igual, pero habrá que reasignarlas la próxima vez."
+        );
+      } else {
+        toast.success(`${toRemember.length} asignación(es) guardada(s) para futuras cargas`);
+      }
+    }
+
     const parsed   = resolveRows(rawRows, allLocs, suppliers);
     const grouped_ = groupByOrderNumber(parsed);
 
@@ -379,23 +473,55 @@ export default function BulkOCImport() {
   async function markDuplicates(groups: GroupedOC[]) {
     const numbers = groups.map(g => g.orderNumber).filter(Boolean);
     if (numbers.length === 0) return;
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from("purchase_orders")
-      .select("id, order_number")
+      .select("id, order_number, amount_clp")
       .in("order_number", numbers)
       .is("deleted_at", null) as any;
 
-    const existingMap = new Map<string, string>();
-    for (const o of (existing || []) as any[]) existingMap.set(o.order_number, o.id);
+    if (error) {
+      console.error("Error al buscar OC existentes:", error);
+      toast.error("No se pudo verificar qué OC ya existen. Revisa antes de importar para no duplicar.");
+      return;
+    }
+
+    // Una OC "digitada" multi-local tiene N filas en purchase_orders con el
+    // MISMO order_number, una por contrato asignado, cada una con el monto
+    // PARCIAL de esa asignación (ver ConvertOCRequestDialog). Hay que sumar
+    // todas las filas del mismo order_number para obtener el total real:
+    // comparar el total del Excel contra el monto de una sola fila las
+    // marcaba como "distintas" aunque el total coincidiera.
+    const existingMap = new Map<string, { id: string; amountClp: number }>();
+    for (const o of (existing || []) as any[]) {
+      const prev = existingMap.get(o.order_number);
+      existingMap.set(o.order_number, {
+        id:        prev?.id ?? o.id, // se usa la primera fila como referencia
+        amountClp: (prev?.amountClp ?? 0) + (Number(o.amount_clp) || 0),
+      });
+    }
+
     for (const g of groups) {
-      if (existingMap.has(g.orderNumber)) {
-        g.isDuplicate = true;
-        g.existingId  = existingMap.get(g.orderNumber) ?? null;
-      }
+      const hit = existingMap.get(g.orderNumber);
+      if (!hit) continue;
+      g.isDuplicate       = true;
+      g.existingId        = hit.id;
+      g.existingAmountClp = hit.amountClp;
+      // Preselección: si el monto difiere hay que sincerarlo, así que se
+      // propone reemplazar; si coincide, se conserva lo que ya está. En ambos
+      // casos queda visible y se puede cambiar con un clic.
+      g.duplicateResolution = amountsDiffer(g.totalAmountClp, hit.amountClp)
+        ? "replace"
+        : "keep_existing";
     }
   }
 
   // ── Duplicate resolution ───────────────────────────────────────────────────
+
+  /** Tolerancia de 1 peso: los montos vienen de sumar filas del Excel y el
+   *  redondeo no debe contar como diferencia real. */
+  function amountsDiffer(a: number, b: number): boolean {
+    return Math.abs((a || 0) - (b || 0)) >= 1;
+  }
 
   function setResolution(orderNumber: string, res: DuplicateResolution) {
     setGrouped(prev => prev.map(g =>
@@ -404,7 +530,7 @@ export default function BulkOCImport() {
   }
 
   const unresolvedDuplicates = grouped.filter(g => g.isDuplicate && g.duplicateResolution === null);
-  const toImport             = grouped.filter(g => !g.isDuplicate || g.duplicateResolution !== "keep_existing");
+  const toImport             = grouped; // se procesan todas: nueva, reemplazo o verificación de existente
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -437,7 +563,7 @@ export default function BulkOCImport() {
       if (!error) storagePath = path;
     } catch { /* non-blocking */ }
 
-    const { data: batchData } = await supabase
+    const { data: batchData, error: batchErr } = await supabase
       .from("oc_import_batches" as any)
       .insert({
         filename:              file.name,
@@ -452,7 +578,51 @@ export default function BulkOCImport() {
       .single() as any;
 
     const batchId: string | null = batchData?.id ?? null;
+
+    // Sin batchId las OC se insertan con import_batch_id = null y quedan
+    // marcadas como "D" (digitadas) en el listado, indistinguibles de las
+    // manuales, y la importación no aparece en el historial. Antes este error
+    // se descartaba y el import seguía igual: se perdía toda la trazabilidad
+    // en silencio. Se aborta para no ensuciar los datos.
+    if (batchErr || !batchId) {
+      console.error("Error al registrar el lote de importación:", batchErr);
+      setStage("review");
+      setProgress(0);
+      toast.error(
+        "No se pudo registrar el lote de importación, así que se canceló para no cargar OC sin trazabilidad. " +
+        (batchErr?.message ? `Detalle: ${batchErr.message}` : "Revisa los permisos de la tabla oc_import_batches.")
+      );
+      return;
+    }
+
+    // Reconciliación de "Reemplazar" para OC multi-local digitadas: existen
+    // como N filas en purchase_orders con el MISMO order_number (una por
+    // contrato, ver ConvertOCRequestDialog), no como una sola fila con el
+    // total. Se traen todas para actualizar cada una por su contract_id en
+    // vez de tocar solo g.existingId (la primera fila del grupo).
+    const replaceOrderNumbers = toImport
+      .filter(g => g.isDuplicate && g.duplicateResolution === "replace")
+      .map(g => g.orderNumber);
+
+    const existingRowsByOrder = new Map<string, { id: string; contractId: string | null; amountClp: number }[]>();
+    if (replaceOrderNumbers.length > 0) {
+      const { data: existingRows, error: existingRowsErr } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, contract_id, amount_clp")
+        .in("order_number", replaceOrderNumbers)
+        .is("deleted_at", null) as any;
+      if (existingRowsErr) {
+        console.error("Error al leer OC existentes para reemplazo:", existingRowsErr);
+      }
+      for (const row of ((existingRows || []) as any[])) {
+        const list = existingRowsByOrder.get(row.order_number) ?? [];
+        list.push({ id: row.id, contractId: row.contract_id, amountClp: Number(row.amount_clp) || 0 });
+        existingRowsByOrder.set(row.order_number, list);
+      }
+    }
+
     let inserted = 0;
+    let verified  = 0;
 
     for (let i = 0; i < toImport.length; i++) {
       const g = toImport[i];
@@ -462,20 +632,124 @@ export default function BulkOCImport() {
         const orderYear    = g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear();
         const primaryAlloc = g.allocations.find(a => a.contractId) ?? g.allocations[0];
 
+        if (g.isDuplicate && g.duplicateResolution === "keep_existing" && g.existingId) {
+          // Un solo UPDATE por order_number: no hace falta reconciliar por
+          // contrato porque no se toca ningún monto, solo se deja constancia
+          // de que el import confirmó que esta OC ya está correcta.
+          const { error: verifyErr } = await (supabase
+            .from("purchase_orders")
+            .update({ import_batch_id: batchId } as any)
+            .eq("order_number", g.orderNumber)
+            .is("deleted_at", null));
+          if (verifyErr) {
+            console.error("Error al marcar OC existente como verificada", g.orderNumber, verifyErr);
+          } else {
+            verified++;
+          }
+          continue;
+        }
+
         if (g.isDuplicate && g.duplicateResolution === "replace" && g.existingId) {
-          await (supabase
+          const existingRows = existingRowsByOrder.get(g.orderNumber) ?? [];
+          const sharedFields = {
+            description:             g.description,
+            supplier_id:             g.supplierId,
+            supplier_name:           g.supplierName,
+            order_date:              g.orderDate,
+            import_pending_supplier: !g.supplierId,
+            import_batch_id:         batchId,
+          };
+
+          if (existingRows.length > 1) {
+            // Multi-local: una fila existente por contrato. Se actualiza cada
+            // una con el monto de SU asignación (matcheando por contract_id),
+            // no con el total. Un contrato del Excel sin fila existente se
+            // inserta; una fila existente sin contrato en el Excel se avisa
+            // y se deja intacta (no se borra sin confirmación explícita).
+            const allocByContract = new Map(
+              g.allocations.filter(a => a.contractId).map(a => [a.contractId as string, a])
+            );
+            const matchedContractIds = new Set<string>();
+
+            for (const row of existingRows) {
+              const alloc = row.contractId ? allocByContract.get(row.contractId) : undefined;
+              if (!alloc) continue;
+              matchedContractIds.add(row.contractId!);
+              const { error: updErr } = await (supabase
+                .from("purchase_orders")
+                .update({
+                  ...sharedFields,
+                  amount_clp:           alloc.amountClp,
+                  amount_uf:            ufValue > 0 ? alloc.amountClp / ufValue : 0,
+                  import_pending_local: false,
+                } as any)
+                .eq("id", row.id));
+              if (updErr) console.error("Error al reemplazar asignación de OC", g.orderNumber, row.contractId, updErr);
+              await (supabase
+                .from("purchase_order_contract_allocations")
+                .update({ amount_clp: alloc.amountClp, amount_uf: ufValue > 0 ? alloc.amountClp / ufValue : 0 } as any)
+                .eq("purchase_order_id", row.id));
+            }
+
+            const unmatchedExisting = existingRows.filter(r => !r.contractId || !matchedContractIds.has(r.contractId));
+            if (unmatchedExisting.length > 0) {
+              toast.warning(
+                `OC ${g.orderNumber}: ${unmatchedExisting.length} contrato(s) existente(s) no está(n) en el Excel y NO se modificaron. Revisar manualmente.`
+              );
+            }
+
+            const newContracts = [...allocByContract.keys()].filter(cId => !existingRows.some(r => r.contractId === cId));
+            for (const contractId of newContracts) {
+              const alloc = allocByContract.get(contractId)!;
+              const { data: newRow, error: insErr } = await (supabase
+                .from("purchase_orders")
+                .insert({
+                  ...sharedFields,
+                  order_number:      g.orderNumber,
+                  contract_id:       contractId,
+                  amount_clp:        alloc.amountClp,
+                  amount_uf:         ufValue > 0 ? alloc.amountClp / ufValue : 0,
+                  uf_value_at_entry: ufValue > 0 ? ufValue : null,
+                  input_currency:    "CLP",
+                  status:            "abierta",
+                  budget_classification: "OPEX",
+                  year:              g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear(),
+                  is_multi_contract: true,
+                  import_pending_local: false,
+                } as any)
+                .select("id")
+                .single() as any);
+              if (insErr) {
+                console.error("Error al agregar contrato nuevo a OC existente", g.orderNumber, contractId, insErr);
+                continue;
+              }
+              await supabase.from("purchase_order_contract_allocations").insert({
+                purchase_order_id: newRow.id,
+                contract_id:       contractId,
+                amount_clp:        alloc.amountClp,
+                amount_uf:         ufValue > 0 ? alloc.amountClp / ufValue : 0,
+              } as any);
+            }
+
+            inserted++;
+            continue;
+          }
+
+          // Caso simple: una sola fila existente para este order_number.
+          const { error: updErr } = await (supabase
             .from("purchase_orders")
             .update({
-              description:             g.description,
-              amount_clp:              g.totalAmountClp,
-              supplier_id:             g.supplierId,
-              supplier_name:           g.supplierName,
-              order_date:              g.orderDate,
-              import_pending_supplier: !g.supplierId,
-              import_pending_local:    g.allocations.some(a => !a.contractId),
+              ...sharedFields,
+              amount_clp:           g.totalAmountClp,
+              amount_uf:            ufValue > 0 ? g.totalAmountClp / ufValue : 0,
+              import_pending_local: g.allocations.some(a => !a.contractId),
             } as any)
             .eq("id", g.existingId));
-          inserted++;
+          if (updErr) {
+            console.error("Error al reemplazar OC", g.orderNumber, updErr);
+          } else {
+            inserted++;
+          }
           continue;
         }
 
@@ -530,13 +804,16 @@ export default function BulkOCImport() {
 
     setProgress(100);
     setStage("done");
-    toast.success(`${inserted} OC importadas correctamente.`);
+    const parts = [`${inserted} OC importadas`];
+    if (verified > 0) parts.push(`${verified} verificadas sin cambios`);
+    toast.success(`${parts.join(", ")}.`);
 
-    const { data: freshBatches } = await supabase
+    const { data: freshBatches, error: freshErr } = await supabase
       .from("oc_import_batches" as any)
       .select("id,filename,storage_path,imported_at,rows_total,rows_ok,rows_pending_supplier,rows_pending_local,rows_duplicate,drive_synced_at")
       .order("imported_at", { ascending: false })
       .limit(20) as any;
+    if (freshErr) console.error("Error al refrescar el historial:", freshErr);
     setBatches(((freshBatches || []) as any[]) as ImportBatch[]);
   }
 
@@ -754,13 +1031,17 @@ export default function BulkOCImport() {
                           <span className="font-mono font-semibold">OC {g.orderNumber}</span>
                           <span className="text-muted-foreground text-sm ml-2">— {g.description}</span>
                         </div>
-                        {g.duplicateResolution && (
-                          <Badge variant="outline" className="text-xs">
-                            {g.duplicateResolution === "keep_existing" && "Mantener existente"}
-                            {g.duplicateResolution === "replace"       && "Reemplazar"}
-                            {g.duplicateResolution === "keep_both"     && "Mantener ambas"}
-                          </Badge>
-                        )}
+                        {(() => {
+                          const differs = g.existingAmountClp !== null
+                            && amountsDiffer(g.totalAmountClp, g.existingAmountClp);
+                          return differs ? (
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
+                              Monto distinto — se sincera
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">Sin diferencias</Badge>
+                          );
+                        })()}
                       </div>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="bg-muted/40 rounded p-3">
@@ -772,15 +1053,28 @@ export default function BulkOCImport() {
                         </div>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3">
                           <p className="font-medium text-xs text-amber-700 mb-1">EN EL SISTEMA</p>
-                          <p className="text-xs text-muted-foreground italic">
-                            ID: {g.existingId?.slice(0, 8)}… — ver en listado de OC
+                          <p className="font-semibold">
+                            {g.existingAmountClp !== null ? fmtClp(g.existingAmountClp) : "—"}
+                          </p>
+                          {g.existingAmountClp !== null
+                            && amountsDiffer(g.totalAmountClp, g.existingAmountClp) && (
+                            <p className="text-xs font-medium text-amber-700 mt-1">
+                              Diferencia: {fmtClp(g.totalAmountClp - g.existingAmountClp)}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground italic mt-1">
+                            ID: {g.existingId?.slice(0, 8)}…
                           </p>
                         </div>
                       </div>
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="flex gap-2 flex-wrap items-center">
                         <Button size="sm" variant={g.duplicateResolution === "keep_existing" ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "keep_existing")}>Mantener existente</Button>
                         <Button size="sm" variant={g.duplicateResolution === "replace"       ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "replace")}>Reemplazar con importado</Button>
-                        <Button size="sm" variant={g.duplicateResolution === "keep_both"     ? "default" : "outline"} onClick={() => setResolution(g.orderNumber, "keep_both")}>Mantener ambas</Button>
+                        <span className="text-xs text-muted-foreground">
+                          {g.duplicateResolution === "replace"
+                            ? "Se actualizará la OC existente con los datos del Excel."
+                            : "La OC existente queda como está."}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -967,14 +1261,26 @@ export default function BulkOCImport() {
 
         {/* ── Import history ── */}
         <div>
-          <button
-            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
-            onClick={() => setShowHistory(v => !v)}
-          >
-            <History className="h-4 w-4" />
-            Historial de importaciones
-            {showHistory ? <ChevronUp className="h-4 w-4 ml-auto" /> : <ChevronDown className="h-4 w-4 ml-auto" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex-1"
+              onClick={() => setShowHistory(v => !v)}
+            >
+              <History className="h-4 w-4" />
+              Historial de importaciones
+              {showHistory ? <ChevronUp className="h-4 w-4 ml-auto" /> : <ChevronDown className="h-4 w-4 ml-auto" />}
+            </button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-shrink-0"
+                onClick={() => setShowReconcileDialog(true)}
+              >
+                Reconciliar importaciones anteriores
+              </Button>
+            )}
+          </div>
 
           {showHistory && (
             <Card className="mt-3">
@@ -1054,6 +1360,11 @@ export default function BulkOCImport() {
         </div>
 
       </main>
+
+      <ReconcileImportsDialog
+        open={showReconcileDialog}
+        onOpenChange={setShowReconcileDialog}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -187,6 +187,7 @@ export type Database = {
           next_send_at: string | null
           priority: number | null
           repeat_every_days: number | null
+          service_contract_id: string | null
           title: string
           updated_at: string
         }
@@ -215,6 +216,7 @@ export type Database = {
           next_send_at?: string | null
           priority?: number | null
           repeat_every_days?: number | null
+          service_contract_id?: string | null
           title: string
           updated_at?: string
         }
@@ -243,6 +245,7 @@ export type Database = {
           next_send_at?: string | null
           priority?: number | null
           repeat_every_days?: number | null
+          service_contract_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -266,6 +269,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
         ]
@@ -308,19 +318,58 @@ export type Database = {
           key: string
           updated_at: string | null
           updated_by: string | null
-          value: Json
+          value: Json | null
         }
         Insert: {
           key: string
           updated_at?: string | null
           updated_by?: string | null
-          value: Json
+          value?: Json | null
         }
         Update: {
           key?: string
           updated_at?: string | null
           updated_by?: string | null
-          value?: Json
+          value?: Json | null
+        }
+        Relationships: []
+      }
+      board_report_shares: {
+        Row: {
+          contract_count: number
+          contract_ids: string[]
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          file_name: string
+          id: string
+          revoked_at: string | null
+          storage_path: string
+          year: string
+        }
+        Insert: {
+          contract_count?: number
+          contract_ids?: string[]
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          file_name: string
+          id?: string
+          revoked_at?: string | null
+          storage_path: string
+          year: string
+        }
+        Update: {
+          contract_count?: number
+          contract_ids?: string[]
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          file_name?: string
+          id?: string
+          revoked_at?: string | null
+          storage_path?: string
+          year?: string
         }
         Relationships: []
       }
@@ -992,10 +1041,10 @@ export type Database = {
           id: string
           lat: number | null
           lng: number | null
-          number: string
+          number: string | null
           region: string
           rol_sii: string | null
-          street: string
+          street: string | null
         }
         Insert: {
           commune: string
@@ -1007,10 +1056,10 @@ export type Database = {
           id?: string
           lat?: number | null
           lng?: number | null
-          number: string
+          number?: string | null
           region: string
           rol_sii?: string | null
-          street: string
+          street?: string | null
         }
         Update: {
           commune?: string
@@ -1022,10 +1071,10 @@ export type Database = {
           id?: string
           lat?: number | null
           lng?: number | null
-          number?: string
+          number?: string | null
           region?: string
           rol_sii?: string | null
-          street?: string
+          street?: string | null
         }
         Relationships: [
           {
@@ -1043,13 +1092,14 @@ export type Database = {
           budget_type: string
           closed_at: string | null
           closed_by: string | null
-          contract_id: string
+          contract_id: string | null
           created_at: string
           frozen_amount_uf: number | null
           frozen_at: string | null
           frozen_by: string | null
           id: string
           is_closed: boolean | null
+          service_contract_id: string | null
           updated_at: string
           year: number
         }
@@ -1058,13 +1108,14 @@ export type Database = {
           budget_type: string
           closed_at?: string | null
           closed_by?: string | null
-          contract_id: string
+          contract_id?: string | null
           created_at?: string
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
           id?: string
           is_closed?: boolean | null
+          service_contract_id?: string | null
           updated_at?: string
           year: number
         }
@@ -1073,13 +1124,14 @@ export type Database = {
           budget_type?: string
           closed_at?: string | null
           closed_by?: string | null
-          contract_id?: string
+          contract_id?: string | null
           created_at?: string
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
           id?: string
           is_closed?: boolean | null
+          service_contract_id?: string | null
           updated_at?: string
           year?: number
         }
@@ -1089,6 +1141,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_budgets_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
         ]
@@ -1173,36 +1232,36 @@ export type Database = {
       contract_contacts: {
         Row: {
           cedula_identidad: string | null
-          company: string
+          company: string | null
           contract_id: string
           created_at: string
           domicilio_comercial: string | null
           email: string | null
           id: string
-          name: string
-          phone: string
+          name: string | null
+          phone: string | null
         }
         Insert: {
           cedula_identidad?: string | null
-          company: string
+          company?: string | null
           contract_id: string
           created_at?: string
           domicilio_comercial?: string | null
           email?: string | null
           id?: string
-          name: string
-          phone: string
+          name?: string | null
+          phone?: string | null
         }
         Update: {
           cedula_identidad?: string | null
-          company?: string
+          company?: string | null
           contract_id?: string
           created_at?: string
           domicilio_comercial?: string | null
           email?: string | null
           id?: string
-          name?: string
-          phone?: string
+          name?: string | null
+          phone?: string | null
         }
         Relationships: [
           {
@@ -1328,6 +1387,61 @@ export type Database = {
           },
         ]
       }
+      contract_fixed_assets: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          contract_id: string
+          created_at: string
+          fixed_asset_id: string
+          id: string
+          notes: string | null
+          quantity: number
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          contract_id: string
+          created_at?: string
+          fixed_asset_id: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          contract_id?: string
+          created_at?: string
+          fixed_asset_id?: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_fixed_assets_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_fixed_assets_fixed_asset_id_fkey"
+            columns: ["fixed_asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_fixed_assets_fixed_asset_id_fkey"
+            columns: ["fixed_asset_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_assets_with_availability"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_import_audit: {
         Row: {
           category: string
@@ -1368,6 +1482,96 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_isochrone_links: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          contract_id: string
+          folder_name: string | null
+          isochrone_name: string
+          projection: Json
+          saved_isochrone_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          contract_id: string
+          folder_name?: string | null
+          isochrone_name: string
+          projection: Json
+          saved_isochrone_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          contract_id?: string
+          folder_name?: string | null
+          isochrone_name?: string
+          projection?: Json
+          saved_isochrone_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_isochrone_links_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_isochrone_links_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: true
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_isochrone_reports: {
+        Row: {
+          contract_id: string
+          extracted_at: string
+          extracted_by: string | null
+          isochrone_name: string
+          saved_isochrone_id: string
+          slide1_path: string
+          slide2_path: string | null
+        }
+        Insert: {
+          contract_id: string
+          extracted_at?: string
+          extracted_by?: string | null
+          isochrone_name: string
+          saved_isochrone_id: string
+          slide1_path: string
+          slide2_path?: string | null
+        }
+        Update: {
+          contract_id?: string
+          extracted_at?: string
+          extracted_by?: string | null
+          isochrone_name?: string
+          saved_isochrone_id?: string
+          slide1_path?: string
+          slide2_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_isochrone_reports_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: true
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_isochrone_reports_extracted_by_fkey"
+            columns: ["extracted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1440,6 +1644,7 @@ export type Database = {
           gastos_comunes_total_centro: number | null
           gastos_comunes_uf_m2: number | null
           gastos_comunes_uf_ml_frente: number | null
+          grace_ggcc_applies: boolean
           grace_months: number | null
           guarantee_fixed_amount: number | null
           guarantee_fixed_currency: string | null
@@ -1454,7 +1659,7 @@ export type Database = {
           is_renegotiation: boolean
           notice_bilaterality: string | null
           notice_type: Database["public"]["Enums"]["notice_type"]
-          notice_value: string
+          notice_value: string | null
           otros_egresos_amount: number | null
           otros_egresos_description: string | null
           regime_rent: number
@@ -1485,6 +1690,7 @@ export type Database = {
           gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
+          grace_ggcc_applies?: boolean
           grace_months?: number | null
           guarantee_fixed_amount?: number | null
           guarantee_fixed_currency?: string | null
@@ -1499,7 +1705,7 @@ export type Database = {
           is_renegotiation?: boolean
           notice_bilaterality?: string | null
           notice_type: Database["public"]["Enums"]["notice_type"]
-          notice_value: string
+          notice_value?: string | null
           otros_egresos_amount?: number | null
           otros_egresos_description?: string | null
           regime_rent: number
@@ -1530,6 +1736,7 @@ export type Database = {
           gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
+          grace_ggcc_applies?: boolean
           grace_months?: number | null
           guarantee_fixed_amount?: number | null
           guarantee_fixed_currency?: string | null
@@ -1544,7 +1751,7 @@ export type Database = {
           is_renegotiation?: boolean
           notice_bilaterality?: string | null
           notice_type?: Database["public"]["Enums"]["notice_type"]
-          notice_value?: string
+          notice_value?: string | null
           otros_egresos_amount?: number | null
           otros_egresos_description?: string | null
           regime_rent?: number
@@ -1872,6 +2079,113 @@ export type Database = {
           },
         ]
       }
+      expense_items: {
+        Row: {
+          business_purpose: string | null
+          created_at: string
+          created_by: string
+          currency: string | null
+          expense_report_id: string
+          expense_type: string | null
+          has_receipt: boolean | null
+          id: string
+          payment_type: string | null
+          photo_path: string | null
+          provider_name: string | null
+          provider_rut: string | null
+          purchase_city: string | null
+          receipt_number: string | null
+          receipt_type: string | null
+          tax_amount: number | null
+          total_amount: number | null
+          transaction_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          business_purpose?: string | null
+          created_at?: string
+          created_by: string
+          currency?: string | null
+          expense_report_id: string
+          expense_type?: string | null
+          has_receipt?: boolean | null
+          id?: string
+          payment_type?: string | null
+          photo_path?: string | null
+          provider_name?: string | null
+          provider_rut?: string | null
+          purchase_city?: string | null
+          receipt_number?: string | null
+          receipt_type?: string | null
+          tax_amount?: number | null
+          total_amount?: number | null
+          transaction_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          business_purpose?: string | null
+          created_at?: string
+          created_by?: string
+          currency?: string | null
+          expense_report_id?: string
+          expense_type?: string | null
+          has_receipt?: boolean | null
+          id?: string
+          payment_type?: string | null
+          photo_path?: string | null
+          provider_name?: string | null
+          provider_rut?: string | null
+          purchase_city?: string | null
+          receipt_number?: string | null
+          receipt_type?: string | null
+          tax_amount?: number | null
+          total_amount?: number | null
+          transaction_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_items_expense_report_id_fkey"
+            columns: ["expense_report_id"]
+            isOneToOne: false
+            referencedRelation: "expense_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expense_reports: {
+        Row: {
+          created_at: string
+          created_by: string
+          edit_unlocked: boolean
+          id: string
+          sent_at: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          edit_unlocked?: boolean
+          id?: string
+          sent_at?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          edit_unlocked?: boolean
+          id?: string
+          sent_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       file_destination_settings: {
         Row: {
           created_at: string
@@ -1924,6 +2238,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      fixed_assets: {
+        Row: {
+          acquisition_date: string | null
+          acquisition_value: number | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          location: string | null
+          name: string
+          notes: string | null
+          photo_url: string | null
+          sku: string | null
+          status: string
+          total_quantity: number
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          acquisition_date?: string | null
+          acquisition_value?: number | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          location?: string | null
+          name: string
+          notes?: string | null
+          photo_url?: string | null
+          sku?: string | null
+          status?: string
+          total_quantity?: number
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          acquisition_date?: string | null
+          acquisition_value?: number | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          location?: string | null
+          name?: string
+          notes?: string | null
+          photo_url?: string | null
+          sku?: string | null
+          status?: string
+          total_quantity?: number
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       folder_statuses: {
         Row: {
@@ -2075,8 +2446,14 @@ export type Database = {
       }
       gantt_tasks: {
         Row: {
+          baseline_end_date: string | null
+          baseline_start_date: string | null
+          budget_line_id: string | null
           color: string | null
           created_at: string
+          dependency_join_mode: string
+          discarded_at: string | null
+          discarded_snapshot: Json | null
           display_order: number | null
           duration_days: number | null
           duration_type: string
@@ -2090,6 +2467,7 @@ export type Database = {
           origin: string | null
           parent_id: string | null
           progress: number | null
+          reprog_offset_days: number
           responsible_member_id: string | null
           start_date: string | null
           status: string
@@ -2098,8 +2476,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          baseline_end_date?: string | null
+          baseline_start_date?: string | null
+          budget_line_id?: string | null
           color?: string | null
           created_at?: string
+          dependency_join_mode?: string
+          discarded_at?: string | null
+          discarded_snapshot?: Json | null
           display_order?: number | null
           duration_days?: number | null
           duration_type?: string
@@ -2113,6 +2497,7 @@ export type Database = {
           origin?: string | null
           parent_id?: string | null
           progress?: number | null
+          reprog_offset_days?: number
           responsible_member_id?: string | null
           start_date?: string | null
           status?: string
@@ -2121,8 +2506,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          baseline_end_date?: string | null
+          baseline_start_date?: string | null
+          budget_line_id?: string | null
           color?: string | null
           created_at?: string
+          dependency_join_mode?: string
+          discarded_at?: string | null
+          discarded_snapshot?: Json | null
           display_order?: number | null
           duration_days?: number | null
           duration_type?: string
@@ -2136,6 +2527,7 @@ export type Database = {
           origin?: string | null
           parent_id?: string | null
           progress?: number | null
+          reprog_offset_days?: number
           responsible_member_id?: string | null
           start_date?: string | null
           status?: string
@@ -2144,6 +2536,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "gantt_tasks_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "gantt_tasks_parent_id_fkey"
             columns: ["parent_id"]
@@ -2221,6 +2620,7 @@ export type Database = {
       }
       gantt_template_tasks: {
         Row: {
+          color: string | null
           created_at: string
           default_duration_days: number | null
           default_origin: string | null
@@ -2233,6 +2633,7 @@ export type Database = {
           template_id: string
         }
         Insert: {
+          color?: string | null
           created_at?: string
           default_duration_days?: number | null
           default_origin?: string | null
@@ -2245,6 +2646,7 @@ export type Database = {
           template_id: string
         }
         Update: {
+          color?: string | null
           created_at?: string
           default_duration_days?: number | null
           default_origin?: string | null
@@ -2312,29 +2714,44 @@ export type Database = {
       }
       gantt_timelines: {
         Row: {
-          contract_id: string
+          category: string
+          contract_id: string | null
           created_at: string
           created_by: string | null
           id: string
+          is_priority: boolean
           name: string
+          overview_status: string
+          service_contract_id: string | null
+          source: string
           template_id: string | null
           updated_at: string
         }
         Insert: {
-          contract_id: string
+          category?: string
+          contract_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
+          is_priority?: boolean
           name?: string
+          overview_status?: string
+          service_contract_id?: string | null
+          source?: string
           template_id?: string | null
           updated_at?: string
         }
         Update: {
-          contract_id?: string
+          category?: string
+          contract_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
+          is_priority?: boolean
           name?: string
+          overview_status?: string
+          service_contract_id?: string | null
+          source?: string
           template_id?: string | null
           updated_at?: string
         }
@@ -2344,6 +2761,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_timelines_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
           {
@@ -2450,157 +2874,40 @@ export type Database = {
           },
         ]
       }
-      geoloc_drive_sync: {
+      geochile_integration_settings: {
         Row: {
-          folders_file_drive_id: string | null
-          last_error: string | null
-          last_synced_at: string | null
-          pois_file_drive_id: string | null
-          root_folder_drive_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          folders_file_drive_id?: string | null
-          last_error?: string | null
-          last_synced_at?: string | null
-          pois_file_drive_id?: string | null
-          root_folder_drive_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          folders_file_drive_id?: string | null
-          last_error?: string | null
-          last_synced_at?: string | null
-          pois_file_drive_id?: string | null
-          root_folder_drive_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      geoloc_sync_log: {
-        Row: {
-          conflicts: Json
-          executed_at: string
-          files_skipped_protected: number
-          files_updated: number
+          api_key: string
+          base_url: string
           id: string
-          request_id: string | null
-          summary: string | null
+          is_active: boolean
+          updated_at: string
+          updated_by: string | null
         }
         Insert: {
-          conflicts?: Json
-          executed_at?: string
-          files_skipped_protected?: number
-          files_updated?: number
+          api_key: string
+          base_url: string
           id?: string
-          request_id?: string | null
-          summary?: string | null
+          is_active?: boolean
+          updated_at?: string
+          updated_by?: string | null
         }
         Update: {
-          conflicts?: Json
-          executed_at?: string
-          files_skipped_protected?: number
-          files_updated?: number
+          api_key?: string
+          base_url?: string
           id?: string
-          request_id?: string | null
-          summary?: string | null
+          is_active?: boolean
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "geoloc_sync_log_request_id_fkey"
-            columns: ["request_id"]
+            foreignKeyName: "geochile_integration_settings_updated_by_fkey"
+            columns: ["updated_by"]
             isOneToOne: false
-            referencedRelation: "geoloc_sync_requests"
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
-      }
-      geoloc_sync_requests: {
-        Row: {
-          id: string
-          notes: string | null
-          requested_at: string
-          requested_by: string | null
-          status: string
-        }
-        Insert: {
-          id?: string
-          notes?: string | null
-          requested_at?: string
-          requested_by?: string | null
-          status?: string
-        }
-        Update: {
-          id?: string
-          notes?: string | null
-          requested_at?: string
-          requested_by?: string | null
-          status?: string
-        }
-        Relationships: []
-      }
-      geoloc_sync_state: {
-        Row: {
-          folders_synced_total: number
-          last_cursor_folders: string | null
-          last_cursor_pois: string | null
-          last_error: string | null
-          last_run_at: string | null
-          pois_synced_total: number
-          source_project: string
-          status: string | null
-          updated_at: string
-        }
-        Insert: {
-          folders_synced_total?: number
-          last_cursor_folders?: string | null
-          last_cursor_pois?: string | null
-          last_error?: string | null
-          last_run_at?: string | null
-          pois_synced_total?: number
-          source_project: string
-          status?: string | null
-          updated_at?: string
-        }
-        Update: {
-          folders_synced_total?: number
-          last_cursor_folders?: string | null
-          last_cursor_pois?: string | null
-          last_error?: string | null
-          last_run_at?: string | null
-          pois_synced_total?: number
-          source_project?: string
-          status?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      geoloc_user_map: {
-        Row: {
-          created_at: string
-          email: string | null
-          gplanet_user_id: string
-          source_project: string
-          source_user_id: string
-        }
-        Insert: {
-          created_at?: string
-          email?: string | null
-          gplanet_user_id: string
-          source_project: string
-          source_user_id: string
-        }
-        Update: {
-          created_at?: string
-          email?: string | null
-          gplanet_user_id?: string
-          source_project?: string
-          source_user_id?: string
-        }
-        Relationships: []
       }
       holidays: {
         Row: {
@@ -2628,6 +2935,51 @@ export type Database = {
           name?: string
         }
         Relationships: []
+      }
+      invitations: {
+        Row: {
+          created_at: string
+          id: string
+          invited_by: string
+          status: string
+          token: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invited_by: string
+          status?: string
+          token?: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invited_by?: string
+          status?: string
+          token?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invitations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       invoices: {
         Row: {
@@ -2937,6 +3289,27 @@ export type Database = {
           },
         ]
       }
+      kpi_team_config: {
+        Row: {
+          config: Json
+          key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          config?: Json
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          config?: Json
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       kpis: {
         Row: {
           assigned_user_id: string | null
@@ -3053,6 +3426,35 @@ export type Database = {
           },
         ]
       }
+      login_events: {
+        Row: {
+          id: string
+          logged_in_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          logged_in_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          id?: string
+          logged_in_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "login_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       maintenance_criticality_categories: {
         Row: {
           code: string
@@ -3089,6 +3491,39 @@ export type Database = {
         }
         Relationships: []
       }
+      maintenance_form_merge_log: {
+        Row: {
+          action: string
+          contract_id: string | null
+          form_ids: string[]
+          form_numbers: string[]
+          id: string
+          merge_group_id: string
+          performed_at: string
+          performed_by: string | null
+        }
+        Insert: {
+          action?: string
+          contract_id?: string | null
+          form_ids: string[]
+          form_numbers: string[]
+          id?: string
+          merge_group_id: string
+          performed_at?: string
+          performed_by?: string | null
+        }
+        Update: {
+          action?: string
+          contract_id?: string | null
+          form_ids?: string[]
+          form_numbers?: string[]
+          id?: string
+          merge_group_id?: string
+          performed_at?: string
+          performed_by?: string | null
+        }
+        Relationships: []
+      }
       maintenance_forms: {
         Row: {
           additional_comments: string | null
@@ -3104,9 +3539,12 @@ export type Database = {
           evidence_links: string[] | null
           fixed_assets_description: string | null
           form_number: string
+          gantt_task_id: string | null
           general_description: string | null
           hvac_description: string | null
           id: string
+          merge_group_id: string | null
+          merge_is_primary: boolean
           ot_file_url: string | null
           purchase_order_id: string | null
           purchase_order_number: string | null
@@ -3141,9 +3579,12 @@ export type Database = {
           evidence_links?: string[] | null
           fixed_assets_description?: string | null
           form_number: string
+          gantt_task_id?: string | null
           general_description?: string | null
           hvac_description?: string | null
           id?: string
+          merge_group_id?: string | null
+          merge_is_primary?: boolean
           ot_file_url?: string | null
           purchase_order_id?: string | null
           purchase_order_number?: string | null
@@ -3178,9 +3619,12 @@ export type Database = {
           evidence_links?: string[] | null
           fixed_assets_description?: string | null
           form_number?: string
+          gantt_task_id?: string | null
           general_description?: string | null
           hvac_description?: string | null
           id?: string
+          merge_group_id?: string | null
+          merge_is_primary?: boolean
           ot_file_url?: string | null
           purchase_order_id?: string | null
           purchase_order_number?: string | null
@@ -3214,6 +3658,13 @@ export type Database = {
             columns: ["criticality_category_id"]
             isOneToOne: false
             referencedRelation: "maintenance_criticality_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_forms_gantt_task_id_fkey"
+            columns: ["gantt_task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_tasks"
             referencedColumns: ["id"]
           },
           {
@@ -3281,7 +3732,15 @@ export type Database = {
           poi_id?: string
           zona?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_locations_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       maintenance_route_forms: {
         Row: {
@@ -3363,8 +3822,6 @@ export type Database = {
           status: string
           stop_kind: string | null
           stop_label: string | null
-          stop_lat: number | null
-          stop_lng: number | null
           stop_minutes: number | null
           stop_order: number
         }
@@ -3381,8 +3838,6 @@ export type Database = {
           status?: string
           stop_kind?: string | null
           stop_label?: string | null
-          stop_lat?: number | null
-          stop_lng?: number | null
           stop_minutes?: number | null
           stop_order: number
         }
@@ -3399,8 +3854,6 @@ export type Database = {
           status?: string
           stop_kind?: string | null
           stop_label?: string | null
-          stop_lat?: number | null
-          stop_lng?: number | null
           stop_minutes?: number | null
           stop_order?: number
         }
@@ -3425,40 +3878,59 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          day_index: number
           deleted_at: string | null
           id: string
           name: string
           notes: string | null
           scheduled_date: string | null
+          service_contract_id: string | null
+          start_time: string | null
           status: string
           supplier_id: string | null
+          tour_id: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           created_by?: string | null
+          day_index?: number
           deleted_at?: string | null
           id?: string
           name: string
           notes?: string | null
           scheduled_date?: string | null
+          service_contract_id?: string | null
+          start_time?: string | null
           status?: string
           supplier_id?: string | null
+          tour_id?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           created_by?: string | null
+          day_index?: number
           deleted_at?: string | null
           id?: string
           name?: string
           notes?: string | null
           scheduled_date?: string | null
+          service_contract_id?: string | null
+          start_time?: string | null
           status?: string
           supplier_id?: string | null
+          tour_id?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "maintenance_routes_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "maintenance_routes_supplier_id_fkey"
             columns: ["supplier_id"]
@@ -3511,33 +3983,33 @@ export type Database = {
           color: string | null
           created_at: string | null
           description: string | null
-          display_order: number
+          display_order: number | null
           id: string
           is_active: boolean | null
-          label: string
-          name: string
+          label: string | null
+          name: string | null
           responsible: string | null
         }
         Insert: {
           color?: string | null
           created_at?: string | null
           description?: string | null
-          display_order: number
+          display_order?: number | null
           id?: string
           is_active?: boolean | null
-          label: string
-          name: string
+          label?: string | null
+          name?: string | null
           responsible?: string | null
         }
         Update: {
           color?: string | null
           created_at?: string | null
           description?: string | null
-          display_order?: number
+          display_order?: number | null
           id?: string
           is_active?: boolean | null
-          label?: string
-          name?: string
+          label?: string | null
+          name?: string | null
           responsible?: string | null
         }
         Relationships: []
@@ -3623,11 +4095,46 @@ export type Database = {
           },
         ]
       }
+      oc_centro_mappings: {
+        Row: {
+          centro_code: string
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          centro_code: string
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          centro_code?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oc_centro_mappings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oc_import_batches: {
         Row: {
           drive_file_id: string | null
           drive_synced_at: string | null
-          filename: string
+          filename: string | null
           id: string
           imported_at: string | null
           imported_by: string | null
@@ -3641,7 +4148,7 @@ export type Database = {
         Insert: {
           drive_file_id?: string | null
           drive_synced_at?: string | null
-          filename: string
+          filename?: string | null
           id?: string
           imported_at?: string | null
           imported_by?: string | null
@@ -3655,7 +4162,7 @@ export type Database = {
         Update: {
           drive_file_id?: string | null
           drive_synced_at?: string | null
-          filename?: string
+          filename?: string | null
           id?: string
           imported_at?: string | null
           imported_by?: string | null
@@ -3670,6 +4177,7 @@ export type Database = {
       }
       oc_payment_plans: {
         Row: {
+          amount_clp: number | null
           amount_uf: number
           created_at: string
           description: string | null
@@ -3683,6 +4191,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          amount_clp?: number | null
           amount_uf?: number
           created_at?: string
           description?: string | null
@@ -3696,6 +4205,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          amount_clp?: number | null
           amount_uf?: number
           created_at?: string
           description?: string | null
@@ -3945,6 +4455,7 @@ export type Database = {
           input_currency: string | null
           is_multi_contract: boolean | null
           line_name: string
+          migo_choice: string | null
           opex_master_id: string | null
           project_name: string
           purchase_order_id: string | null
@@ -3952,6 +4463,7 @@ export type Database = {
           quotation_url: string | null
           request_date: string
           request_number: string
+          sequence_number: number | null
           status: string
           supplier_id: string | null
           supplier_name: string | null
@@ -3973,6 +4485,7 @@ export type Database = {
           input_currency?: string | null
           is_multi_contract?: boolean | null
           line_name: string
+          migo_choice?: string | null
           opex_master_id?: string | null
           project_name: string
           purchase_order_id?: string | null
@@ -3980,6 +4493,7 @@ export type Database = {
           quotation_url?: string | null
           request_date?: string
           request_number: string
+          sequence_number?: number | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
@@ -4001,6 +4515,7 @@ export type Database = {
           input_currency?: string | null
           is_multi_contract?: boolean | null
           line_name?: string
+          migo_choice?: string | null
           opex_master_id?: string | null
           project_name?: string
           purchase_order_id?: string | null
@@ -4008,6 +4523,7 @@ export type Database = {
           quotation_url?: string | null
           request_date?: string
           request_number?: string
+          sequence_number?: number | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
@@ -4966,41 +5482,110 @@ export type Database = {
           },
         ]
       }
+      profile_template_permissions: {
+        Row: {
+          created_at: string
+          id: string
+          permission: string
+          profile_id: string
+          resource: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          permission: string
+          profile_id: string
+          resource: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          permission?: string
+          profile_id?: string
+          resource?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_template_permissions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profile_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           activity_status: string
           cargo: string | null
           created_at: string
+          created_by: string | null
           current_section: string | null
           email: string
           full_name: string | null
           id: string
+          invitation_status: string
+          is_active: boolean
           last_seen_at: string | null
+          org_member_id: string | null
+          profile_template_id: string | null
           updated_at: string
         }
         Insert: {
           activity_status?: string
           cargo?: string | null
           created_at?: string
+          created_by?: string | null
           current_section?: string | null
           email: string
           full_name?: string | null
           id: string
+          invitation_status?: string
+          is_active?: boolean
           last_seen_at?: string | null
+          org_member_id?: string | null
+          profile_template_id?: string | null
           updated_at?: string
         }
         Update: {
           activity_status?: string
           cargo?: string | null
           created_at?: string
+          created_by?: string | null
           current_section?: string | null
           email?: string
           full_name?: string | null
           id?: string
+          invitation_status?: string
+          is_active?: boolean
           last_seen_at?: string | null
+          org_member_id?: string | null
+          profile_template_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_org_member_id_fkey"
+            columns: ["org_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_profile_template_id_fkey"
+            columns: ["profile_template_id"]
+            isOneToOne: false
+            referencedRelation: "user_profile_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       purchase_items: {
         Row: {
@@ -5182,7 +5767,7 @@ export type Database = {
             | null
           budget_id: string | null
           budget_line_id: string | null
-          contract_id: string | null
+          contract_id: string
           created_at: string
           deleted_at: string | null
           deleted_by: string | null
@@ -5190,8 +5775,6 @@ export type Database = {
           drive_file_id: string | null
           id: string
           import_batch_id: string | null
-          import_pending_local: boolean | null
-          import_pending_supplier: boolean | null
           input_currency: string | null
           is_multi_contract: boolean | null
           maintenance_form_ids: string[] | null
@@ -5199,6 +5782,7 @@ export type Database = {
           opex_master_id: string | null
           order_date: string
           order_number: string
+          service_contract_id: string | null
           status: string
           storage_provider: string | null
           supplier_id: string | null
@@ -5216,7 +5800,7 @@ export type Database = {
             | null
           budget_id?: string | null
           budget_line_id?: string | null
-          contract_id?: string | null
+          contract_id: string
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
@@ -5224,8 +5808,6 @@ export type Database = {
           drive_file_id?: string | null
           id?: string
           import_batch_id?: string | null
-          import_pending_local?: boolean | null
-          import_pending_supplier?: boolean | null
           input_currency?: string | null
           is_multi_contract?: boolean | null
           maintenance_form_ids?: string[] | null
@@ -5233,6 +5815,7 @@ export type Database = {
           opex_master_id?: string | null
           order_date?: string
           order_number: string
+          service_contract_id?: string | null
           status?: string
           storage_provider?: string | null
           supplier_id?: string | null
@@ -5250,7 +5833,7 @@ export type Database = {
             | null
           budget_id?: string | null
           budget_line_id?: string | null
-          contract_id?: string | null
+          contract_id?: string
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
@@ -5258,8 +5841,6 @@ export type Database = {
           drive_file_id?: string | null
           id?: string
           import_batch_id?: string | null
-          import_pending_local?: boolean | null
-          import_pending_supplier?: boolean | null
           input_currency?: string | null
           is_multi_contract?: boolean | null
           maintenance_form_ids?: string[] | null
@@ -5267,6 +5848,7 @@ export type Database = {
           opex_master_id?: string | null
           order_date?: string
           order_number?: string
+          service_contract_id?: string | null
           status?: string
           storage_provider?: string | null
           supplier_id?: string | null
@@ -5309,6 +5891,13 @@ export type Database = {
             columns: ["opex_master_id"]
             isOneToOne: false
             referencedRelation: "opex_master_budget"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
             referencedColumns: ["id"]
           },
           {
@@ -5410,6 +5999,7 @@ export type Database = {
           gastos_comunes_total_centro: number | null
           gastos_comunes_uf_m2: number | null
           gastos_comunes_uf_ml_frente: number | null
+          grace_ggcc_applies: boolean
           grace_months: number | null
           guarantee_multiplier: number | null
           has_extended_gastos_comunes: boolean | null
@@ -5454,6 +6044,7 @@ export type Database = {
           gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
+          grace_ggcc_applies?: boolean
           grace_months?: number | null
           guarantee_multiplier?: number | null
           has_extended_gastos_comunes?: boolean | null
@@ -5498,6 +6089,7 @@ export type Database = {
           gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
+          grace_ggcc_applies?: boolean
           grace_months?: number | null
           guarantee_multiplier?: number | null
           has_extended_gastos_comunes?: boolean | null
@@ -5721,6 +6313,277 @@ export type Database = {
             columns: ["stop_id"]
             isOneToOne: false
             referencedRelation: "maintenance_route_stops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_contract_approval_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          comment: string | null
+          created_at: string | null
+          id: string
+          service_contract_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          comment?: string | null
+          created_at?: string | null
+          id?: string
+          service_contract_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          comment?: string | null
+          created_at?: string | null
+          id?: string
+          service_contract_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contract_approval_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_approval_events_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_contract_approvers: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          org_member_id: string
+          profile_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          org_member_id: string
+          profile_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          org_member_id?: string
+          profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contract_approvers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_approvers_org_member_id_fkey"
+            columns: ["org_member_id"]
+            isOneToOne: true
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_approvers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_contract_contracts: {
+        Row: {
+          contract_id: string
+          created_at: string
+          id: string
+          service_contract_id: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          id?: string
+          service_contract_id: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          id?: string
+          service_contract_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contract_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contract_contracts_service_contract_id_fkey"
+            columns: ["service_contract_id"]
+            isOneToOne: false
+            referencedRelation: "service_contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_contract_types: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      service_contracts: {
+        Row: {
+          amount_clp: number | null
+          amount_uf: number
+          approval_comment: string | null
+          approval_requested_at: string | null
+          approval_status: string
+          approved_at: string | null
+          approver_id: string | null
+          approver_name: string | null
+          approver_org_member_id: string | null
+          auto_renewal: boolean
+          created_at: string
+          created_by: string | null
+          display_currency: string
+          drive_folder_id: string | null
+          end_date: string | null
+          frequency: Database["public"]["Enums"]["service_contract_frequency"]
+          id: string
+          name: string
+          notes: string | null
+          notice_days: number | null
+          opex_category_id: string | null
+          pricing_mode: string
+          renewal_term_months: number | null
+          service_type: string
+          start_date: string
+          status: Database["public"]["Enums"]["service_contract_status"]
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_clp?: number | null
+          amount_uf: number
+          approval_comment?: string | null
+          approval_requested_at?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approver_id?: string | null
+          approver_name?: string | null
+          approver_org_member_id?: string | null
+          auto_renewal?: boolean
+          created_at?: string
+          created_by?: string | null
+          display_currency?: string
+          drive_folder_id?: string | null
+          end_date?: string | null
+          frequency?: Database["public"]["Enums"]["service_contract_frequency"]
+          id?: string
+          name: string
+          notes?: string | null
+          notice_days?: number | null
+          opex_category_id?: string | null
+          pricing_mode?: string
+          renewal_term_months?: number | null
+          service_type: string
+          start_date: string
+          status?: Database["public"]["Enums"]["service_contract_status"]
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_clp?: number | null
+          amount_uf?: number
+          approval_comment?: string | null
+          approval_requested_at?: string | null
+          approval_status?: string
+          approved_at?: string | null
+          approver_id?: string | null
+          approver_name?: string | null
+          approver_org_member_id?: string | null
+          auto_renewal?: boolean
+          created_at?: string
+          created_by?: string | null
+          display_currency?: string
+          drive_folder_id?: string | null
+          end_date?: string | null
+          frequency?: Database["public"]["Enums"]["service_contract_frequency"]
+          id?: string
+          name?: string
+          notes?: string | null
+          notice_days?: number | null
+          opex_category_id?: string | null
+          pricing_mode?: string
+          renewal_term_months?: number | null
+          service_type?: string
+          start_date?: string
+          status?: Database["public"]["Enums"]["service_contract_status"]
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_contracts_approver_id_fkey"
+            columns: ["approver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_approver_org_member_id_fkey"
+            columns: ["approver_org_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_opex_category_id_fkey"
+            columns: ["opex_category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_contracts_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -6141,6 +7004,8 @@ export type Database = {
           commune: string | null
           contact_name: string | null
           created_at: string
+          does_installations: boolean
+          does_maintenance: boolean
           email: string | null
           id: string
           is_generic: boolean | null
@@ -6158,6 +7023,8 @@ export type Database = {
           commune?: string | null
           contact_name?: string | null
           created_at?: string
+          does_installations?: boolean
+          does_maintenance?: boolean
           email?: string | null
           id?: string
           is_generic?: boolean | null
@@ -6175,6 +7042,8 @@ export type Database = {
           commune?: string | null
           contact_name?: string | null
           created_at?: string
+          does_installations?: boolean
+          does_maintenance?: boolean
           email?: string | null
           id?: string
           is_generic?: boolean | null
@@ -6301,7 +7170,7 @@ export type Database = {
           created_at: string
           id: string
           preference_key: string
-          preference_value: Json
+          preference_value: Json | null
           updated_at: string
           user_id: string
         }
@@ -6309,7 +7178,7 @@ export type Database = {
           created_at?: string
           id?: string
           preference_key: string
-          preference_value: Json
+          preference_value?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -6317,9 +7186,33 @@ export type Database = {
           created_at?: string
           id?: string
           preference_key?: string
-          preference_value?: Json
+          preference_value?: Json | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      user_profile_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -6435,6 +7328,28 @@ export type Database = {
         }
         Relationships: []
       }
+      fixed_assets_with_availability: {
+        Row: {
+          acquisition_date: string | null
+          acquisition_value: number | null
+          available_quantity: number | null
+          category: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string | null
+          location: string | null
+          name: string | null
+          notes: string | null
+          photo_url: string | null
+          sku: string | null
+          status: string | null
+          total_quantity: number | null
+          unit: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       append_maintenance_comment: {
@@ -6451,6 +7366,13 @@ export type Database = {
         Returns: string
       }
       can_access_gantt: { Args: { _user_id: string }; Returns: boolean }
+      can_schedule_maintenance: { Args: { _user_id: string }; Returns: boolean }
+      delete_repository_folder_tree: {
+        Args: { p_folder_id: string }
+        Returns: {
+          deleted_url: string
+        }[]
+      }
       get_cloud_storage_token: {
         Args: { p_connection_id: string }
         Returns: {
@@ -6521,14 +7443,34 @@ export type Database = {
         }
         Returns: boolean
       }
+      merge_maintenance_forms: {
+        Args: { p_form_ids: string[] }
+        Returns: string
+      }
       purge_deleted_pois: { Args: never; Returns: undefined }
       purge_deleted_routes: { Args: never; Returns: undefined }
+      resolve_sc_approver: {
+        Args: { creator: string }
+        Returns: {
+          approver_name: string
+          approver_org_member: string
+          approver_profile: string
+        }[]
+      }
+      set_budget_line_progress_status: {
+        Args: { p_budget_line_id: string; p_status_name: string }
+        Returns: undefined
+      }
       set_cloud_storage_token: {
         Args: {
           p_access_token: string
           p_connection_id: string
           p_refresh_token: string
         }
+        Returns: undefined
+      }
+      unmerge_maintenance_forms: {
+        Args: { p_group_id: string }
         Returns: undefined
       }
     }
@@ -6543,7 +7485,12 @@ export type Database = {
         | "permit"
         | "certificate"
         | "other"
-      app_role: "admin" | "user" | "operador_terreno"
+      app_role:
+        | "admin"
+        | "user"
+        | "operador_terreno"
+        | "gerente"
+        | "equipo_gerencia"
       budget_classification: "CAPEX" | "OPEX"
       contract_status: "en_negociacion" | "firmado" | "vencido"
       document_type:
@@ -6564,6 +7511,17 @@ export type Database = {
         | "no_aplica"
       patent_priority: "priority_1" | "priority_2" | "priority_3" | "vigente"
       permission_type: "view" | "edit" | "all"
+      service_contract_frequency:
+        | "mensual"
+        | "trimestral"
+        | "semestral"
+        | "anual"
+        | "otro"
+      service_contract_status:
+        | "en_negociacion"
+        | "activo"
+        | "vencido"
+        | "cancelado"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -6579,12 +7537,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6608,11 +7566,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6633,11 +7591,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6658,11 +7616,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6675,11 +7633,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6702,7 +7660,13 @@ export const Constants = {
         "certificate",
         "other",
       ],
-      app_role: ["admin", "user", "operador_terreno"],
+      app_role: [
+        "admin",
+        "user",
+        "operador_terreno",
+        "gerente",
+        "equipo_gerencia",
+      ],
       budget_classification: ["CAPEX", "OPEX"],
       contract_status: ["en_negociacion", "firmado", "vencido"],
       document_type: [
@@ -6725,6 +7689,19 @@ export const Constants = {
       ],
       patent_priority: ["priority_1", "priority_2", "priority_3", "vigente"],
       permission_type: ["view", "edit", "all"],
+      service_contract_frequency: [
+        "mensual",
+        "trimestral",
+        "semestral",
+        "anual",
+        "otro",
+      ],
+      service_contract_status: [
+        "en_negociacion",
+        "activo",
+        "vencido",
+        "cancelado",
+      ],
     },
   },
 } as const
