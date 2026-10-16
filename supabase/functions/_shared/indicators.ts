@@ -79,3 +79,46 @@ export function staleness(ufRows: CacheRow[], usdRows: CacheRow[], today: string
 export function canAttemptRefresh(lastAttemptAtMs: number, nowMs: number, minIntervalMs: number): boolean {
   return nowMs - lastAttemptAtMs >= minIntervalMs;
 }
+
+// ───────────── Proveedor CMF Chile (api.cmfchile.cl) ─────────────
+// Fuente oficial de UF y dólar observado. Requiere API key gratuita
+// (secreto CMF_API_KEY de las Edge Functions). Se usa como proveedor
+// principal; mindicador.cl queda de respaldo.
+
+/** "40.804,00" -> 40804 ; "921,42" -> 921.42 (formato numérico chileno). */
+export function parseChileanNumber(raw: string | number): number {
+  if (typeof raw === "number") return raw;
+  const n = Number(raw.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Extrae la serie de una respuesta de la CMF: {"UFs":[{"Valor":"40.804,00","Fecha":"2026-10-16"}]}
+ * (o "Dolares", "UTMs", ...): toma el primer arreglo del objeto. Descarta filas inválidas.
+ */
+export function parseCmfSeries(json: unknown): DatedValue[] {
+  if (!json || typeof json !== "object") return [];
+  const arr = Object.values(json as Record<string, unknown>).find(Array.isArray) as Array<Record<string, unknown>> | undefined;
+  if (!arr) return [];
+  const out: DatedValue[] = [];
+  for (const item of arr) {
+    const date = typeof item?.Fecha === "string" ? item.Fecha.split("T")[0] : "";
+    const value = parseChileanNumber(item?.Valor as string | number);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(value) && value > 0) out.push({ date, value });
+  }
+  return out;
+}
+
+/** Mes actual y anterior de una fecha YYYY-MM-DD (cubre los "últimos 10 días" a inicios de mes). */
+export function monthsToFetch(today: string): Array<{ year: number; month: number }> {
+  const [y, m] = today.split("-").map(Number);
+  const prev = m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+  return [prev, { year: y, month: m }];
+}
+
+/** Quita secretos (ej. el apikey de la URL) de un texto antes de loguearlo o devolverlo. */
+export function redactSecrets(text: string, secrets: string[]): string {
+  let out = text.replace(/apikey=[^&\s)"']+/gi, "apikey=<oculto>");
+  for (const s of secrets) if (s) out = out.split(s).join("<oculto>");
+  return out;
+}

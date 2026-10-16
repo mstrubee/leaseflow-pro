@@ -3,82 +3,104 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import {
   canAttemptRefresh,
+  monthsToFetch,
+  parseCmfSeries,
+  redactSecrets,
   selectUF,
   selectUSD,
   staleness,
   subtractDays,
   todayInSantiago,
   type CacheRow,
+  type DatedValue,
 } from "../_shared/indicators.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SOURCE = "mindicador.cl";
+// Proveedores: CMF Chile (oficial, requiere API key gratuita en el secreto
+// CMF_API_KEY) y mindicador.cl como respaldo. Desde Supabase mindicador.cl
+// ha estado cortando las conexiones, por eso CMF va primero.
+const CMF_API_KEY = Deno.env.get("CMF_API_KEY") ?? "";
+const CMF_BASE = "https://api.cmfchile.cl/api-sbifv3/recursos_api";
 const MINDICADOR_TIMEOUT_MS = 8000;
-// Si mindicador.cl está caído, no reintentar en cada request (por isolate).
+// Si los proveedores están caídos, no reintentar en cada request (por isolate).
 const MIN_REFRESH_RETRY_MS = 5 * 60 * 1000;
 let lastRefreshAttemptAt = 0;
 
-async function fetchMindicador(url: string): Promise<any> {
+async function fetchJson(url: string): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MINDICADOR_TIMEOUT_MS);
   try {
     const response = await fetch(url, { signal: controller.signal });
     const text = await response.text();
-    if (text.trim().startsWith("<")) throw new Error("API returned HTML error page");
+    if (text.trim().startsWith("<")) throw new Error(`HTTP ${response.status}: respuesta HTML`);
     return JSON.parse(text);
+  } catch (e: any) {
+    // El mensaje de error de fetch incluye la URL completa (con el apikey).
+    throw new Error(redactSecrets(String(e?.message ?? e), [CMF_API_KEY]));
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Pide a mindicador.cl solo lo que falta en la caché (UF y/o dólar del año en
-// curso) y lo guarda -- mismo formato que refresh-economic-indicators (que
-// sigue siendo el que refresca todo por cron). Devuelve false si algo falló.
-async function refreshFromMindicador(supabase: any, needs: { uf: boolean; usd: boolean }): Promise<boolean> {
-  const nowISO = new Date().toISOString();
-  const toRecords = (indicator: string, serie: any[]) =>
-    (serie || []).map((item: any) => ({
-      indicator,
-      date: new Date(item.fecha).toISOString().split("T")[0],
-      value: item.valor,
-      source: SOURCE,
-      last_updated: nowISO,
-      is_stale: false,
-    }));
+// CMF: un request por mes (actual y anterior). resource: "uf" | "dolar".
+async function fromCmf(resource: "uf" | "dolar", today: string): Promise<DatedValue[]> {
+  if (!CMF_API_KEY) throw new Error("CMF_API_KEY no configurada");
+  const months = await Promise.all(
+    monthsToFetch(today).map(({ year, month }) =>
+      fetchJson(`${CMF_BASE}/${resource}/${year}/${String(month).padStart(2, "0")}?apikey=${encodeURIComponent(CMF_API_KEY)}&formato=json`).then(parseCmfSeries)
+    )
+  );
+  const series = months.flat();
+  if (series.length === 0) throw new Error("CMF no devolvió valores");
+  return series;
+}
 
-  const tasks: Promise<void>[] = [];
-  if (needs.uf) {
-    tasks.push(
-      (async () => {
-        const data = await fetchMindicador("https://mindicador.cl/api/uf");
-        const records = toRecords("UF", (data.serie || []).slice(0, 31));
-        if (records.length === 0) throw new Error("mindicador returned no UF values");
-        const { error } = await supabase.from("economic_indicators_cache").upsert(records, { onConflict: "indicator,date" });
-        if (error) throw error;
-      })()
-    );
-  }
-  if (needs.usd) {
-    tasks.push(
-      (async () => {
-        const data = await fetchMindicador(`https://mindicador.cl/api/dolar/${new Date().getFullYear()}`);
-        const records = toRecords("USD", data.serie || []);
-        if (records.length === 0) throw new Error("mindicador returned no USD values");
+async function fromMindicador(resource: "uf" | "dolar", today: string): Promise<DatedValue[]> {
+  const url = resource === "uf" ? "https://mindicador.cl/api/uf" : `https://mindicador.cl/api/dolar/${today.slice(0, 4)}`;
+  const data = await fetchJson(url);
+  const series: DatedValue[] = (data.serie || [])
+    .slice(0, resource === "uf" ? 31 : undefined)
+    .map((item: any) => ({ date: new Date(item.fecha).toISOString().split("T")[0], value: item.valor }));
+  if (series.length === 0) throw new Error("mindicador no devolvió valores");
+  return series;
+}
+
+type RefreshDetail = Record<string, { provider?: string; count?: number; error?: string }>;
+
+// Pide solo lo que falta (UF y/o dólar), primero a CMF y, si falla, a
+// mindicador, y lo guarda en la caché. Devuelve el detalle por indicador
+// (sin secretos) y si todo salió bien.
+async function refreshCache(supabase: any, needs: { uf: boolean; usd: boolean }, today: string): Promise<{ ok: boolean; detail: RefreshDetail }> {
+  const nowISO = new Date().toISOString();
+  const detail: RefreshDetail = {};
+
+  const run = async (key: "uf" | "usd", indicator: "UF" | "USD", resource: "uf" | "dolar") => {
+    const errors: string[] = [];
+    for (const [provider, fetcher] of [["cmf", fromCmf], ["mindicador", fromMindicador]] as const) {
+      try {
+        const series = await fetcher(resource, today);
+        const records = series.map((r) => ({ indicator, date: r.date, value: r.value, source: provider === "cmf" ? "cmfchile.cl" : "mindicador.cl", last_updated: nowISO, is_stale: false }));
         for (let i = 0; i < records.length; i += 500) {
           const { error } = await supabase.from("economic_indicators_cache").upsert(records.slice(i, i + 500), { onConflict: "indicator,date" });
           if (error) throw error;
         }
-      })()
-    );
-  }
+        detail[key] = { provider, count: records.length };
+        return;
+      } catch (e: any) {
+        errors.push(`${provider}: ${redactSecrets(String(e?.message ?? e), [CMF_API_KEY])}`);
+      }
+    }
+    detail[key] = { error: errors.join(" | ") };
+  };
 
-  const results = await Promise.allSettled(tasks);
-  results.forEach((r) => {
-    if (r.status === "rejected") console.error("On-demand indicators refresh failed:", r.reason?.message ?? r.reason);
-  });
-  return results.every((r) => r.status === "fulfilled");
+  const tasks: Promise<void>[] = [];
+  if (needs.uf) tasks.push(run("uf", "UF", "uf"));
+  if (needs.usd) tasks.push(run("usd", "USD", "dolar"));
+  await Promise.all(tasks);
+  Object.entries(detail).forEach(([k, v]) => v.error && console.error(`Refresh ${k} failed:`, v.error));
+  return { ok: Object.values(detail).every((d) => !d.error), detail };
 }
 
 async function readCache(supabase: any, today: string, oneYearAgo: string): Promise<{ ufRows: CacheRow[]; usdRows: CacheRow[] }> {
@@ -124,7 +146,7 @@ serve(async (req) => {
     const oneYearAgo = subtractDays(today, 365);
     const sixMonthsAgo = subtractDays(today, 183);
 
-    const { ufRows, usdRows } = await readCache(supabase, today, oneYearAgo);
+    let { ufRows, usdRows } = await readCache(supabase, today, oneYearAgo);
 
     // El cron (refresh-economic-indicators) es lo normal; esto cubre que no
     // esté corriendo o que mindicador haya fallado en su última ejecución.
@@ -132,15 +154,25 @@ serve(async (req) => {
     // mindicador.cl (si está caído tardaría ~10 s en cada carga del
     // dashboard y de toda pantalla que use la UF); el próximo request ya ve
     // los datos nuevos.
-    const needs = staleness(ufRows, usdRows, today);
+    let needs = staleness(ufRows, usdRows, today);
     let refreshing = false;
+    let refreshDetail: RefreshDetail | undefined;
+    // ?refresh=1: verificación manual -- espera el resultado y lo devuelve
+    // (sin secretos). Sigue sujeto al tope de reintentos.
+    const awaitRefresh = url.searchParams.get("refresh") === "1";
     if ((needs.uf || needs.usd) && canAttemptRefresh(lastRefreshAttemptAt, Date.now(), MIN_REFRESH_RETRY_MS)) {
       lastRefreshAttemptAt = Date.now();
       refreshing = true;
-      const task = refreshFromMindicador(supabase, needs).catch((e: any) => console.error("Background refresh crashed:", e?.message ?? e));
-      // EdgeRuntime.waitUntil mantiene viva la tarea tras responder.
-      const runtime = (globalThis as any).EdgeRuntime;
-      if (runtime?.waitUntil) runtime.waitUntil(task);
+      const task = refreshCache(supabase, needs, today).then((r) => { refreshDetail = r.detail; }).catch((e: any) => console.error("Background refresh crashed:", redactSecrets(String(e?.message ?? e), [CMF_API_KEY])));
+      if (awaitRefresh) {
+        await task;
+        ({ ufRows, usdRows } = await readCache(supabase, today, oneYearAgo));
+        needs = staleness(ufRows, usdRows, today);
+      } else {
+        // EdgeRuntime.waitUntil mantiene viva la tarea tras responder.
+        const runtime = (globalThis as any).EdgeRuntime;
+        if (runtime?.waitUntil) runtime.waitUntil(task);
+      }
     }
 
     const uf = selectUF(ufRows, today);
@@ -164,6 +196,7 @@ serve(async (req) => {
         last_updated: uf.lastUpdated,
         source: "cache",
         refreshing,
+        ...(awaitRefresh ? { refresh: refreshDetail ?? "no necesario o en espera de reintento" } : {}),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
