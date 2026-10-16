@@ -686,16 +686,21 @@ export function GanttReportsSection() {
     try {
       const currentYear = new Date().getFullYear();
 
-      // 1) Punto de partida: TODOS los contratos con capex en el año actual,
-      //    independientemente de si tienen Gantt, tareas o estado de autorización.
+      // 1) Punto de partida: TODOS los contratos con capex en el año actual O
+      //    en años posteriores (ej. un contrato con presupuesto asignado solo
+      //    para 2027), independientemente de si tienen Gantt, tareas o estado
+      //    de autorización. Orden ascendente por año: si un contrato tiene
+      //    presupuesto del año actual se usa ese; si no, el del año más
+      //    próximo (antes un contrato solo con presupuesto futuro no aparecía).
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
         .select("id, contract_id, year, amount_uf")
         .eq("budget_type", "capex")
-        .eq("year", currentYear);
+        .gte("year", currentYear)
+        .order("year", { ascending: true });
       if (bErr) throw bErr;
 
-      // Un presupuesto por contrato (primero encontrado)
+      // Un presupuesto por contrato (el del año más temprano >= año actual)
       const budgetByContract = new Map<string, { id: string; amount_uf: number | null }>();
       (budgets || []).forEach((b) => {
         if (!budgetByContract.has(b.contract_id))

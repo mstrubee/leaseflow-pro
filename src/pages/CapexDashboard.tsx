@@ -147,6 +147,17 @@ const extractYearFromComiteGP = (comiteGpStatus: string | null): number | null =
   return match ? Number(match[1]) : null;
 };
 
+// Año más temprano de los presupuestos CAPEX cargados de un contrato
+// (contract_budgets.year, el "Año" asignado en su ficha). Las fechas del
+// Gantt reparten el monto entre años (30/50/20), pero ningún monto puede caer
+// ANTES de ese año: un contrato con presupuesto 2027 cuyo Gantt parte en 2026
+// se ve en 2027, no en 2026 (pedido explícito). Contratos con presupuesto 2026
+// cuyo Gantt cruza a 2027 no cambian: siguen repartiéndose como arrastre.
+const earliestBudgetYear = (rows: { year: number }[]): number => {
+  const min = rows.reduce((acc, b) => (Number.isFinite(b.year) ? Math.min(acc, b.year) : acc), Infinity);
+  return Number.isFinite(min) ? min : -Infinity;
+};
+
 const toggleArrayValue = (arr: string[], value: string): string[] =>
   arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 
@@ -836,7 +847,7 @@ export default function CapexDashboard() {
           yearMap[yearOverride] = clp;
         } else if (disbursement && totalCLP > 0) {
           const addToYear = (dateStr: string, amount: number) => {
-            const year = parseISO(dateStr).getFullYear();
+            const year = Math.max(parseISO(dateStr).getFullYear(), earliestBudgetYear(rows));
             yearMap[year] = (yearMap[year] || 0) + amount * factor;
           };
           addToYear(disbursement.startDate, disbursement.anticipo);
@@ -889,7 +900,7 @@ export default function CapexDashboard() {
           yearMap[yearOverride] = clp;
         } else if (disbursement && totalCLP > 0) {
           const addToYear = (dateStr: string, amount: number) => {
-            const year = parseISO(dateStr).getFullYear();
+            const year = Math.max(parseISO(dateStr).getFullYear(), earliestBudgetYear(rows));
             yearMap[year] = (yearMap[year] || 0) + amount * factor;
           };
           addToYear(disbursement.startDate, disbursement.anticipo);
