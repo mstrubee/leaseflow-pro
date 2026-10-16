@@ -67,11 +67,33 @@ interface ItemRow {
   contract_id: string | null;
 }
 
+/** Una fila (local/ítem × categoría × año) del Presupuesto Operativo, tal cual
+ *  se muestra en pantalla -- usada por la descarga Excel de "Planificar
+ *  Presupuesto" para no recalcular nada fuera de este componente. */
+export interface OpexExportRow {
+  kind: "Contrato" | "Informativo";
+  name: string;
+  company: string;
+  category: string;
+  /** true si el monto viene de ingreso manual (falta dato en el contrato). */
+  manual: boolean;
+  year: number;
+  /** 12 montos mensuales en CLP (Ene..Dic). */
+  months: number[];
+}
+
+export interface OpexExportData {
+  loading: boolean;
+  rows: OpexExportRow[];
+}
+
 interface Props {
   contractIds: string[];
   currentYear: number;
   targetYear: number;
   ufValue: number;
+  /** Recibe los datos calculados cada vez que cambian (ver OpexExportData). */
+  onExportDataChange?: (data: OpexExportData) => void;
   /** Ids/nombres (normalizados) de contratos que ya cuentan como CAPEX real
    *  en el dashboard -- excluye de esta lista cualquier ítem informativo
    *  que ya represente a uno de ellos (vinculado por id, o por nombre en
@@ -115,7 +137,7 @@ const isMissing = {
   otros: (v: VersionRow, hasDate: boolean) => !hasDate || v.otros_egresos_amount == null,
 };
 
-export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYear, ufValue, realContractIds, realContractNames }: Props) {
+export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYear, ufValue, onExportDataChange, realContractIds, realContractNames }: Props) {
   const [loading, setLoading] = useState(false);
   const [contracts, setContracts] = useState<Record<string, ContractRow>>({});
   const [versions, setVersions] = useState<Record<string, VersionRow>>({});
@@ -124,7 +146,9 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
   // cuando contract_versions.effective_date no está cargada -- ver isMissing.
   const [fallbackDateByContract, setFallbackDateByContract] = useState<Record<string, string>>({});
   const [items, setItems] = useState<ItemRow[]>([]);
-  const [itemsLoading, setItemsLoading] = useState(false);
+  // Parte en true: el efecto de ítems siempre corre al montar, y así el
+  // export Excel nunca ve "cargado" antes de tener datos.
+  const [itemsLoading, setItemsLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Edición local de los inputs manuales (texto crudo, por "contractId::year::category").
   const [manualEdits, setManualEdits] = useState<Record<string, string>>({});
@@ -442,6 +466,31 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     });
     return totals;
   }, [perContractData, perItemData, currentYear, targetYear]);
+
+  // Filas planas para la descarga Excel (ver OpexExportData): mismos montos
+  // que se ven en pantalla, por año y categoría.
+  const exportRows: OpexExportRow[] = useMemo(() => {
+    const rows: OpexExportRow[] = [];
+    perContractData.forEach((c) => {
+      [currentYear, targetYear].forEach((year) => {
+        CATEGORIES.forEach(({ key, label }) => {
+          rows.push({ kind: "Contrato", name: c.name, company: c.companyNames.join(", "), category: label, manual: c.missing[key], year, months: c.monthly[key][year] });
+        });
+      });
+    });
+    perItemData.forEach((it) => {
+      [currentYear, targetYear].forEach((year) => {
+        ITEM_CATEGORIES.forEach(({ key, label }) => {
+          rows.push({ kind: "Informativo", name: it.name, company: "", category: label, manual: true, year, months: it.monthly[key][year] });
+        });
+      });
+    });
+    return rows;
+  }, [perContractData, perItemData, currentYear, targetYear]);
+
+  useEffect(() => {
+    onExportDataChange?.({ loading: loading || itemsLoading, rows: exportRows });
+  }, [exportRows, loading, itemsLoading, onExportDataChange]);
 
   const sumYear = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 

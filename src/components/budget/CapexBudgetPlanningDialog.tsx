@@ -6,11 +6,12 @@ import { formatCLP } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, CalendarClock, Eye, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Lock, CalendarClock, Eye, ChevronDown, ChevronRight, FileSpreadsheet } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { CapexNewLocationOpexSection } from "./CapexNewLocationOpexSection";
+import { CapexNewLocationOpexSection, type OpexExportData } from "./CapexNewLocationOpexSection";
+import { exportCapexPlanningToExcel } from "./CapexPlanningExcelExport";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 /** Totales por Estado de Avance (Terminado/En Curso/Programado/Caído) de un
@@ -160,6 +161,10 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   const [previewMode, setPreviewMode] = useState(false);
   const [missingDataOpen, setMissingDataOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"capex" | "operativo">("capex");
+  const [exportingExcel, setExportingExcel] = useState(false);
+  // Datos calculados por la sección Operativo (siempre montada, oculta fuera
+  // de su pestaña) -- necesarios para la hoja "Operativo" del Excel.
+  const [opexExport, setOpexExport] = useState<OpexExportData | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [items, setItems] = useState<BudgetItem[]>([]);
   // Superficie Edificada Local + Total CAPEX (Business Case Financiero) de
@@ -172,6 +177,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
   const load = async () => {
     setLoading(true);
+    setOpexExport(null);
     try {
       const yearStart = `${targetYear}-01-01`;
       const yearEnd = `${targetYear}-12-31`;
@@ -305,6 +311,38 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
   // incompletos".
   const missingDataRowsFiltered = missingDataRows.filter((r) => r.avanceStatus !== "Terminado");
 
+  const handleExportExcel = async () => {
+    if (!opexExport || opexExport.loading) return;
+    setExportingExcel(true);
+    try {
+      const { filename } = await exportCapexPlanningToExcel({
+        targetYear,
+        currentYear,
+        ufValue,
+        closedAt: isClosed ? draft?.closed_at ?? null : null,
+        currentYearAvanceTotals,
+        straddlingRows,
+        disponibleCurrentYearCLP,
+        objetivoContratosRows,
+        objetivoContratosCLP,
+        informativos: items.map((it) => ({
+          name: it.name,
+          date: it.date,
+          superficie: it.contract_id ? contractDataByItem[it.contract_id]?.superficie ?? null : null,
+          clp: itemClp(it),
+        })),
+        missingDataRows: missingDataRowsFiltered,
+        operativoRows: opexExport.rows,
+      });
+      toast.success(`Excel descargado: ${filename}`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al generar el Excel");
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   const handleClose = async () => {
     if (!isAdmin) return;
     setClosing(true);
@@ -379,6 +417,20 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
             {/* Dos secciones -- CAPEX (Objetivo/Arrastre/A pedir, todo lo de
                 siempre) y Operativo (Presupuesto Operativo de Nuevos
                 Locales, aparte, no integra con los totales de CAPEX). */}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={handleExportExcel}
+                disabled={exportingExcel || !opexExport || opexExport.loading}
+                title="Descarga un Excel con hojas Resumen, CAPEX y Operativo (con fórmulas)"
+              >
+                {exportingExcel || !opexExport || opexExport.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                Descargar Excel
+              </Button>
+            </div>
+
             <div className="flex gap-2">
               <Button
                 variant={activeTab === "capex" ? "default" : "outline"}
@@ -651,8 +703,9 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
 
             {/* Presupuesto Operativo de Nuevos Locales -- bloque informativo
                 paralelo, no integra con Objetivo/Arrastre/A pedir de CAPEX. */}
-            {activeTab === "operativo" && (
+            <div className={activeTab === "operativo" ? undefined : "hidden"}>
               <CapexNewLocationOpexSection
+                onExportDataChange={setOpexExport}
                 contractIds={newLocationContractIds}
                 currentYear={currentYear}
                 targetYear={targetYear}
@@ -660,7 +713,7 @@ export function CapexBudgetPlanningDialog({ open, onOpenChange, targetYear, ufVa
                 realContractIds={realContractIds}
                 realContractNames={realContractNames}
               />
-            )}
+            </div>
 
             {!isClosed && !previewMode && (
               <div className="flex justify-end gap-2">
