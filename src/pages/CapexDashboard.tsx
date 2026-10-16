@@ -1271,7 +1271,11 @@ export default function CapexDashboard() {
       contractName: rows[0].contract_name,
       clasificacion: rows[0].clasificacion,
       companyNames: rows[0].company_names,
-      amountUf: rows.reduce((s, b) => s + (b.amount_uf || 0), 0),
+      // Monto efectivo (tarjeta, o suma de las líneas del Control
+      // Presupuestario si la tarjeta está en 0) -- igual que el resto de la
+      // página. Usar solo amount_uf mostraba "Sin CAPEX" en contratos con
+      // presupuesto cargado únicamente en las líneas (ej. año 2027).
+      amountUf: rows.reduce((s, b) => s + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]), 0),
     }));
 
     // Copias excluidas individualmente (split.excluded_from_capex_dashboard),
@@ -1281,7 +1285,7 @@ export default function CapexDashboard() {
       if (wholeContractExcludedIds.has(contractId)) return;
       const contractRows = budgets.filter((b) => b.contract_id === contractId);
       if (contractRows.length === 0) return;
-      const totalUf = contractRows.reduce((s, b) => s + (b.amount_uf || 0), 0);
+      const totalUf = contractRows.reduce((s, b) => s + getEffectiveBudgetTotal(b, authByBudget[b.budget_id]), 0);
       splits
         .filter((s) => s.excluded_from_capex_dashboard)
         .forEach((s) => {
@@ -1299,7 +1303,7 @@ export default function CapexDashboard() {
     });
 
     return entries.sort((a, b) => a.contractName.localeCompare(b.contractName) || (a.splitLabel || "").localeCompare(b.splitLabel || ""));
-  }, [budgets, splitsByContract]);
+  }, [budgets, splitsByContract, authByBudget]);
 
   // Filas de un contrato que pertenecen a `company` (mismo agrupamiento de 4
   // que companyGroups: Autoplanet/Agroplanet/Grupo Planet/Otra), respetando
