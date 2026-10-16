@@ -4,6 +4,10 @@
 // indexado, más los montos que el ADMIN agrega a mano por categoría (globales).
 
 export interface PlanningOrder {
+  id: string;
+  order_number: string | null;
+  description: string | null;
+  company_names: string[];
   amount_clp: number | null;
   amount_uf: number | null;
   order_date: string | null;
@@ -18,8 +22,29 @@ export interface PlanningCategory {
 }
 
 export interface PlanningItem {
+  id: string;
   category_id: string;
   amount_clp: number;
+  source_contract_id: string | null;
+  notes: string | null;
+  // Excluida de la propuesta (tarjada), no borrada: se puede reincorporar.
+  excluded_at: string | null;
+}
+
+// Línea considerada en la propuesta: una OC OPEX del año base o un OPEX agregado por el ADMIN.
+export interface PlanLine {
+  key: string;
+  kind: "oc" | "admin";
+  id: string;
+  date: string | null;
+  reference: string;
+  contractName: string | null;
+  companyNames: string[];
+  supplierName: string | null;
+  categoryId: string | null;
+  description: string | null;
+  amountClp: number;
+  excluded: boolean;
 }
 
 export interface CategoryPlanRow {
@@ -118,6 +143,7 @@ export const sumByMonth = (orders: PlanningOrder[], ufValue: number): number[] =
 
 export interface RankedRow {
   name: string;
+  companyNames: string[];
   orderCount: number;
   totalClp: number;
   percent: number;
@@ -130,13 +156,13 @@ export const rankBy = (
   ufValue: number,
   limit = 10,
 ): RankedRow[] => {
-  const acc = new Map<string, { orderCount: number; totalClp: number }>();
+  const acc = new Map<string, { orderCount: number; totalClp: number; companyNames: string[] }>();
   let grandTotal = 0;
   orders.forEach((o) => {
     const key = keyOf(o).trim();
     const amount = orderAmountClp(o, ufValue);
     grandTotal += amount;
-    const row = acc.get(key) ?? { orderCount: 0, totalClp: 0 };
+    const row = acc.get(key) ?? { orderCount: 0, totalClp: 0, companyNames: o.company_names };
     row.orderCount += 1;
     row.totalClp += amount;
     acc.set(key, row);
@@ -145,4 +171,47 @@ export const rankBy = (
     .map(([name, r]) => ({ name, ...r, percent: grandTotal > 0 ? (r.totalClp / grandTotal) * 100 : 0 }))
     .sort((a, b) => b.totalClp - a.totalClp)
     .slice(0, limit);
+};
+
+// Une OC y OPEX agregado en una sola lista de líneas; marca cuáles están excluidas.
+export const buildPlanLines = (params: {
+  orders: PlanningOrder[];
+  items: PlanningItem[];
+  excludedOrderIds: Set<string>;
+  contractCompanyNames: (contractId: string | null) => { name: string | null; companyNames: string[] };
+  ufValue: number;
+}): PlanLine[] => {
+  const { orders, items, excludedOrderIds, contractCompanyNames, ufValue } = params;
+  const ocLines: PlanLine[] = orders.map((o) => ({
+    key: `oc-${o.id}`,
+    kind: "oc",
+    id: o.id,
+    date: o.order_date,
+    reference: o.order_number ? `OC ${o.order_number}` : "OC",
+    contractName: o.contract_name,
+    companyNames: o.company_names,
+    supplierName: o.supplier_name,
+    categoryId: o.opex_category_id,
+    description: o.description,
+    amountClp: orderAmountClp(o, ufValue),
+    excluded: excludedOrderIds.has(o.id),
+  }));
+  const adminLines: PlanLine[] = items.map((i) => {
+    const contract = contractCompanyNames(i.source_contract_id);
+    return {
+      key: `admin-${i.id}`,
+      kind: "admin",
+      id: i.id,
+      date: null,
+      reference: i.source_contract_id ? "OPEX agregado (contrato)" : "OPEX agregado (global)",
+      contractName: contract.name,
+      companyNames: contract.companyNames,
+      supplierName: null,
+      categoryId: i.category_id,
+      description: i.notes,
+      amountClp: i.amount_clp,
+      excluded: i.excluded_at !== null,
+    };
+  });
+  return [...adminLines, ...ocLines.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))];
 };

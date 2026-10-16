@@ -4612,12 +4612,45 @@ export type Database = {
           },
         ]
       }
+      opex_budget_plan_exclusions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          purchase_order_id: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          purchase_order_id: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          purchase_order_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opex_budget_plan_exclusions_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opex_budget_plan_items: {
         Row: {
           amount_clp: number
           category_id: string
           created_at: string
           created_by: string | null
+          excluded_at: string | null
           id: string
           notes: string | null
           source_contract_id: string | null
@@ -4629,6 +4662,7 @@ export type Database = {
           category_id: string
           created_at?: string
           created_by?: string | null
+          excluded_at?: string | null
           id?: string
           notes?: string | null
           source_contract_id?: string | null
@@ -4640,6 +4674,7 @@ export type Database = {
           category_id?: string
           created_at?: string
           created_by?: string | null
+          excluded_at?: string | null
           id?: string
           notes?: string | null
           source_contract_id?: string | null
