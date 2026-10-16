@@ -4612,6 +4612,57 @@ export type Database = {
           },
         ]
       }
+      opex_budget_plan_items: {
+        Row: {
+          amount_clp: number
+          category_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          source_contract_id: string | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_clp: number
+          category_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          source_contract_id?: string | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_clp?: number
+          category_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          source_contract_id?: string | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opex_budget_plan_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opex_budget_plan_items_source_contract_id_fkey"
+            columns: ["source_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opex_categories: {
         Row: {
           created_at: string
