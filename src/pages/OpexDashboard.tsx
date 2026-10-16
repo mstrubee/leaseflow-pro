@@ -21,6 +21,7 @@ import { useOpexNavigation } from "@/components/opex/OpexReturnButton";
 import { OpexCreateDialog } from "@/components/opex/OpexCreateDialog";
 import { OpexCategoryManager } from "@/components/opex/OpexCategoryManager";
 import { OpexCloseYear } from "@/components/opex/OpexCloseYear";
+import { OpexPlanningDialog } from "@/components/opex/OpexPlanningDialog";
 import { OpexTemplateDownload } from "@/components/opex/OpexTemplateDownload";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -593,6 +594,13 @@ const OpexDashboard = () => {
                     contracts={contracts}
                     categories={categories}
                     onSuccess={loadData} 
+                  />
+                  <OpexPlanningDialog
+                    baseYear={new Date().getFullYear()}
+                    ufValue={ufValue}
+                    categories={categories}
+                    onCategoriesChange={loadData}
+                    contracts={contracts}
                   />
                   <OpexCategoryManager onCategoryChange={loadData} />
                   <OpexCloseYear year={parseInt(yearFilter)} ufValue={ufValue} onSuccess={loadData} />
