@@ -5,8 +5,10 @@ import type { OpexExportRow } from "./CapexNewLocationOpexSection";
 // Descarga Excel de "Planificar Presupuesto {año}" (/capex): hojas Resumen,
 // CAPEX y Operativo. Solo reordena/presenta los montos que el diálogo ya
 // calculó -- no recalcula nada (así el Excel siempre coincide con pantalla).
-// Todos los montos son en PESOS (CLP) como dato; la UF aparece solo como
-// referencia, siempre calculada como $ / Valor UF (nunca al revés). Los
+// Hojas Resumen y CAPEX: montos en PESOS (CLP) como dato; la UF aparece solo
+// como referencia, siempre calculada como $ / Valor UF (nunca al revés). La
+// hoja Operativo es la excepción: sus montos automáticos van en función de la
+// UF (UF del mes × Valor UF). Los
 // totales y derivados llevan fórmula (con su resultado cacheado) para que el
 // archivo siga siendo editable. Pendiente: hoja OPEX.
 
@@ -54,8 +56,8 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   const wsCapex = wb.addWorksheet("CAPEX");
   const wsOperativo = wb.addWorksheet("Operativo");
 
-  // Celda única de Valor UF: las columnas "Ref. UF" la usan como $ / UF. Los
-  // montos en pesos NO dependen de ella.
+  // Celda única de Valor UF: las columnas "Ref. UF" la usan como $ / UF, y la
+  // hoja Operativo como UF × Valor UF. Los pesos de CAPEX NO dependen de ella.
   const UF = "Resumen!$B$3";
   const INPUT_FONT = { color: { argb: "FF0000FF" } }; // azul = dato de ingreso/editable
 
@@ -90,7 +92,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   wsResumen.addRow([
     `Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")} · Estado: ${data.closedAt ? `Cerrado el ${fmtDate(data.closedAt)}` : "Borrador (se recalcula en vivo)"}`,
   ]).font = { italic: true };
-  const ufRow = wsResumen.addRow(["Valor UF ($ por UF) — solo para las columnas de referencia UF", uf]);
+  const ufRow = wsResumen.addRow(["Valor UF ($ por UF) — editable: referencia UF en CAPEX/Resumen y montos de Operativo", uf]);
   ufRow.getCell(2).numFmt = UF_FMT;
   ufRow.getCell(2).font = { bold: true, color: { argb: "FF0000FF" } };
   ufRow.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
@@ -101,7 +103,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   // total. Cada tabla cierra con fila de total por mes (fórmula SUM).
   const operativoTotalCell: Record<number, string> = {};
   title(wsOperativo, `Presupuesto Operativo de Nuevos Locales ${currentYear}-${targetYear} (CLP)`);
-  wsOperativo.addRow(["Informativo: no integra el total de CAPEX. Montos en pesos. 'Manual' = ingresado a mano por falta de dato en el contrato (celdas azules, editables)."]).font = { italic: true };
+  wsOperativo.addRow(["Informativo: no integra el total de CAPEX. 'Automático' = UF del mes × Valor UF (fórmula: cambia con la UF de Resumen!B3). 'Manual' = pesos ingresados a mano por falta de dato en el contrato (celdas azules, editables)."]).font = { italic: true };
   wsOperativo.addRow([]);
   const opCols = 6 + 12 + 1; // Tipo, Local, Empresa, Categoría, Origen, Año, 12 meses, Total
   [currentYear, targetYear].forEach((year) => {
@@ -112,14 +114,19 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
     rows.forEach((r) => {
       const excelRow = wsOperativo.addRow([r.kind, r.name, r.company, r.category, r.manual ? "Manual" : "Automático", r.year, ...new Array(12).fill(null), null]);
       const n = excelRow.number;
-      // Montos en pesos tal cual se ven en pantalla; los "Manual" (ingreso a
-      // mano) van en azul. Nada depende de la UF.
+      // Operativo SÍ va en función de la UF (pedido explícito): "Automático" =
+      // UF del mes × Valor UF (Resumen!B3), fórmula viva. "Manual" = pesos
+      // ingresados a mano (celda azul, editable), no depende de la UF.
       r.months.forEach((m, i) => {
         const cell = excelRow.getCell(7 + i);
-        cell.value = Math.round(m);
-        if (r.manual) cell.font = INPUT_FONT;
+        if (!r.manual && uf > 0 && m !== 0) {
+          cell.value = { formula: `${Math.round((m / uf) * 1e6) / 1e6}*${UF}`, result: m };
+        } else {
+          cell.value = m;
+          if (r.manual) cell.font = INPUT_FONT;
+        }
       });
-      const total = r.months.reduce((a, b) => a + Math.round(b), 0);
+      const total = r.months.reduce((a, b) => a + b, 0);
       excelRow.getCell(opCols).value = { formula: `SUM(G${n}:R${n})`, result: total };
       setFmt(excelRow, Array.from({ length: 13 }, (_, i) => 7 + i), CLP_FMT);
     });
@@ -128,7 +135,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
     const t = totalRow.number;
     for (let c = 7; c <= opCols; c++) {
       const col = wsOperativo.getColumn(c).letter;
-      const result = c === opCols ? rows.reduce((s, r) => s + r.months.reduce((a, b) => a + Math.round(b), 0), 0) : rows.reduce((s, r) => s + Math.round(r.months[c - 7] || 0), 0);
+      const result = c === opCols ? rows.reduce((s, r) => s + r.months.reduce((a, b) => a + b, 0), 0) : rows.reduce((s, r) => s + (r.months[c - 7] || 0), 0);
       totalRow.getCell(c).value = rows.length > 0 ? { formula: `SUM(${col}${firstDataRow}:${col}${lastDataRow})`, result } : 0;
     }
     setFmt(totalRow, Array.from({ length: 13 }, (_, i) => 7 + i), CLP_FMT);
@@ -324,7 +331,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   sectionHeader(wsResumen, "Operativo (Nuevos Locales) — informativo, no integra el total de CAPEX", 3);
   tableHeader(wsResumen, ["Concepto", "Monto ($)", "Ref. UF"]);
   [currentYear, targetYear].forEach((year) => {
-    const result = data.operativoRows.filter((r) => r.year === year).reduce((acc, r) => acc + r.months.reduce((a, b) => a + Math.round(b), 0), 0);
+    const result = data.operativoRows.filter((r) => r.year === year).reduce((acc, r) => acc + r.months.reduce((a, b) => a + b, 0), 0);
     addSummaryRow(`Presupuesto Operativo ${year}`, operativoTotalCell[year], result);
   });
   wsResumen.columns = [{ width: 56 }, { width: 22 }, { width: 18 }];
