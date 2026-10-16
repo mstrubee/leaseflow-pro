@@ -218,7 +218,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <CalendarRange className="h-4 w-4 mr-1" />
-          Planificar Presupuesto (año siguiente)
+          Planificar Presupuesto {planYear}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
