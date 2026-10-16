@@ -50,6 +50,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
+import { loadBusinessCaseCapexUF, loadContractCapexUF } from "@/lib/contractCapexEstimate";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
@@ -471,14 +472,25 @@ export function GanttReportsSection() {
   const [loadingNegotiation, setLoadingNegotiation] = useState(false);
   const [negotiationSearchOpen, setNegotiationSearchOpen] = useState(false);
   const [extraData, setExtraData] = useState<GanttContractData[]>([]);
+  // CAPEX (UF) de los contratos agregados a mano ("Contratos No Firmados" /
+  // "Agregar Ítem"): presupuesto del año en curso y siguientes (tarjeta o
+  // líneas del Control Presupuestario) o, si no tienen, el estimado del
+  // Business Case. Se calcula aparte porque buildNegotiationContractItem no
+  // lo trae (antes quedaban siempre en "Sin CAPEX").
+  const [extraCapexUF, setExtraCapexUF] = useState<Record<string, number>>({});
   const [addedNegotiationIds, setAddedNegotiationIds] = useState<Set<string>>(new Set());
 
   // All data combined (regular + added negotiation contracts)
   const allData = useMemo(() => {
     const regularIds = new Set(data.map((d) => d.contractId));
-    const extras = extraData.filter((e) => !regularIds.has(e.contractId));
+    const extras = extraData
+      .filter((e) => !regularIds.has(e.contractId))
+      .map((e) => {
+        const capexUF = extraCapexUF[e.contractId] ?? 0;
+        return { ...e, capexUF, capexCLP: capexUF * (ufValue || 0) };
+      });
     return [...data, ...extras];
-  }, [data, extraData]);
+  }, [data, extraData, extraCapexUF, ufValue]);
 
   // Unique company names for filter dropdown
   const allCompanies = useMemo(() => {
@@ -700,11 +712,15 @@ export function GanttReportsSection() {
         .order("year", { ascending: true });
       if (bErr) throw bErr;
 
-      // Un presupuesto por contrato (el del año más temprano >= año actual)
-      const budgetByContract = new Map<string, { id: string; amount_uf: number | null }>();
+      // Todos los presupuestos CAPEX del año en curso y siguientes de cada
+      // contrato -- el CAPEX del contrato es la suma (antes se tomaba solo el
+      // primero, y un contrato con la tarjeta del año en curso en 0 y su
+      // presupuesto real en 2027 quedaba en 0).
+      const budgetsByContract = new Map<string, { id: string; amount_uf: number | null }[]>();
       (budgets || []).forEach((b) => {
-        if (!budgetByContract.has(b.contract_id))
-          budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
+        const list = budgetsByContract.get(b.contract_id) || [];
+        list.push({ id: b.id, amount_uf: b.amount_uf });
+        budgetsByContract.set(b.contract_id, list);
       });
 
       // 1b) Contratos "En negociación" con Comité GP "Aceptada"/"Aceptado" (o
@@ -723,7 +739,7 @@ export function GanttReportsSection() {
       );
 
       const contractIds = Array.from(
-        new Set([...budgetByContract.keys(), ...negotiationAcceptedIds])
+        new Set([...budgetsByContract.keys(), ...negotiationAcceptedIds])
       );
 
       if (contractIds.length === 0) {
@@ -852,16 +868,23 @@ export function GanttReportsSection() {
       }
 
       // 5) Totales de capex (misma lógica que Control de Presupuesto)
-      const budgetIds = Array.from(budgetByContract.values()).map((b) => b.id);
+      const budgetIds = Array.from(budgetsByContract.values()).flat().map((b) => b.id);
       const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
 
       const currentUF = ufValue || 0;
       const capexByContract = new Map<string, number>();
-      budgetByContract.forEach((budget, contractId) => {
-        const total = totals.get(budget.id);
-        const fromTree = total ? total.grand : 0;
-        capexByContract.set(contractId, fromTree > 0 ? fromTree : budget.amount_uf || 0);
+      budgetsByContract.forEach((rows, contractId) => {
+        const sum = rows.reduce((acc, budget) => {
+          const fromTree = totals.get(budget.id)?.grand || 0;
+          return acc + (fromTree > 0 ? fromTree : budget.amount_uf || 0);
+        }, 0);
+        capexByContract.set(contractId, sum);
       });
+      // Sin monto en presupuesto ni líneas: estimado del Business Case
+      // Financiero (mismo criterio que /capex para contratos sin CAPEX real).
+      const zeroCapexIds = contractIds.filter((id) => (capexByContract.get(id) || 0) <= 0);
+      const estimatedUF = await loadBusinessCaseCapexUF(zeroCapexIds, currentUF);
+      estimatedUF.forEach((uf, id) => capexByContract.set(id, uf));
 
       // 6) Ensamblar resultado — incluye TODOS los contratos con capex, con o
       //    sin Gantt, con o sin tareas, más los "En negociación" ya aceptados
@@ -1109,6 +1132,22 @@ export function GanttReportsSection() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const extraIdsKey = extraData.map((e) => e.contractId).sort().join(",");
+  useEffect(() => {
+    if (!extraIdsKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await loadContractCapexUF(extraIdsKey.split(","), ufValue || 0, new Date().getFullYear());
+        if (cancelled) return;
+        setExtraCapexUF(Object.fromEntries(map));
+      } catch (e) {
+        console.error("Error loading CAPEX of added contracts:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [extraIdsKey, ufValue]);
 
   // Agrega un contrato al listado (si todavía no está) -- misma acción que
   // el botón "Contratos No Firmados", reutilizada por "Agregar Ítem" de la

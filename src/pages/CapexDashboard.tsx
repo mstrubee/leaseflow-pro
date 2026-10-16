@@ -560,8 +560,7 @@ export default function CapexDashboard() {
 
       if (error) throw error;
 
-      const processed: ContractBudget[] = (data || [])
-        .map((b: any) => ({
+      const mapBudgetRow = (b: any): ContractBudget => ({
         contract_id: b.contract_id,
         contract_name: b.contracts?.name || "Sin nombre",
         clasificacion: b.contracts?.clasificacion || null,
@@ -575,7 +574,8 @@ export default function CapexDashboard() {
         comite_gp_status: b.contracts?.comite_gp_status || null,
         capexYearOverride: b.contracts?.capex_year_override ?? null,
         noGanttYearHint: b.contracts?.capex_no_gantt_year_hint ?? null,
-      }));
+      });
+      const processed: ContractBudget[] = (data || []).map(mapBudgetRow);
 
       // Contratos "autorizados" en negociación (status = en_negociacion,
       // no eliminados, comite_gp_status contiene "acepta" -- Aceptada,
@@ -592,10 +592,47 @@ export default function CapexDashboard() {
         .neq("comite_gp_status", "Rechazada");
       if (negErr) throw negErr;
 
+      // Contratos de la "Línea de tiempo general" de /reports (Cartas Gantt -
+      // Vista General) agregados a mano ("Contratos No Firmados" / "Agregar
+      // Ítem", tabla gantt_overview_extra_contracts): TODOS deben verse
+      // también acá, aunque estén "En Negociación" sin Comité GP aceptado
+      // (la query de arriba los deja fuera). Los que ya tienen presupuesto
+      // CAPEX real cargado entran con sus filas reales; los que no, más abajo
+      // con el estimado del Business Case, igual que los autorizados.
+      // Tabla fuera de los tipos generados de Supabase.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: extraRows } = (await (supabase as any).from("gantt_overview_extra_contracts").select("contract_id")) as { data: { contract_id: string }[] | null };
+      const alreadyLoadedIds = new Set(processed.map((b) => b.contract_id));
+      const extraIds: string[] = Array.from(new Set<string>((extraRows || []).map((r) => r.contract_id))).filter((id) => !alreadyLoadedIds.has(id));
+      let extraContracts: NonNullable<typeof acceptedNegotiationContracts> = [];
+      if (extraIds.length > 0) {
+        const { data: extraBudgetRows, error: extraErr } = await supabase
+          .from("contract_budgets")
+          .select("id, contract_id, year, amount_uf, budget_type, contracts!inner(name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, capex_no_gantt_year_hint, contract_companies(companies(name)))")
+          .eq("budget_type", "capex")
+          .in("contract_id", extraIds)
+          .is("contracts.deleted_at", null)
+          .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada", { foreignTable: "contracts" });
+        if (extraErr) throw extraErr;
+        processed.push(...(extraBudgetRows || []).map(mapBudgetRow));
+        const withRows = new Set<string>((extraBudgetRows || []).map((b) => b.contract_id));
+        const idsWithoutRows = extraIds.filter((id) => !withRows.has(id));
+        if (idsWithoutRows.length > 0) {
+          const { data: extraOnly, error: extraOnlyErr } = await supabase
+            .from("contracts")
+            .select("id, name, clasificacion, capex_avance_status, superficie_edificada_local, excluded_from_capex_dashboard, comite_gp_status, capex_year_override, capex_no_gantt_year_hint, contract_companies(companies(name))")
+            .in("id", idsWithoutRows)
+            .is("deleted_at", null)
+            .or("comite_gp_status.is.null,comite_gp_status.neq.Rechazada");
+          if (extraOnlyErr) throw extraOnlyErr;
+          extraContracts = extraOnly || [];
+        }
+      }
+
       const existingContractIds = new Set(processed.map((b) => b.contract_id));
       const currentYear = new Date().getFullYear();
-      const negotiationOnlyContracts = (acceptedNegotiationContracts || []).filter(
-        (c: any) => !existingContractIds.has(c.id)
+      const negotiationOnlyContracts = ([...(acceptedNegotiationContracts || []), ...extraContracts] as unknown as { id: string }[]).filter(
+        (c, i, all) => !existingContractIds.has(c.id) && all.findIndex((x) => x.id === c.id) === i
       );
 
       // Estos contratos todavía no tienen presupuesto CAPEX real cargado
