@@ -14,6 +14,8 @@ import { CalendarRange, Globe, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { OpexPlanLines } from "@/components/opex/OpexPlanLines";
+import { OpexGeneralAmountCell } from "@/components/opex/OpexGeneralAmountCell";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   buildCategoryPlan,
@@ -55,6 +57,9 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
   // OC OPEX excluidas (tachadas) de la propuesta del año planificado.
   const [excludedOrderIds, setExcludedOrderIds] = useState<Set<string>>(new Set());
   const [busyLineKey, setBusyLineKey] = useState<string | null>(null);
+  // Edición directa del OPEX general en "Por categoría".
+  const [savingCategoryId, setSavingCategoryId] = useState<string | null>(null);
+  const [pendingGeneral, setPendingGeneral] = useState<{ categoryId: string; amount: number } | null>(null);
   const [indexationPct, setIndexationPct] = useState(DEFAULT_INDEXATION_PCT);
 
   // Formulario "Agregar OPEX": GLOBAL_KEY (sin contrato) o el id de un contrato vigente.
@@ -238,6 +243,60 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
     loadData();
   };
 
+  // Fija el OPEX general (sin contrato) de una categoría: 0 lo borra, y los totales se
+  // recalculan al guardar porque salen de `items`. Las líneas excluidas no se tocan.
+  const applyGeneralAmount = async (categoryId: string, amount: number) => {
+    const general = items.filter((i) => i.category_id === categoryId && !i.source_contract_id && i.excluded_at === null);
+    setSavingCategoryId(categoryId);
+    try {
+      if (amount <= 0) {
+        if (general.length > 0) {
+          const ids = general.map((i) => i.id);
+          const { error } = await supabase.from("opex_budget_plan_items").delete().in("id", ids);
+          if (error) throw error;
+          setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+        }
+      } else if (general.length === 0) {
+        const { data, error } = await supabase
+          .from("opex_budget_plan_items")
+          .insert({ year: planYear, category_id: categoryId, amount_clp: amount, source_contract_id: null, created_by: user?.id ?? null })
+          .select("id, category_id, amount_clp, source_contract_id, notes, excluded_at")
+          .single();
+        if (error) throw error;
+        setItems((prev) => [data, ...prev]);
+      } else {
+        const [keep, ...rest] = general;
+        const { error } = await supabase.from("opex_budget_plan_items").update({ amount_clp: amount }).eq("id", keep.id);
+        if (error) throw error;
+        const restIds = rest.map((i) => i.id);
+        if (restIds.length > 0) {
+          const { error: deleteError } = await supabase.from("opex_budget_plan_items").delete().in("id", restIds);
+          if (deleteError) throw deleteError;
+        }
+        setItems((prev) =>
+          prev.filter((i) => !restIds.includes(i.id)).map((i) => (i.id === keep.id ? { ...i, amount_clp: amount } : i)),
+        );
+      }
+      toast.success(amount > 0 ? "Monto general guardado" : "Monto general eliminado");
+    } catch (error) {
+      console.error("Error saving general OPEX amount:", error);
+      toast.error("No se pudo guardar el monto general");
+      loadData();
+    } finally {
+      setSavingCategoryId(null);
+    }
+  };
+
+  // Si la categoría tiene varias líneas generales activas, unificarlas pide confirmación.
+  const handleGeneralCommit = (categoryId: string, amount: number) => {
+    const count = items.filter((i) => i.category_id === categoryId && !i.source_contract_id && i.excluded_at === null).length;
+    if (count > 1 && amount > 0) {
+      setPendingGeneral({ categoryId, amount });
+      return;
+    }
+    applyGeneralAmount(categoryId, amount);
+  };
+
   // Excluir tacha la línea (no la borra); reincorporar la devuelve a la propuesta.
   const setLineExcluded = async (line: PlanLine, excluded: boolean) => {
     setBusyLineKey(line.key);
@@ -349,7 +408,22 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                       <TableCell className="text-right">{formatClp(r.realClp)}</TableCell>
                       <TableCell className="text-right">{formatClp(r.avgMonthlyClp)}</TableCell>
                       <TableCell className="text-right">{formatClp(r.baseProposalClp)}</TableCell>
-                      <TableCell className="text-right">{r.adminClp > 0 ? formatClp(r.adminClp) : "—"}</TableCell>
+                      <TableCell className="text-right">
+                        {r.categoryId ? (
+                          <OpexGeneralAmountCell
+                            value={r.adminGeneralClp}
+                            saving={savingCategoryId === r.categoryId}
+                            ariaLabel={`OPEX general de ${r.name}`}
+                            breakdown={r.contractBreakdown.map((b) => {
+                              const info = contractInfo(b.contractId);
+                              return { name: info.name ?? "Contrato", companyNames: info.companyNames, amountClp: b.amountClp };
+                            })}
+                            onCommit={(amount) => handleGeneralCommit(r.categoryId as string, amount)}
+                          />
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-semibold">{formatClp(r.totalProposalClp)}</TableCell>
                     </TableRow>
                   ))}
@@ -393,7 +467,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {plan.map((r) => (
+                    {plan.filter((r) => r.totalProposalClp > 0).map((r) => (
                       <TableRow key={r.categoryId ?? "none"}>
                         <TableCell className="font-medium whitespace-nowrap">{r.name}</TableCell>
                         {MONTH_LABELS.map((m) => (
@@ -538,6 +612,29 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
           </Tabs>
         )}
       </DialogContent>
+      <AlertDialog open={pendingGeneral !== null} onOpenChange={(o) => !o && setPendingGeneral(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unificar el OPEX general</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingGeneral ? categoryName(pendingGeneral.categoryId) : ""} tiene varias líneas de OPEX general. Se
+              reemplazarán por una sola de {pendingGeneral ? formatClp(pendingGeneral.amount) : ""} y se perderán sus notas.
+              Las líneas que vienen de contratos y las excluidas no cambian.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingGeneral) applyGeneralAmount(pendingGeneral.categoryId, pendingGeneral.amount);
+                setPendingGeneral(null);
+              }}
+            >
+              Unificar y guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 };

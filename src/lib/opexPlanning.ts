@@ -55,9 +55,18 @@ export interface CategoryPlanRow {
   avgMonthlyClp: number;
   annualizedClp: number;
   baseProposalClp: number;
+  // OPEX agregado = parte general (sin contrato, editable en la tabla) + partes que vienen de contratos.
   adminClp: number;
+  adminGeneralClp: number;
+  adminContractClp: number;
+  contractBreakdown: ContractBreakdownRow[];
   totalProposalClp: number;
   monthlyProposalClp: number;
+}
+
+export interface ContractBreakdownRow {
+  contractId: string;
+  amountClp: number;
 }
 
 export const UNCATEGORIZED_NAME = "Sin categoría";
@@ -92,34 +101,64 @@ export const buildCategoryPlan = (params: {
   const { orders, categories, items, months, indexationPct, ufValue } = params;
   const factor = 1 + indexationPct / 100;
   const names = new Map(categories.map((c) => [c.id, c.name]));
-  const acc = new Map<string, { categoryId: string | null; name: string; orderCount: number; realClp: number; adminClp: number }>();
+  const acc = new Map<
+    string,
+    {
+      categoryId: string | null;
+      name: string;
+      orderCount: number;
+      realClp: number;
+      adminGeneralClp: number;
+      contractAmounts: Map<string, number>;
+    }
+  >();
   const slot = (categoryId: string | null) => {
     const key = categoryId ?? "__none__";
     let row = acc.get(key);
     if (!row) {
-      row = { categoryId, name: categoryId ? names.get(categoryId) ?? UNCATEGORIZED_NAME : UNCATEGORIZED_NAME, orderCount: 0, realClp: 0, adminClp: 0 };
+      row = {
+        categoryId,
+        name: categoryId ? names.get(categoryId) ?? UNCATEGORIZED_NAME : UNCATEGORIZED_NAME,
+        orderCount: 0,
+        realClp: 0,
+        adminGeneralClp: 0,
+        contractAmounts: new Map(),
+      };
       acc.set(key, row);
     }
     return row;
   };
 
+  // Todas las categorías vigentes aparecen (aunque estén en 0) para poder asignarles OPEX general.
+  categories.forEach((c) => slot(c.id));
   orders.forEach((o) => {
     const row = slot(o.opex_category_id);
     row.orderCount += 1;
     row.realClp += orderAmountClp(o, ufValue);
   });
   items.forEach((i) => {
-    slot(i.category_id).adminClp += i.amount_clp;
+    const row = slot(i.category_id);
+    if (i.source_contract_id) {
+      row.contractAmounts.set(i.source_contract_id, (row.contractAmounts.get(i.source_contract_id) ?? 0) + i.amount_clp);
+    } else {
+      row.adminGeneralClp += i.amount_clp;
+    }
   });
 
   return Array.from(acc.values())
-    .map((r) => {
+    .map(({ contractAmounts, ...r }) => {
+      const contractBreakdown = Array.from(contractAmounts, ([contractId, amountClp]) => ({ contractId, amountClp }));
+      const adminContractClp = contractBreakdown.reduce((sum, c) => sum + c.amountClp, 0);
+      const adminClp = r.adminGeneralClp + adminContractClp;
       const avgMonthlyClp = r.realClp / months;
       const annualizedClp = avgMonthlyClp * 12;
       const baseProposalClp = annualizedClp * factor;
-      const totalProposalClp = baseProposalClp + r.adminClp;
+      const totalProposalClp = baseProposalClp + adminClp;
       return {
         ...r,
+        adminClp,
+        adminContractClp,
+        contractBreakdown,
         avgMonthlyClp,
         annualizedClp,
         baseProposalClp,
@@ -214,4 +253,13 @@ export const buildPlanLines = (params: {
     };
   });
   return [...adminLines, ...ocLines.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))];
+};
+
+// Texto de un monto en CLP escrito por el usuario ("1.500.000", "$ 1500000", vacío = 0).
+// Devuelve null si no es un número válido o es negativo.
+export const parseClpInput = (raw: string): number | null => {
+  const text = raw.replace(/[$\s]/g, "");
+  if (text === "") return 0;
+  const value = Number(text.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(value) && value >= 0 ? value : null;
 };
