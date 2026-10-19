@@ -6,28 +6,29 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronRight, Loader2, Building2, CalendarClock } from "lucide-react";
-import { computeArriendoPeriods, type RentPeriodsVersionInput } from "@/lib/businessCase/rentPeriods";
+import {
+  buildContractMonths,
+  buildItemMonths,
+  OPEX_CATEGORIES,
+  OPEX_ITEM_CATEGORIES,
+  type ContractVersionInput,
+  type MonthlyByCategory,
+  type OpexCategory,
+  type OpexItemCategory,
+} from "@/lib/budget/newLocationOpex";
+import { defaultUFProjection, projectedUFSeries } from "@/lib/budget/ufProjection";
 import { format, parseISO } from "date-fns";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
-type Category = "arriendo" | "ggcc" | "fondo_promocion" | "otros";
-const CATEGORIES: { key: Category; label: string }[] = [
-  { key: "arriendo", label: "Arriendo" },
-  { key: "ggcc", label: "GGCC" },
-  { key: "fondo_promocion", label: "Fondo Promoción" },
-  { key: "otros", label: "Otros" },
-];
-// Los Ítems de Presupuesto informativos (gantt_overview_budget_items) no
-// tienen canon -- son solo informativos, sin contrato -- así que no
-// participan de la categoría Arriendo, a diferencia de los contratos.
-type ItemCategory = Exclude<Category, "arriendo">;
-const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
-  { key: "ggcc", label: "GGCC" },
-  { key: "fondo_promocion", label: "Fondo Promoción" },
-  { key: "otros", label: "Otros" },
-];
+// Categorías y cálculo mensual viven en @/lib/budget/newLocationOpex (misma
+// lógica que usa el Excel). Los Ítems informativos no tienen canon, así que no
+// participan de Arriendo.
+type Category = OpexCategory;
+const CATEGORIES = OPEX_CATEGORIES;
+type ItemCategory = OpexItemCategory;
+const ITEM_CATEGORIES = OPEX_ITEM_CATEGORIES;
 
 interface ContractRow {
   id: string;
@@ -39,10 +40,9 @@ interface ContractRow {
 
 // Mismo set de columnas que buildBCSeed/ContractDetail necesitan para
 // computeArriendoPeriods, sobre la versión ACTUAL (is_current = true).
-interface VersionRow extends RentPeriodsVersionInput {
+interface VersionRow extends ContractVersionInput {
   id: string;
   contract_id: string;
-  effective_date: string | null;
 }
 
 interface ManualOverride {
@@ -78,11 +78,14 @@ export interface OpexExportRow {
   name: string;
   company: string;
   category: string;
-  /** true si el monto viene de ingreso manual (falta dato en el contrato). */
-  manual: boolean;
+  /** Texto para la columna "Origen" del Excel. */
+  origin: string;
   year: number;
-  /** 12 montos mensuales en CLP (Ene..Dic). */
+  /** 12 montos mensuales en CLP (Ene..Dic), tal cual se muestran (ya con la UF estimada de cada mes). */
   months: number[];
+  /** Monto en UF de cada mes; null = monto manual en pesos (no se proyecta). El Excel arma
+   *  la fórmula "UF del mes × UF estimada del mes" con esto, sin volver a proyectar `months`. */
+  monthsUf: (number | null)[];
 }
 
 export interface OpexExportData {
@@ -105,25 +108,7 @@ interface Props {
   realContractNames: Set<string>;
 }
 
-// Parsea el label "M{start}-M{end}" de un RentPeriodRow (ver rentPeriods.ts).
-const parsePeriodLabel = (label: string): { start: number; end: number } | null => {
-  const m = label.match(/^M(\d+)-M(\d+)$/);
-  if (!m) return null;
-  return { start: parseInt(m[1], 10), end: parseInt(m[2], 10) };
-};
-
-// Offset de mes (1-indexado) de un mes calendario respecto a effective_date:
-// offset 1 = el mes calendario que contiene effective_date.
-// Ej: effective_date 2026-07-15 -> julio/2026 es offset 1, agosto/2026
-// offset 2, junio/2026 offset 0 (antes de empezar), enero/2027 offset 7.
-const monthOffset = (effectiveDate: string, calYear: number, calMonth1Indexed: number): number => {
-  const eff = new Date(effectiveDate + "T00:00:00");
-  const effYear = eff.getFullYear();
-  const effMonth = eff.getMonth() + 1; // 1-indexado
-  return (calYear - effYear) * 12 + (calMonth1Indexed - effMonth) + 1;
-};
-
-// computeAutoMonthly necesita una fecha de inicio para ubicar cada mes
+// autoMonthlyUF (lib) necesita una fecha de inicio para ubicar cada mes
 // dentro del contrato (monthOffset). Si contract_versions.effective_date no
 // está cargada, se usa como respaldo la fecha del ítem del contrato en la
 // Línea de tiempo general de Cartas Gantt (/reports -- gantt_overview_budget_items.date,
@@ -288,29 +273,14 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     return () => { cancelled = true; };
   }, [currentYear, targetYear]);
 
-  // Monto automático (en CLP) de una categoría de un contrato, para un mes
-  // calendario dado, calculado a partir de los tramos de
-  // computeArriendoPeriods (en UF, pasados a CLP con el ufValue único del
-  // diálogo -- estimación de planificación, no exacto mes a mes).
-  const computeAutoMonthly = (version: VersionRow, superficie: number | null, metrosLinealesFrente: number | null, calYear: number, calMonth1Indexed: number, effectiveDateOverride: string | null) => {
-    const zero = { arriendo: 0, ggcc: 0, fondo_promocion: 0, otros: 0 };
-    const effectiveDate = version.effective_date ?? effectiveDateOverride;
-    if (!effectiveDate) return zero;
-    const offset = monthOffset(effectiveDate, calYear, calMonth1Indexed);
-    if (offset < 1 || offset > version.duration_months) return zero;
-    const periods = computeArriendoPeriods(version, superficie, metrosLinealesFrente);
-    const period = periods.find((p) => {
-      const parsed = parsePeriodLabel(p.label);
-      return parsed && offset >= parsed.start && offset <= parsed.end;
-    });
-    if (!period) return zero;
-    return {
-      arriendo: period.canon * ufValue,
-      ggcc: period.ggcc * ufValue,
-      fondo_promocion: period.fProm * ufValue,
-      otros: period.otros * ufValue,
-    };
-  };
+  // UF estimada de cada mes (inflación sobre la UF inicial; los meses
+  // anteriores al mes base usan la UF actual) -- ver @/lib/budget/ufProjection,
+  // misma fórmula que el Excel.
+  const projection = useMemo(() => defaultUFProjection(targetYear, ufValue), [targetYear, ufValue]);
+  const ufSeriesByYear = useMemo(
+    () => ({ [currentYear]: projectedUFSeries(projection, currentYear), [targetYear]: projectedUFSeries(projection, targetYear) }),
+    [projection, currentYear, targetYear]
+  );
 
   const toggleExpanded = (contractId: string) => {
     setExpanded((prev) => {
@@ -356,10 +326,27 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, [field]: parsed } : it)));
   };
 
-  // Para cada ítem informativo: 3 categorías × 12 meses × 2 años, siempre
-  // manual, a partir del mes de su "date" (fecha de la Línea de tiempo
-  // general de /reports) -- sin fecha de término definida, se proyecta
-  // indefinidamente hacia adelante en ambos años.
+  // Separa las series de la lib en pesos (lo que se muestra y suma) y UF por mes
+  // (lo que necesita el Excel).
+  const splitSeries = <C extends string>(m: MonthlyByCategory<C>) => {
+    const clp = {} as Record<C, { [year: number]: number[] }>;
+    const uf = {} as Record<C, { [year: number]: (number | null)[] }>;
+    (Object.keys(m) as C[]).forEach((k) => {
+      clp[k] = {};
+      uf[k] = {};
+      Object.entries(m[k]).forEach(([year, series]) => {
+        clp[k][Number(year)] = series.clp;
+        uf[k][Number(year)] = series.uf;
+      });
+    });
+    return { clp, uf };
+  };
+
+  // Para cada ítem informativo: 3 categorías × 12 meses × 2 años, a partir del
+  // mes de su "date" (fecha de la Línea de tiempo general de /reports) -- sin
+  // fecha de término definida, se proyecta indefinidamente hacia adelante en
+  // ambos años. Sus montos se ingresan en UF y cada mes se valoriza con la UF
+  // estimada de ESE mes.
   interface ItemMonthlyData {
     itemId: string;
     name: string;
@@ -367,38 +354,25 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     superficie_m2: number | null;
     companyNames: string[];
     monthly: Record<ItemCategory, { [year: number]: number[] }>;
+    monthlyUf: Record<ItemCategory, { [year: number]: (number | null)[] }>;
   }
   const perItemData: ItemMonthlyData[] = useMemo(() => {
     return items.map((item) => {
-      const itemDate = new Date(item.date + "T00:00:00");
-      const monthly: Record<ItemCategory, { [year: number]: number[] }> = {
-        ggcc: { [currentYear]: [], [targetYear]: [] },
-        fondo_promocion: { [currentYear]: [], [targetYear]: [] },
-        otros: { [currentYear]: [], [targetYear]: [] },
-      };
-      [currentYear, targetYear].forEach((year) => {
-        for (let m = 1; m <= 12; m++) {
-          const started = year > itemDate.getFullYear() || (year === itemDate.getFullYear() && m >= itemDate.getMonth() + 1);
-          const ggcc = started && item.ggcc_uf_m2 != null && item.superficie_m2 != null ? item.ggcc_uf_m2 * item.superficie_m2 * ufValue : 0;
-          const fondoPromocion = started && item.fondo_promocion_uf != null ? item.fondo_promocion_uf * ufValue : 0;
-          const otros = started && item.otros_uf != null ? item.otros_uf * ufValue : 0;
-          monthly.ggcc[year].push(ggcc);
-          monthly.fondo_promocion[year].push(fondoPromocion);
-          monthly.otros[year].push(otros);
-        }
-      });
-      return { itemId: item.id, name: item.name, date: item.date, superficie_m2: item.superficie_m2, companyNames: item.companyNames || [], monthly };
+      const { clp, uf } = splitSeries(buildItemMonths(item, [currentYear, targetYear], projection));
+      return { itemId: item.id, name: item.name, date: item.date, superficie_m2: item.superficie_m2, companyNames: item.companyNames || [], monthly: clp, monthlyUf: uf };
     });
-  }, [items, currentYear, targetYear, ufValue]);
+  }, [items, currentYear, targetYear, projection]);
 
   // Para cada contrato: 4 categorías × 12 meses × 2 años -- con el valor
-  // automático o, si falta el dato fuente, el override manual persistido.
+  // automático (UF del mes × UF estimada del mes) o, si falta el dato fuente,
+  // el override manual persistido en pesos (no se proyecta).
   interface ContractMonthlyData {
     contractId: string;
     name: string;
     companyNames: string[];
     missing: Record<Category, boolean>;
-    monthly: Record<Category, { [year: number]: number[] }>; // 12 valores por año
+    monthly: Record<Category, { [year: number]: number[] }>; // pesos, 12 valores por año
+    monthlyUf: Record<Category, { [year: number]: (number | null)[] }>; // UF por mes (null = manual)
     // true si el contrato no tiene ninguna versión (contract_versions con
     // is_current = true) -- típico de contratos aún "En Negociación" cuyo
     // CAPEX sale del Business Case (ver "Est. Business Case" en /capex), que
@@ -428,40 +402,31 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
               otros: isMissing.otros(version, hasDate),
             }
           : { arriendo: true, ggcc: true, fondo_promocion: true, otros: true };
-        const monthly: Record<Category, { [year: number]: number[] }> = {
-          arriendo: { [currentYear]: [], [targetYear]: [] },
-          ggcc: { [currentYear]: [], [targetYear]: [] },
-          fondo_promocion: { [currentYear]: [], [targetYear]: [] },
-          otros: { [currentYear]: [], [targetYear]: [] },
-        };
-        [currentYear, targetYear].forEach((year) => {
-          for (let m = 1; m <= 12; m++) {
-            const auto = version
-              ? computeAutoMonthly(version, contract.superficie_edificada_local, contract.metros_lineales_frente, year, m, fallbackDate)
-              : { arriendo: 0, ggcc: 0, fondo_promocion: 0, otros: 0 };
-            CATEGORIES.forEach(({ key }) => {
-              if (missing[key]) {
-                const ov = overrides[overrideKey(contractId, year, key)];
-                monthly[key][year].push(ov?.monthly_amount_clp || 0);
-              } else {
-                monthly[key][year].push(auto[key]);
-              }
-            });
-          }
-        });
+        const { clp, uf } = splitSeries(
+          buildContractMonths({
+            version,
+            superficie: contract.superficie_edificada_local,
+            metrosLinealesFrente: contract.metros_lineales_frente,
+            fallbackDate,
+            missing,
+            manualClp: (year, category) => overrides[overrideKey(contractId, year, category)]?.monthly_amount_clp || 0,
+            years: [currentYear, targetYear],
+            projection,
+          })
+        );
         return {
           contractId,
           name: contract.name,
           companyNames,
           missing,
-          monthly,
+          monthly: clp,
+          monthlyUf: uf,
           noVersion: !version,
           usedFallbackDate: !version?.effective_date && !!fallbackDate,
         };
       })
       .filter((x): x is ContractMonthlyData => x !== null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortedIds, contracts, versions, overrides, fallbackDateByContract, currentYear, targetYear, ufValue]);
+  }, [sortedIds, contracts, versions, overrides, fallbackDateByContract, currentYear, targetYear, projection]);
 
   const grandTotal = useMemo(() => {
     const totals: { [year: number]: number[] } = { [currentYear]: new Array(12).fill(0), [targetYear]: new Array(12).fill(0) };
@@ -493,14 +458,14 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     perContractData.forEach((c) => {
       [currentYear, targetYear].forEach((year) => {
         CATEGORIES.forEach(({ key, label }) => {
-          rows.push({ kind: "Contrato", name: c.name, company: c.companyNames.join(", "), category: label, manual: c.missing[key], year, months: c.monthly[key][year] });
+          rows.push({ kind: "Contrato", name: c.name, company: c.companyNames.join(", "), category: label, origin: c.missing[key] ? "Manual" : "Automático", year, months: c.monthly[key][year], monthsUf: c.monthlyUf[key][year] });
         });
       });
     });
     perItemData.forEach((it) => {
       [currentYear, targetYear].forEach((year) => {
         ITEM_CATEGORIES.forEach(({ key, label }) => {
-          rows.push({ kind: "Informativo", name: it.name, company: "", category: label, manual: true, year, months: it.monthly[key][year] });
+          rows.push({ kind: "Informativo", name: it.name, company: it.companyNames.join(", "), category: label, origin: "UF ingresada", year, months: it.monthly[key][year], monthsUf: it.monthlyUf[key][year] });
         });
       });
     });
@@ -555,6 +520,40 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
         <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : (
         <>
+          {/* UF estimada por mes: cada mes de Arriendo/GGCC/Fondo Promoción/Otros
+              automático = monto en UF × la UF estimada de ESE mes (ver
+              @/lib/budget/ufProjection, misma fórmula que el Excel). */}
+          <div className="rounded-lg border p-3 space-y-2">
+            <p className="text-xs font-medium">Valor UF estimado</p>
+            <p className="text-[11px] text-muted-foreground">
+              Proyectado con inflación de {(projection.annualInflation * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}% anual,
+              desde una UF inicial de {formatCLP(projection.initialUF)} en {MESES[projection.baseMonth - 1]} {projection.baseYear}. Los meses anteriores
+              usan la UF actual ({formatCLP(projection.currentUF)}). Los montos manuales (en pesos) no se proyectan.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr>
+                    <th className="text-left p-1 font-medium">Valor UF estimado</th>
+                    {MESES.map((m) => (
+                      <th key={m} className="text-right p-1 font-medium whitespace-nowrap">{m}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[currentYear, targetYear].map((year) => (
+                    <tr key={year} className="border-t">
+                      <td className="p-1 font-medium">{year}</td>
+                      {ufSeriesByYear[year].map((v, i) => (
+                        <td key={i} className="text-right p-1 whitespace-nowrap">{formatCLP(v)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Resumen gran total, por año */}
           <div className="rounded-lg bg-muted/50 p-3 space-y-2">
             <p className="text-xs font-medium">Total (todos los contratos)</p>
@@ -616,6 +615,13 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                                   </tr>
                                 </thead>
                                 <tbody>
+                                  <tr className="text-muted-foreground">
+                                    <td className="p-1 whitespace-nowrap italic">UF estimada</td>
+                                    {ufSeriesByYear[year].map((v, i) => (
+                                      <td key={i} className="text-right p-1 whitespace-nowrap">{formatCLP(v)}</td>
+                                    ))}
+                                    <td />
+                                  </tr>
                                   {CATEGORIES.map(({ key, label }) => {
                                     const values = c.monthly[key][year];
                                     const total = sumYear(values);
@@ -709,6 +715,13 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
                                   </tr>
                                 </thead>
                                 <tbody>
+                                  <tr className="text-muted-foreground">
+                                    <td className="p-1 whitespace-nowrap italic">UF estimada</td>
+                                    {ufSeriesByYear[year].map((v, i) => (
+                                      <td key={i} className="text-right p-1 whitespace-nowrap">{formatCLP(v)}</td>
+                                    ))}
+                                    <td />
+                                  </tr>
                                   {ITEM_CATEGORIES.map(({ key, label }) => {
                                     const values = it.monthly[key][year];
                                     const total = sumYear(values);
