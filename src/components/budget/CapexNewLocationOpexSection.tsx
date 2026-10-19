@@ -273,10 +273,10 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
     return () => { cancelled = true; };
   }, [currentYear, targetYear]);
 
-  // UF estimada de cada mes (inflación sobre la UF inicial; los meses
-  // anteriores al mes base usan la UF actual) -- ver @/lib/budget/ufProjection,
-  // misma fórmula que el Excel.
-  const projection = useMemo(() => defaultUFProjection(targetYear, ufValue), [targetYear, ufValue]);
+  // UF estimada de cada mes: la UF de HOY proyectada solo con la inflación desde
+  // el mes actual (sin ninguna UF inicial fija); los meses anteriores usan la UF
+  // de hoy -- ver @/lib/budget/ufProjection, misma fórmula que el Excel.
+  const projection = useMemo(() => defaultUFProjection(ufValue), [ufValue]);
   const ufSeriesByYear = useMemo(
     () => ({ [currentYear]: projectedUFSeries(projection, currentYear), [targetYear]: projectedUFSeries(projection, targetYear) }),
     [projection, currentYear, targetYear]
@@ -526,9 +526,9 @@ export function CapexNewLocationOpexSection({ contractIds, currentYear, targetYe
           <div className="rounded-lg border p-3 space-y-2">
             <p className="text-xs font-medium">Valor UF estimado</p>
             <p className="text-[11px] text-muted-foreground">
-              Proyectado con inflación de {(projection.annualInflation * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}% anual,
-              desde una UF inicial de {formatCLP(projection.initialUF)} en {MESES[projection.baseMonth - 1]} {projection.baseYear}. Los meses anteriores
-              usan la UF actual ({formatCLP(projection.currentUF)}). Los montos manuales (en pesos) no se proyectan.
+              Parte de la UF de hoy ({formatCLP(projection.baseUF)}, {MESES[projection.baseMonth - 1]} {projection.baseYear}) y crece solo con la
+              inflación de {(projection.annualInflation * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}% anual. Los meses anteriores usan la UF de hoy.
+              Los montos manuales (en pesos) no se proyectan.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">

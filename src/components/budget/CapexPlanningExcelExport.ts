@@ -48,15 +48,13 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   // Import dinámico: ExcelJS es pesado y solo se necesita al descargar.
   const ExcelJS = (await import("exceljs")).default;
   const { targetYear, currentYear, ufValue } = data;
-  // uf = valor UF del día (el que usó la app para convertir UF a pesos): solo
-  // sirve para recuperar el monto en UF de cada mes de Operativo y para los
-  // meses anteriores al mes base. ufInitial = valor UF inicial que ingresa el
-  // usuario (Resumen!B3), base de la proyección y de las columnas "Ref. UF".
+  // uf = UF de HOY (la de los indicadores). Es la base de la proyección: toda UF
+  // futura sale solo de aplicar la inflación a esta UF desde el mes actual, sin
+  // ninguna UF inicial fija. Constantes y fórmula en @/lib/budget/ufProjection,
+  // la MISMA que usa la pestaña Operativo en pantalla (así los montos coinciden).
   const uf = ufValue || 0;
-  // Proyección de UF: constantes y fórmula en @/lib/budget/ufProjection, la
-  // MISMA que usa la pestaña Operativo en pantalla (así los montos coinciden).
-  const projection = defaultUFProjection(targetYear, uf);
-  const ufInitial = projection.initialUF;
+  const projection = defaultUFProjection(uf);
+  const ufInitial = projection.baseUF;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "LeaseFlow Pro";
@@ -101,7 +99,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   wsResumen.addRow([
     `Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")} · Estado: ${data.closedAt ? `Cerrado el ${fmtDate(data.closedAt)}` : "Borrador (se recalcula en vivo)"}`,
   ]).font = { italic: true };
-  const ufRow = wsResumen.addRow([`Valor UF inicial ($) en el mes base — INGRESAR AQUÍ (base de la proyección de ${targetYear}; también divisor de las columnas Ref. UF)`, ufInitial]);
+  const ufRow = wsResumen.addRow(["UF de hoy ($) — base de la proyección por inflación (mes base en B5); también divisor de las columnas Ref. UF", ufInitial]);
   ufRow.getCell(2).numFmt = UF_FMT;
   ufRow.getCell(2).font = { bold: true, color: { argb: "FF0000FF" } };
   ufRow.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
@@ -111,20 +109,15 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   const BASE = "Resumen!$B$5";
   const inflRow = wsResumen.addRow(["Inflación anual estimada (para proyectar la UF mes a mes) — editable", projection.annualInflation]);
   inflRow.getCell(2).numFmt = "0.0%";
-  const baseRow = wsResumen.addRow(["Mes al que corresponde el Valor UF inicial (mes base) — editable", new Date(Date.UTC(baseYear, baseMonth - 1, 1))]);
+  const baseRow = wsResumen.addRow(["Mes al que corresponde la UF de hoy (mes base) — los meses anteriores usan esta misma UF", new Date(Date.UTC(baseYear, baseMonth - 1, 1))]);
   baseRow.getCell(2).numFmt = "mmm-yyyy";
   [inflRow, baseRow].forEach((r) => {
     r.getCell(2).font = { bold: true, color: { argb: "FF0000FF" } };
     r.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
   });
   // UF estimada de un mes (misma fórmula que la fila "Valor UF estimado" de Operativo).
-  // Meses anteriores al mes base: UF actual (Resumen!B6), sin proyectar.
-  const ACTUAL = "Resumen!$B$6";
+  // UF estimada de un mes (misma fórmula que la fila "Valor UF estimado" de Operativo).
   const estimatedUF = (year: number, month: number) => projectedUF(projection, year, month);
-  const actualRow = wsResumen.addRow(["UF actual a la fecha de descarga ($) — referencial; se usa en los meses anteriores al mes base", uf]);
-  actualRow.getCell(2).numFmt = UF_FMT;
-  actualRow.getCell(2).font = { bold: true, color: { argb: "FF0000FF" } };
-  actualRow.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
   wsResumen.addRow([]);
 
   // Monto de un mes de Operativo tal como lo calculan las fórmulas de la hoja
@@ -145,7 +138,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   // total. Cada tabla cierra con fila de total por mes (fórmula SUM).
   const operativoTotalCell: Record<number, string> = {};
   title(wsOperativo, `Presupuesto Operativo de Nuevos Locales ${currentYear}-${targetYear} (CLP)`);
-  wsOperativo.addRow(["Informativo: no integra el total de CAPEX. 'Automático' = monto en UF del mes × UF estimada de ESE mes (fila 'Valor UF estimado': Valor UF inicial de Resumen!B3, desde el mes base de Resumen!B5, proyectado con la inflación de Resumen!B4; meses anteriores al mes base usan la UF actual de Resumen!B6). 'Manual' = pesos ingresados a mano por falta de dato en el contrato (celdas azules, editables)."]).font = { italic: true };
+  wsOperativo.addRow(["Informativo: no integra el total de CAPEX. 'Automático' = monto en UF del mes × UF estimada de ESE mes (fila 'Valor UF estimado': UF de hoy de Resumen!B3 proyectada solo con la inflación de Resumen!B4 desde el mes base de Resumen!B5; los meses anteriores al mes base usan esa misma UF). 'Manual' = pesos ingresados a mano por falta de dato en el contrato (celdas azules, editables)."]).font = { italic: true };
   wsOperativo.addRow([]);
   const opCols = 6 + 12 + 1; // Tipo, Local, Empresa, Categoría, Origen, Año, 12 meses, Total
   [currentYear, targetYear].forEach((year) => {
@@ -155,7 +148,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
     const ufEstRow = wsOperativo.addRow(["", `Valor UF estimado (inflación ${(projection.annualInflation * 100).toFixed(1).replace(".", ",")}% anual por defecto, editable en Resumen!B4)`, "", "", "", year]);
     for (let m = 1; m <= 12; m++) {
       ufEstRow.getCell(6 + m).value = {
-        formula: `IF((($F${ufEstRow.number}-YEAR(${BASE}))*12+(${m}-MONTH(${BASE})))<0,${ACTUAL},${UF}*(1+${INFL})^((($F${ufEstRow.number}-YEAR(${BASE}))*12+(${m}-MONTH(${BASE})))/12))`,
+        formula: `${UF}*(1+${INFL})^(MAX(0,($F${ufEstRow.number}-YEAR(${BASE}))*12+(${m}-MONTH(${BASE})))/12)`,
         result: estimatedUF(year, m),
       };
       ufEstRow.getCell(6 + m).numFmt = UF_FMT;
@@ -213,7 +206,7 @@ export async function exportCapexPlanningToExcel(data: PlanningExcelData): Promi
   const refUF = (cell: string, amount: number) => ({ formula: `IF(${UF}=0,0,${cell}/${UF})`, result: ufInitial ? amount / ufInitial : 0 });
   const capexCols = 7;
   title(wsCapex, `Presupuesto CAPEX ${targetYear}`);
-  const ufRowCapex = wsCapex.addRow(["Valor UF inicial (referencial, se ingresa en hoja Resumen, celda B3):", null]);
+  const ufRowCapex = wsCapex.addRow(["UF de hoy (referencial, hoja Resumen, celda B3):", null]);
   ufRowCapex.getCell(2).value = { formula: UF, result: ufInitial };
   ufRowCapex.getCell(2).numFmt = UF_FMT;
   ufRowCapex.font = { italic: true };
