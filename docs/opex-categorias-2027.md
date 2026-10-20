@@ -11,6 +11,16 @@ El año 2026 no se toca: sus OC, presupuestos y reportes conservan las categorí
    - Papelera = **Retirar** (nunca se borra la categoría). Si tiene OPEX agregado o presupuesto 2027, la pantalla pide a
      qué categoría pasarlos (eso es una fusión).
    - La tabla muestra la categoría final sumando OC 2026, promedio, propuesta base y OPEX agregado de las originales.
+   - **Buscador por nombre** sobre la tabla (sin distinguir tildes ni mayúsculas; todas las palabras, en cualquier
+     orden). Muestra todos los resultados. La selección es acumulada: lo marcado se conserva al cambiar la búsqueda
+     y se ve como etiquetas sobre la tabla (con opción de quitar o limpiar). El destino de una fusión o retiro también
+     se elige con un selector con búsqueda.
+   - "Cambios de categorías 2027" lista por separado las **fusiones y renombres** (una fila por categoría final, con
+     todas las categorías que la forman) y los **retiros**.
+   - **Editar una fusión** (botón "Editar"): cambiar el nombre de la categoría final (solo si la creó la fusión; una
+     categoría que ya existía no se renombra, porque su nombre también rige para 2026), quitar categorías y agregar otras
+     con búsqueda. La fusión debe conservar al menos una categoría. "Deshacer" en una fusión la deshace completa (primero
+     los lotes que solo agregaron categorías y al final el que creó la categoría final).
    - Cada cambio se puede **deshacer** mientras no se haya ejecutado "Aplicar categorías 2027".
 2. **Cierre de 2026** (`OpexCloseYear`, sin cambios de lógica): copia `opex_master_budget` a 2027 y crea
    `opex_local_additional` 2027 por los montos no facturados, **con las categorías antiguas**.
@@ -33,12 +43,13 @@ y en "Por categoría" si hay categorías retiradas sin destino que tienen presup
 - `opex_categories.valid_from_year` / `valid_to_year` (NULL = sin límite). "Eliminar" = `valid_to_year = 2026`.
 - `opex_category_mappings` (lote, año, categoría antigua, categoría nueva o NULL si se retira, `applied_at`).
 - Funciones `merge_opex_categories`, `retire_opex_category`, `undo_opex_category_change`,
-  `apply_opex_category_mappings`; ayudas internas `opex_first_category_year` (2027), `opex_assert_category_year_open`,
+  `apply_opex_category_mappings`, `update_opex_category_merge` (editar una fusión; migración
+  `20261021120000_opex_category_merge_edit.sql`); ayudas internas `opex_first_category_year` (2027), `opex_assert_category_year_open`,
   `opex_lock_sources_for_change`. Todas **SECURITY INVOKER**; `REVOKE` de PUBLIC y anon, `GRANT` a authenticated.
 - Trigger `trg_po_opex_category_year` en `purchase_orders`: una OC solo puede usar categorías vigentes en el **año de su
   fecha de OC** (`order_date`). En UPDATE solo valida si cambian de verdad la categoría o la fecha, así una OC anterior
   a una fusión se puede seguir editando (por ejemplo, para agregar una factura). El mensaje de error está en español.
-- Orden de aplicación: `20261016120000` (plan items) → `20261016180000` (exclusiones) → `20261020120000` (este).
+- Orden de aplicación: `20261016120000` (plan items) → `20261016180000` (exclusiones) → `20261020120000` (categorías por año) → `20261021120000` (editar fusiones).
 
 ### Cómo aplicarlo (orden exacto, en el proyecto Supabase `ilcumthwzhmtumaklgvo`)
 
@@ -85,11 +96,33 @@ SELECT
   (SELECT count(*) FROM public.opex_category_mappings) AS cambios_registrados__esperado_0;
 ```
 
+Verificación de `20261021120000` (editar fusiones; el valor esperado va en cada fila):
+```sql
+WITH checks(orden, revision, esperado, obtenido) AS (
+  VALUES
+  (1, 'Función update_opex_category_merge creada', '1',
+     (SELECT count(*)::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'update_opex_category_merge')),
+  (2, 'Con permisos de creador (SECURITY DEFINER)', '0',
+     (SELECT count(*)::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'update_opex_category_merge' AND p.prosecdef)),
+  (3, 'Usuarios sin sesión (anon) pueden usarla', 'false',
+     has_function_privilege('anon', 'public.update_opex_category_merge(integer,uuid,text,uuid[],uuid[])', 'EXECUTE')::text),
+  (4, 'Usuarios con sesión (authenticated) pueden usarla', 'true',
+     has_function_privilege('authenticated', 'public.update_opex_category_merge(integer,uuid,text,uuid[],uuid[])', 'EXECUTE')::text)
+)
+SELECT orden, revision, esperado, obtenido,
+       CASE WHEN esperado = obtenido THEN '✅ OK' ELSE '⚠️ REVISAR' END AS resultado
+FROM checks
+ORDER BY orden;
+```
+
 ### Reversión
 
 Solo si **no hay cambios de categorías activos** (si los hay, primero deshacerlos desde la app; si ya se aplicaron, no hay
 vuelta atrás automática porque las filas de 2027 quedaron sumadas: restaurar desde el respaldo).
 ```sql
+DROP FUNCTION IF EXISTS public.update_opex_category_merge(INTEGER, UUID, TEXT, UUID[], UUID[]);  -- solo si se aplicó 20261021120000
 DROP TRIGGER IF EXISTS trg_po_opex_category_year ON public.purchase_orders;
 DROP FUNCTION IF EXISTS public.check_po_opex_category_year();
 DROP FUNCTION IF EXISTS public.apply_opex_category_mappings(INTEGER);

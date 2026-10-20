@@ -9,7 +9,9 @@
   "Aplicar categorías 2027" después del cierre. Detalle, orden de aplicación y reversión en `docs/opex-categorias-2027.md`.
 - Los selectores de OC, proveedores, plantilla y carga Excel de presupuesto muestran solo las categorías vigentes en el
   año de la fecha de la OC; un trigger en `purchase_orders` lo exige en la base. Mensajes de error en español.
-- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`.
+- Planificación: buscador de categorías con selección acumulada, retiros separados de las fusiones y edición de una
+  fusión (nombre, agregar y quitar categorías) con deshacer de la fusión completa.
+- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`, `20261021120000`.
 
 ### Etapa 5 — Refactoring (2026-06-29)
 - Eliminado sistema visual de permisos Lovable-era: `SelectableElement`, `FloatingPermissionSelector`, `PermissionSelectionContext`
