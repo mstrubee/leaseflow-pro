@@ -18,7 +18,8 @@ import { OpexPlanLines } from "@/components/opex/OpexPlanLines";
 import { OpexGeneralAmountCell } from "@/components/opex/OpexGeneralAmountCell";
 import { OpexCategoryChangeDialog, type CategoryActionMode } from "@/components/opex/OpexCategoryChangeDialog";
 import { OpexCategoryChangesPanel } from "@/components/opex/OpexCategoryChangesPanel";
-import { useOpexCategoryChanges } from "@/components/opex/useOpexCategoryChanges";
+import { OpexMergeEditDialog } from "@/components/opex/OpexMergeEditDialog";
+import { useOpexCategoryChanges, type CategoryFusion } from "@/components/opex/useOpexCategoryChanges";
 import { matchesSearch, resolveCategoryId, selectionState, updateSelection } from "@/lib/opexCategories";
 import { OpexCategorySelectionBar } from "@/components/opex/OpexCategorySelectionBar";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -77,6 +78,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
   const [categorySearch, setCategorySearch] = useState("");
   const [changeDialog, setChangeDialog] = useState<{ mode: CategoryActionMode; sourceIds: string[]; batchId?: string } | null>(null);
   const [retireConfirmId, setRetireConfirmId] = useState<string | null>(null);
+  const [editingFusion, setEditingFusion] = useState<CategoryFusion | null>(null);
 
   const months = useMemo(() => monthsElapsed(baseYear), [baseYear]);
 
@@ -450,6 +452,8 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                 planYear={planYear}
                 baseYear={baseYear}
                 batches={categoryChanges.batches}
+                fusions={categoryChanges.fusions}
+                retirements={categoryChanges.retirements}
                 locked={categoryChanges.locked}
                 baseYearClosed={categoryChanges.baseYearClosed}
                 busy={categoryChanges.busy}
@@ -460,6 +464,8 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                 droppedClp={dropped.total}
                 categoryName={categoryName}
                 onUndo={categoryChanges.undo}
+                onEditFusion={setEditingFusion}
+                onUndoFusion={categoryChanges.undoFusion}
                 onApply={categoryChanges.apply}
                 onReassign={(batchId, categoryId) => setChangeDialog({ mode: "reassign", sourceIds: [categoryId], batchId })}
               />
@@ -799,6 +805,24 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
             if (mode === "reassign" && batchId && toId) return categoryChanges.reassignRetired(batchId, sourceIds[0], toId);
             return categoryChanges.merge(sourceIds, toId, toName);
           }}
+        />
+      )}
+      {editingFusion && (
+        <OpexMergeEditDialog
+          key={editingFusion.toId}
+          planYear={planYear}
+          fusion={editingFusion}
+          categoryName={categoryName}
+          // No se ofrecen la categoría final, las que ya están en la fusión ni las que reciben otra fusión.
+          candidates={categories.filter(
+            (c) =>
+              c.id !== editingFusion.toId &&
+              !editingFusion.fromIds.includes(c.id) &&
+              !categoryChanges.fusions.some((f) => f.toId === c.id),
+          )}
+          busy={categoryChanges.busy}
+          onClose={() => setEditingFusion(null)}
+          onSubmit={categoryChanges.updateFusion}
         />
       )}
       <AlertDialog open={retireConfirmId !== null} onOpenChange={(o) => !o && setRetireConfirmId(null)}>

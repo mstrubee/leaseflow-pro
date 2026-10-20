@@ -20,6 +20,18 @@ export interface CategoryChangeBatch {
   applied: boolean;
 }
 
+// Una fusión (o renombre) = la categoría final con todas las categorías que apuntan a ella en el año planificado.
+// Puede estar formada por varios lotes si después se le agregaron categorías.
+export interface CategoryFusion {
+  toId: string;
+  fromIds: string[];
+  batches: Array<{ batchId: string; targetCreated: boolean }>;
+  applied: boolean;
+  // La categoría final la creó una fusión de este año: solo entonces puede renombrarse (no cambia años anteriores).
+  createdByChange: boolean;
+  kind: "merge" | "rename";
+}
+
 export interface ApplyCategoriesResult {
   mappings_applied: number;
   budget_rows_merged: number;
@@ -111,6 +123,27 @@ export const useOpexCategoryChanges = ({ baseYear, planYear, enabled, planItemCa
     }));
   }, [mappings]);
 
+  const fusions = useMemo<CategoryFusion[]>(() => {
+    const byTarget = new Map<string, CategoryMapping[]>();
+    mappings.forEach((m) => {
+      if (m.to_category_id) byTarget.set(m.to_category_id, [...(byTarget.get(m.to_category_id) ?? []), m]);
+    });
+    return Array.from(byTarget, ([toId, rows]) => {
+      const batchFlags = new Map<string, boolean>();
+      rows.forEach((r) => batchFlags.set(r.batch_id, (batchFlags.get(r.batch_id) ?? false) || r.target_created));
+      const createdByChange = rows.some((r) => r.target_created);
+      return {
+        toId,
+        fromIds: rows.map((r) => r.from_category_id),
+        batches: Array.from(batchFlags, ([batchId, targetCreated]) => ({ batchId, targetCreated })),
+        applied: rows.some((r) => r.applied_at !== null),
+        createdByChange,
+        kind: rows.length === 1 && createdByChange ? ("rename" as const) : ("merge" as const),
+      };
+    });
+  }, [mappings]);
+  const retirements = useMemo(() => batches.filter((b) => b.kind === "retire"), [batches]);
+
   const pendingBatches = useMemo(() => batches.filter((b) => !b.applied), [batches]);
   // Con algún cambio ya aplicado, fusionar, retirar y deshacer quedan bloqueados para ese año.
   const locked = useMemo(() => mappings.some((m) => m.applied_at !== null), [mappings]);
@@ -192,6 +225,48 @@ export const useOpexCategoryChanges = ({ baseYear, planYear, enabled, planItemCa
     return ok;
   };
 
+  // Edita una fusión: nombre de la categoría final, categorías que se agregan y categorías que se quitan (todo o nada).
+  const updateFusion = async (input: { toId: string; newName: string | null; add: string[]; remove: string[] }) => {
+    const ok = await run(
+      () =>
+        supabase.rpc("update_opex_category_merge", {
+          p_year: planYear,
+          p_to_id: input.toId,
+          p_new_name: input.newName,
+          p_add: input.add,
+          p_remove: input.remove,
+        }),
+      "No se pudo editar la fusión",
+    );
+    if (ok) {
+      toast.success("Fusión actualizada");
+      await refresh();
+    }
+    return ok;
+  };
+
+  // Deshace una fusión completa: primero los lotes que solo agregaron categorías y al final el que creó la categoría final
+  // (la base no deja deshacer ese mientras otro lote la use). Si uno falla, se recarga para mostrar lo que quedó.
+  const undoFusion = async (fusion: CategoryFusion) => {
+    const ordered = [...fusion.batches].sort((a, b) => Number(a.targetCreated) - Number(b.targetCreated));
+    setBusy(true);
+    try {
+      for (const batch of ordered) {
+        const { error } = await supabase.rpc("undo_opex_category_change", { p_batch: batch.batchId });
+        if (error) {
+          toast.error(errorText(error, "No se pudo deshacer la fusión"));
+          await refresh();
+          return false;
+        }
+      }
+      toast.success("Fusión deshecha");
+      await refresh();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Una retirada sin destino que tiene montos pasa a ser una fusión: se deshace el retiro y se fusiona con el destino.
   // Son dos llamadas; si la segunda falla, la categoría queda vigente de nuevo (sin pérdida de datos).
   const reassignRetired = async (batchId: string, categoryId: string, toId: string) => {
@@ -235,6 +310,8 @@ export const useOpexCategoryChanges = ({ baseYear, planYear, enabled, planItemCa
     mappings,
     mappingIndex,
     batches,
+    fusions,
+    retirements,
     pendingBatches,
     locked,
     baseYearClosed,
@@ -248,6 +325,8 @@ export const useOpexCategoryChanges = ({ baseYear, planYear, enabled, planItemCa
     merge,
     retire,
     undo,
+    updateFusion,
+    undoFusion,
     reassignRetired,
     apply,
   };

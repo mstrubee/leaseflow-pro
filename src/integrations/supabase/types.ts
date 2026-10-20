@@ -7598,6 +7598,10 @@ export type Database = {
         Args: { p_category_id: string; p_year: number }
         Returns: string
       }
+      update_opex_category_merge: {
+        Args: { p_add: string[]; p_new_name: string | null; p_remove: string[]; p_to_id: string; p_year: number }
+        Returns: undefined
+      }
       undo_opex_category_change: {
         Args: { p_batch: string }
         Returns: undefined
