@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage, extractStoragePath } from "@/lib/storageUtils";
 import { useAuth } from "@/hooks/useAuth";
 import { ReconcileImportsDialog } from "@/components/budget/ReconcileImportsDialog";
+import { opexCategoryErrorMessage } from "@/lib/opexCategories";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
   OCSupplier, GroupedOC, OCAllocation, OCRowStatus, DuplicateResolution,
@@ -623,6 +624,12 @@ export default function BulkOCImport() {
 
     let inserted = 0;
     let verified  = 0;
+    // OC que la base rechazó porque su categoría no está vigente en el año de la fecha (mensaje en español del trigger).
+    const rejectedByCategory: string[] = [];
+    const noteCategoryRejection = (orderNumber: string, err: unknown) => {
+      const message = opexCategoryErrorMessage(err);
+      if (message) rejectedByCategory.push(`OC ${orderNumber}: ${message}`);
+    };
 
     for (let i = 0; i < toImport.length; i++) {
       const g = toImport[i];
@@ -684,7 +691,10 @@ export default function BulkOCImport() {
                   import_pending_local: false,
                 } as any)
                 .eq("id", row.id));
-              if (updErr) console.error("Error al reemplazar asignación de OC", g.orderNumber, row.contractId, updErr);
+              if (updErr) {
+                console.error("Error al reemplazar asignación de OC", g.orderNumber, row.contractId, updErr);
+                noteCategoryRejection(g.orderNumber, updErr);
+              }
               await (supabase
                 .from("purchase_order_contract_allocations")
                 .update({ amount_clp: alloc.amountClp, amount_uf: ufValue > 0 ? alloc.amountClp / ufValue : 0 } as any)
@@ -721,6 +731,7 @@ export default function BulkOCImport() {
                 .single() as any);
               if (insErr) {
                 console.error("Error al agregar contrato nuevo a OC existente", g.orderNumber, contractId, insErr);
+                noteCategoryRejection(g.orderNumber, insErr);
                 continue;
               }
               await supabase.from("purchase_order_contract_allocations").insert({
@@ -747,6 +758,7 @@ export default function BulkOCImport() {
             .eq("id", g.existingId));
           if (updErr) {
             console.error("Error al reemplazar OC", g.orderNumber, updErr);
+            noteCategoryRejection(g.orderNumber, updErr);
           } else {
             inserted++;
           }
@@ -779,7 +791,11 @@ export default function BulkOCImport() {
           .select("id")
           .single() as any);
 
-        if (insertErr) { console.error(insertErr); continue; }
+        if (insertErr) {
+          console.error(insertErr);
+          noteCategoryRejection(g.orderNumber, insertErr);
+          continue;
+        }
 
         if (newOC?.id) {
           const allocRows = g.allocations
@@ -807,6 +823,11 @@ export default function BulkOCImport() {
     const parts = [`${inserted} OC importadas`];
     if (verified > 0) parts.push(`${verified} verificadas sin cambios`);
     toast.success(`${parts.join(", ")}.`);
+    if (rejectedByCategory.length > 0) {
+      toast.error(`${rejectedByCategory.length} OC no se importaron: ${rejectedByCategory.slice(0, 3).join(" | ")}`, {
+        duration: 15000,
+      });
+    }
 
     const { data: freshBatches, error: freshErr } = await supabase
       .from("oc_import_batches" as any)
