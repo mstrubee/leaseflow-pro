@@ -2,6 +2,15 @@
 
 ## [Unreleased] — rama `migration`
 
+### OPEX — planificación del año siguiente y categorías por año (2026-10-20)
+- Botón "Planificar Presupuesto 2027" en `/opex` (ADMIN): análisis por categoría, mes, local y proveedor, OPEX agregado
+  (general o desde un contrato vigente), edición directa del monto general, exclusión (tarjado) de líneas con "Excluidas".
+- Categorías por año: fusionar, renombrar y retirar **desde 2027** (el 2026 no se toca), con deshacer y el paso
+  "Aplicar categorías 2027" después del cierre. Detalle, orden de aplicación y reversión en `docs/opex-categorias-2027.md`.
+- Los selectores de OC, proveedores, plantilla y carga Excel de presupuesto muestran solo las categorías vigentes en el
+  año de la fecha de la OC; un trigger en `purchase_orders` lo exige en la base. Mensajes de error en español.
+- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`.
+
 ### Etapa 5 — Refactoring (2026-06-29)
 - Eliminado sistema visual de permisos Lovable-era: `SelectableElement`, `FloatingPermissionSelector`, `PermissionSelectionContext`
 - Limpiados 11 archivos de imports y wrappers vacíos (-834 líneas)
