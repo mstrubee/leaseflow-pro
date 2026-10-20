@@ -25,6 +25,7 @@ import { syncOCRequestLinesFromPurchaseOrder } from "@/lib/ocRequestLines";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
+import { categoriesForYear, isCategoryValidForYear, yearFromDate } from "@/lib/opexCategories";
 
 interface PurchaseOrder {
   id: string;
@@ -86,6 +87,9 @@ interface OpexCategory {
   name: string;
   display_order: number;
   supplier_category_id: string | null;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface Supplier {
@@ -122,6 +126,14 @@ export const PurchaseOrdersModule = ({
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  // La fecha de la OC define qué categorías puede usar (las fusionadas o retiradas dejan de aparecer desde su año).
+  // Se conserva la categoría actual del registro para que una OC anterior al cambio siga mostrándola.
+  const categoriesForOrderDate = (orderDate: string | null | undefined, currentId?: string | null) =>
+    categoriesForYear(opexCategories, yearFromDate(orderDate, selectedYear), [currentId]);
+  const isCategoryOutdatedForDate = (categoryId: string | null | undefined, orderDate: string | null | undefined) => {
+    const category = categoryId ? opexCategories.find((c) => c.id === categoryId) : undefined;
+    return !!category && !isCategoryValidForYear(category, yearFromDate(orderDate, selectedYear));
+  };
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [opexMasterBudget, setOpexMasterBudget] = useState<OpexBudgetData[]>([]);
   const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number; totalInvoicedCLP: number; totalCreditNotesCLP: number }>>({});
@@ -395,7 +407,7 @@ export const PurchaseOrdersModule = ({
     try {
       const { data, error } = await supabase
         .from("opex_categories")
-        .select("id, name, display_order, supplier_category_id")
+        .select("id, name, display_order, supplier_category_id, is_active, valid_from_year, valid_to_year")
         .eq("is_active", true)
         .order("display_order", { ascending: true });
 
@@ -1528,7 +1540,7 @@ export const PurchaseOrdersModule = ({
                       <SelectValue placeholder="Seleccione una categoría OPEX" />
                     </SelectTrigger>
                     <SelectContent>
-                      {opexCategories.map((category) => {
+                      {categoriesForOrderDate(newOrder.order_date, newOrder.opex_category_id).map((category) => {
                         const available = getAvailableOpexForCategory(category.id);
                         const budgetEntry = opexMasterBudget.find(b => b.category_id === category.id);
                         return (
@@ -1546,6 +1558,11 @@ export const PurchaseOrdersModule = ({
                       })}
                     </SelectContent>
                   </Select>
+                  {isCategoryOutdatedForDate(newOrder.opex_category_id, newOrder.order_date) && (
+                    <p className="text-xs text-amber-600">
+                      Esta categoría no está vigente para la fecha de la OC: elige una categoría vigente ese año.
+                    </p>
+                  )}
                   {opexCategories.length === 0 && (
                     <p className="text-xs text-amber-600">No hay categorías OPEX configuradas</p>
                   )}
@@ -1925,7 +1942,7 @@ export const PurchaseOrdersModule = ({
                       <SelectValue placeholder="Seleccione una categoría OPEX" />
                     </SelectTrigger>
                     <SelectContent>
-                      {opexCategories.map((category) => {
+                      {categoriesForOrderDate(editFormData.order_date, editFormData.opex_category_id).map((category) => {
                         const available = getAvailableOpexForCategory(category.id);
                         const budgetEntry = opexMasterBudget.find(b => b.category_id === category.id);
                         return (

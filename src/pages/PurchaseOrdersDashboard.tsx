@@ -107,6 +107,7 @@ import { loadBudgetTotals } from "@/lib/budgetTotals";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
 import { Building2, Store } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
+import { categoriesForYear, isCategoryValidForYear, yearFromDate } from "@/lib/opexCategories";
 
 interface Invoice {
   id: string;
@@ -228,6 +229,9 @@ interface OCRequiredGroup {
 interface OpexCategory {
   id: string;
   name: string;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface ChartData {
@@ -546,7 +550,7 @@ const PurchaseOrdersDashboard = () => {
       // Load OPEX categories
       const { data: categoriesData } = await supabase
         .from("opex_categories")
-        .select("id, name")
+        .select("id, name, is_active, valid_from_year, valid_to_year")
         .eq("is_active", true)
         .order("display_order");
       setOpexCategories(categoriesData || []);
@@ -5317,10 +5321,21 @@ const PurchaseOrdersDashboard = () => {
                     onValueChange={(v) => setEditingOCData({ ...editingOCData, opex_category_id: v === "none" ? null : v })}
                     options={[
                       { value: "none", label: "Sin categoría" },
-                      ...opexCategories.map((cat) => ({ value: cat.id, label: cat.name })),
+                      // Solo categorías vigentes en el año de la fecha de la OC (más la actual de esta OC).
+                      ...categoriesForYear(opexCategories, yearFromDate(editingOCData.order_date), [editingOCData.opex_category_id]).map(
+                        (cat) => ({ value: cat.id, label: cat.name }),
+                      ),
                     ]}
                     placeholder="Seleccionar categoría"
                   />
+                  {(() => {
+                    const current = opexCategories.find((c) => c.id === editingOCData.opex_category_id);
+                    return current && !isCategoryValidForYear(current, yearFromDate(editingOCData.order_date)) ? (
+                      <p className="text-xs text-amber-600">
+                        Esta categoría no está vigente para la fecha de la OC: elige una categoría vigente ese año.
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
               );
             })()}

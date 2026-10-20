@@ -10,14 +10,28 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarRange, Globe, Plus, Search, Trash2 } from "lucide-react";
+import { CalendarRange, Globe, Merge, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
+import { OpexPlanLines } from "@/components/opex/OpexPlanLines";
+import { OpexGeneralAmountCell } from "@/components/opex/OpexGeneralAmountCell";
+import { OpexCategoryChangeDialog, type CategoryActionMode } from "@/components/opex/OpexCategoryChangeDialog";
+import { OpexCategoryChangesPanel } from "@/components/opex/OpexCategoryChangesPanel";
+import { useOpexCategoryChanges } from "@/components/opex/useOpexCategoryChanges";
+import { resolveCategoryId } from "@/lib/opexCategories";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   buildCategoryPlan,
+  buildPlanLines,
+  droppedByRetirement,
   monthsElapsed,
+  orderAmountClp,
   rankBy,
   sumByMonth,
+  type PlanLine,
+  type PlanningItem,
   type PlanningOrder,
 } from "@/lib/opexPlanning";
 
@@ -25,19 +39,10 @@ interface OpexPlanningDialogProps {
   // Año con datos reales; se planifica baseYear + 1.
   baseYear: number;
   ufValue: number;
-  categories: Array<{ id: string; name: string }>;
-  // Para que la página recargue categorías cuando el ADMIN crea una nueva.
+  // Para que la página recargue categorías cuando el ADMIN crea, fusiona, renombra o retira una.
   onCategoriesChange?: () => void;
   // Contratos vigentes (estado "firmado"), ya cargados por la página.
-  contracts: Array<{ id: string; name: string }>;
-}
-
-interface PlanItem {
-  id: string;
-  category_id: string;
-  amount_clp: number;
-  source_contract_id: string | null;
-  notes: string | null;
+  contracts: Array<{ id: string; name: string; company_names?: string[] }>;
 }
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -48,48 +53,59 @@ const formatClp = (value: number) => `$ ${Math.round(value).toLocaleString("es-C
 const GLOBAL_KEY = "__global__";
 const NEW_CATEGORY_VALUE = "__new__";
 
-export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategories, onCategoriesChange, contracts }: OpexPlanningDialogProps) => {
+export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, contracts }: OpexPlanningDialogProps) => {
   const { isAdmin, user } = useAuth();
   const planYear = baseYear + 1;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<PlanningOrder[]>([]);
-  const [items, setItems] = useState<PlanItem[]>([]);
+  const [items, setItems] = useState<PlanningItem[]>([]);
+  // OC OPEX excluidas (tachadas) de la propuesta del año planificado.
+  const [excludedOrderIds, setExcludedOrderIds] = useState<Set<string>>(new Set());
+  const [busyLineKey, setBusyLineKey] = useState<string | null>(null);
+  // Edición directa del OPEX general en "Por categoría".
+  const [savingCategoryId, setSavingCategoryId] = useState<string | null>(null);
+  const [pendingGeneral, setPendingGeneral] = useState<{ categoryId: string; amount: number } | null>(null);
   const [indexationPct, setIndexationPct] = useState(DEFAULT_INDEXATION_PCT);
 
   // Formulario "Agregar OPEX": GLOBAL_KEY (sin contrato) o el id de un contrato vigente.
   const [contractSearch, setContractSearch] = useState("");
   const [activeFormKey, setActiveFormKey] = useState<string | null>(null);
-  // Categorías creadas en esta ventana (la página las recibe recién al recargar).
-  const [createdCategories, setCreatedCategories] = useState<Array<{ id: string; name: string }>>([]);
-
-  const categories = useMemo(() => {
-    const known = new Set(propCategories.map((c) => c.id));
-    return [...propCategories, ...createdCategories.filter((c) => !known.has(c.id))];
-  }, [propCategories, createdCategories]);
+  // Fusionar, renombrar y retirar categorías (rigen desde el año planificado).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [changeDialog, setChangeDialog] = useState<{ mode: CategoryActionMode; sourceIds: string[]; batchId?: string } | null>(null);
+  const [retireConfirmId, setRetireConfirmId] = useState<string | null>(null);
 
   const months = useMemo(() => monthsElapsed(baseYear), [baseYear]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersRes, itemsRes] = await Promise.all([
+      const [ordersRes, itemsRes, exclusionsRes] = await Promise.all([
         supabase
           .from("purchase_orders")
-          .select("amount_clp, amount_uf, order_date, opex_category_id, supplier_name, contracts(name), suppliers(name)")
+          .select(
+            "id, order_number, description, amount_clp, amount_uf, order_date, opex_category_id, supplier_name, contracts(name, contract_companies(companies(name))), suppliers(name)",
+          )
           .eq("year", baseYear)
           .is("deleted_at", null)
           .or("budget_classification.eq.OPEX,opex_category_id.not.is.null"),
         supabase
           .from("opex_budget_plan_items")
-          .select("id, category_id, amount_clp, source_contract_id, notes")
+          .select("id, category_id, amount_clp, source_contract_id, notes, excluded_at")
           .eq("year", planYear)
           .order("created_at", { ascending: false }),
+        supabase.from("opex_budget_plan_exclusions").select("purchase_order_id").eq("year", planYear),
       ]);
       if (ordersRes.error) throw ordersRes.error;
       if (itemsRes.error) throw itemsRes.error;
+      if (exclusionsRes.error) throw exclusionsRes.error;
       setOrders(
         (ordersRes.data || []).map((o) => ({
+          id: o.id,
+          order_number: o.order_number,
+          description: o.description,
+          company_names: getCompanyNames(o.contracts?.contract_companies),
           amount_clp: o.amount_clp,
           amount_uf: o.amount_uf,
           order_date: o.order_date,
@@ -99,6 +115,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
         })),
       );
       setItems(itemsRes.data || []);
+      setExcludedOrderIds(new Set((exclusionsRes.data || []).map((e) => e.purchase_order_id)));
     } catch (error) {
       console.error("Error loading OPEX planning data:", error);
       toast.error("Error al cargar el análisis de OPEX");
@@ -111,13 +128,44 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
     if (open) loadData();
   }, [open, loadData]);
 
+  const planItemCategoryIds = useMemo(() => new Set(items.map((i) => i.category_id)), [items]);
+  const categoryChanges = useOpexCategoryChanges({
+    baseYear,
+    planYear,
+    enabled: open,
+    planItemCategoryIds,
+    onChanged: () => {
+      setSelectedIds(new Set());
+      loadData();
+      onCategoriesChange?.();
+    },
+  });
+  const categories = categoryChanges.planCategories;
+
+  // Solo lo no excluido alimenta la propuesta y los análisis.
+  const activeOrders = useMemo(() => orders.filter((o) => !excludedOrderIds.has(o.id)), [orders, excludedOrderIds]);
+  const activeItems = useMemo(() => items.filter((i) => i.excluded_at === null), [items]);
+
   const plan = useMemo(
-    () => buildCategoryPlan({ orders, categories, items, months, indexationPct, ufValue }),
-    [orders, categories, items, months, indexationPct, ufValue],
+    () =>
+      buildCategoryPlan({
+        orders: activeOrders,
+        categories,
+        items: activeItems,
+        months,
+        indexationPct,
+        ufValue,
+        categoryIndex: categoryChanges.mappingIndex,
+      }),
+    [activeOrders, categories, activeItems, months, indexationPct, ufValue, categoryChanges.mappingIndex],
   );
-  const monthlyReal = useMemo(() => sumByMonth(orders, ufValue), [orders, ufValue]);
-  const topLocals = useMemo(() => rankBy(orders, (o) => o.contract_name, ufValue), [orders, ufValue]);
-  const topSuppliers = useMemo(() => rankBy(orders, (o) => o.supplier_name, ufValue), [orders, ufValue]);
+  const dropped = useMemo(
+    () => droppedByRetirement(activeOrders, categoryChanges.mappingIndex, ufValue),
+    [activeOrders, categoryChanges.mappingIndex, ufValue],
+  );
+  const monthlyReal = useMemo(() => sumByMonth(activeOrders, ufValue), [activeOrders, ufValue]);
+  const topLocals = useMemo(() => rankBy(activeOrders, (o) => o.contract_name, ufValue), [activeOrders, ufValue]);
+  const topSuppliers = useMemo(() => rankBy(activeOrders, (o) => o.supplier_name, ufValue), [activeOrders, ufValue]);
 
   const totals = useMemo(
     () =>
@@ -134,8 +182,37 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
     [plan],
   );
 
-  const categoryName = (id: string) => categories.find((c) => c.id === id)?.name || "Sin categoría";
-  const contractName = (id: string | null) => (id ? contracts.find((c) => c.id === id)?.name || "Contrato" : "—");
+  // Nombre de cualquier categoría (también las retiradas, que siguen existiendo para el histórico).
+  const categoryName = useCallback(
+    (id: string | null) => (id ? categoryChanges.allCategories.find((c) => c.id === id)?.name || "Sin categoría" : "Sin categoría"),
+    [categoryChanges.allCategories],
+  );
+  // Gasto del año base (sin excluidas) de una categoría, según su categoría original en las OC.
+  const baseSpendOf = (categoryId: string) =>
+    activeOrders.filter((o) => o.opex_category_id === categoryId).reduce((sum, o) => sum + orderAmountClp(o, ufValue), 0);
+
+  // En "Líneas": la categoría final de 2027, con la original entre paréntesis si cambió.
+  const lineCategoryName = useCallback(
+    (id: string | null) => {
+      if (!id) return "Sin categoría";
+      const final = resolveCategoryId(id, categoryChanges.mappingIndex);
+      if (final === null) return `${categoryName(id)} (retirada)`;
+      return final === id ? categoryName(id) : `${categoryName(final)} (antes: ${categoryName(id)})`;
+    },
+    [categoryChanges.mappingIndex, categoryName],
+  );
+  const contractInfo = useCallback(
+    (id: string | null) => {
+      const contract = id ? contracts.find((c) => c.id === id) : undefined;
+      return { name: id ? contract?.name || "Contrato" : null, companyNames: contract?.company_names ?? [] };
+    },
+    [contracts],
+  );
+
+  const lines = useMemo(
+    () => buildPlanLines({ orders, items, excludedOrderIds, contractCompanyNames: contractInfo, ufValue }),
+    [orders, items, excludedOrderIds, contractInfo, ufValue],
+  );
 
   const filteredContracts = useMemo(() => {
     const term = contractSearch.trim().toLowerCase();
@@ -148,7 +225,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
       toast.error("Ingresa un nombre para la categoría");
       return null;
     }
-    const existing = categories.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    const existing = categoryChanges.allCategories.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
     if (existing) {
       toast.info("Esa categoría ya existe; quedó seleccionada");
       return existing.id;
@@ -170,8 +247,8 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
       toast.error(error?.code === "23505" ? "Ya existe una categoría con ese nombre" : "No se pudo crear la categoría");
       return null;
     }
-    setCreatedCategories((prev) => [...prev, data]);
     toast.success("Categoría creada");
+    await categoryChanges.reload();
     onCategoriesChange?.();
     return data.id;
   };
@@ -208,6 +285,90 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
       return;
     }
     toast.success("OPEX eliminado");
+    loadData();
+  };
+
+  // Fija el OPEX general (sin contrato) de una categoría: 0 lo borra, y los totales se
+  // recalculan al guardar porque salen de `items`. Las líneas excluidas no se tocan.
+  const applyGeneralAmount = async (categoryId: string, amount: number) => {
+    const general = items.filter((i) => i.category_id === categoryId && !i.source_contract_id && i.excluded_at === null);
+    setSavingCategoryId(categoryId);
+    try {
+      if (amount <= 0) {
+        if (general.length > 0) {
+          const ids = general.map((i) => i.id);
+          const { error } = await supabase.from("opex_budget_plan_items").delete().in("id", ids);
+          if (error) throw error;
+          setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+        }
+      } else if (general.length === 0) {
+        const { data, error } = await supabase
+          .from("opex_budget_plan_items")
+          .insert({ year: planYear, category_id: categoryId, amount_clp: amount, source_contract_id: null, created_by: user?.id ?? null })
+          .select("id, category_id, amount_clp, source_contract_id, notes, excluded_at")
+          .single();
+        if (error) throw error;
+        setItems((prev) => [data, ...prev]);
+      } else {
+        const [keep, ...rest] = general;
+        const { error } = await supabase.from("opex_budget_plan_items").update({ amount_clp: amount }).eq("id", keep.id);
+        if (error) throw error;
+        const restIds = rest.map((i) => i.id);
+        if (restIds.length > 0) {
+          const { error: deleteError } = await supabase.from("opex_budget_plan_items").delete().in("id", restIds);
+          if (deleteError) throw deleteError;
+        }
+        setItems((prev) =>
+          prev.filter((i) => !restIds.includes(i.id)).map((i) => (i.id === keep.id ? { ...i, amount_clp: amount } : i)),
+        );
+      }
+      toast.success(amount > 0 ? "Monto general guardado" : "Monto general eliminado");
+    } catch (error) {
+      console.error("Error saving general OPEX amount:", error);
+      toast.error("No se pudo guardar el monto general");
+      loadData();
+    } finally {
+      setSavingCategoryId(null);
+    }
+  };
+
+  // Si la categoría tiene varias líneas generales activas, unificarlas pide confirmación.
+  const handleGeneralCommit = (categoryId: string, amount: number) => {
+    const count = items.filter((i) => i.category_id === categoryId && !i.source_contract_id && i.excluded_at === null).length;
+    if (count > 1 && amount > 0) {
+      setPendingGeneral({ categoryId, amount });
+      return;
+    }
+    applyGeneralAmount(categoryId, amount);
+  };
+
+  // Excluir tacha la línea (no la borra); reincorporar la devuelve a la propuesta.
+  const setLineExcluded = async (line: PlanLine, excluded: boolean) => {
+    setBusyLineKey(line.key);
+    let error: { message: string } | null;
+    if (line.kind === "oc") {
+      ({ error } = excluded
+        ? await supabase
+            .from("opex_budget_plan_exclusions")
+            .insert({ year: planYear, purchase_order_id: line.id, created_by: user?.id ?? null })
+        : await supabase
+            .from("opex_budget_plan_exclusions")
+            .delete()
+            .eq("year", planYear)
+            .eq("purchase_order_id", line.id));
+    } else {
+      ({ error } = await supabase
+        .from("opex_budget_plan_items")
+        .update({ excluded_at: excluded ? new Date().toISOString() : null })
+        .eq("id", line.id));
+    }
+    setBusyLineKey(null);
+    if (error) {
+      console.error("Error updating OPEX line exclusion:", error);
+      toast.error(excluded ? "No se pudo excluir la línea" : "No se pudo reincorporar la línea");
+      return;
+    }
+    toast.success(excluded ? "Línea excluida de la propuesta" : "Línea reincorporada");
     loadData();
   };
 
@@ -267,13 +428,45 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
               <TabsTrigger value="mes">Por mes</TabsTrigger>
               <TabsTrigger value="local">Por local</TabsTrigger>
               <TabsTrigger value="proveedor">Por proveedor</TabsTrigger>
+              <TabsTrigger value="lineas">Líneas ({lines.filter((l) => !l.excluded).length})</TabsTrigger>
               <TabsTrigger value="asignar">Asignar OPEX ({contracts.length} contratos vigentes)</TabsTrigger>
             </TabsList>
 
             <TabsContent value="categoria">
+              <OpexCategoryChangesPanel
+                planYear={planYear}
+                baseYear={baseYear}
+                batches={categoryChanges.batches}
+                locked={categoryChanges.locked}
+                baseYearClosed={categoryChanges.baseYearClosed}
+                busy={categoryChanges.busy}
+                applyError={categoryChanges.applyError}
+                lastApply={categoryChanges.lastApply}
+                blockingRetirements={categoryChanges.blockingRetirements}
+                retirementsWithBaseBudget={categoryChanges.retirementsWithBaseBudget}
+                droppedClp={dropped.total}
+                categoryName={categoryName}
+                onUndo={categoryChanges.undo}
+                onApply={categoryChanges.apply}
+                onReassign={(batchId, categoryId) => setChangeDialog({ mode: "reassign", sourceIds: [categoryId], batchId })}
+              />
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs text-muted-foreground">
+                  Marca 2 o más categorías para fusionarlas. Renombrar, fusionar y retirar rigen desde {planYear}; {baseYear} no se toca.
+                </p>
+                <Button
+                  size="sm"
+                  disabled={selectedIds.size < 2 || categoryChanges.locked}
+                  onClick={() => setChangeDialog({ mode: "merge", sourceIds: Array.from(selectedIds) })}
+                >
+                  <Merge className="h-4 w-4 mr-1" />
+                  Fusionar ({selectedIds.size})
+                </Button>
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8" />
                     <TableHead>Categoría</TableHead>
                     <TableHead className="text-right">OC</TableHead>
                     <TableHead className="text-right">Con OC a la fecha</TableHead>
@@ -281,28 +474,92 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                     <TableHead className="text-right">Propuesta base</TableHead>
                     <TableHead className="text-right">OPEX agregado</TableHead>
                     <TableHead className="text-right">Total {planYear}</TableHead>
+                    <TableHead className="w-24" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {plan.map((r) => (
                     <TableRow key={r.categoryId ?? "none"}>
+                      <TableCell>
+                        {r.categoryId && (
+                          <Checkbox
+                            aria-label={`Seleccionar ${r.name}`}
+                            disabled={categoryChanges.locked}
+                            checked={selectedIds.has(r.categoryId)}
+                            onCheckedChange={(checked) => {
+                              const id = r.categoryId as string;
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(id);
+                                else next.delete(id);
+                                return next;
+                              });
+                            }}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell className="font-medium">{r.name}</TableCell>
                       <TableCell className="text-right">{r.orderCount}</TableCell>
                       <TableCell className="text-right">{formatClp(r.realClp)}</TableCell>
                       <TableCell className="text-right">{formatClp(r.avgMonthlyClp)}</TableCell>
                       <TableCell className="text-right">{formatClp(r.baseProposalClp)}</TableCell>
-                      <TableCell className="text-right">{r.adminClp > 0 ? formatClp(r.adminClp) : "—"}</TableCell>
+                      <TableCell className="text-right">
+                        {r.categoryId ? (
+                          <OpexGeneralAmountCell
+                            value={r.adminGeneralClp}
+                            saving={savingCategoryId === r.categoryId}
+                            ariaLabel={`OPEX general de ${r.name}`}
+                            breakdown={r.contractBreakdown.map((b) => {
+                              const info = contractInfo(b.contractId);
+                              return { name: info.name ?? "Contrato", companyNames: info.companyNames, amountClp: b.amountClp };
+                            })}
+                            onCommit={(amount) => handleGeneralCommit(r.categoryId as string, amount)}
+                          />
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-semibold">{formatClp(r.totalProposalClp)}</TableCell>
+                      <TableCell>
+                        {r.categoryId && (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Renombrar ${r.name}`}
+                              disabled={categoryChanges.locked}
+                              onClick={() => setChangeDialog({ mode: "rename", sourceIds: [r.categoryId as string] })}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Retirar ${r.name}`}
+                              disabled={categoryChanges.locked}
+                              onClick={() =>
+                                categoryChanges.hasPlanAmounts(r.categoryId as string)
+                                  ? setChangeDialog({ mode: "retire", sourceIds: [r.categoryId as string] })
+                                  : setRetireConfirmId(r.categoryId as string)
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="font-semibold bg-muted/50">
+                    <TableCell />
                     <TableCell>Total</TableCell>
-                    <TableCell className="text-right">{orders.length}</TableCell>
+                    <TableCell className="text-right">{activeOrders.length}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.real)}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.avgMonthly)}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.base)}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.admin)}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.total)}</TableCell>
+                    <TableCell />
                   </TableRow>
                 </TableBody>
               </Table>
@@ -335,7 +592,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {plan.map((r) => (
+                    {plan.filter((r) => r.totalProposalClp > 0).map((r) => (
                       <TableRow key={r.categoryId ?? "none"}>
                         <TableCell className="font-medium whitespace-nowrap">{r.name}</TableCell>
                         {MONTH_LABELS.map((m) => (
@@ -349,10 +606,20 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
             </TabsContent>
 
             <TabsContent value="local">
-              <RankTable title="Local" rows={topLocals} />
+              <RankTable title="Local" rows={topLocals} showLogos />
             </TabsContent>
             <TabsContent value="proveedor">
               <RankTable title="Proveedor" rows={topSuppliers} />
+            </TabsContent>
+
+            <TabsContent value="lineas">
+              <OpexPlanLines
+                lines={lines}
+                categoryName={lineCategoryName}
+                busyKey={busyLineKey}
+                onExclude={(line) => setLineExcluded(line, true)}
+                onRestore={(line) => setLineExcluded(line, false)}
+              />
             </TabsContent>
 
             <TabsContent value="asignar" className="space-y-4">
@@ -362,7 +629,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                 {planYear} y el contrato queda solo como referencia, sin recibir el presupuesto.
               </p>
 
-              {items.length > 0 && (
+              {activeItems.length > 0 && (
                 <div className="border rounded-md">
                   <Table>
                     <TableHeader>
@@ -375,11 +642,20 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {items.map((item) => (
+                      {activeItems.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell>{categoryName(item.category_id)}</TableCell>
                           <TableCell className="text-right">{formatClp(item.amount_clp)}</TableCell>
-                          <TableCell>{item.source_contract_id ? contractName(item.source_contract_id) : "Global"}</TableCell>
+                          <TableCell>
+                            {item.source_contract_id ? (
+                              <div className="flex items-center gap-2">
+                                <CompanyLogo companyNames={contractInfo(item.source_contract_id).companyNames} size="sm" />
+                                <span>{contractInfo(item.source_contract_id).name}</span>
+                              </div>
+                            ) : (
+                              "Global"
+                            )}
+                          </TableCell>
                           <TableCell className="text-muted-foreground">{item.notes || "—"}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" aria-label="Eliminar OPEX" onClick={() => handleDeleteItem(item.id)}>
@@ -434,7 +710,10 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
                 {filteredContracts.map((contract) => (
                   <div key={contract.id} className="p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm">{contract.name}</span>
+                      <div className="flex items-center gap-2">
+                        <CompanyLogo companyNames={contract.company_names} size="sm" />
+                        <span className="text-sm">{contract.name}</span>
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
@@ -458,6 +737,68 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, categories: propCategori
           </Tabs>
         )}
       </DialogContent>
+      <AlertDialog open={pendingGeneral !== null} onOpenChange={(o) => !o && setPendingGeneral(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unificar el OPEX general</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingGeneral ? categoryName(pendingGeneral.categoryId) : ""} tiene varias líneas de OPEX general. Se
+              reemplazarán por una sola de {pendingGeneral ? formatClp(pendingGeneral.amount) : ""} y se perderán sus notas.
+              Las líneas que vienen de contratos y las excluidas no cambian.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingGeneral) applyGeneralAmount(pendingGeneral.categoryId, pendingGeneral.amount);
+                setPendingGeneral(null);
+              }}
+            >
+              Unificar y guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {changeDialog && (
+        <OpexCategoryChangeDialog
+          open
+          mode={changeDialog.mode}
+          planYear={planYear}
+          sources={changeDialog.sourceIds.map((id) => ({ id, name: categoryName(id) }))}
+          candidates={categories.filter((c) => !changeDialog.sourceIds.includes(c.id))}
+          busy={categoryChanges.busy}
+          onClose={() => setChangeDialog(null)}
+          onSubmit={({ toId, toName }) => {
+            const { mode, sourceIds, batchId } = changeDialog;
+            if (mode === "reassign" && batchId && toId) return categoryChanges.reassignRetired(batchId, sourceIds[0], toId);
+            return categoryChanges.merge(sourceIds, toId, toName);
+          }}
+        />
+      )}
+      <AlertDialog open={retireConfirmId !== null} onOpenChange={(o) => !o && setRetireConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retirar categoría desde {planYear}</AlertDialogTitle>
+            <AlertDialogDescription>
+              «{retireConfirmId ? categoryName(retireConfirmId) : ""}» deja de estar disponible desde {planYear}; no se
+              borra, porque las OC y reportes de {baseYear} la siguen usando.
+              {retireConfirmId && ` Su gasto ${baseYear} (${formatClp(baseSpendOf(retireConfirmId))}) dejará de proyectarse en ${planYear}.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (retireConfirmId) categoryChanges.retire(retireConfirmId);
+                setRetireConfirmId(null);
+              }}
+            >
+              Retirar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 };
@@ -472,7 +813,16 @@ const SummaryCard = ({ label, value, hint, highlight }: { label: string; value: 
   </Card>
 );
 
-const RankTable = ({ title, rows }: { title: string; rows: Array<{ name: string; orderCount: number; totalClp: number; percent: number }> }) => (
+const RankTable = ({
+  title,
+  rows,
+  showLogos,
+}: {
+  title: string;
+  rows: Array<{ name: string; companyNames: string[]; orderCount: number; totalClp: number; percent: number }>;
+  // Solo cuando las filas son contratos/locales.
+  showLogos?: boolean;
+}) => (
   <Table>
     <TableHeader>
       <TableRow>
@@ -485,7 +835,16 @@ const RankTable = ({ title, rows }: { title: string; rows: Array<{ name: string;
     <TableBody>
       {rows.map((r) => (
         <TableRow key={r.name}>
-          <TableCell className="font-medium">{r.name}</TableCell>
+          <TableCell className="font-medium">
+            {showLogos ? (
+              <div className="flex items-center gap-2">
+                <CompanyLogo companyNames={r.companyNames} size="sm" />
+                <span>{r.name}</span>
+              </div>
+            ) : (
+              r.name
+            )}
+          </TableCell>
           <TableCell className="text-right">{r.orderCount}</TableCell>
           <TableCell className="text-right">{formatClp(r.totalClp)}</TableCell>
           <TableCell className="text-right">{r.percent.toFixed(1)}%</TableCell>

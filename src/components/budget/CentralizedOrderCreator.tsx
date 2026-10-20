@@ -23,6 +23,7 @@ import { formatCLP } from "@/lib/utils";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
+import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
 interface Contract {
   id: string;
   name: string;
@@ -33,6 +34,9 @@ interface Contract {
 interface OpexCategory {
   id: string;
   name: string;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface OpexMasterLine {
@@ -244,6 +248,9 @@ export const CentralizedOrderCreator = ({
   const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  // Categorías que la OC puede usar según su fecha de OC (las fusionadas o retiradas dejan de aparecer desde su año).
+  const categoriesForFormDate = () =>
+    categoriesForYear(opexCategories, yearFromDate(formData.order_date, year), [selectedCategoryId]);
   const [opexMasterLines, setOpexMasterLines] = useState<OpexMasterLine[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   
@@ -496,7 +503,7 @@ export const CentralizedOrderCreator = ({
       // Load OPEX categories
       const { data: categoriesData } = await supabase
         .from("opex_categories")
-        .select("id, name")
+        .select("id, name, is_active, valid_from_year, valid_to_year")
         .eq("is_active", true)
         .order("display_order");
       setOpexCategories(categoriesData || []);
@@ -1338,7 +1345,7 @@ export const CentralizedOrderCreator = ({
                         <SearchableSelect
                           value={selectedCategoryId}
                           onValueChange={setSelectedCategoryId}
-                          options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
+                          options={categoriesForFormDate().map(cat => ({ value: cat.id, label: cat.name }))}
                           placeholder="Seleccionar categoría"
                         />
                         {selectedCategoryId && (
@@ -1560,7 +1567,7 @@ export const CentralizedOrderCreator = ({
                         <SearchableSelect
                           value={selectedCategoryId}
                           onValueChange={setSelectedCategoryId}
-                          options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
+                          options={categoriesForFormDate().map(cat => ({ value: cat.id, label: cat.name }))}
                           placeholder="Seleccionar categoría"
                         />
                         {selectedCategoryId && (

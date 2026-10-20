@@ -102,6 +102,14 @@ const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
 
 ---
 
+## OPEX: categorías por año (desde 2027)
+- Renombrar, fusionar y retirar categorías OPEX rige **solo desde 2027**; 2026 no se toca. "Eliminar" = retirar
+  (`valid_to_year`), nunca borrar. Una OC solo usa categorías vigentes en el año de su fecha de OC (trigger en la base).
+- Los cambios se hacen en `Planificar Presupuesto 2027` (ADMIN) y se aplican con "Aplicar categorías 2027" después del
+  cierre de 2026. Detalle, diferencia `created_at` / `order_date` / `year` y reversión: `docs/opex-categorias-2027.md`.
+
+---
+
 ## Reglas de desarrollo
 
 1. **Cambios pequeños y testeables** — un commit por tema

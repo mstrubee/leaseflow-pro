@@ -46,6 +46,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
+import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
 
 interface ContractAllocation {
   contract_id: string;
@@ -81,6 +82,9 @@ interface OCRequest {
 interface OpexCategory {
   id: string;
   name: string;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface ConvertOCRequestDialogProps {
@@ -133,7 +137,7 @@ export const ConvertOCRequestDialog = ({
   const loadCategories = async () => {
     const { data } = await supabase
       .from("opex_categories")
-      .select("id, name")
+      .select("id, name, is_active, valid_from_year, valid_to_year")
       .eq("is_active", true)
       .order("display_order");
     setOpexCategories(data || []);
@@ -572,7 +576,8 @@ export const ConvertOCRequestDialog = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Sin categoría</SelectItem>
-                  {opexCategories.map((cat) => (
+                  {/* La OC se crea con la fecha de hoy: solo categorías vigentes este año (más la ya elegida). */}
+                  {categoriesForYear(opexCategories, yearFromDate(null), [selectedCategoryId, request?.opex_category_id]).map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
                       {cat.name}
                     </SelectItem>

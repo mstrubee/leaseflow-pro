@@ -4612,12 +4612,45 @@ export type Database = {
           },
         ]
       }
+      opex_budget_plan_exclusions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          purchase_order_id: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          purchase_order_id: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          purchase_order_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opex_budget_plan_exclusions_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opex_budget_plan_items: {
         Row: {
           amount_clp: number
           category_id: string
           created_at: string
           created_by: string | null
+          excluded_at: string | null
           id: string
           notes: string | null
           source_contract_id: string | null
@@ -4629,6 +4662,7 @@ export type Database = {
           category_id: string
           created_at?: string
           created_by?: string | null
+          excluded_at?: string | null
           id?: string
           notes?: string | null
           source_contract_id?: string | null
@@ -4640,6 +4674,7 @@ export type Database = {
           category_id?: string
           created_at?: string
           created_by?: string | null
+          excluded_at?: string | null
           id?: string
           notes?: string | null
           source_contract_id?: string | null
@@ -4674,6 +4709,8 @@ export type Database = {
           name: string
           supplier_category_id: string | null
           updated_at: string
+          valid_from_year: number | null
+          valid_to_year: number | null
         }
         Insert: {
           created_at?: string
@@ -4685,6 +4722,8 @@ export type Database = {
           name: string
           supplier_category_id?: string | null
           updated_at?: string
+          valid_from_year?: number | null
+          valid_to_year?: number | null
         }
         Update: {
           created_at?: string
@@ -4696,6 +4735,8 @@ export type Database = {
           name?: string
           supplier_category_id?: string | null
           updated_at?: string
+          valid_from_year?: number | null
+          valid_to_year?: number | null
         }
         Relationships: [
           {
@@ -4703,6 +4744,57 @@ export type Database = {
             columns: ["supplier_category_id"]
             isOneToOne: false
             referencedRelation: "supplier_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opex_category_mappings: {
+        Row: {
+          applied_at: string | null
+          batch_id: string
+          created_at: string
+          created_by: string | null
+          from_category_id: string
+          id: string
+          target_created: boolean
+          to_category_id: string | null
+          year: number
+        }
+        Insert: {
+          applied_at?: string | null
+          batch_id: string
+          created_at?: string
+          created_by?: string | null
+          from_category_id: string
+          id?: string
+          target_created?: boolean
+          to_category_id?: string | null
+          year: number
+        }
+        Update: {
+          applied_at?: string | null
+          batch_id?: string
+          created_at?: string
+          created_by?: string | null
+          from_category_id?: string
+          id?: string
+          target_created?: boolean
+          to_category_id?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opex_category_mappings_from_category_id_fkey"
+            columns: ["from_category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opex_category_mappings_to_category_id_fkey"
+            columns: ["to_category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
             referencedColumns: ["id"]
           },
         ]
@@ -7493,6 +7585,22 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      apply_opex_category_mappings: {
+        Args: { p_year: number }
+        Returns: Json
+      }
+      merge_opex_categories: {
+        Args: { p_from: string[]; p_to_id: string | null; p_to_name: string | null; p_year: number }
+        Returns: string
+      }
+      retire_opex_category: {
+        Args: { p_category_id: string; p_year: number }
+        Returns: string
+      }
+      undo_opex_category_change: {
+        Args: { p_batch: string }
+        Returns: undefined
       }
       merge_maintenance_forms: {
         Args: { p_form_ids: string[] }
