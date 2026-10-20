@@ -19,7 +19,8 @@ import { OpexGeneralAmountCell } from "@/components/opex/OpexGeneralAmountCell";
 import { OpexCategoryChangeDialog, type CategoryActionMode } from "@/components/opex/OpexCategoryChangeDialog";
 import { OpexCategoryChangesPanel } from "@/components/opex/OpexCategoryChangesPanel";
 import { useOpexCategoryChanges } from "@/components/opex/useOpexCategoryChanges";
-import { resolveCategoryId } from "@/lib/opexCategories";
+import { matchesSearch, resolveCategoryId, selectionState, updateSelection } from "@/lib/opexCategories";
+import { OpexCategorySelectionBar } from "@/components/opex/OpexCategorySelectionBar";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
@@ -73,6 +74,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
   const [activeFormKey, setActiveFormKey] = useState<string | null>(null);
   // Fusionar, renombrar y retirar categorías (rigen desde el año planificado).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [categorySearch, setCategorySearch] = useState("");
   const [changeDialog, setChangeDialog] = useState<{ mode: CategoryActionMode; sourceIds: string[]; batchId?: string } | null>(null);
   const [retireConfirmId, setRetireConfirmId] = useState<string | null>(null);
 
@@ -159,6 +161,17 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
       }),
     [activeOrders, categories, activeItems, months, indexationPct, ufValue, categoryChanges.mappingIndex],
   );
+  // Búsqueda por nombre: se muestran todos los resultados. La selección vive aparte (por id), así que sobrevive a cualquier búsqueda.
+  const visiblePlan = useMemo(() => plan.filter((r) => matchesSearch(r.name, categorySearch)), [plan, categorySearch]);
+  const visibleSelectableIds = useMemo(
+    () => visiblePlan.flatMap((r) => (r.categoryId ? [r.categoryId] : [])),
+    [visiblePlan],
+  );
+  const selectedCategories = useMemo(
+    () => plan.flatMap((r) => (r.categoryId && selectedIds.has(r.categoryId) ? [{ id: r.categoryId, name: r.name }] : [])),
+    [plan, selectedIds],
+  );
+  const resultsSelection = selectionState(selectedIds, visibleSelectableIds);
   const dropped = useMemo(
     () => droppedByRetirement(activeOrders, categoryChanges.mappingIndex, ufValue),
     [activeOrders, categoryChanges.mappingIndex, ufValue],
@@ -450,23 +463,34 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                 onApply={categoryChanges.apply}
                 onReassign={(batchId, categoryId) => setChangeDialog({ mode: "reassign", sourceIds: [categoryId], batchId })}
               />
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-xs text-muted-foreground">
-                  Marca 2 o más categorías para fusionarlas. Renombrar, fusionar y retirar rigen desde {planYear}; {baseYear} no se toca.
-                </p>
-                <Button
-                  size="sm"
-                  disabled={selectedIds.size < 2 || categoryChanges.locked}
-                  onClick={() => setChangeDialog({ mode: "merge", sourceIds: Array.from(selectedIds) })}
-                >
-                  <Merge className="h-4 w-4 mr-1" />
-                  Fusionar ({selectedIds.size})
-                </Button>
-              </div>
+              <OpexCategorySelectionBar
+                search={categorySearch}
+                onSearchChange={setCategorySearch}
+                resultCount={visibleSelectableIds.length}
+                totalCount={plan.filter((r) => r.categoryId).length}
+                unselectedResultCount={visibleSelectableIds.filter((id) => !selectedIds.has(id)).length}
+                selected={selectedCategories}
+                locked={categoryChanges.locked}
+                planYear={planYear}
+                baseYear={baseYear}
+                onSelectResults={() => setSelectedIds((prev) => updateSelection(prev, visibleSelectableIds, true))}
+                onRemove={(id) => setSelectedIds((prev) => updateSelection(prev, [id], false))}
+                onClear={() => setSelectedIds(new Set())}
+                onMerge={() => setChangeDialog({ mode: "merge", sourceIds: selectedCategories.map((c) => c.id) })}
+              />
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8" />
+                    <TableHead className="w-8">
+                      <Checkbox
+                        aria-label="Seleccionar todos los resultados"
+                        disabled={categoryChanges.locked || visibleSelectableIds.length === 0}
+                        checked={resultsSelection === "all"}
+                        onCheckedChange={(checked) =>
+                          setSelectedIds((prev) => updateSelection(prev, visibleSelectableIds, checked === true))
+                        }
+                      />
+                    </TableHead>
                     <TableHead>Categoría</TableHead>
                     <TableHead className="text-right">OC</TableHead>
                     <TableHead className="text-right">Con OC a la fecha</TableHead>
@@ -478,7 +502,14 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {plan.map((r) => (
+                  {visiblePlan.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center text-muted-foreground">
+                        Ninguna categoría coincide con «{categorySearch.trim()}».
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {visiblePlan.map((r) => (
                     <TableRow key={r.categoryId ?? "none"}>
                       <TableCell>
                         {r.categoryId && (
@@ -486,15 +517,9 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                             aria-label={`Seleccionar ${r.name}`}
                             disabled={categoryChanges.locked}
                             checked={selectedIds.has(r.categoryId)}
-                            onCheckedChange={(checked) => {
-                              const id = r.categoryId as string;
-                              setSelectedIds((prev) => {
-                                const next = new Set(prev);
-                                if (checked) next.add(id);
-                                else next.delete(id);
-                                return next;
-                              });
-                            }}
+                            onCheckedChange={(checked) =>
+                              setSelectedIds((prev) => updateSelection(prev, [r.categoryId as string], checked === true))
+                            }
                           />
                         )}
                       </TableCell>
@@ -552,7 +577,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                   ))}
                   <TableRow className="font-semibold bg-muted/50">
                     <TableCell />
-                    <TableCell>Total</TableCell>
+                    <TableCell>{categorySearch.trim() ? "Total (todas las categorías)" : "Total"}</TableCell>
                     <TableCell className="text-right">{activeOrders.length}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.real)}</TableCell>
                     <TableCell className="text-right">{formatClp(totals.avgMonthly)}</TableCell>
