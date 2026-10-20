@@ -1,3 +1,5 @@
+import { resolveCategoryId } from "@/lib/opexCategories";
+
 // Cálculos del análisis y la propuesta de presupuesto OPEX del año siguiente.
 // Regla de negocio: se trabaja con lo comprometido en OC (no lo facturado) y
 // el promedio mensual a la fecha; la propuesta base es ese promedio x 12,
@@ -97,8 +99,13 @@ export const buildCategoryPlan = (params: {
   months: number;
   indexationPct: number;
   ufValue: number;
+  // Cambios de categorías del año planificado (antigua -> nueva, null = retirada sin destino):
+  // el gasto del año base y el OPEX agregado se suman en la categoría final.
+  categoryIndex?: Map<string, string | null>;
 }): CategoryPlanRow[] => {
-  const { orders, categories, items, months, indexationPct, ufValue } = params;
+  const { orders, categories, items, months, indexationPct, ufValue, categoryIndex } = params;
+  const finalCategoryId = (id: string | null): string | null | undefined =>
+    id === null || !categoryIndex ? id : resolveCategoryId(id, categoryIndex);
   const factor = 1 + indexationPct / 100;
   const names = new Map(categories.map((c) => [c.id, c.name]));
   const acc = new Map<
@@ -132,12 +139,15 @@ export const buildCategoryPlan = (params: {
   // Todas las categorías vigentes aparecen (aunque estén en 0) para poder asignarles OPEX general.
   categories.forEach((c) => slot(c.id));
   orders.forEach((o) => {
-    const row = slot(o.opex_category_id);
+    const categoryId = finalCategoryId(o.opex_category_id);
+    // Categoría retirada sin destino: su gasto ya no se proyecta (ver droppedByRetirement).
+    if (categoryId === null && o.opex_category_id !== null) return;
+    const row = slot(categoryId ?? null);
     row.orderCount += 1;
     row.realClp += orderAmountClp(o, ufValue);
   });
   items.forEach((i) => {
-    const row = slot(i.category_id);
+    const row = slot(finalCategoryId(i.category_id) ?? i.category_id);
     if (i.source_contract_id) {
       row.contractAmounts.set(i.source_contract_id, (row.contractAmounts.get(i.source_contract_id) ?? 0) + i.amount_clp);
     } else {
@@ -262,4 +272,21 @@ export const parseClpInput = (raw: string): number | null => {
   if (text === "") return 0;
   const value = Number(text.replace(/\./g, "").replace(",", "."));
   return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+// Gasto del año base en categorías retiradas sin destino: queda fuera de la proyección del año planificado.
+export const droppedByRetirement = (
+  orders: PlanningOrder[],
+  categoryIndex: Map<string, string | null>,
+  ufValue: number,
+): { total: number; byCategory: Map<string, number> } => {
+  const byCategory = new Map<string, number>();
+  let total = 0;
+  orders.forEach((o) => {
+    if (o.opex_category_id === null || resolveCategoryId(o.opex_category_id, categoryIndex) !== null) return;
+    const amount = orderAmountClp(o, ufValue);
+    total += amount;
+    byCategory.set(o.opex_category_id, (byCategory.get(o.opex_category_id) ?? 0) + amount);
+  });
+  return { total, byCategory };
 };

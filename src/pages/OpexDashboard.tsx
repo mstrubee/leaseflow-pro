@@ -602,7 +602,6 @@ const OpexDashboard = () => {
                   <OpexPlanningDialog
                     baseYear={new Date().getFullYear()}
                     ufValue={ufValue}
-                    categories={categories}
                     onCategoriesChange={loadData}
                     contracts={contracts}
                   />
