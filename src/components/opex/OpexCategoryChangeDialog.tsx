@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 
 // merge: 2 o más categorías -> una existente o una nueva. rename: una categoría con otro nombre.
@@ -106,18 +106,14 @@ export const OpexCategoryChangeDialog = ({
           {needsExisting && (
             <div className="space-y-1">
               <Label>{mode === "merge" ? "Categoría final" : "Pasar los montos a"}</Label>
-              <Select value={toId} onValueChange={setToId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Elige una categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  {candidates.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={toId}
+                onValueChange={setToId}
+                options={candidates.map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="Elige una categoría"
+                searchPlaceholder="Buscar categoría..."
+                emptyMessage="Ninguna categoría coincide."
+              />
             </div>
           )}
 

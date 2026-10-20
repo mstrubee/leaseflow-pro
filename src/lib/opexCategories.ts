@@ -100,3 +100,31 @@ export const loadCategoryNameResolver = async (year: number) => {
     },
   };
 };
+
+// ── Búsqueda y selección múltiple de categorías (planificación) ─────────────────────────────
+
+// Texto sin tildes ni mayúsculas, para buscar "mantencion" y encontrar "Mantención".
+export const normalizeSearchText = (text: string): string =>
+  text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+// Coincide si todas las palabras buscadas aparecen en el nombre (en cualquier orden). Búsqueda vacía = todo.
+export const matchesSearch = (name: string, term: string): boolean => {
+  const tokens = normalizeSearchText(term).split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const normalized = normalizeSearchText(name);
+  return tokens.every((token) => normalized.includes(token));
+};
+
+// Agrega o quita `ids` de la selección sin tocar el resto: lo ya seleccionado se conserva aunque cambie la búsqueda.
+export const updateSelection = (previous: Set<string>, ids: string[], selected: boolean): Set<string> => {
+  const next = new Set(previous);
+  ids.forEach((id) => (selected ? next.add(id) : next.delete(id)));
+  return next;
+};
+
+// Estado del "seleccionar todos" respecto de los resultados visibles.
+export const selectionState = (selected: Set<string>, visibleIds: string[]): "all" | "some" | "none" => {
+  if (visibleIds.length === 0) return "none";
+  const count = visibleIds.filter((id) => selected.has(id)).length;
+  return count === 0 ? "none" : count === visibleIds.length ? "all" : "some";
+};

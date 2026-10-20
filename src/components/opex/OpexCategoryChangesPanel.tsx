@@ -62,6 +62,9 @@ export const OpexCategoryChangesPanel = ({
   const [listOpen, setListOpen] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const pending = batches.filter((b) => !b.applied);
+  // Los retiros se muestran aparte de las fusiones y los renombres.
+  const mergeBatches = batches.filter((b) => b.kind !== "retire");
+  const retireBatches = batches.filter((b) => b.kind === "retire");
 
   if (batches.length === 0 && !lastApply) return null;
 
@@ -174,27 +177,25 @@ export const OpexCategoryChangesPanel = ({
               Cambios de categorías {planYear} ({batches.length})
             </Button>
           </CollapsibleTrigger>
-          <CollapsibleContent>
-            <ul className="space-y-1 text-sm">
-              {batches.map((b) => (
-                <li key={b.batchId} className="flex items-center justify-between gap-2 border rounded-md px-2 py-1">
-                  <span>
-                    <Badge variant="secondary" className="mr-2">{KIND_LABEL[b.kind]}</Badge>
-                    {b.fromIds.map(categoryName).join(" + ")}
-                    {b.toId && ` → ${categoryName(b.toId)}`}
-                    {b.kind === "retire" && " (retirada)"}
-                  </span>
-                  {b.applied ? (
-                    <Badge variant="outline">Aplicado</Badge>
-                  ) : (
-                    <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => onUndo(b.batchId)}>
-                      <Undo2 className="h-4 w-4 mr-1" />
-                      Deshacer
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
+          <CollapsibleContent className="space-y-3">
+            <ChangeList
+              title="Fusiones y renombres"
+              batches={mergeBatches}
+              emptyText="No hay fusiones ni renombres."
+              categoryName={categoryName}
+              busy={busy}
+              locked={locked}
+              onUndo={onUndo}
+            />
+            <ChangeList
+              title="Retiros"
+              batches={retireBatches}
+              emptyText="No hay categorías retiradas."
+              categoryName={categoryName}
+              busy={busy}
+              locked={locked}
+              onUndo={onUndo}
+            />
           </CollapsibleContent>
         </Collapsible>
       )}
@@ -225,3 +226,45 @@ export const OpexCategoryChangesPanel = ({
     </div>
   );
 };
+
+interface ChangeListProps {
+  title: string;
+  batches: CategoryChangeBatch[];
+  emptyText: string;
+  categoryName: (id: string) => string;
+  busy: boolean;
+  locked: boolean;
+  onUndo: (batchId: string) => void;
+}
+
+export const ChangeList = ({ title, batches, emptyText, categoryName, busy, locked, onUndo }: ChangeListProps) => (
+  <div className="space-y-1">
+    <h4 className="text-sm font-medium">
+      {title} ({batches.length})
+    </h4>
+    {batches.length === 0 ? (
+      <p className="text-xs text-muted-foreground">{emptyText}</p>
+    ) : (
+      <ul className="space-y-1 text-sm">
+        {batches.map((b) => (
+          <li key={b.batchId} className="flex items-center justify-between gap-2 border rounded-md px-2 py-1">
+            <span>
+              <Badge variant="secondary" className="mr-2">{KIND_LABEL[b.kind]}</Badge>
+              {b.fromIds.map(categoryName).join(" + ")}
+              {b.toId && ` → ${categoryName(b.toId)}`}
+              {b.kind === "retire" && " (retirada, sin destino)"}
+            </span>
+            {b.applied ? (
+              <Badge variant="outline">Aplicado</Badge>
+            ) : (
+              <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => onUndo(b.batchId)}>
+                <Undo2 className="h-4 w-4 mr-1" />
+                Deshacer
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
