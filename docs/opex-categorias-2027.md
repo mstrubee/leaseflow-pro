@@ -139,7 +139,38 @@ No siempre coinciden: hay OC con `year = 2026` y `order_date` de diciembre de 20
   de 2027 quedan con una categoría que cambió (`purchase_orders_with_old_category`) y no las modifica.
 - El arrastre del cierre de 2026 usa `created_at`, no `order_date` ni `year`; no se cambió en este trabajo.
 
-Pendiente de decisión (no se hizo): unificar el criterio de año de la OC en un solo campo.
+### Propuesta (pendiente): unificar el "año de la OC"
+
+**Decisión (2026-10-20): por ahora no se unifica; se decide después del cierre 2026.** Propuesta preliminar para esa
+conversación: usar **`order_date`** como único criterio ("año de la OC = año de su fecha de OC"), porque es lo que ve el
+usuario en la OC y coincide con la regla de categorías y con el trigger.
+
+Qué implicaría:
+
+1. **Diagnóstico previo (solo lectura):** cuántas OC tienen `year` distinto del año de `order_date`, cuántas no tienen
+   fecha y por qué monto, para decidir con datos.
+   ```sql
+   SELECT year AS year_campo, extract(year FROM order_date)::int AS year_fecha,
+          count(*) AS oc, round(sum(coalesce(amount_clp, 0))) AS monto_clp
+   FROM public.purchase_orders
+   WHERE deleted_at IS NULL AND (order_date IS NULL OR year IS DISTINCT FROM extract(year FROM order_date)::int)
+   GROUP BY 1, 2 ORDER BY 1, 2;
+   ```
+2. **Base de datos:** `purchase_orders.year` pasaría a derivarse de `order_date` (trigger o columna generada) o se dejaría
+   de usar. Las OC sin fecha necesitan una regla (hoy dependen de `year`).
+3. **Código:** cambiar los filtros por `year` de OC (alrededor de 14 archivos leen `purchase_orders` y filtran por
+   `.eq("year", …)`: dashboard `/opex`, consumos, `MasterBudgetTable`, planificación, CAPEX, etc.; hay que revisar cuáles
+   filtran realmente OC) a un rango de `order_date`, y `OpexCloseYear` de `created_at` a `order_date`.
+4. **Efecto en cifras:** las OC con `year` ≠ año de su fecha cambian de año en reportes y presupuestos (por ejemplo, las
+   OC de diciembre de 2025 con `year = 2026` pasarían a 2025), y el arrastre del cierre dejaría de depender de cuándo se
+   cargó la OC (hoy las cargas masivas de febrero y agosto de 2026 cuentan por `created_at`). Los totales históricos ya
+   comparados o cerrados cambiarían: requiere OK explícito de Matias.
+5. **Momento:** después del cierre 2026, para no alterar el arrastre en curso. Orden sugerido: diagnóstico → decisión →
+   migración de datos y trigger → cambio de pantallas → cierre 2027 ya con el criterio nuevo.
+
+Alternativa más liviana: dejar `year` como "año presupuestario" explícito y alinear la regla de categorías (trigger y
+selectores) a `year` en vez de `order_date`. Cambia menos datos, pero la fecha visible de una OC puede contradecir su año
+presupuestario.
 
 ## Limitaciones conocidas
 
