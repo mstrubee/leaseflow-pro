@@ -13,13 +13,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, ChevronDown, ChevronRight, Lock, Undo2 } from "lucide-react";
-import type { ApplyCategoriesResult, CategoryChangeBatch } from "@/components/opex/useOpexCategoryChanges";
+import { AlertTriangle, ChevronDown, ChevronRight, Lock, Pencil, Undo2 } from "lucide-react";
+import type { ApplyCategoriesResult, CategoryChangeBatch, CategoryFusion } from "@/components/opex/useOpexCategoryChanges";
 
 interface OpexCategoryChangesPanelProps {
   planYear: number;
   baseYear: number;
   batches: CategoryChangeBatch[];
+  // Fusiones y renombres agrupados por categoría final, y retiros: se listan por separado.
+  fusions: CategoryFusion[];
+  retirements: CategoryChangeBatch[];
   locked: boolean;
   baseYearClosed: boolean;
   busy: boolean;
@@ -33,6 +36,8 @@ interface OpexCategoryChangesPanelProps {
   droppedClp: number;
   categoryName: (id: string) => string;
   onUndo: (batchId: string) => void;
+  onEditFusion: (fusion: CategoryFusion) => void;
+  onUndoFusion: (fusion: CategoryFusion) => void;
   onApply: () => Promise<boolean>;
   onReassign: (batchId: string, categoryId: string) => void;
 }
@@ -46,6 +51,8 @@ export const OpexCategoryChangesPanel = ({
   planYear,
   baseYear,
   batches,
+  fusions,
+  retirements,
   locked,
   baseYearClosed,
   busy,
@@ -56,15 +63,15 @@ export const OpexCategoryChangesPanel = ({
   droppedClp,
   categoryName,
   onUndo,
+  onEditFusion,
+  onUndoFusion,
   onApply,
   onReassign,
 }: OpexCategoryChangesPanelProps) => {
   const [listOpen, setListOpen] = useState(false);
   const [confirmApply, setConfirmApply] = useState(false);
   const pending = batches.filter((b) => !b.applied);
-  // Los retiros se muestran aparte de las fusiones y los renombres.
-  const mergeBatches = batches.filter((b) => b.kind !== "retire");
-  const retireBatches = batches.filter((b) => b.kind === "retire");
+
 
   if (batches.length === 0 && !lastApply) return null;
 
@@ -174,22 +181,21 @@ export const OpexCategoryChangesPanel = ({
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="sm" className="justify-start">
               {listOpen ? <ChevronDown className="h-4 w-4 mr-1" /> : <ChevronRight className="h-4 w-4 mr-1" />}
-              Cambios de categorías {planYear} ({batches.length})
+              Cambios de categorías {planYear} ({fusions.length + retirements.length})
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-3">
-            <ChangeList
-              title="Fusiones y renombres"
-              batches={mergeBatches}
-              emptyText="No hay fusiones ni renombres."
+            <FusionList
+              fusions={fusions}
               categoryName={categoryName}
               busy={busy}
               locked={locked}
-              onUndo={onUndo}
+              onEdit={onEditFusion}
+              onUndo={onUndoFusion}
             />
             <ChangeList
               title="Retiros"
-              batches={retireBatches}
+              batches={retirements}
               emptyText="No hay categorías retiradas."
               categoryName={categoryName}
               busy={busy}
@@ -261,6 +267,50 @@ export const ChangeList = ({ title, batches, emptyText, categoryName, busy, lock
                 <Undo2 className="h-4 w-4 mr-1" />
                 Deshacer
               </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
+
+interface FusionListProps {
+  fusions: CategoryFusion[];
+  categoryName: (id: string) => string;
+  busy: boolean;
+  locked: boolean;
+  onEdit: (fusion: CategoryFusion) => void;
+  onUndo: (fusion: CategoryFusion) => void;
+}
+
+// Fusiones y renombres: una fila por categoría final, con todas las categorías que la forman. Se pueden editar y deshacer.
+export const FusionList = ({ fusions, categoryName, busy, locked, onEdit, onUndo }: FusionListProps) => (
+  <div className="space-y-1">
+    <h4 className="text-sm font-medium">Fusiones y renombres ({fusions.length})</h4>
+    {fusions.length === 0 ? (
+      <p className="text-xs text-muted-foreground">No hay fusiones ni renombres.</p>
+    ) : (
+      <ul className="space-y-1 text-sm">
+        {fusions.map((f) => (
+          <li key={f.toId} className="flex items-center justify-between gap-2 border rounded-md px-2 py-1">
+            <span>
+              <Badge variant="secondary" className="mr-2">{f.kind === "rename" ? "Renombre" : "Fusión"}</Badge>
+              {f.fromIds.map(categoryName).join(" + ")} → <strong>{categoryName(f.toId)}</strong>
+            </span>
+            {f.applied ? (
+              <Badge variant="outline">Aplicado</Badge>
+            ) : (
+              <span className="flex gap-1">
+                <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => onEdit(f)}>
+                  <Pencil className="h-4 w-4 mr-1" />
+                  Editar
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => onUndo(f)}>
+                  <Undo2 className="h-4 w-4 mr-1" />
+                  Deshacer
+                </Button>
+              </span>
             )}
           </li>
         ))}
