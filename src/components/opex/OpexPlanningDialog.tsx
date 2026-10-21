@@ -19,6 +19,7 @@ import { OpexGeneralAmountCell } from "@/components/opex/OpexGeneralAmountCell";
 import { OpexCategoryChangeDialog, type CategoryActionMode } from "@/components/opex/OpexCategoryChangeDialog";
 import { OpexCategoryChangesPanel } from "@/components/opex/OpexCategoryChangesPanel";
 import { OpexMergeEditDialog } from "@/components/opex/OpexMergeEditDialog";
+import { OpexUndoFusionDialog } from "@/components/opex/OpexUndoFusionDialog";
 import { useOpexCategoryChanges, type CategoryFusion } from "@/components/opex/useOpexCategoryChanges";
 import { matchesSearch, resolveCategoryId, selectionState, updateSelection } from "@/lib/opexCategories";
 import { OpexCategorySelectionBar } from "@/components/opex/OpexCategorySelectionBar";
@@ -79,6 +80,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
   const [changeDialog, setChangeDialog] = useState<{ mode: CategoryActionMode; sourceIds: string[]; batchId?: string } | null>(null);
   const [retireConfirmId, setRetireConfirmId] = useState<string | null>(null);
   const [editingFusion, setEditingFusion] = useState<CategoryFusion | null>(null);
+  const [undoingFusion, setUndoingFusion] = useState<CategoryFusion | null>(null);
 
   const months = useMemo(() => monthsElapsed(baseYear), [baseYear]);
 
@@ -465,7 +467,8 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                 categoryName={categoryName}
                 onUndo={categoryChanges.undo}
                 onEditFusion={setEditingFusion}
-                onUndoFusion={categoryChanges.undoFusion}
+                // Si la categoría final la creó la fusión, se pregunta a cuál original vuelven sus montos.
+                onUndoFusion={(f) => (f.createdByChange ? setUndoingFusion(f) : categoryChanges.undoFusion(f))}
                 onApply={categoryChanges.apply}
                 onReassign={(batchId, categoryId) => setChangeDialog({ mode: "reassign", sourceIds: [categoryId], batchId })}
               />
@@ -823,6 +826,17 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
           busy={categoryChanges.busy}
           onClose={() => setEditingFusion(null)}
           onSubmit={categoryChanges.updateFusion}
+        />
+      )}
+      {undoingFusion && (
+        <OpexUndoFusionDialog
+          key={undoingFusion.toId}
+          planYear={planYear}
+          fusion={undoingFusion}
+          categoryName={categoryName}
+          busy={categoryChanges.busy}
+          onClose={() => setUndoingFusion(null)}
+          onConfirm={(moveToId) => categoryChanges.undoFusion(undoingFusion, moveToId)}
         />
       )}
       <AlertDialog open={retireConfirmId !== null} onOpenChange={(o) => !o && setRetireConfirmId(null)}>

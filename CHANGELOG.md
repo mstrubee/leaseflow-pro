@@ -11,7 +11,9 @@
   año de la fecha de la OC; un trigger en `purchase_orders` lo exige en la base. Mensajes de error en español.
 - Planificación: buscador de categorías con selección acumulada, retiros separados de las fusiones y edición de una
   fusión (nombre, agregar y quitar categorías) con deshacer de la fusión completa.
-- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`, `20261021120000`.
+- Deshacer una fusión o renombre siempre se permite antes de "Aplicar categorías 2027": los montos de la categoría creada
+  (OPEX agregado, OC, presupuesto, adicionales, proveedores) vuelven a la categoría original que se elija en un diálogo.
+- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`, `20261021120000`, `20261021180000`.
 
 ### Etapa 5 — Refactoring (2026-06-29)
 - Eliminado sistema visual de permisos Lovable-era: `SelectableElement`, `FloatingPermissionSelector`, `PermissionSelectionContext`

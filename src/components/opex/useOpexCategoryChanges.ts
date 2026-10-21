@@ -41,6 +41,30 @@ export interface ApplyCategoriesResult {
   purchase_orders_with_old_category: number;
 }
 
+// Lo que informa la base al deshacer una fusión: registros que volvieron a una categoría original.
+export interface UndoCategoryResult {
+  final_category_deleted: boolean;
+  moved_to_category_id?: string;
+  plan_items_moved?: number;
+  purchase_orders_moved?: number;
+  budget_rows_merged?: number;
+  additional_rows_merged?: number;
+  supplier_links_added?: number;
+}
+
+export const summarizeUndo = (result: UndoCategoryResult | null) => {
+  if (!result?.final_category_deleted) return "";
+  const parts = [
+    [result.plan_items_moved, "OPEX agregado"],
+    [result.purchase_orders_moved, "OC"],
+    [result.budget_rows_merged, "filas de presupuesto"],
+    [result.additional_rows_merged, "adicionales por local"],
+  ]
+    .filter(([n]) => Number(n) > 0)
+    .map(([n, label]) => `${n} ${label}`);
+  return parts.length > 0 ? ` Volvieron a la categoría original: ${parts.join(", ")}.` : "";
+};
+
 interface Params {
   baseYear: number;
   planYear: number;
@@ -245,21 +269,29 @@ export const useOpexCategoryChanges = ({ baseYear, planYear, enabled, planItemCa
     return ok;
   };
 
-  // Deshace una fusión completa: primero los lotes que solo agregaron categorías y al final el que creó la categoría final
-  // (la base no deja deshacer ese mientras otro lote la use). Si uno falla, se recarga para mostrar lo que quedó.
-  const undoFusion = async (fusion: CategoryFusion) => {
-    const ordered = [...fusion.batches].sort((a, b) => Number(a.targetCreated) - Number(b.targetCreated));
+  // Deshace una fusión completa. Siempre se permite mientras no se apliquen las categorías: si la categoría final ya
+  // tiene montos, la base los devuelve a una categoría original (moveToId, o la primera de la fusión) y la elimina.
+  // Deshacer el lote que la creó desarma toda la fusión (también lo agregado con Editar). Si la fusión es hacia una
+  // categoría que ya existía, se desarma lote por lote y no se mueve nada.
+  const undoFusion = async (fusion: CategoryFusion, moveToId?: string) => {
+    const creator = fusion.batches.find((b) => b.targetCreated);
+    const targets = creator ? [creator] : fusion.batches;
     setBusy(true);
     try {
-      for (const batch of ordered) {
-        const { error } = await supabase.rpc("undo_opex_category_change", { p_batch: batch.batchId });
+      let summary = "";
+      for (const batch of targets) {
+        const { data, error } = await supabase.rpc("undo_opex_category_change", {
+          p_batch: batch.batchId,
+          p_move_to: moveToId ?? null,
+        });
         if (error) {
           toast.error(errorText(error, "No se pudo deshacer la fusión"));
           await refresh();
           return false;
         }
+        summary += summarizeUndo(data as unknown as UndoCategoryResult);
       }
-      toast.success("Fusión deshecha");
+      toast.success(`Fusión deshecha.${summary}`);
       await refresh();
       return true;
     } finally {

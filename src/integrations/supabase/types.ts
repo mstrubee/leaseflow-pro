@@ -7603,8 +7603,8 @@ export type Database = {
         Returns: undefined
       }
       undo_opex_category_change: {
-        Args: { p_batch: string }
-        Returns: undefined
+        Args: { p_batch: string; p_move_to?: string | null }
+        Returns: Json
       }
       merge_maintenance_forms: {
         Args: { p_form_ids: string[] }

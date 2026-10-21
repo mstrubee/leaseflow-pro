@@ -19,9 +19,14 @@ El año 2026 no se toca: sus OC, presupuestos y reportes conservan las categorí
      todas las categorías que la forman) y los **retiros**.
    - **Editar una fusión** (botón "Editar"): cambiar el nombre de la categoría final (solo si la creó la fusión; una
      categoría que ya existía no se renombra, porque su nombre también rige para 2026), quitar categorías y agregar otras
-     con búsqueda. La fusión debe conservar al menos una categoría. "Deshacer" en una fusión la deshace completa (primero
-     los lotes que solo agregaron categorías y al final el que creó la categoría final).
-   - Cada cambio se puede **deshacer** mientras no se haya ejecutado "Aplicar categorías 2027".
+     con búsqueda. La fusión debe conservar al menos una categoría. "Deshacer" en una fusión la deshace completa (se llama
+     al lote que creó la categoría final, que desarma también lo agregado con "Editar").
+   - Cada cambio se puede **deshacer siempre** mientras no se haya ejecutado "Aplicar categorías 2027". Si la categoría
+     final creada por la fusión ya tiene movimientos (OPEX agregado, OC, presupuesto maestro, adicionales por local,
+     proveedores), `undo_opex_category_change(p_batch, p_move_to)` los **devuelve a una categoría original** (la elegida
+     en el diálogo; si no se elige, la primera de la fusión por orden y nombre) y recién entonces elimina la final. En
+     presupuesto maestro y adicionales por local los montos se suman a la fila existente. No se pierde ningún registro.
+     Retiros y fusiones hacia una categoría que ya existía solo se desarman (la final no se toca).
 2. **Cierre de 2026** (`OpexCloseYear`, sin cambios de lógica): copia `opex_master_budget` a 2027 y crea
    `opex_local_additional` 2027 por los montos no facturados, **con las categorías antiguas**.
 3. **Aplicar categorías 2027** (botón en la planificación, ADMIN, después del cierre): una sola función de base de datos
@@ -117,7 +122,22 @@ FROM checks
 ORDER BY orden;
 ```
 
+Verificación de `20261021180000` (deshacer siempre permitido):
+```sql
+SELECT
+  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'undo_opex_category_change') AS versiones__esperado_1,
+  to_regprocedure('public.undo_opex_category_change(uuid,uuid)') IS NOT NULL AS firma_nueva__esperado_true,
+  has_function_privilege('anon', 'public.undo_opex_category_change(uuid,uuid)', 'EXECUTE') AS anon__esperado_false,
+  has_function_privilege('authenticated', 'public.undo_opex_category_change(uuid,uuid)', 'EXECUTE') AS authenticated__esperado_true,
+  (SELECT prosecdef FROM pg_proc WHERE proname = 'undo_opex_category_change') AS security_definer__esperado_false;
+```
+
 ### Reversión
+
+`20261021180000` (deshacer siempre permitido): `DROP FUNCTION IF EXISTS public.undo_opex_category_change(UUID, UUID);` y volver
+a crear la versión anterior (con bloqueo si la categoría creada tiene movimientos) desde `20261020120000`. Antes, deshacer las
+fusiones desde la app.
 
 Solo si **no hay cambios de categorías activos** (si los hay, primero deshacerlos desde la app; si ya se aplicaron, no hay
 vuelta atrás automática porque las filas de 2027 quedaron sumadas: restaurar desde el respaldo).
@@ -127,6 +147,7 @@ DROP TRIGGER IF EXISTS trg_po_opex_category_year ON public.purchase_orders;
 DROP FUNCTION IF EXISTS public.check_po_opex_category_year();
 DROP FUNCTION IF EXISTS public.apply_opex_category_mappings(INTEGER);
 DROP FUNCTION IF EXISTS public.undo_opex_category_change(UUID);
+DROP FUNCTION IF EXISTS public.undo_opex_category_change(UUID, UUID);  -- firma de 20261021180000
 DROP FUNCTION IF EXISTS public.retire_opex_category(INTEGER, UUID);
 DROP FUNCTION IF EXISTS public.merge_opex_categories(INTEGER, UUID[], UUID, TEXT);
 DROP FUNCTION IF EXISTS public.opex_lock_sources_for_change(INTEGER, UUID[]);
