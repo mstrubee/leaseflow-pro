@@ -38,6 +38,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { toast } from "sonner";
 import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
+import { calculateWeightedAverageTotalArriendo } from "@/lib/contractRent";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -45,6 +46,7 @@ interface RentEscalation {
   id: string;
   month_number: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 
 interface ContractVersion {
@@ -181,37 +183,22 @@ const calculateNoticeDeadline = (contract: Contract): Date | null => {
   return subMonths(endDate, noticeMonths);
 };
 
+// Mismo cálculo (UF/m², initial_rent, escalaciones, ajustes periódicos) que
+// usa la celda "Costo Arriendo" de la tabla (ver ContractsTable.tsx) -- antes
+// esta función reimplementaba su propia versión simplificada, que leía
+// regime_rent directo sin chequear regime_rent_is_uf_m2 ni initial_rent, así
+// que un contrato con renta en UF/m² ordenaba/filtraba con la tasa por m²
+// en vez del monto total (ej. "0,54" en vez de "270 UF").
 const calcCostoArriendoUF = (contract: Contract): number => {
   const currentVersion = contract.contract_versions?.find((v) => v.is_current);
   if (!currentVersion) return 0;
-  const superficie = contract.superficie_edificada_local || 0;
-  const metrosFrente = contract.metros_lineales_frente || 0;
-  const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-  const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-  let gastosComunes = 0;
-  if (methodology === "percentage") {
-    const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-    const percentage = currentVersion.gastos_comunes_percentage || 0;
-    const topeValue = currentVersion.gastos_comunes_tope;
-    const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-    const calculatedAmount = (totalCentro * percentage) / 100;
-    if (topeValue && topeValue > 0) {
-      const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-      gastosComunes = Math.min(calculatedAmount, effectiveTope);
-    } else {
-      gastosComunes = calculatedAmount;
-    }
-  } else {
-    const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-    const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-    const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-    const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-    const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
-    gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
-  }
-  const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
-  const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-  return currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
+  const { promedio } = calculateWeightedAverageTotalArriendo({
+    version: currentVersion,
+    signedDate: contract.signed_date,
+    superficie: contract.superficie_edificada_local || 0,
+    metrosLinealesFrente: contract.metros_lineales_frente || 0,
+  });
+  return promedio;
 };
 
 // Aislado en su propio componente memoizado para que escribir en el buscador
@@ -470,7 +457,7 @@ const Contracts = () => {
           first_adjustment_month,
           adjustment_periodicity_months,
           notice_ranges:notice_ranges(start_month, end_month),
-          rent_escalations:rent_escalations(id, month_number, amount)
+          rent_escalations:rent_escalations(id, month_number, amount, is_uf_m2)
         ),
         termination_notices (id, notice_type, notice_date, required_exit_date, document_url)
       `)
