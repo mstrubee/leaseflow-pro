@@ -8,6 +8,7 @@ const SHAPES = {
 const CHARTS = {
   PIE: "pie" as const,
 };
+import JSZip from "jszip";
 import { formatCLP } from "@/lib/utils";
 import logosHeader from "@/assets/logos-header.png";
 import { supabase } from "@/integrations/supabase/client";
@@ -247,6 +248,18 @@ export const MUTED = "666666";
 export const DARK = "1A1A1A";
 const BORDER = "CCCCCC";
 
+// Toda la presentación usa el formato ancho (13.33x7.5", LAYOUT_WIDE) en vez
+// del 16:9 más angosto (10x5.625") que se usaba antes -- pedido explícito
+// para que la lámina de Resumen General + Estado de Avance (fusionada, ver
+// más abajo) pueda listar TODOS los locales de cada estado sin truncar
+// ("+ N más"). W() escala cualquier medida (posición, tamaño, tamaño de
+// fuente) pensada para el formato angosto al nuevo ancho (factor 4/3,
+// 13.33/10), para que el resto de las láminas (portada, por empresa) se
+// vean igual que antes pero más grandes, sin tener que rehacerlas a mano.
+const WIDE_SCALE = 4 / 3;
+const W = (v: number) => v * WIDE_SCALE;
+const SLIDE_H = 7.5;
+
 // Mismos 7 colores administrables que usan CapexClasificacionTypeManager /
 // CapexAvanceStatusManager (green/red/blue/yellow/purple/orange/gray), acá
 // en hex para pptxgenjs en vez de clases Tailwind.
@@ -318,6 +331,24 @@ export async function loadImageAsBase64(src: string): Promise<string> {
   });
 }
 
+// pptxgenjs no expone "explosion" (el espacio nativo de PowerPoint entre
+// las porciones de una torta) -- se post-procesa el .pptx ya generado,
+// inyectando <c:explosion> en cada <c:dPt> de cada gráfico de torta. Cada
+// punto de datos de una torta con chartColors (como arma este archivo)
+// siempre trae "<c:bubble3D val="0"/>" seguido de su propio <c:spPr> -- el
+// explosion debe ir justo entre esos dos nodos según el schema de OOXML
+// (CT_DPt: idx, invertIfNegative?, marker?, bubble3D?, explosion?, spPr?).
+async function addPieSliceGaps(arrayBuffer: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const chartPaths = Object.keys(zip.files).filter((f) => /^ppt\/charts\/chart\d+\.xml$/.test(f));
+  for (const path of chartPaths) {
+    const xml = await zip.file(path)!.async("text");
+    if (!xml.includes("<c:pieChart")) continue;
+    zip.file(path, xml.replace(/<c:bubble3D val="0"\/>/g, '<c:bubble3D val="0"/><c:explosion val="6"/>'));
+  }
+  return zip.generateAsync({ type: "arraybuffer" });
+}
+
 export interface GenerateCapexPPTOptions {
   /** Instancia existente de PptxGenJS a la que agregar las slides, en vez de crear una nueva. */
   pres?: PptxGenJS;
@@ -347,19 +378,37 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
 
   const pres = opts.pres ?? new PptxGenJS();
   if (!opts.pres) {
-    pres.layout = "LAYOUT_16x9";
+    pres.layout = "LAYOUT_WIDE";
     pres.author = "GPlanet";
     pres.title = `Presupuesto CAPEX ${data.year}`;
   }
 
   const addFooter = (slide: PptxGenJS.Slide, pageNum: number) => {
     slide.addText(`Presupuesto CAPEX ${data.year}`, {
-      x: 0.5, y: 5.25, w: 5, h: 0.3,
-      fontSize: 8, color: MUTED, fontFace: "Arial",
+      x: W(0.5), y: W(5.25), w: W(5), h: W(0.3),
+      fontSize: W(8), color: MUTED, fontFace: "Arial",
     });
     slide.addText(`${pageNum}`, {
-      x: 8.5, y: 5.25, w: 1, h: 0.3,
-      fontSize: 8, color: MUTED, fontFace: "Arial", align: "right",
+      x: W(8.5), y: W(5.25), w: W(1), h: W(0.3),
+      fontSize: W(8), color: MUTED, fontFace: "Arial", align: "right",
+    });
+  };
+
+  // Header común a toda lámina de contenido (todo menos la portada): título
+  // "PRESUPUESTO CAPEX" + subtítulo + línea divisoria -- antes se repetía
+  // (con los mismos 3 valores) en cada lugar donde se armaba una lámina.
+  const addPageHeader = (slide: PptxGenJS.Slide, subtitle: string) => {
+    slide.addText("PRESUPUESTO CAPEX", {
+      x: W(0.5), y: W(0.2), w: W(9), h: W(0.3),
+      fontSize: W(14), fontFace: "Arial", color: ACCENT, bold: true,
+    });
+    slide.addText(subtitle, {
+      x: W(0.5), y: W(0.5), w: W(9.2), h: W(0.35),
+      fontSize: W(16), fontFace: "Arial", color: DARK, bold: true,
+    });
+    slide.addShape(SHAPES.LINE, {
+      x: W(0.5), y: W(0.87), w: W(9), h: 0,
+      line: { color: BORDER, width: 1 },
     });
   };
 
@@ -376,181 +425,105 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
     s1.background = { color: ACCENT };
 
     if (logoBase64) {
-      s1.addImage({ data: logoBase64, x: 0.5, y: 0.4, w: 2.5, h: 1 });
+      s1.addImage({ data: logoBase64, x: W(0.5), y: W(0.4), w: W(2.5), h: W(1) });
     }
 
     s1.addText("Presupuesto CAPEX", {
-      x: 0.5, y: 1.8, w: 9, h: 1,
-      fontSize: 40, fontFace: "Arial", color: WHITE, bold: true,
+      x: W(0.5), y: W(1.8), w: W(9), h: W(1),
+      fontSize: W(40), fontFace: "Arial", color: WHITE, bold: true,
     });
     s1.addText(`Año ${data.year}`, {
-      x: 0.5, y: 2.7, w: 9, h: 0.6,
-      fontSize: 24, fontFace: "Arial", color: WHITE,
+      x: W(0.5), y: W(2.7), w: W(9), h: W(0.6),
+      fontSize: W(24), fontFace: "Arial", color: WHITE,
     });
 
     s1.addShape(SHAPES.LINE, {
-      x: 0.5, y: 3.5, w: 3, h: 0,
+      x: W(0.5), y: W(3.5), w: W(3), h: 0,
       line: { color: WHITE, width: 3 },
     });
 
     const today = new Date().toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
     s1.addText(today, {
-      x: 0.5, y: 4.0, w: 9, h: 0.4,
-      fontSize: 14, fontFace: "Arial", color: "F5C6C4",
+      x: W(0.5), y: W(4.0), w: W(9), h: W(0.4),
+      fontSize: W(14), fontFace: "Arial", color: "F5C6C4",
     });
   }
 
-  // ═══════════ SLIDE 2: Resumen General ═══════════
+  // ═══════════ SLIDE 2: Resumen General + Estado de Avance (fusionada) ═══
+  // Antes eran hasta 3 slides separadas (Resumen General + una "Estado de
+  // Avance y Presupuesto Aprobado" por año) -- pedido explícito de
+  // fusionarlas en UNA sola lámina, listando TODOS los locales de cada
+  // estado sin truncar ("+ N más"). La card grande "Inversión Total CAPEX"
+  // (con el conteo de locales) y las cards de clasificación con su propio
+  // desglose se eliminan de esta lámina -- la clasificación queda
+  // representada solo por la leyenda junto a los gráficos de torta.
   let pageNum = 1;
   const s2 = pres.addSlide();
   s2.background = { color: "F2F2F2" };
 
-  s2.addText("PRESUPUESTO CAPEX", {
-    x: 0.5, y: 0.2, w: 9, h: 0.3,
-    fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
-  });
-  s2.addText(`Resumen General ${data.year}`, {
-    x: 0.5, y: 0.5, w: 9.2, h: 0.35,
-    fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
-  });
-  s2.addShape(SHAPES.LINE, {
-    x: 0.5, y: 0.87, w: 9, h: 0,
-    line: { color: BORDER, width: 1 },
-  });
+  const avanceByYear = data.avanceByYear || [];
+  const subtitleYears = avanceByYear.length > 0 ? avanceByYear.map((y) => y.year).join(" / ") : data.year;
+  addPageHeader(s2, `Estado de Avance y Presupuesto Aprobado — ${subtitleYears}`);
 
-  // Alto de los chips de año (uno por línea, ver yearBreakdownLine) -- crece
-  // según cuántos años tenga cada bloque, para no solaparse con lo de abajo.
-  const CHIP_LINE_H_LG = 0.16; // fontSize 9 (card grande "Inversión Total")
-  const CHIP_LINE_H_SM = 0.12; // fontSize 6.5 (cards de clasificación)
+  let cardsY = W(0.99);
 
-  // Posiciones y tamaños de este bloque ajustados a la diagramación de
-  // referencia (más compacto que antes: la card total arranca justo debajo
-  // de la línea divisoria, no dejando el aire de sobra que empujaba todo lo
-  // demás hacia abajo).
-  const TOTAL_CARD_Y = 0.99;
-  const totalYears = yearsWithCapex(data.totalYearBreakdown);
-  // El texto de años adjunto a la card total no debe considerar años
-  // anteriores a 2026 (a diferencia de las cards de clasificación de más
-  // abajo, que sí siguen mostrando todos los años en sus propios chips).
-  const totalYearsForDisplay = totalYears.filter((y) => y >= PPT_MIN_YEAR);
-  const totalCardH = 1.26 + Math.max(0, totalYearsForDisplay.length - 1) * CHIP_LINE_H_LG;
-
-  // Big total card
-  s2.addShape(SHAPES.RECTANGLE, {
-    x: 0.5, y: TOTAL_CARD_Y, w: 9, h: totalCardH,
-    fill: { color: PRIMARY },
-  });
-
-  s2.addText("Inversión Total CAPEX", {
-    x: 0.7, y: TOTAL_CARD_Y + 0.04, w: 4, h: 0.4,
-    fontSize: 14, fontFace: "Arial", color: LIGHT_TEXT,
-  });
-
-  // El monto en $ es el protagonista (bold, grande); la UF es "meramente
-  // un dato", secundario -- pedido explícito, mismo criterio en toda la
-  // presentación (cards de clasificación, de empresa y de avance).
-  s2.addText(formatCLP(data.totalCapexUF * data.ufValue), {
-    x: 0.55, y: TOTAL_CARD_Y + 0.39, w: 4.3, h: 0.5,
-    fontSize: 28, fontFace: "Arial", color: WHITE, bold: true, wrap: false,
-  });
-
-  s2.addText(`${fmtUF(data.totalCapexUF)} UF`, {
-    x: 5, y: TOTAL_CARD_Y + 0.31, w: 4.3, h: 0.5,
-    fontSize: 16, fontFace: "Arial", color: WHITE, align: "right",
-  });
-
-  s2.addText(`${data.totalLocales} locales`, {
-    x: 5, y: TOTAL_CARD_Y + 0.03, w: 4.3, h: 0.4,
-    fontSize: 14, fontFace: "Arial", color: WHITE, align: "right",
-  });
-
-  const totalYearBreakdownForDisplay = totalYearsForDisplay.length > 0
-    ? Object.fromEntries(totalYearsForDisplay.map((y) => [y, data.totalYearBreakdown![y]]))
-    : undefined;
-  const totalYearLine = yearBreakdownLine(totalYearBreakdownForDisplay);
-  if (totalYearLine) {
-    s2.addText(totalYearLine, {
-      x: 5, y: TOTAL_CARD_Y + 0.71, w: 4.3, h: totalYearsForDisplay.length * CHIP_LINE_H_LG,
-      fontSize: 9, fontFace: "Arial", color: WHITE, align: "right",
+  // --- Presupuesto Aprobado: una fila por año (antes, una tabla por slide) ---
+  const approvedRows = avanceByYear.filter((y) => y.approvedBudget);
+  if (approvedRows.length > 0) {
+    const tableHeader: PptxGenJS.TableCell[] = [
+      { text: "Año", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(10), fontFace: "Arial", align: "left" } },
+      { text: "Ppto.", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(10), fontFace: "Arial", align: "right" } },
+      { text: "Aprob. Gasto", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(10), fontFace: "Arial", align: "right" } },
+      { text: "Disponible", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(10), fontFace: "Arial", align: "right" } },
+    ];
+    const cellOpts = (align: "left" | "right"): PptxGenJS.TextPropsOptions => ({
+      fontSize: W(10), fontFace: "Arial", color: DARK, align,
     });
+    const tableRows: PptxGenJS.TableRow[] = [tableHeader];
+    approvedRows.forEach((yearData) => {
+      const row = yearData.approvedBudget!;
+      tableRows.push([
+        { text: String(yearData.year), options: cellOpts("left") },
+        { text: `mm$ ${row.aprobadoMM.toLocaleString("es-CL")}`, options: cellOpts("right") },
+        { text: `mm$ ${row.totalMM.toLocaleString("es-CL")}`, options: cellOpts("right") },
+        {
+          text: `mm$ ${row.disponibleMM.toLocaleString("es-CL")}`,
+          options: { ...cellOpts("right"), color: row.disponibleMM < 0 ? PRIMARY : "1E8E3E", bold: true },
+        },
+      ]);
+    });
+    s2.addTable(tableRows, {
+      x: W(0.5), y: cardsY, w: W(9), h: W(0.19) * tableRows.length,
+      colW: [W(2), W(2.33), W(2.33), W(2.34)],
+      rowH: Array(tableRows.length).fill(W(0.19)),
+      margin: [0.02, 0.05, 0.02, 0.05],
+      border: { type: "solid", color: BORDER, pt: 0.5 },
+      autoPage: false,
+    });
+    cardsY = cardsY + W(0.19) * tableRows.length + W(0.1);
   }
 
-  // Classification cards -- dinámico según los "Tipos de CAPEX" que tengan
-  // algún local asignado (ya no son 3 fijos).
-  const classCards = data.clasificacionTotals.map((t) => ({
-    label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color),
-    years: yearsWithCapex(t.yearBreakdown), yearLine: yearBreakdownLine(t.yearBreakdown),
-  }));
-  const cardGap = 0.15;
-  const cardW = classCards.length > 0 ? (9 - cardGap * (classCards.length - 1)) / classCards.length : 0;
-  const maxClassYears = classCards.reduce((max, c) => Math.max(max, c.years.length), 0);
-  const classCardH = 1.32 + Math.max(0, maxClassYears - 1) * CHIP_LINE_H_SM;
-  const classCardsY = TOTAL_CARD_Y + totalCardH + 0.14;
-
-  classCards.forEach((card, i) => {
-    const x = 0.5 + i * (cardW + cardGap);
-    const y = classCardsY;
-
-    s2.addShape(SHAPES.RECTANGLE, {
-      x, y, w: cardW, h: classCardH,
-      fill: { color: LIGHT_BG },
-    });
-
-    // Left accent
-    s2.addShape(SHAPES.RECTANGLE, {
-      x, y, w: 0.06, h: classCardH,
-      fill: { color: card.color },
-    });
-
-    s2.addText(card.label, {
-      x: x + 0.2, y: y, w: cardW - 0.4, h: 0.25,
-      fontSize: 11, fontFace: "Arial", color: MUTED,
-    });
-
-    s2.addText(formatCLP(card.uf * data.ufValue), {
-      x: x + 0.05, y: y + 0.20, w: cardW - 0.10, h: 0.35,
-      fontSize: 16, fontFace: "Arial", color: DARK, bold: true, wrap: false,
-    });
-
-    s2.addText(`${card.count} ${card.count === 1 ? "local" : "locales"}`, {
-      x: x + 0.2, y: y + 0.50, w: cardW - 0.4, h: 0.25,
-      fontSize: 10, fontFace: "Arial", color: MUTED,
-    });
-
-    s2.addText(`${fmtUF(card.uf)} UF`, {
-      x: x + 0.2, y: y + 0.70, w: cardW - 0.4, h: 0.22,
-      fontSize: 9, fontFace: "Arial", color: MUTED,
-    });
-
-    if (card.yearLine) {
-      s2.addText(card.yearLine, {
-        x: x + 0.2, y: y + 0.93, w: cardW - 0.4, h: card.years.length * CHIP_LINE_H_SM,
-        fontSize: 6.5, fontFace: "Arial", color: MUTED,
-      });
-    }
-  });
-
-  // Gráficos de torta: uno por año (distribución por clasificación en ESE
-  // año) + uno extra con la distribución del CAPEX total entre los años.
-  // Una sola leyenda para todos (clasificación), en vez de repetirla en
-  // cada torta -- el gráfico "Por año" no la necesita porque sus propias
-  // porciones ya muestran el año como etiqueta. La leyenda ocupa la misma
-  // "columna" que ocuparía una torta más, apilada verticalmente, en vez de
-  // ir en una fila propia arriba -- así se ahorra una fila entera de alto.
-  //
+  // --- Gráficos de torta + leyenda: geometría calculada ANTES de las cards
+  // de Estado de Avance (ver más abajo) porque ancla al borde inferior de
+  // la slide -- las tablas de esas cards usan su borde superior como límite
+  // de cuánto espacio tienen disponible, en vez de un alto fijo adivinado. ---
+  const totalYears = yearsWithCapex(data.totalYearBreakdown);
   // Un año cuyo aporte al total es marginal (ej. 2 UF de miles de UF) no
   // aporta nada útil como torta propia -- se le da su propia torta solo si
   // su participación supera este umbral; igual sigue apareciendo como
   // porción (chica) en la torta "Por año", que sí debe reflejar el 100%.
   const MIN_YEAR_SHARE_FOR_OWN_PIE = 0.01; // 1% del total
-  // Los gráficos de torta no muestran años anteriores a 2026 -- a
-  // diferencia de la card total y las cards de clasificación de arriba
-  // (esas sí siguen mostrando todos los años en sus chips de texto).
+  // Los gráficos de torta no muestran años anteriores a 2026.
   const pieYears = totalYears.filter((y) => y >= PPT_MIN_YEAR);
   const totalCapexCLP = pieYears.reduce((s, y) => s + (data.totalYearBreakdown?.[y] || 0), 0);
   const yearsForOwnPie = totalCapexCLP > 0
     ? pieYears.filter((y) => (data.totalYearBreakdown![y] / totalCapexCLP) >= MIN_YEAR_SHARE_FOR_OWN_PIE)
     : pieYears;
+
+  // Clasificación -- dinámico según los "Tipos de CAPEX" que tengan algún
+  // local asignado (ya no son 3 fijos). Solo se usan como leyenda (color +
+  // nombre) junto a las tortas, sin card propia.
+  const classCards = data.clasificacionTotals.map((t) => ({ label: t.name, color: colorHex(t.color) }));
 
   const pieBlocks = yearsForOwnPie.map((year) => ({
     title: String(year),
@@ -572,246 +545,197 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   // torta (años + "Por año"). Mismo layout que si todas fueran tortas, para
   // que la leyenda quede alineada con ellas.
   const slotCount = 1 + pieBlocks.length + (distributionBlock ? 1 : 0);
-  const pieGap = 0.15;
-  // Ancho de contenido reducido a propósito (8.4 en vez de 9): las
-  // etiquetas de porcentaje de la torta (showPercent) pueden dibujarse
+  const pieGap = W(0.15);
+  // Ancho de contenido reducido a propósito (8.4 en vez de 9, ya escalado):
+  // las etiquetas de porcentaje de la torta (showPercent) pueden dibujarse
   // ligeramente fuera de su recuadro nominal -- este margen extra evita que
-  // se salgan del borde derecho de la slide cuando hay pocas tortas (y por
-  // lo tanto cada una queda más ancha).
-  const PIE_ROW_W = 8.4;
+  // se salgan del borde derecho de la slide cuando hay pocas tortas.
+  const PIE_ROW_W = W(8.4);
   const slotW = (PIE_ROW_W - pieGap * (slotCount - 1)) / slotCount;
-  const pieH = Math.min(1.35, slotW);
-  const pieTitleY = classCardsY + classCardH + 0.16;
-  const pieChartY = pieTitleY + 0.2;
+  const pieH = Math.min(W(0.85), slotW);
+  const pieTitleY = SLIDE_H - W(0.4) - W(0.1) - W(0.2) - pieH;
+  const pieChartY = pieTitleY + W(0.2);
 
-  if (classCards.length > 0) {
-    const legendX = 0.5;
-    // Compacta (0.18 en vez de 0.22) para que, con 4+ tipos de CAPEX, el
-    // último ítem no llegue a montarse con el pie de página.
-    const legendStep = 0.18;
-    classCards.forEach((card, i) => {
-      const y = pieChartY + 0.12 + i * legendStep;
-      s2.addShape(SHAPES.RECTANGLE, {
-        x: legendX + 0.1, y: y + 0.02, w: 0.12, h: 0.12,
-        fill: { color: card.color },
-      });
-      s2.addText(card.label, {
-        x: legendX + 0.28, y, w: 2.1, h: 0.18,
-        fontSize: 8, fontFace: "Arial", color: MUTED,
-      });
-    });
-  }
-
-  [...pieBlocks, ...(distributionBlock ? [distributionBlock] : [])].forEach((block, i) => {
-    // Cada torta filtra sus propios ceros -- una clasificación sin monto
-    // ese año no debe aparecer como porción vacía.
-    const nonZero = block.labels
-      .map((label, idx) => ({ label, value: block.values[idx], color: block.colors[idx] }))
-      .filter((d) => d.value > 0);
-    if (nonZero.length === 0) return;
-
-    // Slot 0 es la leyenda -- las tortas ocupan del slot 1 en adelante.
-    const x = 0.5 + (i + 1) * (slotW + pieGap);
-    s2.addText(block.title, {
-      x, y: pieTitleY, w: slotW, h: 0.2,
-      fontSize: 9, fontFace: "Arial", color: MUTED, align: "center", bold: true,
-    });
-    s2.addChart(CHARTS.PIE, [{
-      name: block.title,
-      labels: nonZero.map((d) => d.label),
-      values: nonZero.map((d) => d.value),
-    }], {
-      x, y: pieChartY, w: slotW, h: pieH,
-      showPercent: true,
-      showLabel: block.showLabel,
-      showTitle: false,
-      showLegend: false,
-      chartColors: nonZero.map((d) => d.color),
-      dataLabelFontSize: 7,
-      dataLabelColor: DARK,
-    });
-  });
-
-  addFooter(s2, pageNum++);
-
-  // ═══════════ SLIDES (opcionales): Estado de Avance + Presupuesto Aprobado, UNA POR AÑO ═══
-  // Mismos datos que la fila de cards de Estado de Avance y la card "Capex
-  // Aprobado" de /capex, pero de ESE año específico -- una slide por cada
-  // año (2026 en adelante) en vez de una sola slide con todos los años
-  // mezclados. Diagramación: subtítulo + tabla de Presupuesto Aprobado
-  // arriba, cards de Estado de Avance debajo, y el listado de nombres de
-  // contrato de cada estado debajo de su card correspondiente.
+  // --- Cards de Estado de Avance: una por cada combinación estado+año que
+  // tenga datos (Terminado/En Curso/Programado/Caído, mismo orden fijo que
+  // las cards de /capex), con el desglose por empresa, el monto y la tabla
+  // de TODOS sus contratos debajo -- sin truncar ("+ N más" eliminado). Si
+  // un mismo estado tiene datos en más de un año (ej. "Programado" en 2026
+  // Y 2027), cada año es su propia card, distinguida por el año debajo del
+  // título; si el estado solo aparece en un año, el título no lo muestra. --
   const AVANCE_ORDER = ["Terminado", "En Curso", "Programado", "Caído"];
-  for (const yearData of data.avanceByYear || []) {
-    if (yearData.avanceTotals.length === 0 && !yearData.approvedBudget) continue;
-
-    const s2b = pres.addSlide();
-    s2b.background = { color: "F2F2F2" };
-
-    s2b.addText("PRESUPUESTO CAPEX", {
-      x: 0.5, y: 0.2, w: 9, h: 0.3,
-      fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
-    });
-    s2b.addText(`Estado de Avance y Presupuesto Aprobado — ${yearData.year}`, {
-      x: 0.5, y: 0.5, w: 9.2, h: 0.35,
-      fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
-    });
-    s2b.addShape(SHAPES.LINE, {
-      x: 0.5, y: 0.87, w: 9, h: 0,
-      line: { color: BORDER, width: 1 },
-    });
-
-    let cardsY = 0.99;
-
-    if (yearData.approvedBudget) {
-      s2b.addText("Presupuesto Aprobado", {
-        x: 0.5, y: 0.89, w: 9, h: 0.3,
-        fontSize: 13, fontFace: "Arial", color: DARK, bold: true,
-      });
-
-      const tableHeader: PptxGenJS.TableCell[] = [
-        { text: "Año", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "left" } },
-        { text: "Ppto.", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "right" } },
-        { text: "Aprob. Gasto", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "right" } },
-        { text: "Disponible", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 10, fontFace: "Arial", align: "right" } },
-      ];
-      const cellOpts = (align: "left" | "right"): PptxGenJS.TextPropsOptions => ({
-        fontSize: 10, fontFace: "Arial", color: DARK, align,
-      });
-      const row = yearData.approvedBudget;
-      s2b.addTable([
-        tableHeader,
-        [
-          { text: String(yearData.year), options: cellOpts("left") },
-          { text: `mm$ ${row.aprobadoMM.toLocaleString("es-CL")}`, options: cellOpts("right") },
-          { text: `mm$ ${row.totalMM.toLocaleString("es-CL")}`, options: cellOpts("right") },
-          {
-            text: `mm$ ${row.disponibleMM.toLocaleString("es-CL")}`,
-            options: { ...cellOpts("right"), color: row.disponibleMM < 0 ? PRIMARY : "1E8E3E", bold: true },
-          },
-        ],
-      ], {
-        x: 0.5, y: 1.24, w: 9,
-        colW: [2, 2.33, 2.33, 2.34],
-        border: { type: "solid", color: BORDER, pt: 0.5 },
-        autoPage: false,
-      });
-      cardsY = 1.83;
-    }
-
-    if (yearData.avanceTotals.length > 0) {
-      // Mismo orden fijo que las cards de /capex: Terminado, En Curso,
-      // Programado, Caído (no el display_order administrado en Admin).
-      const avanceCards = [...yearData.avanceTotals].sort((a, b) => {
+  interface AvanceCardSpec {
+    year: number; name: string; count: number; uf: number; color: string;
+    companyBreakdown: Array<{ company: string; uf: number }>;
+    contractRows: Array<{ contractName: string; company: string; clasificacion: string | null; uf: number; date: string | null }>;
+  }
+  const avanceCardSpecs: AvanceCardSpec[] = [];
+  avanceByYear.forEach((yearData) => {
+    [...yearData.avanceTotals]
+      .sort((a, b) => {
         const ia = AVANCE_ORDER.indexOf(a.name), ib = AVANCE_ORDER.indexOf(b.name);
         if (ia === -1 && ib === -1) return a.name.localeCompare(b.name);
         if (ia === -1) return 1;
         if (ib === -1) return -1;
         return ia - ib;
-      });
-      const cardGap = 0.15;
-      const cardW = (9 - cardGap * (avanceCards.length - 1)) / avanceCards.length;
-      // El título (Terminado/En Curso/Programado/Caído) va en una línea
-      // propia, sin el "(N)" -- que va debajo, en su propia línea -- para
-      // que la palabra nunca se corte a dos líneas por falta de ancho. Los
-      // chips de empresa van arriba a la derecha, justificados al borde de
-      // la card, en el espacio que le sobra al título.
-      const TITLE_W = 0.85; // alcanza para "Programado", la palabra más larga
-      const CHIPS_W = cardW - 0.15 - TITLE_W - 0.05 - 0.10;
-      const COMPANY_CHIP_H = 0.13;
-      const maxCompanyChips = avanceCards.reduce((max, c) => Math.max(max, c.companyBreakdown.length), 0);
-      const topBlockH = Math.max(0.36, maxCompanyChips * COMPANY_CHIP_H); // título (2 líneas) + chips, lo que sea más alto
-      const dollarOffsetY = 0.10 + topBlockH + 0.06;
-      const ufOffsetY = dollarOffsetY + 0.35;
-      const cardH = ufOffsetY + 0.30;
-      // Espacio disponible para la tabla de contratos, debajo de las cards
-      // y hasta el footer. Todas las filas de la tabla (menos el
-      // encabezado) usan la misma altura fija (TABLE_ROW_H, con espacio
-      // para 2 líneas) -- así, si una fila necesita 2 líneas por un nombre
-      // de local largo, el resto queda igual de alta en vez de verse
-      // despareja.
-      const TABLE_HEADER_H = 0.14;
-      const TABLE_ROW_H = 0.26;
-      const tableY = cardsY + cardH + 0.08;
-      const tableMaxH = 5.0 - tableY;
-      const maxTableRows = Math.max(0, Math.floor((tableMaxH - TABLE_HEADER_H) / TABLE_ROW_H));
+      })
+      .forEach((t) => avanceCardSpecs.push({
+        year: yearData.year, name: t.name, count: t.count, uf: t.uf, color: t.color,
+        companyBreakdown: t.companyBreakdown, contractRows: t.contractRows,
+      }));
+  });
+  avanceCardSpecs.sort((a, b) => {
+    const ia = AVANCE_ORDER.indexOf(a.name), ib = AVANCE_ORDER.indexOf(b.name);
+    const ra = ia === -1 ? AVANCE_ORDER.length : ia, rb = ib === -1 ? AVANCE_ORDER.length : ib;
+    return ra !== rb ? ra - rb : a.year - b.year;
+  });
+  const nameCounts = new Map<string, number>();
+  avanceCardSpecs.forEach((c) => nameCounts.set(c.name, (nameCounts.get(c.name) || 0) + 1));
 
-      const companyShort: Record<string, string> = { Autoplanet: "AP", Agroplanet: "AG", "Grupo Planet": "GP", Otra: "Otra" };
-      const fmtDate = (iso: string | null) => {
-        if (!iso) return "-";
-        const [y, m, d] = iso.split("-");
-        return d && m && y ? `${d}/${m}/${y.slice(2)}` : "-";
-      };
-      // Tipos de CAPEX abreviados para que entren en una sola línea en la
-      // columna "Tipo" de esta tabla angosta -- solo acá, el resto de la
-      // presentación sigue mostrando el nombre completo. Lo único que debe
-      // poder quedar en dos líneas es la columna "Local".
-      const clasificacionShort: Record<string, string> = {
-        "Reemplazo": "Reemp.",
-        "Regularización": "Regulariza",
-        "Amplia/Mejora": "Amp/Mejora",
-      };
-      const fmtTipoShort = (c: string | null) => {
-        const label = clasificacionLabel(c);
-        return clasificacionShort[label] || label;
-      };
-      // "Monto de los detalles en millones de pesos" (ej. "265"), sin la
-      // unidad repetida en cada fila -- la unidad ("mm$") va una sola vez
-      // en el encabezado de la columna.
-      const fmtMM = (uf: number) => `${Math.round((uf * data.ufValue) / 1_000_000).toLocaleString("es-CL")}`;
+  // Locales que no entraron en el espacio de su card en la lámina fusionada
+  // -- se listan en lámina(s) de continuación después, en una tabla ancha
+  // (ver más abajo), nunca truncados.
+  const overflowRows: Array<{ status: string; year: number; row: AvanceCardSpec["contractRows"][number] }> = [];
+  // La lámina donde terminan rindiéndose las cards de Estado de Avance --
+  // la fusionada (s2) si entran todas en una sola fila, o la última lámina
+  // de continuación si hizo falta más de una. Los gráficos de torta y su
+  // footer van en ESTA lámina (ver más abajo), nunca en s2 a secas si el
+  // contenido se corrió a otra parte.
+  let currentSlide: PptxGenJS.Slide = s2;
 
-      avanceCards.forEach((card, i) => {
-        const x = 0.5 + i * (cardW + cardGap);
-        s2b.addShape(SHAPES.RECTANGLE, { x, y: cardsY, w: cardW, h: cardH, fill: { color: LIGHT_BG } });
-        s2b.addShape(SHAPES.RECTANGLE, { x, y: cardsY, w: 0.06, h: cardH, fill: { color: colorHex(card.color) } });
-        s2b.addText(card.name, {
-          x: x + 0.15, y: cardsY + 0.09, w: TITLE_W, h: 0.18,
-          fontSize: 10, fontFace: "Arial", color: MUTED, wrap: false,
-        });
-        s2b.addText(`(${card.count})`, {
-          x: x + 0.15, y: cardsY + 0.26, w: TITLE_W, h: 0.16,
-          fontSize: 9, fontFace: "Arial", color: MUTED,
+  const companyShort: Record<string, string> = { Autoplanet: "AP", Agroplanet: "AG", "Grupo Planet": "GP", Otra: "Otra" };
+  const fmtDate = (iso: string | null) => {
+    if (!iso) return "-";
+    const [y, m, d] = iso.split("-");
+    return d && m && y ? `${d}/${m}/${y.slice(2)}` : "-";
+  };
+  // Tipos de CAPEX abreviados para que entren en una sola línea en la
+  // columna "Tipo" de las tablas angostas de cada card -- solo ahí, el
+  // resto de la presentación sigue mostrando el nombre completo.
+  const clasificacionShort: Record<string, string> = {
+    "Reemplazo": "Reemp.",
+    "Regularización": "Regulariza",
+    "Amplia/Mejora": "Amp/Mejora",
+  };
+  const fmtTipoShort = (c: string | null) => {
+    const label = clasificacionLabel(c);
+    return clasificacionShort[label] || label;
+  };
+  // "Monto de los detalles en millones de pesos" (ej. "265"), sin la unidad
+  // repetida en cada fila -- la unidad ("mm$") va una sola vez en el
+  // encabezado de la columna.
+  const fmtMM = (uf: number) => `${Math.round((uf * data.ufValue) / 1_000_000).toLocaleString("es-CL")}`;
+
+  if (avanceCardSpecs.length > 0) {
+    const cardGap = W(0.15);
+    // Máximo de cards por fila -- si hay más combinaciones estado+año que
+    // esto (ej. 4 estados x 2 años), se pasa a una segunda fila en vez de
+    // angostar las cards hasta el punto de no poder mostrar ni el título ni
+    // los chips de empresa.
+    const MAX_CARDS_PER_ROW = 4;
+    const cols = Math.min(MAX_CARDS_PER_ROW, avanceCardSpecs.length);
+    const cardW = (W(9) - cardGap * (cols - 1)) / cols;
+    const cardRows: AvanceCardSpec[][] = [];
+    for (let i = 0; i < avanceCardSpecs.length; i += MAX_CARDS_PER_ROW) {
+      cardRows.push(avanceCardSpecs.slice(i, i + MAX_CARDS_PER_ROW));
+    }
+
+    const TITLE_W = W(1.05); // alcanza para "Programado (99)" en negrita, en una línea
+    const CHIPS_W = cardW - W(0.15) - TITLE_W - W(0.05) - W(0.10);
+    const COMPANY_CHIP_H = W(0.09);
+    const maxCompanyChips = avanceCardSpecs.reduce((max, c) => Math.max(max, c.companyBreakdown.length), 0);
+    const anyYearSuffix = avanceCardSpecs.some((c) => (nameCounts.get(c.name) || 0) > 1);
+    const titleBlockH = anyYearSuffix ? W(0.26) : W(0.13); // 1 línea, o 2 si lleva el año debajo
+    const topBlockH = Math.max(titleBlockH, maxCompanyChips * COMPANY_CHIP_H);
+    const dollarOffsetY = W(0.06) + topBlockH + W(0.03);
+    const ufOffsetY = dollarOffsetY + W(0.25);
+    const cardH = ufOffsetY + W(0.15);
+
+    // Alto de fila fijo y cómodo (no se achica según el volumen de datos --
+    // PowerPoint tampoco lo permitiría por debajo de lo que el texto
+    // necesita). Si una card tiene más locales de los que entran en el
+    // espacio disponible, el resto se lista en una lámina de continuación
+    // (tabla ancha, ver más abajo) -- nunca se trunca ("+ N más" eliminado)
+    // ni se superpone con otra cosa.
+    const TABLE_HEADER_H = W(0.14);
+    const TABLE_ROW_H = W(0.2);
+    const rowGapToTable = W(0.06);
+
+    // La primera fila de cards (hasta 4 combinaciones estado+año) va en la
+    // lámina fusionada, debajo de Presupuesto Aprobado. Si hace falta más
+    // de una fila (más de 4 combinaciones), cada fila extra pasa a su
+    // propia lámina de continuación, con TODO el alto disponible -- sin
+    // competir con los gráficos de torta, que solo van en la ÚLTIMA fila
+    // (y por lo tanto en la última lámina) de esta sección.
+    let rowTopY = cardsY;
+    cardRows.forEach((rowCards, rowIdx) => {
+      const isLastRow = rowIdx === cardRows.length - 1;
+      if (rowIdx > 0) {
+        currentSlide = pres.addSlide();
+        currentSlide.background = { color: "F2F2F2" };
+        addPageHeader(currentSlide, `Estado de Avance y Presupuesto Aprobado — ${subtitleYears} (cont.)`);
+        rowTopY = W(0.99);
+      }
+      const bottomLimit = isLastRow ? pieTitleY - W(0.08) : SLIDE_H - W(0.5);
+      const tableY = rowTopY + cardH + rowGapToTable;
+      const maxVisibleRows = Math.max(0, Math.floor((bottomLimit - tableY - TABLE_HEADER_H) / TABLE_ROW_H));
+      const maxRowsHere = Math.min(maxVisibleRows, rowCards.reduce((max, c) => Math.max(max, c.contractRows.length), 0));
+
+      rowCards.forEach((card, i) => {
+        const x = W(0.5) + i * (cardW + cardGap);
+        currentSlide.addShape(SHAPES.RECTANGLE, { x, y: rowTopY, w: cardW, h: cardH, fill: { color: LIGHT_BG } });
+        currentSlide.addShape(SHAPES.RECTANGLE, { x, y: rowTopY, w: W(0.06), h: cardH, fill: { color: colorHex(card.color) } });
+
+        const titleText = (nameCounts.get(card.name) || 0) > 1
+          ? `${card.name} (${card.count})\n${card.year}`
+          : `${card.name} (${card.count})`;
+        currentSlide.addText(titleText, {
+          x: x + W(0.15), y: rowTopY + W(0.07), w: TITLE_W, h: titleBlockH,
+          fontSize: W(10), fontFace: "Arial", color: MUTED, bold: true, wrap: false,
         });
 
         // Desglose por empresa en chips (Autoplanet, Agroplanet, Grupo
-        // Planet, en ese orden), arriba a la derecha, justificados al
-        // borde de la card.
+        // Planet, en ese orden), arriba a la derecha, justificados al borde
+        // de la card.
         if (card.companyBreakdown.length > 0) {
           const chipLines = card.companyBreakdown.map((c) => `${c.company}: ${fmtUF(c.uf)} UF`);
-          s2b.addText(chipLines.join("\n"), {
-            x: x + cardW - 0.10 - CHIPS_W, y: cardsY + 0.09, w: CHIPS_W, h: card.companyBreakdown.length * COMPANY_CHIP_H,
-            fontSize: 7, fontFace: "Arial", color: MUTED, align: "right", lineSpacing: 9.5,
+          currentSlide.addText(chipLines.join("\n"), {
+            x: x + cardW - W(0.10) - CHIPS_W, y: rowTopY + W(0.07), w: CHIPS_W, h: card.companyBreakdown.length * COMPANY_CHIP_H,
+            fontSize: W(7), fontFace: "Arial", color: MUTED, align: "right", lineSpacing: W(8.5),
           });
         }
 
         // El monto en $ es el protagonista (bold, grande); la UF es
         // "meramente un dato", secundario -- mismo criterio en toda la
         // presentación.
-        s2b.addText(formatCLP(card.uf * data.ufValue), {
-          x: x + 0.05, y: cardsY + dollarOffsetY, w: cardW - 0.10, h: 0.35,
-          fontSize: 13, fontFace: "Arial", color: DARK, bold: true, wrap: false,
+        currentSlide.addText(formatCLP(card.uf * data.ufValue), {
+          x: x + W(0.05), y: rowTopY + dollarOffsetY, w: cardW - W(0.10), h: W(0.3),
+          fontSize: W(13), fontFace: "Arial", color: DARK, bold: true, wrap: false,
         });
-        s2b.addText(`${fmtUF(card.uf)} UF`, {
-          x: x + 0.15, y: cardsY + ufOffsetY, w: cardW - 0.3, h: 0.25,
-          fontSize: 9, fontFace: "Arial", color: MUTED,
+        currentSlide.addText(`${fmtUF(card.uf)} UF`, {
+          x: x + W(0.15), y: rowTopY + ufOffsetY, w: cardW - W(0.3), h: W(0.2),
+          fontSize: W(9), fontFace: "Arial", color: MUTED,
         });
 
-        // Tabla de contratos de este estado, debajo de su card: Empresa |
-        // Local | Tipo de CAPEX | Monto | Fecha de término/apertura --
-        // agrupada por empresa (Autoplanet, Agroplanet, Grupo Planet) y,
-        // dentro de cada una, ordenada por fecha (ya viene ordenada así
+        // Tabla de TODOS los contratos de este estado (sin truncar), debajo
+        // de su card: Empresa | Local | Tipo de CAPEX | Monto | Fecha de
+        // término/apertura -- agrupada por empresa (ya viene ordenada así
         // desde CapexDashboard.tsx). Anchos de columna fijos (en pulgadas,
         // no proporcionales al ancho de la card) para que Emp./Tipo/mm$/
         // Fecha nunca necesiten una segunda línea -- "Local" se lleva el
         // ancho restante y es la única columna que puede quedar en 2
-        // líneas.
-        if (card.contractRows.length > 0 && maxTableRows > 0) {
-          const rows = card.contractRows;
-          const visibleRows = rows.length > maxTableRows ? rows.slice(0, Math.max(0, maxTableRows - 1)) : rows;
-          const EMP_W = 0.22, TIPO_W = 0.50, MONTO_W = 0.30, FECHA_W = 0.38;
-          const LOCAL_W = cardW - EMP_W - TIPO_W - MONTO_W - FECHA_W - 0.02;
+        // líneas. Si todavía así no entran todos los locales de la card
+        // (card.contractRows.length > maxRowsHere), el resto pasa a
+        // overflowRows (lámina de continuación en tabla ancha).
+        if (card.contractRows.length > 0 && maxRowsHere > 0) {
+          const visibleRows = card.contractRows.slice(0, maxRowsHere);
+          card.contractRows.slice(maxRowsHere).forEach((row) => {
+            overflowRows.push({ status: card.name, year: card.year, row });
+          });
+          const EMP_W = W(0.22), TIPO_W = W(0.50), MONTO_W = W(0.30), FECHA_W = W(0.38);
+          const LOCAL_W = cardW - EMP_W - TIPO_W - MONTO_W - FECHA_W - W(0.02);
           const cellOpts = (align: "left" | "right" = "left"): PptxGenJS.TextPropsOptions => ({
-            fontSize: 6, fontFace: "Arial", color: DARK, align,
+            fontSize: W(6), fontFace: "Arial", color: DARK, align,
           });
           const tableRows: PptxGenJS.TableRow[] = [
             [
@@ -834,14 +758,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
               { text: fmtDate(r.date), options: rowCellOpts("right") },
             ]);
           });
-          if (rows.length > maxTableRows) {
-            tableRows.push([{
-              text: `+ ${rows.length - visibleRows.length} más`,
-              options: { ...cellOpts(), colspan: 5, italic: true, color: MUTED },
-            }]);
-          }
-          s2b.addTable(tableRows, {
-            x, y: tableY, w: cardW,
+          currentSlide.addTable(tableRows, {
+            x, y: tableY, w: cardW, h: TABLE_HEADER_H + (tableRows.length - 1) * TABLE_ROW_H,
             colW: [EMP_W, LOCAL_W, TIPO_W, MONTO_W, FECHA_W],
             rowH: [TABLE_HEADER_H, ...Array(tableRows.length - 1).fill(TABLE_ROW_H)],
             border: { type: "solid", color: BORDER, pt: 0.25 },
@@ -849,84 +767,189 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
             margin: 0.01,
             valign: "middle",
           });
+        } else if (card.contractRows.length > 0) {
+          card.contractRows.forEach((row) => overflowRows.push({ status: card.name, year: card.year, row }));
         }
       });
-    }
 
-    addFooter(s2b, pageNum++);
+      if (!isLastRow) addFooter(currentSlide, pageNum++);
+    });
+  }
+
+  // --- Leyenda de clasificación + gráficos de torta (geometría calculada
+  // más arriba) -- van en `currentSlide`, la última lámina de la sección de
+  // Estado de Avance (la fusionada si entró todo en una fila, o la última
+  // de continuación si no). ---
+  if (classCards.length > 0) {
+    const legendX = W(0.5);
+    // Compacta (0.18 en vez de 0.22, ya escalado) para que, con 4+ tipos de
+    // CAPEX, el último ítem no llegue a montarse con el pie de página.
+    const legendStep = W(0.18);
+    classCards.forEach((card, i) => {
+      const y = pieChartY + W(0.12) + i * legendStep;
+      currentSlide.addShape(SHAPES.RECTANGLE, {
+        x: legendX + W(0.1), y: y + W(0.02), w: W(0.12), h: W(0.12),
+        fill: { color: card.color },
+      });
+      currentSlide.addText(card.label, {
+        x: legendX + W(0.28), y, w: W(2.1), h: W(0.18),
+        fontSize: W(8), fontFace: "Arial", color: MUTED,
+      });
+    });
+  }
+
+  [...pieBlocks, ...(distributionBlock ? [distributionBlock] : [])].forEach((block, i) => {
+    // Cada torta filtra sus propios ceros -- una clasificación sin monto
+    // ese año no debe aparecer como porción vacía.
+    const nonZero = block.labels
+      .map((label, idx) => ({ label, value: block.values[idx], color: block.colors[idx] }))
+      .filter((d) => d.value > 0);
+    if (nonZero.length === 0) return;
+
+    // Slot 0 es la leyenda -- las tortas ocupan del slot 1 en adelante.
+    const x = W(0.5) + (i + 1) * (slotW + pieGap);
+    currentSlide.addText(block.title, {
+      x, y: pieTitleY, w: slotW, h: W(0.2),
+      fontSize: W(9), fontFace: "Arial", color: MUTED, align: "center", bold: true,
+    });
+    currentSlide.addChart(CHARTS.PIE, [{
+      name: block.title,
+      labels: nonZero.map((d) => d.label),
+      values: nonZero.map((d) => d.value),
+    }], {
+      x, y: pieChartY, w: slotW, h: pieH,
+      showPercent: true,
+      showLabel: block.showLabel,
+      showTitle: false,
+      showLegend: false,
+      chartColors: nonZero.map((d) => d.color),
+      dataLabelFontSize: W(7),
+      dataLabelColor: DARK,
+    });
+  });
+
+  addFooter(currentSlide, pageNum++);
+
+  // ═══════════ SLIDE(S) de continuación: locales que no entraron en la lámina fusionada ═══
+  // Si algún estado de avance tiene más locales de los que caben en su card
+  // (ver overflowRows más arriba), se listan acá en una tabla ancha de
+  // ancho completo -- nunca se trunca ("+ N más" eliminado), solo se sigue
+  // en otra lámina cuando hace falta, igual que la tabla de cada empresa.
+  if (overflowRows.length > 0) {
+    const OV_HEADER_H = W(0.14);
+    const OV_ROW_H = W(0.22);
+    const OV_ROWS_PER_SLIDE = 20;
+    const ovTableHeader: PptxGenJS.TableCell[] = [
+      { text: "Estado", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "left" } },
+      { text: "Año", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "center" } },
+      { text: "Emp.", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "left" } },
+      { text: "Local", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "left" } },
+      { text: "Tipo", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "left" } },
+      { text: "mm$", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "right" } },
+      { text: "Fecha", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(8), fontFace: "Arial", align: "right" } },
+    ];
+    const ovPages: (typeof overflowRows)[] = [];
+    for (let i = 0; i < overflowRows.length; i += OV_ROWS_PER_SLIDE) {
+      ovPages.push(overflowRows.slice(i, i + OV_ROWS_PER_SLIDE));
+    }
+    ovPages.forEach((pageRows) => {
+      const ovSlide = pres.addSlide();
+      ovSlide.background = { color: "F2F2F2" };
+      addPageHeader(ovSlide, `Estado de Avance — ${subtitleYears} (cont.)`);
+
+      const cellOpts = (align: "left" | "center" | "right" = "left"): PptxGenJS.TextPropsOptions => ({
+        fontSize: W(8), fontFace: "Arial", color: DARK, align,
+      });
+      const ovRows: PptxGenJS.TableRow[] = [ovTableHeader];
+      pageRows.forEach(({ status, year, row: r }) => {
+        const rowCellOpts = (align: "left" | "center" | "right" = "left"): PptxGenJS.TextPropsOptions =>
+          r.company === "Autoplanet" ? { ...cellOpts(align), bold: true } : cellOpts(align);
+        ovRows.push([
+          { text: status, options: rowCellOpts() },
+          { text: String(year), options: rowCellOpts("center") },
+          { text: companyShort[r.company] || r.company, options: rowCellOpts() },
+          { text: r.contractName, options: rowCellOpts() },
+          { text: fmtTipoShort(r.clasificacion), options: rowCellOpts() },
+          { text: fmtMM(r.uf), options: rowCellOpts("right") },
+          { text: fmtDate(r.date), options: rowCellOpts("right") },
+        ]);
+      });
+      ovSlide.addTable(ovRows, {
+        x: W(0.5), y: W(0.99), w: W(9), h: OV_HEADER_H + (ovRows.length - 1) * OV_ROW_H,
+        colW: [W(1.6), W(0.7), W(0.6), W(5.6), W(1.6), W(0.9), W(1.0)],
+        rowH: [OV_HEADER_H, ...Array(ovRows.length - 1).fill(OV_ROW_H)],
+        border: { type: "solid", color: BORDER, pt: 0.5 },
+        autoPage: false,
+      });
+
+      addFooter(ovSlide, pageNum++);
+    });
   }
 
   // ═══════════ SLIDES 3+: Per Company ═══════════
+  // Alto de los chips de año (uno por línea, ver yearBreakdownLine) de las
+  // cards de empresa -- crece según cuántos años tenga cada bloque.
+  const CHIP_LINE_H_SM = W(0.12); // fontSize 6.5
+
   for (const group of data.companyGroups) {
     const s = pres.addSlide();
     s.background = { color: "F2F2F2" };
-
-    s.addText("PRESUPUESTO CAPEX", {
-      x: 0.5, y: 0.2, w: 9, h: 0.3,
-      fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
-    });
-    s.addText(group.company, {
-      x: 0.5, y: 0.5, w: 9.2, h: 0.35,
-      fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
-    });
-    s.addShape(SHAPES.LINE, {
-      x: 0.5, y: 0.87, w: 9, h: 0,
-      line: { color: BORDER, width: 1 },
-    });
+    addPageHeader(s, group.company);
 
     // Company summary cards -- dinámico según los tipos con locales en esta empresa
     const companyCards = group.totals.byType.map((t) => ({
       label: t.name, count: t.count, uf: t.uf, color: colorHex(t.color),
       years: yearsWithCapex(t.yearBreakdown), yearLine: yearBreakdownLine(t.yearBreakdown),
     }));
-    const companyCardGap = 0.15;
-    const companyCardW = companyCards.length > 0 ? (9 - companyCardGap * (companyCards.length - 1)) / companyCards.length : 0;
+    const companyCardGap = W(0.15);
+    const companyCardW = companyCards.length > 0 ? (W(9) - companyCardGap * (companyCards.length - 1)) / companyCards.length : 0;
     const maxCompanyYears = companyCards.reduce((max, c) => Math.max(max, c.years.length), 0);
-    const companyCardH = 1.05 + Math.max(0, maxCompanyYears - 1) * CHIP_LINE_H_SM;
+    const companyCardH = W(1.05) + Math.max(0, maxCompanyYears - 1) * CHIP_LINE_H_SM;
+    const companyCardsY = W(1.1);
 
     companyCards.forEach((card, i) => {
-      const x = 0.5 + i * (companyCardW + companyCardGap);
+      const x = W(0.5) + i * (companyCardW + companyCardGap);
 
       s.addShape(SHAPES.RECTANGLE, {
-        x, y: 1.1, w: companyCardW, h: companyCardH,
+        x, y: companyCardsY, w: companyCardW, h: companyCardH,
         fill: { color: LIGHT_BG },
       });
 
       s.addShape(SHAPES.RECTANGLE, {
-        x, y: 1.1, w: 0.06, h: companyCardH,
+        x, y: companyCardsY, w: W(0.06), h: companyCardH,
         fill: { color: card.color },
       });
 
       s.addText(`${card.label} (${card.count})`, {
-        x: x + 0.15, y: 1.15, w: companyCardW - 0.3, h: 0.25,
-        fontSize: 10, fontFace: "Arial", color: MUTED,
+        x: x + W(0.15), y: companyCardsY + W(0.05), w: companyCardW - W(0.3), h: W(0.25),
+        fontSize: W(10), fontFace: "Arial", color: MUTED,
       });
 
       s.addText(formatCLP(card.uf * data.ufValue), {
-        x: x + 0.05, y: 1.4, w: companyCardW - 0.10, h: 0.35,
-        fontSize: 14, fontFace: "Arial", color: DARK, bold: true, wrap: false,
+        x: x + W(0.05), y: companyCardsY + W(0.3), w: companyCardW - W(0.10), h: W(0.35),
+        fontSize: W(14), fontFace: "Arial", color: DARK, bold: true, wrap: false,
       });
 
       s.addText(`${fmtUF(card.uf)} UF`, {
-        x: x + 0.15, y: 1.7, w: companyCardW - 0.3, h: 0.2,
-        fontSize: 9, fontFace: "Arial", color: MUTED,
+        x: x + W(0.15), y: companyCardsY + W(0.6), w: companyCardW - W(0.3), h: W(0.2),
+        fontSize: W(9), fontFace: "Arial", color: MUTED,
       });
 
       if (card.yearLine) {
         s.addText(card.yearLine, {
-          x: x + 0.15, y: 1.9, w: companyCardW - 0.3, h: card.years.length * CHIP_LINE_H_SM,
-          fontSize: 6.5, fontFace: "Arial", color: MUTED,
+          x: x + W(0.15), y: companyCardsY + W(0.8), w: companyCardW - W(0.3), h: card.years.length * CHIP_LINE_H_SM,
+          fontSize: W(6.5), fontFace: "Arial", color: MUTED,
         });
       }
     });
 
     // Detail table
     const tableHeader: PptxGenJS.TableCell[] = [
-      { text: "Local", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "left" } },
-      { text: "Clasificación", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "center" } },
-      { text: "m²", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "center" } },
-      { text: "Total UF", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
-      { text: "Total CLP", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
+      { text: "Local", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(9), fontFace: "Arial", align: "left" } },
+      { text: "Clasificación", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(9), fontFace: "Arial", align: "center" } },
+      { text: "m²", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(9), fontFace: "Arial", align: "center" } },
+      { text: "Total UF", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(9), fontFace: "Arial", align: "right" } },
+      { text: "Total CLP", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: W(9), fontFace: "Arial", align: "right" } },
     ];
 
     // Sort contracts: by clasificacion (mismo orden que las cards / Admin >
@@ -952,24 +975,17 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       const targetSlide = pageIdx === 0 ? s : pres.addSlide();
       if (pageIdx > 0) {
         targetSlide.background = { color: "F2F2F2" };
-        targetSlide.addText("PRESUPUESTO CAPEX", {
-          x: 0.5, y: 0.2, w: 9, h: 0.3,
-          fontSize: 14, fontFace: "Arial", color: ACCENT, bold: true,
-        });
-        targetSlide.addText(`${group.company} (cont.)`, {
-          x: 0.5, y: 0.5, w: 9.2, h: 0.35,
-          fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
-        });
+        addPageHeader(targetSlide, `${group.company} (cont.)`);
       }
 
-      const tableY = pageIdx === 0 ? 1.1 + companyCardH + 0.2 : 0.9;
+      const tableY = pageIdx === 0 ? companyCardsY + companyCardH + W(0.2) : W(0.99);
 
       const rows: PptxGenJS.TableRow[] = [tableHeader];
 
       pageContracts.forEach((c, idx) => {
         const bgColor = idx % 2 === 0 ? WHITE : LIGHT_BG;
         const cellOpts = (align: "left" | "center" | "right" = "left"): PptxGenJS.TextPropsOptions => ({
-          fontSize: 8, fontFace: "Arial", color: DARK, fill: { color: bgColor }, align,
+          fontSize: W(8), fontFace: "Arial", color: DARK, fill: { color: bgColor }, align,
         });
 
         rows.push([
@@ -987,7 +1003,7 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
         const totalCLP = group.contracts.reduce((s, c) => s + c.total_clp, 0);
 
         const totOpts = (align: "left" | "center" | "right" = "right"): PptxGenJS.TextPropsOptions => ({
-          fontSize: 9, fontFace: "Arial", color: WHITE, fill: { color: PRIMARY }, align, bold: true,
+          fontSize: W(9), fontFace: "Arial", color: WHITE, fill: { color: PRIMARY }, align, bold: true,
         });
 
         rows.push([
@@ -1000,8 +1016,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
       }
 
       targetSlide.addTable(rows, {
-        x: 0.3, y: tableY, w: 9.4,
-        colW: [3.2, 1.5, 1.0, 1.8, 1.9],
+        x: W(0.3), y: tableY, w: W(9.4),
+        colW: [W(3.2), W(1.5), W(1.0), W(1.8), W(1.9)],
         border: { pt: 0.5, color: BORDER },
       });
 
@@ -1012,7 +1028,8 @@ export async function generateCapexPPT(data: CapexPPTData, opts: GenerateCapexPP
   if (opts.skipSave) return pres;
 
   // Save
-  const arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
+  let arrBuf = await pres.write({ outputType: "arraybuffer" }) as ArrayBuffer;
+  arrBuf = await addPieSliceGaps(arrBuf);
   const blob = new Blob([arrBuf], {
     type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   });
