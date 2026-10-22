@@ -133,9 +133,9 @@ const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
    - Tablas con secretos (p. ej. `oc_verification_secret`) no se exponen a `authenticated` ni `anon`.
    - Verificación en la DB oficial (debe devolver 0 filas):
      `select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and not (has_table_privilege('authenticated',c.oid,'SELECT') and has_table_privilege('service_role',c.oid,'SELECT'));`
-   - Deuda conocida: 29 tablas creadas entre 2026-06-25 y 2026-10-20 no traen `GRANT` en su migración (en la DB oficial
-     funcionan porque se crearon antes del cambio). Una reconstrucción desde cero las dejaría sin acceso. Pendiente: migración
-     con `GRANT` idempotentes para esas tablas (toca `supabase/migrations/`, confirmar con Matias antes).
+   - Deuda histórica resuelta en `20261022120000_grant_data_api_new_tables.sql`: 27 tablas creadas entre 2026-06-25 y
+     2026-10-20 no traían `GRANT` en su migración (en la DB oficial funcionaban porque se crearon antes del cambio).
+     En una DB reconstruida desde cero la consulta de verificación solo debe listar `oc_verification_secret`, que no se expone a propósito.
 
 ---
 
