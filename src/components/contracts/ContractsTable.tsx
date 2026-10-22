@@ -1264,11 +1264,28 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     return (
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatAmount(hasMultiplePeriods ? promedio : (currentRentVal2 + gastosComunesTotal + fondoP + otros), contract.display_currency)}</span>
-                        {hasMultiplePeriods ? (
-                          <div className="text-[9px] text-muted-foreground whitespace-nowrap">
-                            <div className="font-medium">Promedio. Incluye GGCC, FP y Otros</div>
-                          </div>
-                        ) : (
+                        {hasMultiplePeriods ? (() => {
+                          // Solo se mencionan los ítems que el contrato realmente
+                          // tiene especificados (mismo criterio que la columna
+                          // "GC"/"F. Prom"/"Otros" de la vista sin promediar, acá
+                          // abajo) -- un contrato sin GGCC/FP/Otros no debe decir
+                          // que los incluye.
+                          const includedItems = [
+                            gastosComunesTotal > 0 ? "GGCC" : null,
+                            fondoPct > 0 ? "FP" : null,
+                            otros > 0 ? "Otros" : null,
+                          ].filter((item): item is string => item !== null);
+                          const label = includedItems.length === 0
+                            ? "Promedio"
+                            : `Promedio. Incluye ${includedItems.length === 1
+                                ? includedItems[0]
+                                : `${includedItems.slice(0, -1).join(", ")} y ${includedItems[includedItems.length - 1]}`}`;
+                          return (
+                            <div className="text-[9px] text-muted-foreground whitespace-nowrap">
+                              <div className="font-medium">{label}</div>
+                            </div>
+                          );
+                        })() : (
                           <div className="text-[9px] text-muted-foreground whitespace-nowrap">
                             <div>Canon{showCurrentLabel ? " actual" : ""}: {formatAmount(currentRentVal2, contract.display_currency)}</div>
                             <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}{methodology === "percentage" && currentVersion.gastos_comunes_tope && currentVersion.gastos_comunes_tope > 0 ? " (c/tope)" : ""}</div>
