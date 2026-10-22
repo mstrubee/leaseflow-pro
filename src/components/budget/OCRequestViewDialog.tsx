@@ -2,6 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,11 +23,18 @@ import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatCLP } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarWidget } from "@/components/ui/calendar";
+import { formatCLP, cn } from "@/lib/utils";
+import { MultipleLinesSelector } from "./MultipleLinesSelector";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData } from "@/lib/ocRequestShare";
 
 interface OCRequest {
   id: string;
   contract_id: string;
+  budget_id: string | null;
+  budget_line_id: string | null;
   request_number: string;
   request_date: string;
   line_name: string;
@@ -34,6 +50,16 @@ interface OCRequest {
   quotation_url?: string | null;
   quotation_file_name?: string | null;
   uf_value_at_entry?: number;
+  migo_choice?: "con" | "sin" | null;
+  sequence_number?: number | null;
+  verification_code?: string | null;
+}
+
+interface EditableLine {
+  lineId: string;
+  lineName: string;
+  amount: number;
+  maxAmount: number;
 }
 
 interface BudgetLineAssignment {
@@ -89,6 +115,7 @@ interface PaymentPlan {
   payment_number: number;
   description: string | null;
   amount_uf: number;
+  amount_clp: number | null;
   due_date: string | null;
   status: "pending" | "paid" | "overdue";
   paid_date: string | null;
@@ -112,6 +139,12 @@ const getEffectiveUf = (request: OCRequest | null, fallbackUf: number) =>
 const ufToClp = (uf: number, request: OCRequest | null, fallbackUf: number) =>
   Math.round(uf * getEffectiveUf(request, fallbackUf));
 
+// Helper: CLP de un pago. Usa el monto en CLP guardado directamente si existe
+// (evita el redondeo de ida y vuelta por UF, que podía perder $1 o más);
+// pagos antiguos sin amount_clp caen al cálculo vía UF como antes.
+const paymentClp = (plan: PaymentPlan, request: OCRequest | null, fallbackUf: number) =>
+  plan.amount_clp ?? ufToClp(plan.amount_uf, request, fallbackUf);
+
 export const OCRequestViewDialog = ({
   open,
   onOpenChange,
@@ -126,6 +159,13 @@ export const OCRequestViewDialog = ({
   const [saving, setSaving] = useState(false);
   const [request, setRequest] = useState<OCRequest | null>(null);
   const [budgetLines, setBudgetLines] = useState<BudgetLineAssignment[]>([]);
+  // Techo para "Monto Total": suma del disponible real de la(s) línea(s)
+  // asignada(s) (excluyendo el consumo de esta misma solicitud). null = sin
+  // línea asignada aún, no se puede acotar.
+  const [maxTotalUf, setMaxTotalUf] = useState<number | null>(null);
+  // Ventana emergente de error cuando el monto ingresado supera lo autorizado
+  // — el toast pasaba desapercibido, esto exige un click explícito.
+  const [amountLimitError, setAmountLimitError] = useState<{ enteredClp: number; maxClp: number } | null>(null);
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
   const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([]);
   const [activeTab, setActiveTab] = useState("info");
@@ -134,6 +174,7 @@ export const OCRequestViewDialog = ({
   const [description, setDescription] = useState("");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   
   // New payment form
   const [newPayment, setNewPayment] = useState({ description: "", amount: "", due_date: "", input_mode: "clp" as "clp" | "percent" | "balance" });
@@ -144,6 +185,11 @@ export const OCRequestViewDialog = ({
   const [editableAllocations, setEditableAllocations] = useState<EditableAllocation[]>([]);
   const [availableContracts, setAvailableContracts] = useState<Contract[]>([]);
   const [savingAllocations, setSavingAllocations] = useState(false);
+
+  // Budget line assignment edit state
+  const [isEditingLines, setIsEditingLines] = useState(false);
+  const [editableLines, setEditableLines] = useState<EditableLine[]>([]);
+  const [savingLines, setSavingLines] = useState(false);
 
   // Form assignments state
   const [formAssignments, setFormAssignments] = useState<FormAssignment[]>([]);
@@ -222,6 +268,32 @@ export const OCRequestViewDialog = ({
         })));
       } else {
         setBudgetLines([]);
+      }
+
+      // Techo del monto total: suma del disponible real de la(s) línea(s)
+      // asignada(s), excluyendo el consumo de esta misma solicitud (si no,
+      // se restaría a sí misma y el techo quedaría subestimado).
+      const assignedLineIds = linesData && linesData.length > 0
+        ? linesData.map(l => l.budget_line_id)
+        : (reqData.budget_line_id ? [reqData.budget_line_id] : []);
+
+      if (assignedLineIds.length > 0) {
+        const [{ data: lineRows }, { data: poRows }, { data: reqRows }] = await Promise.all([
+          supabase.from("budget_lines").select("id, amount_uf").in("id", assignedLineIds),
+          supabase.from("purchase_orders").select("amount_uf, budget_line_id").in("budget_line_id", assignedLineIds).is("deleted_at", null),
+          supabase.from("oc_requests").select("id, amount_uf, budget_line_id").in("budget_line_id", assignedLineIds).eq("status", "pending"),
+        ]);
+        let ceiling = 0;
+        for (const line of lineRows || []) {
+          const usedByOC = (poRows || []).filter(p => p.budget_line_id === line.id).reduce((s, p) => s + p.amount_uf, 0);
+          const usedByOtherRequests = (reqRows || [])
+            .filter(r => r.budget_line_id === line.id && r.id !== requestId)
+            .reduce((s, r) => s + r.amount_uf, 0);
+          ceiling += Math.max(0, line.amount_uf - usedByOC - usedByOtherRequests);
+        }
+        setMaxTotalUf(Math.round(ceiling * 10000) / 10000);
+      } else {
+        setMaxTotalUf(null);
       }
 
       // Load contract allocations (multi-contract)
@@ -396,6 +468,96 @@ export const OCRequestViewDialog = ({
     }
   };
 
+  // Start editing the budget line assignment — precarga la asignación actual,
+  // sea simple (budget_line_id directo) o múltiple (oc_budget_lines), con su
+  // monto actual. MultipleLinesSelector corrige maxAmount apenas calcula el
+  // disponible real (excluyendo el consumo de esta misma solicitud).
+  const handleStartEditLines = () => {
+    if (!request) return;
+    if (budgetLines.length > 0) {
+      setEditableLines(budgetLines.map(l => ({
+        lineId: l.budget_line_id,
+        lineName: l.line_name || "Línea desconocida",
+        amount: l.amount_uf,
+        maxAmount: l.amount_uf,
+      })));
+    } else if (request.budget_line_id) {
+      setEditableLines([{
+        lineId: request.budget_line_id,
+        lineName: request.line_name,
+        amount: request.amount_uf,
+        maxAmount: request.amount_uf,
+      }]);
+    } else {
+      setEditableLines([]);
+    }
+    setIsEditingLines(true);
+  };
+
+  const handleCancelEditLines = () => {
+    setIsEditingLines(false);
+    setEditableLines([]);
+  };
+
+  const handleSaveLines = async () => {
+    if (!request) return;
+
+    const validLines = editableLines.filter(l => l.lineId && l.amount > 0);
+    if (validLines.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe asignar al menos una línea de presupuesto" });
+      return;
+    }
+
+    const totalAssigned = validLines.reduce((sum, l) => sum + l.amount, 0);
+    const tolerance = 0.01;
+    if (Math.abs(totalAssigned - request.amount_uf) > tolerance) {
+      toast({
+        variant: "destructive",
+        title: "Error de distribución",
+        description: `El total asignado (${formatUF(totalAssigned)}) no coincide con el monto total de la solicitud (${formatUF(request.amount_uf)})`,
+      });
+      return;
+    }
+
+    setSavingLines(true);
+    try {
+      // Limpiar siempre la tabla puente primero — evita dejar filas residuales
+      // sin importar si el resultado final es asignación simple o múltiple.
+      await supabase.from("oc_budget_lines").delete().eq("oc_request_id", request.id);
+
+      if (validLines.length === 1) {
+        const { error } = await supabase
+          .from("oc_requests")
+          .update({ budget_line_id: validLines[0].lineId, line_name: validLines[0].lineName })
+          .eq("id", request.id);
+        if (error) throw error;
+      } else {
+        const { error: clearError } = await supabase
+          .from("oc_requests")
+          .update({ budget_line_id: null, line_name: validLines.map(l => l.lineName).join(" + ") })
+          .eq("id", request.id);
+        if (clearError) throw clearError;
+
+        const inserts = validLines.map(l => ({
+          oc_request_id: request.id,
+          budget_line_id: l.lineId,
+          amount_uf: Math.round(l.amount * 10000) / 10000,
+        }));
+        const { error: insertError } = await supabase.from("oc_budget_lines").insert(inserts);
+        if (insertError) throw insertError;
+      }
+
+      toast({ title: "Asignación de líneas actualizada" });
+      setIsEditingLines(false);
+      loadRequest();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSavingLines(false);
+    }
+  };
+
   // Load available maintenance forms for the contract
   const loadAvailableForms = async () => {
     if (!request) return;
@@ -507,9 +669,36 @@ export const OCRequestViewDialog = ({
         .eq("id", request.id);
       
       if (error) throw error;
-      
+
       toast({ title: "Solicitud actualizada" });
       onRefresh?.();
+
+      // Se ofrece descargar/enviar de nuevo con los datos ya actualizados —
+      // igual que al crearla, pero sin pedir Con Migo/Sin Migo otra vez.
+      const effectiveUf = getEffectiveUf(request, ufValue);
+      setShareData({
+        requestDate: request.request_date,
+        currency: "CLP",
+        contractNames: contractAllocations.length > 0
+          ? contractAllocations.map((a) => a.contract_name)
+          : [request.project_name].filter(Boolean),
+        description,
+        lines: budgetLines.map((l) => ({
+          lineName: l.line_name || "Línea",
+          amountClp: Math.round(l.amount_uf * effectiveUf),
+        })),
+        totalAmountClp: request.amount_clp || Math.round(request.amount_uf * effectiveUf),
+        payments: paymentPlans.map((p) => ({
+          description: p.description || "Pago",
+          amountClp: paymentClp(p, request, ufValue),
+          dueDate: p.due_date,
+        })),
+        supplierName,
+        sequenceNumber: request.sequence_number,
+        migoChoice: request.migo_choice,
+        requestId: request.id,
+        verificationCode: request.verification_code,
+      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -527,6 +716,11 @@ export const OCRequestViewDialog = ({
     }
     const effectiveUf = getEffectiveUf(request, ufValue);
     const newUf = newClp / effectiveUf;
+
+    if (maxTotalUf !== null && newUf > maxTotalUf + 0.01) {
+      setAmountLimitError({ enteredClp: Math.round(newClp), maxClp: Math.round(maxTotalUf * effectiveUf) });
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -581,6 +775,7 @@ export const OCRequestViewDialog = ({
         payment_number: nextNumber,
         description: newPayment.description || `Pago ${nextNumber}`,
         amount_uf: Math.round(amountUf * 10000) / 10000,
+        amount_clp: Math.round(amountClp),
         due_date: newPayment.due_date || null,
         status: "pending"
       });
@@ -613,7 +808,7 @@ export const OCRequestViewDialog = ({
     setEditingPaymentId(plan.id);
     setEditingPaymentField(field);
     if (field === "amount") {
-      setEditingPaymentValue(String(ufToClp(plan.amount_uf, request, ufValue)));
+      setEditingPaymentValue(String(paymentClp(plan, request, ufValue)));
     } else {
       setEditingPaymentValue(plan.description || "");
     }
@@ -639,7 +834,7 @@ export const OCRequestViewDialog = ({
         const amountUf = amountClp / effectiveUf;
         await supabase
           .from("oc_payment_plans")
-          .update({ amount_uf: Math.round(amountUf * 10000) / 10000 })
+          .update({ amount_uf: Math.round(amountUf * 10000) / 10000, amount_clp: Math.round(amountClp) })
           .eq("id", editingPaymentId);
       } else {
         await supabase
@@ -681,16 +876,21 @@ export const OCRequestViewDialog = ({
 
   // All CLP-based calculations
   const effectiveUfVal = getEffectiveUf(request, ufValue);
-  const totalPlannedClp = paymentPlans.reduce((sum, p) => sum + ufToClp(p.amount_uf, request, ufValue), 0);
-  const totalPaidClp = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + ufToClp(p.amount_uf, request, ufValue), 0);
+  const totalPlannedClp = paymentPlans.reduce((sum, p) => sum + paymentClp(p, request, ufValue), 0);
+  const totalPaidClp = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + paymentClp(p, request, ufValue), 0);
   const totalRequestClp = request?.amount_clp || ufToClp(request?.amount_uf || 0, request, ufValue);
   const remainingClp = totalRequestClp - totalPlannedClp;
 
   const isMultiContract = contractAllocations.length > 0;
+  // budgetLines solo cubre la asignación múltiple (oc_budget_lines); la
+  // asignación simple vive directo en oc_requests.budget_line_id y no
+  // aparece ahí, así que sin este fallback el contador siempre mostraba (0).
+  const assignedLinesCount = budgetLines.length > 0 ? budgetLines.length : (request?.budget_line_id ? 1 : 0);
 
   if (!open) return null;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -703,8 +903,18 @@ export const OCRequestViewDialog = ({
               </Badge>
             )}
           </DialogTitle>
-          <DialogDescription>
-            {request?.request_number}
+          <DialogDescription className="flex items-center gap-2 flex-wrap">
+            <span>{request?.request_number}</span>
+            {request?.sequence_number != null && (
+              <Badge variant="outline" className="text-xs font-mono">
+                N° {String(request.sequence_number).padStart(6, "0")}
+              </Badge>
+            )}
+            {request && (
+              <Badge variant="secondary" className="text-xs">
+                {request.migo_choice === "con" ? "Con Migo" : request.migo_choice === "sin" ? "Sin Migo" : "Sin definir"}
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -726,7 +936,7 @@ export const OCRequestViewDialog = ({
                 <Wrench className="h-3 w-3" />
                 FORMs ({formAssignments.length})
               </TabsTrigger>
-              <TabsTrigger value="lines">Líneas ({budgetLines.length})</TabsTrigger>
+              <TabsTrigger value="lines">Líneas ({assignedLinesCount})</TabsTrigger>
               <TabsTrigger value="payments">Pagos ({paymentPlans.length})</TabsTrigger>
             </TabsList>
 
@@ -767,11 +977,17 @@ export const OCRequestViewDialog = ({
                             setEditingTotalValue("");
                           }
                         }}
+                        max={maxTotalUf !== null ? Math.round(maxTotalUf * getEffectiveUf(request, ufValue)) : undefined}
                         className="h-7 text-sm font-mono w-[140px]"
                       />
                       <p className="text-[10px] text-muted-foreground mt-0.5">
                         ≈ {formatUF((parseFloat(editingTotalValue) || 0) / getEffectiveUf(request, ufValue))}
                       </p>
+                      {maxTotalUf !== null && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Disponible en la línea: {formatCLP(Math.round(maxTotalUf * getEffectiveUf(request, ufValue)))}
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div
@@ -826,6 +1042,7 @@ export const OCRequestViewDialog = ({
                     <Label>Proveedor</Label>
                     <SupplierSelect
                       value={supplierId}
+                      supplierName={supplierName}
                       onChange={(id, name) => {
                         setSupplierId(id);
                         setSupplierName(name);
@@ -1073,7 +1290,48 @@ export const OCRequestViewDialog = ({
             )}
 
             <TabsContent value="lines" className="space-y-4 mt-4">
-              {budgetLines.length > 0 ? (
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium">Asignación a Línea(s) de Presupuesto</span>
+                {!readOnly && request.status === "pending" && !isEditingLines && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleStartEditLines}
+                    disabled={!request.budget_id}
+                    title={!request.budget_id ? "Esta solicitud no está asociada a un presupuesto CAPEX" : undefined}
+                    className="gap-1"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Editar
+                  </Button>
+                )}
+                {isEditingLines && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={handleCancelEditLines} className="gap-1">
+                      <X className="h-3 w-3" />
+                      Cancelar
+                    </Button>
+                    <Button size="sm" onClick={handleSaveLines} disabled={savingLines} className="gap-1">
+                      {savingLines ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Guardar
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {isEditingLines ? (
+                request.budget_id ? (
+                  <MultipleLinesSelector
+                    budgetId={request.budget_id}
+                    selectedLines={editableLines}
+                    onSelectionChange={setEditableLines}
+                    formatUF={formatUF}
+                    formatCLP={formatCLP}
+                    ufValue={ufValue}
+                    excludeRequestId={request.id}
+                  />
+                ) : null
+              ) : budgetLines.length > 0 ? (
                 <div className="space-y-2">
                   {budgetLines.map((line) => (
                     <div key={line.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
@@ -1330,7 +1588,7 @@ export const OCRequestViewDialog = ({
                               />
                             ) : (
                               <div className="flex flex-col items-end">
-                                <span>{formatCLP(ufToClp(plan.amount_uf, request, ufValue))}</span>
+                                <span>{formatCLP(paymentClp(plan, request, ufValue))}</span>
                                 <span className="text-[10px] text-muted-foreground">{formatUF(plan.amount_uf)}</span>
                               </div>
                             )}
@@ -1441,16 +1699,38 @@ export const OCRequestViewDialog = ({
                     </div>
                     <div className="col-span-2 space-y-1">
                       <Label className="text-xs">Vencimiento</Label>
-                      <Input
-                        type="date"
-                        value={newPayment.due_date}
-                        onChange={(e) => setNewPayment(prev => ({ ...prev, due_date: e.target.value }))}
-                      />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className={cn(
+                              "w-full h-9 justify-start text-left font-normal px-2 text-xs",
+                              !newPayment.due_date && "text-muted-foreground"
+                            )}
+                          >
+                            <Calendar className="mr-1 h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">
+                              {newPayment.due_date
+                                ? format(new Date(`${newPayment.due_date}T00:00:00`), "dd/MM/yyyy", { locale: es })
+                                : "Fecha"}
+                            </span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarWidget
+                            mode="single"
+                            selected={newPayment.due_date ? new Date(`${newPayment.due_date}T00:00:00`) : undefined}
+                            onSelect={(date) => setNewPayment(prev => ({ ...prev, due_date: date ? format(date, "yyyy-MM-dd") : "" }))}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div className="col-span-2 flex items-end">
-                      <Button 
-                        size="sm" 
-                        onClick={handleAddPayment} 
+                      <Button
+                        size="sm"
+                        onClick={handleAddPayment}
                         disabled={addingPayment}
                         className="w-full gap-1"
                       >
@@ -1481,5 +1761,32 @@ export const OCRequestViewDialog = ({
         )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={!!amountLimitError} onOpenChange={(v) => { if (!v) setAmountLimitError(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Monto excede lo autorizado</AlertDialogTitle>
+          <AlertDialogDescription>
+            {amountLimitError && (
+              <>
+                El monto ingresado ({formatCLP(amountLimitError.enteredClp)}) supera el máximo autorizado
+                para la(s) línea(s) de presupuesto asignada(s): <strong>{formatCLP(amountLimitError.maxClp)}</strong>.
+              </>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction onClick={() => setAmountLimitError(null)}>Entendido</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+      requireMigoChoice={false}
+    />
+    </>
   );
 };
