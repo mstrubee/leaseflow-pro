@@ -117,6 +117,25 @@ const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
 3. **Nombres en inglés** para código, **UI en español** para usuarios finales
 4. **RLS siempre** — cualquier tabla nueva debe tener RLS habilitado
 5. **TypeScript estricto** — correr `npx tsc --noEmit` antes de cada commit
+6. **GRANT explícito en cada tabla nueva** — desde el 2026-10-30 Supabase ya no da acceso Data API automático a las tablas
+   nuevas de `public` (aviso de Supabase, 2026-10-20). Toda migración que haga `CREATE TABLE` debe incluir sus `GRANT` en el
+   mismo archivo; sin ellos supabase-js recibe `permission denied`. Esto vale también para `supabase db reset`, ramas de
+   preview y proyectos nuevos, porque repiten todas las migraciones desde cero.
+
+   ```sql
+   GRANT SELECT, INSERT, UPDATE, DELETE ON public.<tabla> TO authenticated;
+   GRANT ALL ON public.<tabla> TO service_role;
+   -- anon solo si la tabla debe leerse sin iniciar sesión (hoy ninguna lo necesita)
+   ```
+
+   - Dar a `authenticated` solo los permisos que la tabla necesita (p. ej. solo `SELECT` si se escribe vía RPC/Edge Function);
+     el acceso fino lo sigue controlando RLS (regla 4).
+   - Tablas con secretos (p. ej. `oc_verification_secret`) no se exponen a `authenticated` ni `anon`.
+   - Verificación en la DB oficial (debe devolver 0 filas):
+     `select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and not (has_table_privilege('authenticated',c.oid,'SELECT') and has_table_privilege('service_role',c.oid,'SELECT'));`
+   - Deuda histórica resuelta en `20261022120000_grant_data_api_new_tables.sql`: 27 tablas creadas entre 2026-06-25 y
+     2026-10-20 no traían `GRANT` en su migración (en la DB oficial funcionaban porque se crearon antes del cambio).
+     En una DB reconstruida desde cero la consulta de verificación solo debe listar `oc_verification_secret`, que no se expone a propósito.
 
 ---
 
