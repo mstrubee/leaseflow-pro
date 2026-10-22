@@ -189,7 +189,15 @@ export const generateContractsListExcel = (
             : breakdown.canon + breakdown.ggcc + breakdown.fondoPromocion + breakdown.otrosEgresos;
           const parts: string[] = [formatContractAmount(total, contract.display_currency)];
           if (hasMultiplePeriods) {
-            parts.push("Promedio (incl. GGCC, FP, Otros)");
+            // Solo se mencionan los ítems que el contrato realmente tiene
+            // especificados (mismo criterio que Canon/GC/FP/Otros de la
+            // rama sin promediar, acá abajo).
+            const includedItems = [
+              breakdown.ggcc > 0 ? "GGCC" : null,
+              breakdown.fondoPromocion > 0 ? "FP" : null,
+              breakdown.otrosEgresos > 0 ? "Otros" : null,
+            ].filter((item): item is string => item !== null);
+            parts.push(includedItems.length === 0 ? "Promedio" : `Promedio (incl. ${includedItems.join(", ")})`);
           } else {
             const extras: string[] = [`Canon ${formatContractAmount(breakdown.canon, contract.display_currency)}`];
             if (breakdown.ggcc > 0) extras.push(`GC ${formatContractAmount(breakdown.ggcc, contract.display_currency)}`);

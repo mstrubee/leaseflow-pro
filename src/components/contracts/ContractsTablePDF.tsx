@@ -275,7 +275,19 @@ export const generateContractsListPDF = async (
             const lines: string[] = [formatContractAmount(totalShown, contract.display_currency)];
 
             if (hasMultiplePeriods) {
-              lines.push("(Promedio. Incluye GGCC, FP y Otros)");
+              // Solo se mencionan los ítems que el contrato realmente tiene
+              // especificados (mismo criterio que las líneas Canon/GC/F.
+              // Prom/Otros de la vista sin promediar, acá abajo).
+              const includedItems = [
+                breakdown.ggcc > 0 ? "GGCC" : null,
+                breakdown.fondoPromocion > 0 ? "FP" : null,
+                breakdown.otrosEgresos > 0 ? "Otros" : null,
+              ].filter((item): item is string => item !== null);
+              lines.push(includedItems.length === 0
+                ? "(Promedio)"
+                : `(Promedio. Incluye ${includedItems.length === 1
+                    ? includedItems[0]
+                    : `${includedItems.slice(0, -1).join(", ")} y ${includedItems[includedItems.length - 1]}`})`);
             } else {
               lines.push(`Canon: ${formatContractAmount(breakdown.canon, contract.display_currency)}`);
               lines.push(`GC: ${formatContractAmount(breakdown.ggcc, contract.display_currency)}`);
