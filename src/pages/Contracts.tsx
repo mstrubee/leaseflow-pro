@@ -56,6 +56,7 @@ interface ContractVersion {
   initial_rent?: number | null;
   initial_rent_is_uf_m2?: boolean | null;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
   duration_months: number;
   is_current: boolean;
   effective_date: string | null;
@@ -432,6 +433,7 @@ const Contracts = () => {
           initial_rent,
           initial_rent_is_uf_m2,
           grace_months,
+          grace_ggcc_applies,
           duration_months,
           is_current,
           effective_date,

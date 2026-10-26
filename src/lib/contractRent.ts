@@ -14,6 +14,10 @@ export interface ContractVersionLike {
   initial_rent_is_uf_m2?: boolean | null;
   effective_date?: string | null;
   grace_months?: number | null;
+  // Los meses de gracia eximen el arriendo (canon) siempre -- este flag
+  // decide si TAMBIÉN eximen los gastos comunes. Default true (se cobran)
+  // preserva el comportamiento histórico, ver migración grace_ggcc_applies.
+  grace_ggcc_applies?: boolean | null;
 
   // Escalations
   rent_escalations?: RentEscalationLike[];
@@ -50,6 +54,10 @@ export interface CurrentRentResult {
   hasEscalations: boolean;
   hasAdjustments: boolean;
   isContractNotStarted: boolean;
+  // true solo durante los meses de gracia del contrato (currentMonth entre 1
+  // y grace_months) -- usado para decidir si corresponde eximir también los
+  // gastos comunes (grace_ggcc_applies), no solo el canon.
+  isInGracePeriod: boolean;
 }
 
 const safeParseDate = (value: string | null | undefined): Date | null => {
@@ -99,6 +107,7 @@ export const calculateCurrentRentUF = (params: {
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: true,
+      isInGracePeriod: false,
     };
   }
 
@@ -113,6 +122,7 @@ export const calculateCurrentRentUF = (params: {
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: true,
+      isInGracePeriod: false,
     };
   }
 
@@ -124,6 +134,7 @@ export const calculateCurrentRentUF = (params: {
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: false,
+      isInGracePeriod: true,
     };
   }
 
@@ -135,6 +146,7 @@ export const calculateCurrentRentUF = (params: {
       hasEscalations: false,
       hasAdjustments: false,
       isContractNotStarted: false,
+      isInGracePeriod: false,
     };
   }
 
@@ -212,6 +224,7 @@ export const calculateCurrentRentUF = (params: {
     hasEscalations,
     hasAdjustments,
     isContractNotStarted: false,
+    isInGracePeriod: false,
   };
 };
 
@@ -275,14 +288,18 @@ export const calculateTotalArriendoUF = (params: {
   const isRentUfM2 = version.regime_rent_is_uf_m2 === true;
   const canon = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
 
-  const { currentRent } = calculateCurrentRentUF({ version, signedDate, superficie });
+  const { currentRent, isInGracePeriod } = calculateCurrentRentUF({ version, signedDate, superficie });
 
-  const ggcc = calculateGastosComunesUF({
+  const rawGgcc = calculateGastosComunesUF({
     version,
     superficie,
     metrosLinealesFrente,
     baseRegimeRent: canon,
   });
+  // Los meses de gracia eximen el canon siempre; los gastos comunes solo si
+  // grace_ggcc_applies está en false (default true = se siguen cobrando).
+  const graceGgccApplies = version.grace_ggcc_applies !== false;
+  const ggcc = isInGracePeriod && !graceGgccApplies ? 0 : rawGgcc;
 
   const fondoPromocionPct = version.fondo_promocion_percentage || 0;
   const fondoPromocion = currentRent * (fondoPromocionPct / 100);
