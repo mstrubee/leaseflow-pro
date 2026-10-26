@@ -13,6 +13,7 @@ interface ContractVersion {
   initial_rent_is_uf_m2?: boolean | null;
   effective_date?: string | null;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
 
   // Escalations & adjustments
   rent_escalations?: Array<{ month_number: number; amount: number }>;

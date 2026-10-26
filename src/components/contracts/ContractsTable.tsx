@@ -12,7 +12,7 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, calculateCurrentRentUF } from "@/lib/contractRent";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -51,6 +51,7 @@ interface ContractVersion {
   initial_rent?: number | null;
   initial_rent_is_uf_m2?: boolean | null;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
   duration_months: number;
   is_current: boolean;
   effective_date: string | null;
@@ -559,113 +560,6 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     }
 
     return { isInsideRange: false, rangeEndDate: null };
-  };
-
-  // Calculate current rent based on escalations, periodic adjustments, and current month
-  // superficie parameter is used when rent is in UF/m²
-  // For contracts that haven't started yet (future start date), returns regime rent
-  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null, superficie: number = 0): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean; isContractNotStarted: boolean } => {
-    const escalations = version.rent_escalations || [];
-    const hasEscalations = escalations.length > 0;
-    const hasAdjustments = version.has_periodic_adjustments && 
-      (version.adjustment_value || 0) > 0 && 
-      (version.first_adjustment_month || 0) > 0;
-    
-    const isRentUfM2 = version.regime_rent_is_uf_m2 ?? false;
-    // initial_rent inherits UF/m² from regime if its own flag is not explicitly set
-    const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || isRentUfM2;
-    
-    // Calculate current month
-    const startDate = version.effective_date
-      ? parseISO(version.effective_date)
-      : signedDate
-        ? parseISO(signedDate)
-        : null;
-    
-    // Get base regime rent (considering UF/m²)
-    const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
-    // Initial rent (considering UF/m²) — has priority over regime_rent whenever
-    // it's loaded (same criteria as rentField in buildSeed.ts): in practice the
-    // analyst types the real canon into initial_rent and leaves regime_rent at
-    // its default (0), whether or not the contract has escalations. Every early
-    // return below used to fall back to baseRegimeRent alone, so a contract
-    // without escalations (or that hadn't started yet) showed canon $0 even
-    // with initial_rent loaded — real case: Ovalle (Express).
-    const baseInitialRent = version.initial_rent
-      ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
-      : 0;
-    const baseRent = baseInitialRent || baseRegimeRent;
-
-    if (!startDate) {
-      return { currentRent: baseRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
-    }
-
-    const today = new Date();
-    const diffTime = today.getTime() - startDate.getTime();
-    const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-
-    // Check if contract hasn't started yet (future start date)
-    const isContractNotStarted = currentMonth < 1;
-    if (isContractNotStarted) {
-      // For contracts that haven't started, return the (still) projected rent
-      return { currentRent: baseRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
-    }
-
-    // Check grace period - only for active contracts (currentMonth >= 1)
-    const graceMonths = version.grace_months || 0;
-    if (currentMonth <= graceMonths) {
-      return { currentRent: 0, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
-    }
-
-    // If no escalations and no adjustments, rent stays flat at initial_rent
-    // (or regime_rent if there's no initial_rent loaded)
-    if (!hasEscalations && !hasAdjustments) {
-      return { currentRent: baseRent, hasEscalations: false, hasAdjustments: false, isContractNotStarted: false };
-    }
-
-    // Start with base rent from escalations or regime rent
-    let currentRent = baseRent;
-
-    if (hasEscalations) {
-      // Find the applicable escalation for current month
-      const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
-
-      currentRent = baseInitialRent || baseRegimeRent;
-      for (const esc of sortedEscalations) {
-        if (esc.month_number <= currentMonth) {
-          // Per-escalation UF/m²: own flag or legacy regime flag
-          const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
-          currentRent = needsMultiply ? esc.amount * superficie : esc.amount;
-        } else {
-          break;
-        }
-      }
-    }
-    
-    // Apply periodic adjustments on top of base rent
-    if (hasAdjustments) {
-      const firstAdjMonth = version.first_adjustment_month || 0;
-      const periodicity = version.adjustment_periodicity_months || 12;
-      const adjValue = version.adjustment_value || 0;
-      const adjType = version.adjustment_type || "percentage";
-      
-      // Calculate how many adjustments have been applied
-      if (currentMonth >= firstAdjMonth) {
-        const monthsSinceFirst = currentMonth - firstAdjMonth;
-        const numAdjustments = Math.floor(monthsSinceFirst / periodicity) + 1;
-        
-        // Apply adjustments cumulatively
-        for (let i = 0; i < numAdjustments; i++) {
-          if (adjType === "percentage") {
-            currentRent = currentRent * (1 + adjValue / 100);
-          } else {
-            currentRent = currentRent + adjValue;
-          }
-        }
-      }
-    }
-    
-    return { currentRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
   };
 
   const getStatusBadge = (status: string) => {
@@ -1206,44 +1100,25 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   {currentVersion ? (() => {
                     const superficie = contract.superficie_edificada_local || 0;
                     const metrosFrente = contract.metros_lineales_frente || 0;
-                    const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
                     const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-                    
-                    // Gastos comunes: calculate based on methodology
-                    let gastosComunesTotal = 0;
-                    
-                    if (methodology === "percentage") {
-                      // Percentage methodology
-                      const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-                      const percentage = currentVersion.gastos_comunes_percentage || 0;
-                      const topeValue = currentVersion.gastos_comunes_tope;
-                      const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-                      
-                      // Calculate base amount (Total GGCC * Percentage)
-                      const calculatedAmount = (totalCentro * percentage) / 100;
-                      
-                      // Apply cap if configured
-                      if (topeValue && topeValue > 0) {
-                        // Calculate effective cap based on type
-                        const effectiveTope = topeType === "uf_m2" && superficie > 0
-                          ? topeValue * superficie
-                          : topeValue;
-                        
-                        // Apply the cap only if calculated amount exceeds it
-                        gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
-                      } else {
-                        gastosComunesTotal = calculatedAmount;
-                      }
-                    } else {
-                      // UF/m2 methodology
-                      const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                      const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-                      const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-                      const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                      const fixedAdminUf = currentVersion.gastos_comunes_fixed_admin_uf || 0;
-                      gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
-                    }
-                    
+
+                    // Mismo cálculo (UF/m², initial_rent, y gracia que exime
+                    // también los gastos comunes cuando grace_ggcc_applies es
+                    // false) que usa la ficha del contrato -- antes esta celda
+                    // reimplementaba su propia versión de GC, que no
+                    // consideraba el período de gracia para nada.
+                    const {
+                      canon: currentRentVal2,
+                      ggcc: gastosComunesTotal,
+                      fondoPromocion: fondoP,
+                      otrosEgresos: otros,
+                    } = calculateTotalArriendoUF({
+                      version: currentVersion,
+                      signedDate: contract.signed_date,
+                      superficie,
+                      metrosLinealesFrente: metrosFrente,
+                    });
+
                     // Calculate weighted average total arriendo
                     const { promedio, hasMultiplePeriods } = calculateWeightedAverageTotalArriendo({
                       version: { ...currentVersion, duration_months: currentVersion.duration_months },
@@ -1252,14 +1127,15 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       metrosLinealesFrente: metrosFrente,
                     });
 
-                    // Calculate current rent for label purposes
-                    const { hasEscalations, hasAdjustments, isContractNotStarted, currentRent: currentRentVal2 } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
+                    // Current rent status, for label purposes only
+                    const { hasEscalations, hasAdjustments, isContractNotStarted } = calculateCurrentRentUF({
+                      version: currentVersion,
+                      signedDate: contract.signed_date,
+                      superficie,
+                    });
                     const showCurrentLabel = !isContractNotStarted && (hasEscalations || hasAdjustments);
 
-                    // Individual components for non-averaged display
                     const fondoPct = currentVersion.fondo_promocion_percentage ?? 0;
-                    const fondoP = currentRentVal2 * (fondoPct / 100);
-                    const otros = currentVersion.otros_egresos_amount || 0;
 
                     return (
                       <div className="flex flex-col items-center">

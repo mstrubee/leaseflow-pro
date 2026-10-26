@@ -1225,6 +1225,7 @@ const ContractDetail = () => {
                             gastos_comunes_fixed_admin_uf: (displayVersion as any).gastos_comunes_fixed_admin_uf,
                             has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
                             grace_months: (displayVersion as any).grace_months,
+                            grace_ggcc_applies: (displayVersion as any).grace_ggcc_applies,
                             otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
                             otros_egresos_description: (displayVersion as any).otros_egresos_description,
                             notice_bilaterality: (displayVersion as any).notice_bilaterality,
