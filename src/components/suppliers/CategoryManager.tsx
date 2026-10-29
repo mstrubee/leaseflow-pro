@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { useSuppliersNavigation } from "./SuppliersReturnButton";
 import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
+import { BEATRIZ_CFG_DB_KEY, BEATRIZ_DEFAULTS, mergeBeatrizCfg, type BeatrizCfg } from "@/lib/beatrizRubroConfig";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search, Loader2, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { SupplierForm } from "./SupplierForm";
@@ -165,6 +169,18 @@ const LEVEL_COLORS = [
   { bg: "bg-primary/5", border: "border-primary/10", text: "text-primary/70" },
 ];
 
+// Clasificación Compras/Mantenciones por rubro, tal como la administra el KPI
+// "Beatriz Valenzuela — Cobertura de Proveedores" (kpi_team_config, key='beatriz').
+// Colores tomados 1:1 de BTN.active en SupplierCategoryView.tsx para consistencia
+// visual con la pestaña "Categoría".
+type RubroBadgeKey = "compras" | "mantenciones" | "ambas";
+
+const RUBRO_BADGE: Record<RubroBadgeKey, { label: string; className: string }> = {
+  compras: { label: "Compras", className: "bg-green-700 text-white" },
+  mantenciones: { label: "Mantenciones", className: "bg-sky-400 text-white" },
+  ambas: { label: "Ambas", className: "bg-orange-500 text-white" },
+};
+
 const SortableCategoryRow = ({
   item,
   editingId,
@@ -185,6 +201,9 @@ const SortableCategoryRow = ({
   onPromote,
   getMoveTargets,
   dragDisabled,
+  rubroBadge,
+  onSetRubroBadge,
+  canEditRubroBadge,
 }: {
   item: FlatVisibleItem;
   editingId: string | null;
@@ -205,6 +224,9 @@ const SortableCategoryRow = ({
   onPromote: (catId: string) => void;
   getMoveTargets: (catId: string) => { id: string | null; name: string; level: number }[];
   dragDisabled: boolean;
+  rubroBadge: RubroBadgeKey | null;
+  onSetRubroBadge: (catId: string, next: RubroBadgeKey | null) => void;
+  canEditRubroBadge: boolean;
 }) => {
   const {
     attributes,
@@ -297,7 +319,64 @@ const SortableCategoryRow = ({
             >
               {cat.name}
             </span>
-            
+
+            {canEditRubroBadge ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={e => e.stopPropagation()}
+                    className={cn(
+                      "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none transition-opacity",
+                      rubroBadge
+                        ? RUBRO_BADGE[rubroBadge].className
+                        : "opacity-0 group-hover:opacity-100 border border-dashed border-muted-foreground/40 text-muted-foreground"
+                    )}
+                    title="Clasificación KPI Beatriz (Cobertura de Proveedores) — click para editar"
+                  >
+                    {rubroBadge ? RUBRO_BADGE[rubroBadge].label : "Sin clasificar"}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-44 p-1">
+                  <div className="space-y-0.5">
+                    {(Object.keys(RUBRO_BADGE) as RubroBadgeKey[]).map(key => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => onSetRubroBadge(cat.id, key)}
+                        className={cn(
+                          "w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent flex items-center gap-2",
+                          rubroBadge === key && "bg-accent"
+                        )}
+                      >
+                        <span className={cn("h-2 w-2 rounded-full", RUBRO_BADGE[key].className)} />
+                        {RUBRO_BADGE[key].label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => onSetRubroBadge(cat.id, null)}
+                      className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent text-muted-foreground"
+                    >
+                      Sin clasificar
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              rubroBadge && (
+                <span
+                  className={cn(
+                    "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none",
+                    RUBRO_BADGE[rubroBadge].className
+                  )}
+                  title="Clasificación KPI Beatriz (Cobertura de Proveedores)"
+                >
+                  {RUBRO_BADGE[rubroBadge].label}
+                </span>
+              )
+            )}
+
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleActive(cat)} title={cat.is_active ? "Desactivar" : "Activar"}>
                 {cat.is_active ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -417,6 +496,7 @@ const ReassignCategoryPicker = ({
 };
 
 export const CategoryManager = () => {
+  const { isAdmin } = useAuth();
   const [categories, setCategories] = useState<CategoryWithChildren[]>([]);
   const [flatCategories, setFlatCategories] = useState<SupplierCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -493,6 +573,68 @@ export const CategoryManager = () => {
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Clasificación Compras/Mantenciones por rubro — misma fuente que administra
+  // el KPI "Beatriz Valenzuela — Cobertura de Proveedores" (kpi_team_config,
+  // key='beatriz'). Editable desde acá (además del modal admin del KPI): se
+  // guarda la config completa para no pisar los umbrales (n70/n100/n130) que
+  // administra esa otra pantalla. Fallo silencioso al cargar — es un badge
+  // decorativo, no debe romper la pestaña si la fila aún no existe o no hay
+  // permiso de lectura.
+  const [beatrizCfg, setBeatrizCfg] = useState<BeatrizCfg | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: row } = await supabase
+          .from("kpi_team_config")
+          .select("config")
+          .eq("key", BEATRIZ_CFG_DB_KEY)
+          .maybeSingle();
+        setBeatrizCfg(mergeBeatrizCfg(row?.config as Parameters<typeof mergeBeatrizCfg>[0]));
+      } catch (err) {
+        console.error("Error loading Beatriz rubro classification:", err);
+      }
+    })();
+  }, []);
+
+  const rubroBadgeMap = useMemo(() => {
+    const map = new Map<string, RubroBadgeKey>();
+    if (!beatrizCfg) return map;
+    for (const id of beatrizCfg.compras.rubroIds) map.set(id, "compras");
+    for (const id of beatrizCfg.mantenciones.rubroIds) map.set(id, map.has(id) ? "ambas" : "mantenciones");
+    return map;
+  }, [beatrizCfg]);
+
+  // Guarda la clasificación de un rubro (Compras / Mantenciones / Ambas / sin
+  // clasificar) directamente desde su badge, sin tener que ir al modal admin
+  // del KPI. Solo se tocan los rubroIds — n70/n100/n130 quedan intactos.
+  const handleSetRubroBadge = async (catId: string, next: RubroBadgeKey | null) => {
+    const base = beatrizCfg ?? BEATRIZ_DEFAULTS;
+    const nextCfg: BeatrizCfg = {
+      compras: { ...base.compras, rubroIds: base.compras.rubroIds.filter(id => id !== catId) },
+      mantenciones: { ...base.mantenciones, rubroIds: base.mantenciones.rubroIds.filter(id => id !== catId) },
+    };
+    if (next === "compras" || next === "ambas") nextCfg.compras.rubroIds = [...nextCfg.compras.rubroIds, catId];
+    if (next === "mantenciones" || next === "ambas") nextCfg.mantenciones.rubroIds = [...nextCfg.mantenciones.rubroIds, catId];
+
+    const previous = beatrizCfg;
+    setBeatrizCfg(nextCfg);
+    try {
+      const { error } = await supabase
+        .from("kpi_team_config")
+        .upsert(
+          { key: BEATRIZ_CFG_DB_KEY, config: nextCfg as unknown as Json, updated_at: new Date().toISOString() },
+          { onConflict: "key" }
+        );
+      if (error) throw error;
+      toast.success("Clasificación actualizada");
+    } catch (err) {
+      console.error("Error updating rubro classification:", err);
+      toast.error("Error al actualizar la clasificación");
+      setBeatrizCfg(previous);
+    }
+  };
 
   const buildTree = (flatCats: SupplierCategory[]): CategoryWithChildren[] => {
     const map = new Map<string, CategoryWithChildren>();
@@ -581,9 +723,18 @@ export const CategoryManager = () => {
         .select()
         .single();
       if (error) throw error;
-      const finalFlat = updatedFlat.map(c => c.id === tempId ? { ...c, id: data.id } : c);
-      setFlatCategories(finalFlat);
-      setCategories(buildTree(finalFlat));
+
+      // Ubicar el rubro recién creado en su posición alfabética entre sus
+      // hermanos (no siempre al final) — así el listado nace ordenado sin
+      // depender de arrastrarlo manualmente después.
+      const finalSiblings = [...siblings, { ...newCat, id: data.id }]
+        .sort((a, b) => a.name.localeCompare(b.name, "es"));
+      await Promise.all(
+        finalSiblings.map((cat, index) =>
+          supabase.from("supplier_categories").update({ display_order: index + 1 }).eq("id", cat.id)
+        )
+      );
+      await loadCategories();
       toast.success(parentId ? "Sub-rubro creado" : "Rubro creado");
     } catch (error: any) {
       setFlatCategories(flatCategories);
@@ -720,20 +871,43 @@ export const CategoryManager = () => {
     setLoadingSuppliers(true);
     try {
       const allCatIds = [catId, ...getDescendants(catId)];
-      const { data, error } = await supabase
-        .from("suppliers")
-        .select("id, name, rut, category:supplier_categories(name)")
-        .in("category_id", allCatIds)
-        .order("name");
-      if (error) throw error;
-      setCategorySuppliers(
-        (data || []).map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          rut: s.rut,
-          category_name: s.category?.name || null,
-        }))
-      );
+
+      // Un proveedor puede quedar asociado a un rubro de dos formas: como su
+      // rubro principal (suppliers.category_id) o vía el selector múltiple
+      // (supplier_category_assignments). Hay que consultar ambas — si no,
+      // un proveedor con el rubro asignado SOLO por el selector múltiple
+      // nunca aparece acá, aunque el rubro sí esté correctamente asignado.
+      const [primaryRes, assignedRes] = await Promise.all([
+        supabase
+          .from("suppliers")
+          .select("id, name, rut, category:supplier_categories(name)")
+          .in("category_id", allCatIds),
+        supabase
+          .from("supplier_category_assignments")
+          .select("category:supplier_categories(name), supplier:suppliers(id, name, rut)")
+          .in("category_id", allCatIds),
+      ]);
+      if (primaryRes.error) throw primaryRes.error;
+      if (assignedRes.error) throw assignedRes.error;
+
+      const byId = new Map<string, { id: string; name: string; rut: string | null; category_name: string | null }>();
+      (primaryRes.data || []).forEach((s: { id: string; name: string; rut: string | null; category: { name: string } | null }) => {
+        byId.set(s.id, { id: s.id, name: s.name, rut: s.rut, category_name: s.category?.name || null });
+      });
+      // Para los que solo vienen por el selector múltiple, se muestra el
+      // nombre del rubro que causó la coincidencia (no su rubro principal,
+      // que sería irrelevante acá).
+      (assignedRes.data || []).forEach((a: { category: { name: string } | null; supplier: { id: string; name: string; rut: string | null } | null }) => {
+        if (!a.supplier || byId.has(a.supplier.id)) return;
+        byId.set(a.supplier.id, {
+          id: a.supplier.id,
+          name: a.supplier.name,
+          rut: a.supplier.rut,
+          category_name: a.category?.name || null,
+        });
+      });
+
+      setCategorySuppliers(Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, "es")));
     } catch {
       toast.error("Error al cargar proveedores");
       setCategorySuppliers([]);
@@ -1004,6 +1178,9 @@ export const CategoryManager = () => {
                 onPromote={handlePromote}
                 getMoveTargets={getMoveTargets}
                 dragDisabled={editingId !== null}
+                rubroBadge={rubroBadgeMap.get(item.id) ?? null}
+                onSetRubroBadge={handleSetRubroBadge}
+                canEditRubroBadge={isAdmin}
               />
             ))}
           </div>

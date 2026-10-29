@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
@@ -10,8 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Edit2, Loader2, FileText, Copy } from "lucide-react";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { Plus, Trash2, Edit2, Loader2, FileText, Copy, Download, Upload } from "lucide-react";
 import { BudgetTemplateLineTree, TemplateLine } from "./BudgetTemplateLineTree";
+import {
+  exportTemplateToExcel,
+  parseExcelToTemplateLines,
+  downloadExampleTemplateExcel,
+} from "./BudgetTemplateExcel";
 
 interface BudgetTemplate {
   id: string;
@@ -46,8 +52,14 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  
+
+  // Excel import
+  const [importing, setImporting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const { toast } = useToast();
+  const { ufValue } = useEconomicIndicators();
 
   useEffect(() => {
     loadTemplates();
@@ -114,6 +126,14 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
         roots.push(node);
       }
     });
+
+    // Ordenar por display_order en cada nivel para que el reordenamiento
+    // (arrastrar) se refleje visualmente y no dependa del orden de inserción.
+    const sortByOrder = (nodes: TemplateLine[]) => {
+      nodes.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+      nodes.forEach((n) => { if (n.children && n.children.length) sortByOrder(n.children); });
+    };
+    sortByOrder(roots);
 
     return roots;
   };
@@ -266,6 +286,88 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
     }
   };
 
+  // ---- Descargar plantilla a Excel ----
+  const handleDownloadExcel = async (template: BudgetTemplate) => {
+    setDownloadingId(template.id);
+    try {
+      const { data, error } = await supabase
+        .from("budget_template_lines")
+        .select("*")
+        .eq("template_id", template.id)
+        .order("display_order");
+
+      if (error) throw error;
+      const tree = buildTree((data || []) as TemplateLine[]);
+      await exportTemplateToExcel(template.name, template.budget_type, tree, ufValue);
+      toast({ title: "Excel descargado", description: `"${template.name}"` });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // ---- Crear plantilla desde Excel ----
+  const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset input so the same file can be re-selected later
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const parsed = await parseExcelToTemplateLines(file);
+
+      // 1. Create the template. Name from file name (sans extension).
+      const baseName = file.name.replace(/\.(xlsx|xls|csv)$/i, "").trim() || "Plantilla importada";
+      const { data: newTemplate, error: tplError } = await supabase
+        .from("budget_templates")
+        .insert({
+          name: baseName,
+          description: null,
+          budget_type: activeTab,
+        })
+        .select()
+        .single();
+
+      if (tplError) throw tplError;
+
+      // 2. Pre-generate IDs so parent references resolve in a single batch insert.
+      const ids = parsed.map(() => crypto.randomUUID());
+      const rowsToInsert = parsed.map((line, i) => ({
+        id: ids[i],
+        template_id: newTemplate.id,
+        parent_id: line.parent_index !== null ? ids[line.parent_index] : null,
+        name: line.name,
+        description: line.description,
+        default_amount_uf: line.default_amount_uf,
+        display_order: i + 1,
+        quantity: line.quantity,
+        unit_type: line.unit_type,
+        currency: line.currency,
+        supplier_name: line.supplier_name,
+      }));
+
+      const { error: linesError } = await supabase
+        .from("budget_template_lines")
+        .insert(rowsToInsert);
+
+      if (linesError) throw linesError;
+
+      const created = newTemplate as BudgetTemplate;
+      setTemplates(prev => [created, ...prev]);
+      setSelectedTemplate(created);
+      toast({
+        title: "Plantilla importada",
+        description: `"${baseName}" con ${parsed.length} línea(s). Puedes editarla ahora.`,
+      });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al importar", description: error.message });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleAddLine = async (parentId: string | null) => {
     if (!selectedTemplate) return;
 
@@ -352,6 +454,63 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
     }
   };
 
+  // Reordenar hermanos: actualiza display_order de forma atómica en el estado
+  // local (evita el clobber del loop) y persiste cada línea en la BD.
+  const handleReorderLines = async (newOrder: TemplateLine[]) => {
+    const orderMap = new Map(newOrder.map((l, i) => [l.id, i]));
+    const updatedFlat = flatLines.map(l =>
+      orderMap.has(l.id) ? { ...l, display_order: orderMap.get(l.id)! } : l
+    );
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
+    try {
+      await Promise.all(
+        newOrder.map((l, i) =>
+          supabase.from("budget_template_lines").update({ display_order: i }).eq("id", l.id)
+        )
+      );
+    } catch (error: any) {
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  // Mover una línea a otro nivel (padre) y posición entre hermanos, de forma
+  // atómica: cambia parent_id de la línea movida y reindexa display_order de
+  // todo el grupo destino. Cubre "reordenar entre madres" y sacar hijas a raíz.
+  const handleMoveLine = async (
+    activeId: string,
+    newParentId: string | null,
+    orderedSiblingIds: string[],
+  ) => {
+    const orderMap = new Map(orderedSiblingIds.map((id, i) => [id, i]));
+    const updatedFlat = flatLines.map((l) => {
+      if (l.id === activeId) {
+        return { ...l, parent_id: newParentId, display_order: orderMap.get(activeId) ?? 0 };
+      }
+      if (orderMap.has(l.id)) return { ...l, display_order: orderMap.get(l.id)! };
+      return l;
+    });
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
+    try {
+      await Promise.all(
+        orderedSiblingIds.map((id, i) => {
+          const patch = id === activeId ? { parent_id: newParentId, display_order: i } : { display_order: i };
+          return supabase.from("budget_template_lines").update(patch).eq("id", id);
+        }),
+      );
+      toast({ title: "Línea movida", description: "La estructura se ha actualizado" });
+    } catch (error: any) {
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const handleReparent = async (lineId: string, newParentId: string | null) => {
     const updatedFlat = flatLines.map(l => l.id === lineId ? { ...l, parent_id: newParentId } : l);
     setFlatLines(updatedFlat);
@@ -398,13 +557,41 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
       icon={<FileText className="h-5 w-5 text-blue-500" />}
       defaultOpen={!defaultCollapsed}
       headerActions={
-        <Button onClick={() => {
-          setNewType(activeTab);
-          setShowNewDialog(true);
-        }} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Nueva Plantilla
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleUploadExcel}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadExampleTemplateExcel}
+            title="Descargar un Excel de ejemplo con el formato esperado"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Ejemplo
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            title="Crear una plantilla a partir de un archivo Excel"
+          >
+            {importing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+            Cargar Excel
+          </Button>
+          <Button onClick={() => {
+            setNewType(activeTab);
+            setShowNewDialog(true);
+          }} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Nueva Plantilla
+          </Button>
+        </div>
       }
     >
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
@@ -438,6 +625,21 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{template.name}</span>
                         <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadExcel(template);
+                            }}
+                            disabled={downloadingId === template.id}
+                            title="Descargar Excel"
+                          >
+                            {downloadingId === template.id
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : <Download className="h-3 w-3" />}
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -501,6 +703,8 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
                         onAddLine={handleAddLine}
                         onUpdateLine={handleUpdateLine}
                         onDeleteLine={handleDeleteLine}
+                        onReorder={handleReorderLines}
+                        onMoveLine={handleMoveLine}
                         onReparent={handleReparent}
                       />
                     )}

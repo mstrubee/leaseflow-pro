@@ -8,9 +8,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, CalendarClock, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, ChevronDown, Link2, MessageSquare, FileText } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveFileUrl } from "@/lib/storageUtils";
@@ -25,7 +35,10 @@ import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTab
 import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF, exportMergedFormAndOT } from "./maintenanceExport";
 import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExport";
 import { OTDownloadOfferDialog } from "./OTDownloadOfferDialog";
+import { ScheduleMaintenanceDialog } from "./ScheduleMaintenanceDialog";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 
 /** "Resuelto con Observaciones": subestado dedicado resuelto_obs, o resuelto + observaciones. */
@@ -47,6 +60,7 @@ const CommentCell = memo(function CommentCell({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const handleOpen = () => {
     if (form.additional_comments?.trim()) {
@@ -64,10 +78,28 @@ const CommentCell = memo(function CommentCell({
     setEditing(true);
   };
 
+  const handleSave = () => {
+    onSave(form.id, editText);
+    setOpen(false);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
-      onSave(form.id, editText);
+      handleSave();
+    }
+  };
+
+  // Al cancelar, si ya existía un comentario guardado se vuelve a modo
+  // lectura (el popover sigue abierto mostrando lo guardado); si no existía
+  // nada, se cierra directamente.
+  const confirmCancelDiscard = () => {
+    setConfirmCancelOpen(false);
+    if (form.additional_comments?.trim()) {
+      setEditText(form.additional_comments);
+      setEditing(false);
+    } else {
+      setEditText("");
       setOpen(false);
     }
   };
@@ -87,7 +119,12 @@ const CommentCell = memo(function CommentCell({
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-3 space-y-2 z-50 bg-popover border shadow-md">
+      <PopoverContent
+        align="start"
+        className="w-80 p-3 space-y-2 z-50 bg-popover border shadow-md"
+        onInteractOutside={e => { if (editing) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (editing) e.preventDefault(); }}
+      >
         {!editing ? (
           <>
             <p className="text-xs font-semibold text-muted-foreground">Comentarios</p>
@@ -116,13 +153,33 @@ const CommentCell = memo(function CommentCell({
             />
             <div className="flex justify-between items-center">
               <p className="text-[10px] text-muted-foreground">Ctrl + Enter para guardar</p>
-              <Button size="sm" onClick={() => { onSave(form.id, editText); setOpen(false); }}>
-                Guardar
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setConfirmCancelOpen(true)}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={handleSave}>
+                  Guardar
+                </Button>
+              </div>
             </div>
           </>
         )}
       </PopoverContent>
+
+      <AlertDialog open={confirmCancelOpen} onOpenChange={setConfirmCancelOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Descartar cambios?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se perderá lo escrito en el comentario si no lo guardas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCancelDiscard}>Descartar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Popover>
   );
 });
@@ -349,6 +406,7 @@ interface FilterState {
   dateFilter: string | null;
   observationsFilter: boolean;
   zonalFilter: string;
+  scheduledFilter: "all" | "with" | "without";
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -364,6 +422,7 @@ const DEFAULT_FILTERS: FilterState = {
   dateFilter: null,
   observationsFilter: false,
   zonalFilter: "all",
+  scheduledFilter: "all",
 };
 
 const PAGE_SIZE = 100;
@@ -372,6 +431,7 @@ const CACHE_KEY_FORMS = "maintenance_forms_cache";
 const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
 const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
 const CACHE_KEY_ZONAL_MAP = "maintenance_zonal_map_cache";
+const CACHE_KEY_SUPPLIERS = "maintenance_suppliers_cache";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function readCache<T>(key: string): T | null {
@@ -399,6 +459,8 @@ function invalidateCache() {
 
 export function MaintenanceModule() {
   const navigate = useNavigate();
+  const { isAdmin, hasPermission } = useAuth();
+  const canEditSchedule = isAdmin || hasPermission("maintenance", "edit");
   const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, loading: subStatusLoading } = useMaintenanceSubStatuses();
   const [forms, setForms] = useState<MaintenanceForm[]>(() => {
     const cached = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
@@ -416,6 +478,7 @@ export function MaintenanceModule() {
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
   const [zonalMap, setZonalMap] = useState<Record<string, string>>(() => readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP) || {});
   const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>(() => readCache<{ id: string; name: string }[]>(CACHE_KEY_SUPPLIERS) || []);
   const [excelDialog, setExcelDialog] = useState(false);
   const [excelIncludeCriticality, setExcelIncludeCriticality] = useState(false);
   const [excelIncludeRevisado, setExcelIncludeRevisado] = useState(false);
@@ -427,6 +490,10 @@ export function MaintenanceModule() {
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [otOfferTarget, setOtOfferTarget] = useState<string | null>(null);
   const [otOfferOpen, setOtOfferOpen] = useState(false);
+  const [scheduleTarget, setScheduleTarget] = useState<MaintenanceForm | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Datos de la tarea vinculada (columna "Programación") — mapa por gantt_task_id.
+  const [scheduledTasks, setScheduledTasks] = useState<Map<string, { id: string; name: string; start_date: string | null; end_date: string | null; duration_days: number }>>(new Map());
   formsRef.current = forms;
 
   // Comment editing state removed — now handled by CommentCell
@@ -500,6 +567,36 @@ export function MaintenanceModule() {
     };
     fetchCriticalities();
   }, []);
+
+  useEffect(() => {
+    const cached = readCache<{ id: string; name: string }[]>(CACHE_KEY_SUPPLIERS);
+    if (cached) return;
+    (async () => {
+      const { data } = await supabase.from("suppliers").select("id, name").order("name");
+      if (data) {
+        setSuppliers(data);
+        writeCache(CACHE_KEY_SUPPLIERS, data);
+      }
+    })();
+  }, []);
+
+  // Carga los datos (nombre/fechas/plazo) de las tareas de cronograma ya
+  // vinculadas a algún form, para mostrar la columna "Programación" y
+  // precargar el diálogo al reprogramar.
+  useEffect(() => {
+    const ids = Array.from(new Set(forms.map(f => f.gantt_task_id).filter((id): id is string => !!id)));
+    if (ids.length === 0) { setScheduledTasks(new Map()); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("gantt_tasks")
+        .select("id, name, start_date, end_date, duration_days")
+        .in("id", ids);
+      if (cancelled || !data) return;
+      setScheduledTasks(new Map(data.map(t => [t.id, t])));
+    })();
+    return () => { cancelled = true; };
+  }, [forms]);
 
   useEffect(() => {
     const cached = readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP);
@@ -692,7 +789,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter } = filters;
+    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter, scheduledFilter } = filters;
     let result = forms.filter(f => {
       if (observationsFilter && !isResueltoObs(f)) return false;
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
@@ -719,6 +816,11 @@ export function MaintenanceModule() {
       }
       if (dateFilter) {
         if (f.created_date !== dateFilter) return false;
+      }
+      if (scheduledFilter !== "all") {
+        const hasSchedule = !!(f.gantt_task_id && scheduledTasks.get(f.gantt_task_id)?.start_date);
+        if (scheduledFilter === "with" && !hasSchedule) return false;
+        if (scheduledFilter === "without" && hasSchedule) return false;
       }
       if (zonalFilter !== "all") {
         const zName = f.contract_id ? zonalMap[f.contract_id] : undefined;
@@ -762,7 +864,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap]);
+  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap, scheduledTasks]);
 
   // Agrupar forms fusionados: cada grupo es un item (el "padre" = nº más alto;
   // los demás son hijos colapsables). Singles quedan como item suelto.
@@ -892,9 +994,15 @@ export function MaintenanceModule() {
     });
   }, []);
 
-  // Comment save handler (called by CommentCell)
+  // Comment save handler (called by CommentCell) — guardar comentarios avanza
+  // el sub-estado a "Revisado" automáticamente.
   const saveComment = useCallback(async (formId: string, text: string) => {
-    const updates: any = { additional_comments: text || null, updated_at: new Date().toISOString() };
+    const updates: any = {
+      additional_comments: text || null,
+      sub_status: "Revisado",
+      status: "proceso",
+      updated_at: new Date().toISOString(),
+    };
     const { error } = await (supabase as any)
       .from("maintenance_forms")
       .update(updates)
@@ -904,13 +1012,34 @@ export function MaintenanceModule() {
       toast({ title: "Error", description: "No se pudo guardar el comentario", variant: "destructive" });
     } else {
       setForms(prev => {
-        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null } : fm);
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, ...updates } : fm);
         writeCache(CACHE_KEY_FORMS, updated);
         return updated;
       });
-      toast({ title: "Comentario guardado" });
+      toast({ title: "Comentario guardado", description: "Sub-estado actualizado a Revisado" });
     }
   }, []);
+
+  // Guarda el proveedor seleccionado en el dropdown de la columna "Proveedor"
+  // — se guarda de inmediato al elegir, sin botón "Guardar" (mismo patrón que
+  // el resto de los selects inline de esta tabla, ej. saveComment).
+  const saveSupplier = useCallback(async (formId: string, supplierId: string | null) => {
+    const supplierName = supplierId ? suppliers.find(s => s.id === supplierId)?.name ?? null : null;
+    const { error } = await supabase
+      .from("maintenance_forms")
+      .update({ supplier_id: supplierId, supplier_name: supplierName, updated_at: new Date().toISOString() })
+      .eq("id", formId);
+    if (error) {
+      console.error(error);
+      toast({ title: "Error", description: "No se pudo guardar el proveedor", variant: "destructive" });
+    } else {
+      setForms(prev => {
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, supplier_id: supplierId, supplier_name: supplierName } : fm);
+        writeCache(CACHE_KEY_FORMS, updated);
+        return updated;
+      });
+    }
+  }, [suppliers]);
 
   // Sub-status change handler (called by SubStatusCell)
   const handleSubStatusChange = useCallback(async (formId: string, newSubStatus: string) => {
@@ -1029,8 +1158,28 @@ export function MaintenanceModule() {
           ) : opts.isChild ? (
             <div className="flex items-center gap-1 pl-5 text-muted-foreground">
               <span className="text-purple-400">↳</span>
-              <span>{f.form_number}</span>
+              {f.sub_status === "resuelto" && f.ot_file_url ? (
+                <button
+                  type="button"
+                  onClick={async () => { const u = await resolveFileUrl(f.ot_file_url); if (u) window.open(u, "_blank", "noopener,noreferrer"); }}
+                  className="text-primary hover:underline"
+                  title="Ver OT firmada"
+                >
+                  {f.form_number}
+                </button>
+              ) : (
+                <span>{f.form_number}</span>
+              )}
             </div>
+          ) : f.sub_status === "resuelto" && f.ot_file_url ? (
+            <button
+              type="button"
+              onClick={async () => { const u = await resolveFileUrl(f.ot_file_url); if (u) window.open(u, "_blank", "noopener,noreferrer"); }}
+              className="text-primary hover:underline"
+              title="Ver OT firmada"
+            >
+              {f.form_number}
+            </button>
           ) : (
             f.form_number
           )}
@@ -1066,22 +1215,22 @@ export function MaintenanceModule() {
             </div>
           )}
         </TableCell>
-        <TableCell className="text-xs">
-          <div className="flex items-center gap-1.5">
+        <TableCell className="text-xs overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
             {f.contract_id && contractCompanyMap[f.contract_id] && (
               <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
             )}
             <span className="truncate">{f.contract_name || "-"}</span>
           </div>
         </TableCell>
-        <TableCell className="text-xs truncate max-w-36">
-          {f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}
+        <TableCell className="text-xs overflow-hidden">
+          <span className="truncate block">{f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}</span>
         </TableCell>
-        <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
-        <TableCell className="text-xs max-w-48">
+        <TableCell><Badge variant="outline" className="text-xs whitespace-nowrap">{detectMaintenanceType(f)}</Badge></TableCell>
+        <TableCell className="text-xs overflow-hidden">
           <Popover>
             <PopoverTrigger asChild>
-              <button className="truncate block max-w-48 text-left hover:text-primary transition-colors cursor-pointer">
+              <button className="truncate block w-full text-left hover:text-primary transition-colors cursor-pointer">
                 {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
               </button>
             </PopoverTrigger>
@@ -1101,20 +1250,33 @@ export function MaintenanceModule() {
             </PopoverContent>
           </Popover>
         </TableCell>
-        <TableCell className="text-xs max-w-32">
+        <TableCell className="text-xs overflow-hidden">
           <CommentCell form={f} onSave={saveComment} />
         </TableCell>
-        <TableCell className="text-xs">
-          {f.supplier_name ? (
-            <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+        <TableCell className="text-xs overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          {canEditSchedule ? (
+            <SearchableSelect
+              value={f.supplier_id ?? "__none__"}
+              onValueChange={(v) => saveSupplier(f.id, v === "__none__" ? null : v)}
+              options={[
+                { value: "__none__", label: "Sin asignar" },
+                ...suppliers.map(s => ({ value: s.id, label: s.name })),
+              ]}
+              placeholder="Sin asignar"
+              searchPlaceholder="Buscar proveedor..."
+              emptyMessage="No hay proveedores."
+              triggerClassName="h-7 text-xs w-full"
+            />
+          ) : f.supplier_name ? (
+            <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 w-full min-w-0">
               <span className="truncate">{f.supplier_name}</span>
               <ExternalLink className="h-3 w-3 shrink-0" />
             </button>
           ) : <span className="text-muted-foreground">-</span>}
         </TableCell>
-        <TableCell className="text-xs">
+        <TableCell className="text-xs overflow-hidden">
           {f.purchase_order_number ? (
-            <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+            <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 w-full min-w-0">
               <span className="truncate">{f.purchase_order_number}</span>
               <ExternalLink className="h-3 w-3 shrink-0" />
             </button>
@@ -1139,6 +1301,47 @@ export function MaintenanceModule() {
                     <Link className="h-3 w-3" />Evid. Prov {idx + 1}
                   </button>
                 ))}
+              </div>
+            );
+          })()}
+        </TableCell>
+        <TableCell className="text-xs">
+          {(() => {
+            const task = f.gantt_task_id ? scheduledTasks.get(f.gantt_task_id) : undefined;
+            const dateLabel = task?.start_date ? (
+              <span>
+                {format(new Date(task.start_date + "T00:00:00"), "dd/MM")}
+                {task.end_date && task.end_date !== task.start_date && ` → ${format(new Date(task.end_date + "T00:00:00"), "dd/MM")}`}
+              </span>
+            ) : null;
+            return (
+              <div className="flex items-center gap-1.5">
+                {canEditSchedule ? (
+                  <button
+                    type="button"
+                    onClick={() => { setScheduleTarget(f); setScheduleOpen(true); }}
+                    className="text-primary hover:underline flex items-center gap-1 text-left"
+                    title="Programar en el cronograma de mantenciones"
+                  >
+                    <CalendarClock className="h-3 w-3 shrink-0" />
+                    {dateLabel ?? <span className="text-muted-foreground">Programar</span>}
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <CalendarClock className="h-3 w-3 shrink-0" />
+                    {dateLabel ?? "-"}
+                  </span>
+                )}
+                {f.contract_id && task?.start_date && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/contracts/${f.contract_id}`, { state: { fromMaintenance: true } })}
+                    className="text-muted-foreground hover:text-primary shrink-0"
+                    title="Ver en el cronograma del contrato"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             );
           })()}
@@ -1311,8 +1514,8 @@ export function MaintenanceModule() {
               </Card>
             );
           })}
-          {/* Sin Criticidad card */}
-          {noCriticalityCount > 0 && (() => {
+          {/* Sin Criticidad card — siempre visible, incluso en cero */}
+          {(() => {
             const isActive = filters.criticalityFilter === "none";
             const ageRange = criticalityAgeRanges["__none__"];
             return (
@@ -1557,6 +1760,17 @@ export function MaintenanceModule() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Programación</Label>
+          <Select value={filters.scheduledFilter} onValueChange={v => updateFilter("scheduledFilter", v as FilterState["scheduledFilter"])}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Programación" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="with">Con Programación</SelectItem>
+              <SelectItem value="without">Sin Programación</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
         </Button>
@@ -1613,25 +1827,26 @@ export function MaintenanceModule() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-auto">
+          <div className="w-full">
             <TooltipProvider delayDuration={100}>
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
-                    <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
-                    <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                    <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
-                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-[8.4rem]" />
-                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="max-w-[10rem]" />
-                    <SortableTableHead label="Gerente Zonal" sortKey="zonalName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
-                    <TableHead className="w-28">Tipo</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Comentarios / Observaciones</TableHead>
-                    <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                    <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                    <TableHead className="w-28">Evidencia</TableHead>
-                    <TableHead className="w-32 text-center">Acciones</TableHead>
+                    <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-20" />
+                    <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Gerente Zonal" sortKey="zonalName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <TableHead className="w-20">Tipo</TableHead>
+                    <TableHead className="w-36">Descripción</TableHead>
+                    <TableHead className="w-32">Comentarios / Obs.</TableHead>
+                    <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-20" />
+                    <TableHead className="w-20">Evidencia</TableHead>
+                    <TableHead className="w-28">Programación</TableHead>
+                    <TableHead className="w-24 text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1714,6 +1929,18 @@ export function MaintenanceModule() {
           setOtOfferOpen(false);
           setOtOfferTarget(null);
         }}
+      />
+      <ScheduleMaintenanceDialog
+        open={scheduleOpen}
+        onOpenChange={(v) => { setScheduleOpen(v); if (!v) setScheduleTarget(null); }}
+        contractId={scheduleTarget?.contract_id ?? null}
+        formId={scheduleTarget?.id ?? ""}
+        formNumber={scheduleTarget?.form_number ?? ""}
+        existingTaskId={scheduleTarget?.gantt_task_id ?? null}
+        existingName={scheduleTarget?.gantt_task_id ? scheduledTasks.get(scheduleTarget.gantt_task_id)?.name : undefined}
+        existingStartDate={scheduleTarget?.gantt_task_id ? scheduledTasks.get(scheduleTarget.gantt_task_id)?.start_date : undefined}
+        existingDurationDays={scheduleTarget?.gantt_task_id ? scheduledTasks.get(scheduleTarget.gantt_task_id)?.duration_days : undefined}
+        onScheduled={handleDataChanged}
       />
 
       {/* Excel download dialog with checkboxes */}

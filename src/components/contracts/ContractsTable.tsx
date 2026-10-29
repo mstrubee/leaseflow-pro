@@ -12,12 +12,13 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo, calculateCurrentRentUF } from "@/lib/contractRent";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { SortableTableHead, SortOrder } from "./SortableTableHead";
 import { CompanyLogo, getCompanyNames } from "./CompanyLogo";
+import { prefetchRoute } from "@/lib/routePrefetch";
 
 interface ContractAlert {
   id: string;
@@ -50,6 +51,7 @@ interface ContractVersion {
   initial_rent?: number | null;
   initial_rent_is_uf_m2?: boolean | null;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
   duration_months: number;
   is_current: boolean;
   effective_date: string | null;
@@ -132,22 +134,32 @@ interface ContractsTableProps {
   columnWidths?: Record<string, number>;
   customFieldsByContract?: Record<string, { cebe?: string; codigo?: string }>;
   comiteGPStatuses?: Array<{ id: string; name: string; color: string | null }>;
+  // El padre (Contracts.tsx) necesita estos mismos totales para las columnas
+  // "Capex"/"Capex Est." de la exportación PDF/Excel — se los pasa acá en
+  // vez de duplicar el fetch/agregación (contract_budgets + budget_lines,
+  // contract_business_cases) que ya vive en esta tabla.
+  onCapexDataChange?: (data: {
+    capexByContract: Record<string, { authorized: number; unauthorized: number }>;
+    capexEstByContract: Record<string, { capexEstMM: number; capitalTrabajoMM: number }>;
+  }) => void;
 }
 
-export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract, comiteGPStatuses: comiteGPStatusesProp }: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract, comiteGPStatuses: comiteGPStatusesProp, onCapexDataChange }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
   const { columnWidths: defaultColumnWidths, getColumnStyle } = useContractColumnWidths();
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
   const [editingVenta, setEditingVenta] = useState<string | null>(null);
   const [ventaMinValue, setVentaMinValue] = useState<string>("");
   const [ventaMaxValue, setVentaMaxValue] = useState<string>("");
   const [comiteGPStatuses, setComiteGPStatuses] = useState<ComiteGPStatus[]>([]);
+  const [capexClasificacionTypes, setCapexClasificacionTypes] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
+  const [capexEstByContract, setCapexEstByContract] = useState<Record<string, { capexEstMM: number; capitalTrabajoMM: number }>>({});
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
@@ -181,6 +193,19 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     loadComiteStatuses();
   }, [comiteGPStatusesProp]);
 
+  // Load "Tipos de CAPEX" (administrables desde Admin > Estados y Categorías)
+  useEffect(() => {
+    const loadCapexTypes = async () => {
+      const { data } = await (supabase as any)
+        .from("capex_clasificacion_types")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      if (data) setCapexClasificacionTypes(data);
+    };
+    loadCapexTypes();
+  }, []);
+
   // Load CAPEX totals for current year (mirrors BudgetDashboard logic)
   useEffect(() => {
     const loadCapex = async () => {
@@ -205,19 +230,23 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       if (budgetIds.length > 0) {
         const { data: lines } = await supabase
           .from("budget_lines")
-          .select("budget_id, amount_uf, status, parent_id, id")
+          .select("budget_id, amount_uf, unit_price, currency, status, parent_id, id")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
-        
+
         if (lines) {
           const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id));
           const leafLines = lines.filter(l => !parentIds.has(l.id));
-          
+
           leafLines.forEach(l => {
+            // CLP lines store amount in unit_price; convert to UF for uniform totals
+            const lineUF = l.currency === "CLP" && ufValue > 0
+              ? (l.unit_price || 0) / ufValue
+              : (l.amount_uf || 0);
             if (l.status === "autorizado") {
-              authorizedByBudget[l.budget_id] = (authorizedByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+              authorizedByBudget[l.budget_id] = (authorizedByBudget[l.budget_id] || 0) + lineUF;
             } else {
-              unauthorizedByBudget[l.budget_id] = (unauthorizedByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+              unauthorizedByBudget[l.budget_id] = (unauthorizedByBudget[l.budget_id] || 0) + lineUF;
             }
           });
         }
@@ -240,7 +269,35 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       setCapexByContract(map);
     };
     loadCapex();
+  }, [ufValue]);
+
+  // "CAPEX Est." = inversión total estimada en el Business Case Financiero,
+  // sin el inventario (capital de trabajo, no es CAPEX). Independiente de la
+  // columna "CAPEX" (presupuesto real del año en curso, contract_budgets).
+  // capitalTrabajoMM = ese inventario (input "Inventario" en Inversión del
+  // Business Case) — se muestra aparte, no se suma al Capex Estimado.
+  useEffect(() => {
+    const loadCapexEst = async () => {
+      const { data } = await supabase.from("contract_business_cases").select("contract_id, computed");
+      const map: Record<string, { capexEstMM: number; capitalTrabajoMM: number }> = {};
+      (data || []).forEach((row: { contract_id: string; computed: unknown }) => {
+        const computed = row.computed as { inv?: { total?: number; rows?: { id: string; monto: number }[] } } | null;
+        const total = computed?.inv?.total || 0;
+        const inventario = computed?.inv?.rows?.find((r) => r.id === "inv")?.monto || 0;
+        map[row.contract_id] = { capexEstMM: total - inventario, capitalTrabajoMM: inventario };
+      });
+      setCapexEstByContract(map);
+    };
+    loadCapexEst();
   }, []);
+
+  // Notifica al padre cada vez que estos totales cambian, para que pueda
+  // usarlos en las columnas "Capex"/"Capex Est." de la exportación PDF/Excel
+  // (ver comentario en ContractsTableProps.onCapexDataChange).
+  useEffect(() => {
+    onCapexDataChange?.({ capexByContract, capexEstByContract });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capexByContract, capexEstByContract]);
 
   const handleComiteGPChange = async (contractId: string, value: string) => {
     const { error } = await supabase
@@ -274,6 +331,21 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
     };
     return colorMap[status?.color || 'gray'] || colorMap.gray;
+  };
+
+  const getCapexClasificacionColor = (name: string | null) => {
+    const colorMap: Record<string, string> = {
+      green: 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
+      red: 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
+      blue: 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200',
+      yellow: 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200',
+      purple: 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200',
+      orange: 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200',
+      gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
+    };
+    if (!name) return colorMap.gray;
+    const type = capexClasificacionTypes.find(t => t.name === name);
+    return colorMap[type?.color || 'gray'] || colorMap.gray;
   };
 
   const isNegociacionView = !isFirmadoView && contracts.some(c => c.status === 'en_negociacion');
@@ -490,106 +562,6 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     return { isInsideRange: false, rangeEndDate: null };
   };
 
-  // Calculate current rent based on escalations, periodic adjustments, and current month
-  // superficie parameter is used when rent is in UF/m²
-  // For contracts that haven't started yet (future start date), returns regime rent
-  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null, superficie: number = 0): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean; isContractNotStarted: boolean } => {
-    const escalations = version.rent_escalations || [];
-    const hasEscalations = escalations.length > 0;
-    const hasAdjustments = version.has_periodic_adjustments && 
-      (version.adjustment_value || 0) > 0 && 
-      (version.first_adjustment_month || 0) > 0;
-    
-    const isRentUfM2 = version.regime_rent_is_uf_m2 ?? false;
-    // initial_rent inherits UF/m² from regime if its own flag is not explicitly set
-    const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || isRentUfM2;
-    
-    // Calculate current month
-    const startDate = version.effective_date
-      ? parseISO(version.effective_date)
-      : signedDate
-        ? parseISO(signedDate)
-        : null;
-    
-    // Get base regime rent (considering UF/m²)
-    const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
-    
-    if (!startDate) {
-      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
-    }
-    
-    const today = new Date();
-    const diffTime = today.getTime() - startDate.getTime();
-    const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-    
-    // Check if contract hasn't started yet (future start date)
-    const isContractNotStarted = currentMonth < 1;
-    if (isContractNotStarted) {
-      // For contracts that haven't started, return regime rent (projected)
-      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
-    }
-    
-    // Check grace period - only for active contracts (currentMonth >= 1)
-    const graceMonths = version.grace_months || 0;
-    if (currentMonth <= graceMonths) {
-      return { currentRent: 0, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
-    }
-    
-    // If no escalations and no adjustments, return regime rent
-    if (!hasEscalations && !hasAdjustments) {
-      return { currentRent: baseRegimeRent, hasEscalations: false, hasAdjustments: false, isContractNotStarted: false };
-    }
-    
-    // Start with base rent from escalations or regime rent
-    let currentRent = baseRegimeRent;
-    
-    if (hasEscalations) {
-      // Find the applicable escalation for current month
-      const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
-      
-      // Initial rent (considering UF/m²)
-      const baseInitialRent = version.initial_rent 
-        ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
-        : baseRegimeRent;
-      
-      currentRent = baseInitialRent;
-      for (const esc of sortedEscalations) {
-        if (esc.month_number <= currentMonth) {
-          // Per-escalation UF/m²: own flag or legacy regime flag
-          const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
-          currentRent = needsMultiply ? esc.amount * superficie : esc.amount;
-        } else {
-          break;
-        }
-      }
-    }
-    
-    // Apply periodic adjustments on top of base rent
-    if (hasAdjustments) {
-      const firstAdjMonth = version.first_adjustment_month || 0;
-      const periodicity = version.adjustment_periodicity_months || 12;
-      const adjValue = version.adjustment_value || 0;
-      const adjType = version.adjustment_type || "percentage";
-      
-      // Calculate how many adjustments have been applied
-      if (currentMonth >= firstAdjMonth) {
-        const monthsSinceFirst = currentMonth - firstAdjMonth;
-        const numAdjustments = Math.floor(monthsSinceFirst / periodicity) + 1;
-        
-        // Apply adjustments cumulatively
-        for (let i = 0; i < numAdjustments; i++) {
-          if (adjType === "percentage") {
-            currentRent = currentRent * (1 + adjValue / 100);
-          } else {
-            currentRent = currentRent + adjValue;
-          }
-        }
-      }
-    }
-    
-    return { currentRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
-  };
-
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
       en_negociacion: { label: "En Negociación", className: "bg-yellow-500 text-white" },
@@ -687,6 +659,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               style={getColStyle("venta_estimada")}
             />
             <TableHead className="font-semibold text-center" style={getColStyle("capex")}>CAPEX</TableHead>
+            <TableHead className="font-semibold text-center" style={getColStyle("capex_est")}>Capex Est / Sup.</TableHead>
             <SortableTableHead
               label={<div className="leading-tight">Costo<br/>Arriendo</div>}
               sortKey="costo_arriendo"
@@ -775,11 +748,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               <TableRow
                 key={contract.id}
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() =>
+                onMouseEnter={() => prefetchRoute("ContractDetail")}
+                onTouchStart={() => prefetchRoute("ContractDetail")}
+                onClick={() => {
                   navigate(`/contracts/${contract.id}`, {
                     state: { backTo: `${location.pathname}${location.search}` },
-                  })
-                }
+                  });
+                }}
               >
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -811,7 +786,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                             VENCIDO
                           </Badge>
                         )}
-                        {contract.requires_special_attention && (
+                        {contract.requires_special_attention && (isAdmin || hasPermission("special_attention", "view")) && (
                           <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] px-1 py-0 gap-0.5">
                             <AlertTriangle className="h-2.5 w-2.5" />
                             Atención Especial
@@ -848,13 +823,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 {isNegociacionView && (
                   contract.status === 'en_negociacion' ? (
                   <>
-                    <TableCell className="min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="min-w-[210px]" onClick={(e) => e.stopPropagation()}>
                       <Select
                         value={contract.comite_gp_status || ''}
                         onValueChange={(value) => handleComiteGPChange(contract.id, value)}
                       >
                         <SelectTrigger
-                          className={`h-7 text-xs w-full font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
+                          className={`h-7 text-xs w-full font-medium px-2 [&>span]:line-clamp-none [&>span]:whitespace-nowrap ${getComiteGPColor(contract.comite_gp_status || null)}`}
                         >
                           <SelectValue placeholder="Seleccionar" />
                         </SelectTrigger>
@@ -908,30 +883,20 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         value={contract.clasificacion || ''} 
                         onValueChange={(value) => handleClasificacionChange(contract.id, value)}
                       >
-                        <SelectTrigger 
-                          className={`h-7 text-xs w-[100px] font-medium ${
-                            contract.clasificacion === 'nuevo' 
-                              ? 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200' 
-                              : contract.clasificacion === 'reemplazo'
-                                ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                                : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
-                          }`}
+                        <SelectTrigger
+                          className={`h-7 text-xs w-[100px] font-medium ${getCapexClasificacionColor(contract.clasificacion || null)}`}
                         >
                           <SelectValue placeholder="Seleccionar" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="nuevo" className="text-xs">
-                            <span className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                              Nuevo
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="reemplazo" className="text-xs">
-                            <span className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                              Reemplazo
-                            </span>
-                          </SelectItem>
+                          {capexClasificacionTypes.map((t) => (
+                            <SelectItem key={t.id} value={t.name} className="text-xs">
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full bg-${t.color || 'gray'}-500`} />
+                                {t.name}
+                              </span>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -1099,48 +1064,61 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     );
                   })()}
                 </TableCell>
+                <TableCell className="text-center" style={getColStyle("capex_est")}>
+                  {(() => {
+                    const capexEstData = capexEstByContract[contract.id];
+                    const capexEst = capexEstData?.capexEstMM || 0;
+                    if (!capexEst || capexEst <= 0) return <span className="text-muted-foreground">-</span>;
+                    const capitalTrabajo = capexEstData?.capitalTrabajoMM || 0;
+                    const superficie = contract.superficie_edificada_local || 0;
+                    // capexEst viene en MM CLP (ver comentario más arriba) — se
+                    // pasa a UF para el ratio, mismo criterio que la columna
+                    // "CAPEX" de al lado (perM2 en UF/m², no en MM$/m²).
+                    const capexEstUF = ufValue > 0 ? (capexEst * 1_000_000) / ufValue : 0;
+                    const perM2UF = superficie > 0 && capexEstUF > 0 ? capexEstUF / superficie : 0;
+                    return (
+                      <div className="flex flex-col items-center" title="Inversión estimada del Business Case Financiero, sin inventario">
+                        <span className="font-medium text-xs">
+                          {capexEst.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$
+                        </span>
+                        <span className="text-[10px] text-muted-foreground" title="Capital de Trabajo (Inventario) del Business Case Financiero">
+                          {capitalTrabajo > 0 ? `${capitalTrabajo.toLocaleString('es-CL', { maximumFractionDigits: 0 })} MM$ (CT)` : '-'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {superficie > 0 ? `${superficie.toLocaleString('es-CL')} m²` : '-'}
+                        </span>
+                        {perM2UF > 0 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {perM2UF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </TableCell>
                 <TableCell className="text-center min-w-[140px]">
                   {currentVersion ? (() => {
                     const superficie = contract.superficie_edificada_local || 0;
                     const metrosFrente = contract.metros_lineales_frente || 0;
-                    const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
                     const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-                    
-                    // Gastos comunes: calculate based on methodology
-                    let gastosComunesTotal = 0;
-                    
-                    if (methodology === "percentage") {
-                      // Percentage methodology
-                      const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-                      const percentage = currentVersion.gastos_comunes_percentage || 0;
-                      const topeValue = currentVersion.gastos_comunes_tope;
-                      const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-                      
-                      // Calculate base amount (Total GGCC * Percentage)
-                      const calculatedAmount = (totalCentro * percentage) / 100;
-                      
-                      // Apply cap if configured
-                      if (topeValue && topeValue > 0) {
-                        // Calculate effective cap based on type
-                        const effectiveTope = topeType === "uf_m2" && superficie > 0
-                          ? topeValue * superficie
-                          : topeValue;
-                        
-                        // Apply the cap only if calculated amount exceeds it
-                        gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
-                      } else {
-                        gastosComunesTotal = calculatedAmount;
-                      }
-                    } else {
-                      // UF/m2 methodology
-                      const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                      const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-                      const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-                      const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                      const fixedAdminUf = currentVersion.gastos_comunes_fixed_admin_uf || 0;
-                      gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
-                    }
-                    
+
+                    // Mismo cálculo (UF/m², initial_rent, y gracia que exime
+                    // también los gastos comunes cuando grace_ggcc_applies es
+                    // false) que usa la ficha del contrato -- antes esta celda
+                    // reimplementaba su propia versión de GC, que no
+                    // consideraba el período de gracia para nada.
+                    const {
+                      canon: currentRentVal2,
+                      ggcc: gastosComunesTotal,
+                      fondoPromocion: fondoP,
+                      otrosEgresos: otros,
+                    } = calculateTotalArriendoUF({
+                      version: currentVersion,
+                      signedDate: contract.signed_date,
+                      superficie,
+                      metrosLinealesFrente: metrosFrente,
+                    });
+
                     // Calculate weighted average total arriendo
                     const { promedio, hasMultiplePeriods } = calculateWeightedAverageTotalArriendo({
                       version: { ...currentVersion, duration_months: currentVersion.duration_months },
@@ -1149,23 +1127,41 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       metrosLinealesFrente: metrosFrente,
                     });
 
-                    // Calculate current rent for label purposes
-                    const { hasEscalations, hasAdjustments, isContractNotStarted, currentRent: currentRentVal2 } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
+                    // Current rent status, for label purposes only
+                    const { hasEscalations, hasAdjustments, isContractNotStarted } = calculateCurrentRentUF({
+                      version: currentVersion,
+                      signedDate: contract.signed_date,
+                      superficie,
+                    });
                     const showCurrentLabel = !isContractNotStarted && (hasEscalations || hasAdjustments);
 
-                    // Individual components for non-averaged display
                     const fondoPct = currentVersion.fondo_promocion_percentage ?? 0;
-                    const fondoP = currentRentVal2 * (fondoPct / 100);
-                    const otros = currentVersion.otros_egresos_amount || 0;
 
                     return (
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatAmount(hasMultiplePeriods ? promedio : (currentRentVal2 + gastosComunesTotal + fondoP + otros), contract.display_currency)}</span>
-                        {hasMultiplePeriods ? (
-                          <div className="text-[9px] text-muted-foreground whitespace-nowrap">
-                            <div className="font-medium">Promedio. Incluye GGCC, FP y Otros</div>
-                          </div>
-                        ) : (
+                        {hasMultiplePeriods ? (() => {
+                          // Solo se mencionan los ítems que el contrato realmente
+                          // tiene especificados (mismo criterio que la columna
+                          // "GC"/"F. Prom"/"Otros" de la vista sin promediar, acá
+                          // abajo) -- un contrato sin GGCC/FP/Otros no debe decir
+                          // que los incluye.
+                          const includedItems = [
+                            gastosComunesTotal > 0 ? "GGCC" : null,
+                            fondoPct > 0 ? "FP" : null,
+                            otros > 0 ? "Otros" : null,
+                          ].filter((item): item is string => item !== null);
+                          const label = includedItems.length === 0
+                            ? "Promedio"
+                            : `Promedio. Incluye ${includedItems.length === 1
+                                ? includedItems[0]
+                                : `${includedItems.slice(0, -1).join(", ")} y ${includedItems[includedItems.length - 1]}`}`;
+                          return (
+                            <div className="text-[9px] text-muted-foreground whitespace-nowrap">
+                              <div className="font-medium">{label}</div>
+                            </div>
+                          );
+                        })() : (
                           <div className="text-[9px] text-muted-foreground whitespace-nowrap">
                             <div>Canon{showCurrentLabel ? " actual" : ""}: {formatAmount(currentRentVal2, contract.display_currency)}</div>
                             <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}{methodology === "percentage" && currentVersion.gastos_comunes_tope && currentVersion.gastos_comunes_tope > 0 ? " (c/tope)" : ""}</div>

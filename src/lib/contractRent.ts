@@ -14,6 +14,10 @@ export interface ContractVersionLike {
   initial_rent_is_uf_m2?: boolean | null;
   effective_date?: string | null;
   grace_months?: number | null;
+  // Los meses de gracia eximen el arriendo (canon) siempre -- este flag
+  // decide si TAMBIÉN eximen los gastos comunes. Default true (se cobran)
+  // preserva el comportamiento histórico, ver migración grace_ggcc_applies.
+  grace_ggcc_applies?: boolean | null;
 
   // Escalations
   rent_escalations?: RentEscalationLike[];
@@ -50,6 +54,10 @@ export interface CurrentRentResult {
   hasEscalations: boolean;
   hasAdjustments: boolean;
   isContractNotStarted: boolean;
+  // true solo durante los meses de gracia del contrato (currentMonth entre 1
+  // y grace_months) -- usado para decidir si corresponde eximir también los
+  // gastos comunes (grace_ggcc_applies), no solo el canon.
+  isInGracePeriod: boolean;
 }
 
 const safeParseDate = (value: string | null | undefined): Date | null => {
@@ -81,14 +89,25 @@ export const calculateCurrentRentUF = (params: {
   const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || isRentUfM2;
 
   const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
+  // initial_rent tiene prioridad sobre regime_rent cuando está cargado (mismo
+  // criterio que rentField en buildSeed.ts): en la práctica el analista tipea
+  // el canon real en initial_rent y deja regime_rent en su default (0), tenga
+  // o no escalonamiento el contrato. Antes cada return de acá abajo caía a
+  // baseRegimeRent solo, así que un contrato sin escalaciones (o que aún no
+  // arrancaba) mostraba canon $0 aunque initial_rent tuviera el valor real.
+  const baseInitialRent = version.initial_rent != null
+    ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
+    : 0;
+  const baseRent = baseInitialRent || baseRegimeRent;
 
   const startDate = safeParseDate(version.effective_date) || safeParseDate(signedDate);
   if (!startDate) {
     return {
-      currentRent: baseRegimeRent,
+      currentRent: baseRent,
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: true,
+      isInGracePeriod: false,
     };
   }
 
@@ -99,10 +118,11 @@ export const calculateCurrentRentUF = (params: {
   // Future start
   if (currentMonth < 1) {
     return {
-      currentRent: baseRegimeRent,
+      currentRent: baseRent,
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: true,
+      isInGracePeriod: false,
     };
   }
 
@@ -114,30 +134,29 @@ export const calculateCurrentRentUF = (params: {
       hasEscalations,
       hasAdjustments,
       isContractNotStarted: false,
+      isInGracePeriod: true,
     };
   }
 
-  // No escalations/adjustments
+  // No escalations/adjustments: rent stays flat at initial_rent (or
+  // regime_rent if there's no initial_rent loaded)
   if (!hasEscalations && !hasAdjustments) {
     return {
-      currentRent: baseRegimeRent,
+      currentRent: baseRent,
       hasEscalations: false,
       hasAdjustments: false,
       isContractNotStarted: false,
+      isInGracePeriod: false,
     };
   }
 
-  let currentRent = baseRegimeRent;
+  let currentRent = baseRent;
 
   // Escalations (absolute values; if UF/m², multiply by superficie)
   if (hasEscalations) {
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
 
-    const baseInitialRent = version.initial_rent != null
-      ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
-      : baseRegimeRent;
-
-    currentRent = baseInitialRent;
+    currentRent = baseInitialRent || baseRegimeRent;
 
     for (const esc of sortedEscalations) {
       if (esc.month_number <= currentMonth) {
@@ -205,6 +224,7 @@ export const calculateCurrentRentUF = (params: {
     hasEscalations,
     hasAdjustments,
     isContractNotStarted: false,
+    isInGracePeriod: false,
   };
 };
 
@@ -268,14 +288,18 @@ export const calculateTotalArriendoUF = (params: {
   const isRentUfM2 = version.regime_rent_is_uf_m2 === true;
   const canon = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
 
-  const { currentRent } = calculateCurrentRentUF({ version, signedDate, superficie });
+  const { currentRent, isInGracePeriod } = calculateCurrentRentUF({ version, signedDate, superficie });
 
-  const ggcc = calculateGastosComunesUF({
+  const rawGgcc = calculateGastosComunesUF({
     version,
     superficie,
     metrosLinealesFrente,
     baseRegimeRent: canon,
   });
+  // Los meses de gracia eximen el canon siempre; los gastos comunes solo si
+  // grace_ggcc_applies está en false (default true = se siguen cobrando).
+  const graceGgccApplies = version.grace_ggcc_applies !== false;
+  const ggcc = isInGracePeriod && !graceGgccApplies ? 0 : rawGgcc;
 
   const fondoPromocionPct = version.fondo_promocion_percentage || 0;
   const fondoPromocion = currentRent * (fondoPromocionPct / 100);

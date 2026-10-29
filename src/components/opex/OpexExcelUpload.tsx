@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { validateExcelFile, withParseTimeout } from "@/lib/excelFileValidation";
+import { loadCategoryNameResolver } from "@/lib/opexCategories";
 
 interface OpexExcelUploadProps {
   year: number;
@@ -181,22 +182,28 @@ export const OpexExcelUpload = ({ year, ufValue, onSuccess }: OpexExcelUploadPro
     setIsLoading(true);
 
     try {
-      // Get existing categories
-      const { data: existingCategories } = await supabase
-        .from("opex_categories")
-        .select("id, name")
-        .eq("is_active", true);
+      // Resuelve cada nombre contra las categorías vigentes en el año: un nombre de categoría fusionada o renombrada
+      // se carga en su categoría nueva; las retiradas se rechazan antes de escribir nada.
+      const resolver = await loadCategoryNameResolver(year);
+      const retiredNames = validRows.filter((r) => resolver.resolve(r.category).kind === "retired").map((r) => r.category);
+      if (retiredNames.length > 0) {
+        toast.error(
+          `Estas categorías no están vigentes en ${year}: ${retiredNames.join(", ")}. Usa el nombre vigente o quítalas del Excel.`,
+        );
+        setIsLoading(false);
+        return;
+      }
 
-      const categoryMap = new Map(
-        (existingCategories || []).map(c => [c.name.toLowerCase(), c.id])
-      );
-
-      // Process each valid row
+      // Las filas que caen en la misma categoría (por ejemplo dos categorías fusionadas) se suman en una sola.
+      const totalsByCategory = new Map<string, { categoryId: string; months: number[]; total: number }>();
+      let changedCount = 0;
       for (const row of validRows) {
-        let categoryId = categoryMap.get(row.category.toLowerCase());
-
-        // Create category if it doesn't exist
-        if (!categoryId) {
+        const resolution = resolver.resolve(row.category);
+        let categoryId: string;
+        if (resolution.kind === "found") {
+          categoryId = resolution.id;
+          if (resolution.viaChange) changedCount++;
+        } else {
           const { data: newCategory, error: catError } = await supabase
             .from("opex_categories")
             .insert({ name: row.category })
@@ -205,8 +212,19 @@ export const OpexExcelUpload = ({ year, ufValue, onSuccess }: OpexExcelUploadPro
 
           if (catError) throw catError;
           categoryId = newCategory.id;
-          categoryMap.set(row.category.toLowerCase(), categoryId);
+          resolver.remember(row.category, categoryId);
         }
+        const acc = totalsByCategory.get(categoryId) ?? { categoryId, months: new Array(12).fill(0), total: 0 };
+        row.months.forEach((m, i) => (acc.months[i] += m));
+        acc.total += row.total;
+        totalsByCategory.set(categoryId, acc);
+      }
+      if (changedCount > 0) {
+        toast.info(`${changedCount} fila(s) usaban un nombre de categoría que cambió y se cargaron en su categoría nueva`);
+      }
+
+      for (const row of Array.from(totalsByCategory.values())) {
+        const categoryId = row.categoryId;
 
         // Check if budget exists for this year/category
         const { data: existing } = await supabase

@@ -10,7 +10,7 @@ import {
 import * as XLSX from "xlsx";
 import { PatentBulkUploadDialog } from "./PatentBulkUploadDialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialog, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -48,6 +48,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
   const [folderPath, setFolderPath] = useState<RepoFolder[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // New folder
   const [newFolderName, setNewFolderName] = useState("");
@@ -187,34 +188,21 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
   };
 
   const handleDeleteFolder = async (folderId: string) => {
-    try {
-      // Delete files in folder first
-      const { data: folderFiles } = await supabase
-        .from("repository_files")
-        .select("id, url")
-        .eq("folder_id", folderId);
-
-      for (const f of folderFiles || []) {
-        if (isStorageUrl(f.url)) {
-          await deleteFileFromStorage(f.url);
-        }
-        await supabase.from("repository_files").delete().eq("id", f.id);
-      }
-
-      // Delete subfolders recursively
-      const { data: subfolders } = await supabase
-        .from("repository_folders")
-        .select("id")
-        .eq("parent_id", folderId);
-
-      for (const sub of subfolders || []) {
-        await handleDeleteFolder(sub.id);
-      }
-
-      await supabase.from("repository_folders").delete().eq("id", folderId);
-    } catch (error) {
+    // Borrado del subárbol en el servidor (una sola llamada atómica y a prueba
+    // de ciclos), en vez de N+1 llamadas recursivas desde el cliente — esto
+    // último "congelaba" la UI al borrar carpetas con muchos descendientes.
+    // La RPC devuelve las URLs de los archivos borrados para limpiar el storage.
+    const { data: deletedUrls, error } = await supabase.rpc("delete_repository_folder_tree", {
+      p_folder_id: folderId,
+    });
+    if (error) {
       console.error("Error deleting folder:", error);
       throw error;
+    }
+    // Limpieza de storage en segundo plano (no bloquea el refresco de la UI).
+    const urls = (deletedUrls || []).map((r) => r.deleted_url).filter((u): u is string => !!u && isStorageUrl(u));
+    if (urls.length > 0) {
+      void Promise.allSettled(urls.map((u) => deleteFileFromStorage(u)));
     }
   };
 
@@ -232,7 +220,8 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
   };
 
   const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
       if (deleteTarget.type === 'folder') {
         await handleDeleteFolder(deleteTarget.id);
@@ -242,10 +231,12 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
         const file = files.find(f => f.id === deleteTarget.id);
         if (file) await handleDeleteFile(file.id, file.url);
       }
+      setDeleteTarget(null);
     } catch {
       toast.error("Error al eliminar");
+    } finally {
+      setDeleting(false);
     }
-    setDeleteTarget(null);
   };
 
   const uploadFiles = async (fileList: FileList | File[]) => {
@@ -575,7 +566,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
       </Dialog>
 
       {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o && !deleting) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -587,8 +578,13 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>Eliminar</AlertDialogAction>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            {/* No usamos AlertDialogAction (que cierra el diálogo al instante):
+                así el diálogo queda abierto mostrando "Eliminando..." hasta que
+                la operación termina, y no se puede disparar dos veces. */}
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleting}>
+              {deleting ? "Eliminando..." : "Eliminar"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
