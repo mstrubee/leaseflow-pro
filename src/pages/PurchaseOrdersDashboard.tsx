@@ -1399,10 +1399,26 @@ const PurchaseOrdersDashboard = () => {
   const handleApproveSolicitaLine = async (lineId: string) => {
     setApprovingLineId(lineId);
     try {
-      const { error } = await supabase.from("budget_lines").update({ status: "autorizado" }).eq("id", lineId);
+      const { data, error } = await supabase
+        .from("budget_lines")
+        .update({ status: "autorizado" })
+        .eq("id", lineId)
+        .select("authorized_at");
       if (error) throw error;
+      // Actualización local en vez de loadData(): recargar todo el dashboard
+      // (con spinner) por cada línea aprobada hacía la pestaña lenta. Solo
+      // cambia el estado de esta línea; pasa de "Pendientes" a "Aprobadas".
+      const authorizedAt = data?.[0]?.authorized_at ?? new Date().toISOString();
+      setSolicitaLines((prev) =>
+        prev.map((l) => (l.id === lineId ? { ...l, status: "autorizado", authorized_at: authorizedAt } : l))
+      );
+      setOcRequiredGroups((prev) =>
+        prev.map((g) => ({
+          ...g,
+          lines: g.lines.map((line) => (line.budgetLineId === lineId ? { ...line, status: "autorizado" } : line)),
+        }))
+      );
       toast.success("Línea autorizada");
-      await loadData();
     } catch (error: any) {
       console.error("Error approving line:", error);
       toast.error(error.message || "No se pudo autorizar la línea");
