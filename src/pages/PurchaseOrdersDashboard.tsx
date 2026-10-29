@@ -1399,16 +1399,12 @@ const PurchaseOrdersDashboard = () => {
   const handleApproveSolicitaLine = async (lineId: string) => {
     setApprovingLineId(lineId);
     try {
-      const { data, error } = await supabase
-        .from("budget_lines")
-        .update({ status: "autorizado" })
-        .eq("id", lineId)
-        .select("authorized_at");
+      const { error } = await supabase.from("budget_lines").update({ status: "autorizado" }).eq("id", lineId);
       if (error) throw error;
       // Actualización local en vez de loadData(): recargar todo el dashboard
       // (con spinner) por cada línea aprobada hacía la pestaña lenta. Solo
       // cambia el estado de esta línea; pasa de "Pendientes" a "Aprobadas".
-      const authorizedAt = data?.[0]?.authorized_at ?? new Date().toISOString();
+      const authorizedAt = new Date().toISOString();
       setSolicitaLines((prev) =>
         prev.map((l) => (l.id === lineId ? { ...l, status: "autorizado", authorized_at: authorizedAt } : l))
       );
