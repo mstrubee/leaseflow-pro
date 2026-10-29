@@ -194,6 +194,9 @@ interface SolicitaAutorizacionLine {
   amount_uf: number;
   status: "solicita_autorizar" | "autorizado";
   authorized_at: string | null;
+  /** Cotización adjunta al pedir autorización (ver SolicitaAutorizarDialog). */
+  quotation_file_url: string | null;
+  quotation_file_name: string | null;
   budget_id: string;
   contract_id: string;
   year: number;
@@ -771,12 +774,12 @@ const PurchaseOrdersDashboard = () => {
       const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedLinesData, error: approvedLinesError }] = await Promise.all([
         supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, status, authorized_at, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+          .select("id, name, amount_uf, status, authorized_at, quotation_file_url, quotation_file_name, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "solicita_autorizar"),
         supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, status, authorized_at, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+          .select("id, name, amount_uf, status, authorized_at, quotation_file_url, quotation_file_name, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "autorizado")
           .gte("authorized_at", authorizedCutoffIso),
@@ -791,6 +794,8 @@ const PurchaseOrdersDashboard = () => {
           amount_uf: r.amount_uf || 0,
           status: r.status,
           authorized_at: r.authorized_at,
+          quotation_file_url: r.quotation_file_url ?? null,
+          quotation_file_name: r.quotation_file_name ?? null,
           budget_id: r.budget_id,
           contract_id: r.contract_budgets?.contract_id,
           year: r.contract_budgets?.year,
@@ -1395,6 +1400,23 @@ const PurchaseOrdersDashboard = () => {
 
   const solicitaPending = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "solicita_autorizar"), [filteredSolicitaLines]);
   const solicitaApproved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "autorizado"), [filteredSolicitaLines]);
+
+  // Pinchar el nombre de la línea abre la cotización adjunta al solicitar
+  // autorización. Si la línea no tiene cotización, se muestra solo el texto.
+  const renderSolicitaLineName = (l: SolicitaAutorizacionLine) =>
+    l.quotation_file_url ? (
+      <button
+        type="button"
+        className="flex items-center gap-1 max-w-full text-left text-primary hover:underline"
+        title={`Ver cotización${l.quotation_file_name ? `: ${l.quotation_file_name}` : ""}`}
+        onClick={() => void openFile(l.quotation_file_url)}
+      >
+        <FileText className="h-3 w-3 shrink-0" />
+        <span className="truncate">{l.name}</span>
+      </button>
+    ) : (
+      <span className="block truncate" title="Sin cotización adjunta">{l.name}</span>
+    );
 
   const handleApproveSolicitaLine = async (lineId: string) => {
     setApprovingLineId(lineId);
@@ -4832,7 +4854,7 @@ const PurchaseOrdersDashboard = () => {
                                     <span className="truncate max-w-[160px]">{contractName}</span>
                                   </div>
                                 </TableCell>
-                                <TableCell className="truncate max-w-[180px]">{l.name}</TableCell>
+                                <TableCell className="max-w-[180px]">{renderSolicitaLineName(l)}</TableCell>
                                 <TableCell>
                                   <Badge variant="outline" className={l.budget_type === "capex" ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"}>
                                     {l.budget_type?.toUpperCase() || "N/A"}
@@ -4889,7 +4911,7 @@ const PurchaseOrdersDashboard = () => {
                                     <span className="truncate max-w-[160px]">{contractName}</span>
                                   </div>
                                 </TableCell>
-                                <TableCell className="truncate max-w-[180px]">{l.name}</TableCell>
+                                <TableCell className="max-w-[180px]">{renderSolicitaLineName(l)}</TableCell>
                                 <TableCell>
                                   <Badge variant="outline" className={l.budget_type === "capex" ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"}>
                                     {l.budget_type?.toUpperCase() || "N/A"}
