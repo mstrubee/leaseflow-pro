@@ -27,6 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarWidget } from "@/components/ui/calendar";
 import { formatCLP, cn } from "@/lib/utils";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
+import { OpexLineAssignment } from "./OpexLineAssignment";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData } from "@/lib/ocRequestShare";
 import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
@@ -200,14 +201,6 @@ export const OCRequestViewDialog = ({
   const [editableLines, setEditableLines] = useState<EditableLine[]>([]);
   const [savingLines, setSavingLines] = useState(false);
 
-  // OPEX category assignment edit state (solo admin). Una solicitud OPEX se
-  // imputa a UNA categoría del presupuesto maestro (oc_requests.opex_master_id).
-  const [isEditingOpexLine, setIsEditingOpexLine] = useState(false);
-  const [opexCategories, setOpexCategories] = useState<{ id: string; categoryId: string | null; name: string }[]>([]);
-  const [selectedOpexId, setSelectedOpexId] = useState("");
-  const [loadingOpexCategories, setLoadingOpexCategories] = useState(false);
-  const [savingOpexLine, setSavingOpexLine] = useState(false);
-
   // Form assignments state
   const [formAssignments, setFormAssignments] = useState<FormAssignment[]>([]);
   const [availableForms, setAvailableForms] = useState<AvailableForm[]>([]);
@@ -229,7 +222,6 @@ export const OCRequestViewDialog = ({
 
   useEffect(() => {
     if (open && requestId) {
-      setIsEditingOpexLine(false);
       loadRequest();
     }
   }, [open, requestId]);
@@ -573,89 +565,6 @@ export const OCRequestViewDialog = ({
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSavingLines(false);
-    }
-  };
-
-  // OPEX: la imputación vive en oc_requests.opex_master_id (fila de
-  // opex_master_budget = categoría del año). No usa oc_budget_lines: esa tabla
-  // referencia budget_lines (CAPEX), así que una solicitud OPEX nunca tiene
-  // filas ahí y el editor CAPEX de arriba no aplica.
-  const handleStartEditOpexLine = async () => {
-    if (!request?.opex_master_id) return;
-    const currentId = request.opex_master_id;
-    setSelectedOpexId(currentId);
-    setIsEditingOpexLine(true);
-    setLoadingOpexCategories(true);
-    try {
-      const year = request.year ?? new Date(request.request_date).getFullYear();
-      const { data, error } = await supabase
-        .from("opex_master_budget")
-        .select("id, category:opex_categories(id, name)")
-        .eq("year", year)
-        .eq("is_closed", false);
-      if (error) throw error;
-
-      const rows = (data || []) as unknown as { id: string; category: { id: string; name: string } | null }[];
-      const categories = rows.map((row) => ({
-        id: row.id,
-        categoryId: row.category?.id ?? null,
-        name: row.category?.name ?? "Sin categoría",
-      }));
-      // La línea actual puede estar en un presupuesto ya cerrado: se conserva
-      // como opción para que el selector no quede vacío ni la pierda.
-      if (!categories.some((c) => c.id === currentId)) {
-        categories.push({ id: currentId, categoryId: null, name: request.line_name });
-      }
-      categories.sort((a, b) => a.name.localeCompare(b.name, "es"));
-      setOpexCategories(categories);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudieron cargar las categorías OPEX",
-      });
-      setIsEditingOpexLine(false);
-    } finally {
-      setLoadingOpexCategories(false);
-    }
-  };
-
-  const handleSaveOpexLine = async () => {
-    if (!request || !isAdmin) return;
-    const target = opexCategories.find((c) => c.id === selectedOpexId);
-    if (!target) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione una categoría OPEX" });
-      return;
-    }
-    if (target.id === request.opex_master_id) {
-      setIsEditingOpexLine(false);
-      return;
-    }
-
-    setSavingOpexLine(true);
-    try {
-      // Una sola operación en la base: mueve la solicitud y, si ya se convirtió
-      // en OC, también la OC (el consumo del presupuesto se calcula desde ella).
-      // O se aplican ambos cambios o ninguno; valida además rol ADMIN, año,
-      // presupuesto abierto y vínculo con la OC.
-      const { error } = await supabase.rpc("change_oc_request_opex_line", {
-        p_request_id: request.id,
-        p_opex_master_id: target.id,
-      });
-      if (error) throw error;
-
-      toast({ title: "Línea OPEX actualizada", description: `Imputada a ${target.name}` });
-      setIsEditingOpexLine(false);
-      loadRequest();
-      onRefresh?.();
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error instanceof Error ? error.message : (error as { message?: string })?.message ?? "No se pudo actualizar la línea OPEX",
-      });
-    } finally {
-      setSavingOpexLine(false);
     }
   };
 
@@ -1385,117 +1294,87 @@ export const OCRequestViewDialog = ({
             )}
 
             <TabsContent value="lines" className="space-y-4 mt-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium">Asignación a Línea(s) de Presupuesto</span>
-                {!readOnly && request.status === "pending" && !isEditingLines && !canEditOpexLine && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleStartEditLines}
-                    disabled={!request.budget_id}
-                    title={!request.budget_id ? "Esta solicitud no está asociada a un presupuesto CAPEX" : undefined}
-                    className="gap-1"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Editar
-                  </Button>
-                )}
-                {canEditOpexLine && !isEditingOpexLine && (
-                  <Button variant="outline" size="sm" onClick={handleStartEditOpexLine} className="gap-1">
-                    <Pencil className="h-3 w-3" />
-                    Editar
-                  </Button>
-                )}
-                {isEditingOpexLine && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setIsEditingOpexLine(false)} disabled={savingOpexLine} className="gap-1">
-                      <X className="h-3 w-3" />
-                      Cancelar
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveOpexLine}
-                      disabled={savingOpexLine || loadingOpexCategories || !selectedOpexId}
-                      className="gap-1"
-                    >
-                      {savingOpexLine ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                      Guardar
-                    </Button>
+              {canEditOpexLine && request.opex_master_id ? (
+                <OpexLineAssignment
+                  requestId={request.id}
+                  currentOpexMasterId={request.opex_master_id}
+                  currentLineName={request.line_name}
+                  year={request.year ?? new Date(request.request_date).getFullYear()}
+                  totalClp={totalRequestClp}
+                  isConverted={request.status === "converted"}
+                  onSaved={() => {
+                    loadRequest();
+                    onRefresh?.();
+                  }}
+                />
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium">Asignación a Línea(s) de Presupuesto</span>
+                    {!readOnly && request.status === "pending" && !isEditingLines && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleStartEditLines}
+                        disabled={!request.budget_id}
+                        title={!request.budget_id ? "Esta solicitud no está asociada a un presupuesto CAPEX" : undefined}
+                        className="gap-1"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Editar
+                      </Button>
+                    )}
+                    {isEditingLines && (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={handleCancelEditLines} className="gap-1">
+                          <X className="h-3 w-3" />
+                          Cancelar
+                        </Button>
+                        <Button size="sm" onClick={handleSaveLines} disabled={savingLines} className="gap-1">
+                          {savingLines ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                          Guardar
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                )}
-                {isEditingLines && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={handleCancelEditLines} className="gap-1">
-                      <X className="h-3 w-3" />
-                      Cancelar
-                    </Button>
-                    <Button size="sm" onClick={handleSaveLines} disabled={savingLines} className="gap-1">
-                      {savingLines ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                      Guardar
-                    </Button>
-                  </div>
-                )}
-              </div>
 
-              {isEditingOpexLine ? (
-                <div className="space-y-2">
-                  <Label>Categoría OPEX</Label>
-                  {loadingOpexCategories ? (
-                    <div className="flex justify-center py-3">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    </div>
-                  ) : (
-                    <Select value={selectedOpexId} onValueChange={setSelectedOpexId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione una categoría" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {opexCategories.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    El monto total ({formatCLP(totalRequestClp)}) se imputa completo a la categoría elegida.
-                    {request.status === "converted" && " También se actualiza la OC creada desde esta solicitud."}
-                  </p>
-                </div>
-              ) : isEditingLines ? (
-                request.budget_id ? (
-                  <MultipleLinesSelector
-                    budgetId={request.budget_id}
-                    selectedLines={editableLines}
-                    onSelectionChange={setEditableLines}
-                    formatUF={formatUF}
-                    formatCLP={formatCLP}
-                    ufValue={ufValue}
-                    excludeRequestId={request.id}
-                  />
-                ) : null
-              ) : budgetLines.length > 0 ? (
-                <div className="space-y-2">
-                  {budgetLines.map((line) => (
-                    <div key={line.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
-                      <span className="text-sm">{line.line_name}</span>
-                      <div className="flex flex-col items-end">
-                        <span className="font-mono text-sm">{formatCLP(ufToClp(line.amount_uf, request, ufValue))}</span>
-                        <span className="text-[10px] text-muted-foreground">{formatUF(line.amount_uf)}</span>
+                  {isEditingLines ? (
+                    request.budget_id ? (
+                      <MultipleLinesSelector
+                        budgetId={request.budget_id}
+                        selectedLines={editableLines}
+                        onSelectionChange={setEditableLines}
+                        formatUF={formatUF}
+                        formatCLP={formatCLP}
+                        ufValue={ufValue}
+                        excludeRequestId={request.id}
+                      />
+                    ) : null
+                  ) : budgetLines.length > 0 ? (
+                    <div className="space-y-2">
+                      {budgetLines.map((line) => (
+                        <div key={line.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
+                          <span className="text-sm">{line.line_name}</span>
+                          <div className="flex flex-col items-end">
+                            <span className="font-mono text-sm">{formatCLP(ufToClp(line.amount_uf, request, ufValue))}</span>
+                            <span className="text-[10px] text-muted-foreground">{formatUF(line.amount_uf)}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex justify-between items-center p-2 border-t font-medium">
+                        <span>Total</span>
+                        <div className="flex flex-col items-end">
+                          <span className="font-mono">{formatCLP(totalRequestClp)}</span>
+                          <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
+                        </div>
                       </div>
                     </div>
-                  ))}
-                  <div className="flex justify-between items-center p-2 border-t font-medium">
-                    <span>Total</span>
-                    <div className="flex flex-col items-end">
-                      <span className="font-mono">{formatCLP(totalRequestClp)}</span>
-                      <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      Asignación simple a línea: {request.line_name}
                     </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-muted-foreground text-sm">
-                  Asignación simple a línea: {request.line_name}
-                </div>
+                  )}
+                </>
               )}
             </TabsContent>
 
