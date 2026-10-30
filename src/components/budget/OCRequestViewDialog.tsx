@@ -632,65 +632,17 @@ export const OCRequestViewDialog = ({
       return;
     }
 
-    // El consumo del presupuesto OPEX se calcula desde la OC una vez
-    // convertida, así que ahí también hay que mover la imputación. Si no hay
-    // forma segura de ubicar esa OC, no se cambia nada: la solicitud y la OC
-    // quedarían en categorías distintas y el presupuesto descuadrado.
-    const isConverted = request.status === "converted";
-    if (isConverted && !request.purchase_order_id) {
-      toast({
-        variant: "destructive",
-        title: "No se puede cambiar la línea",
-        description: "La OC creada desde esta solicitud no está vinculada a ella. Cambie la categoría directamente en la OC.",
-      });
-      return;
-    }
-
     setSavingOpexLine(true);
     try {
-      const purchaseOrderId = isConverted ? request.purchase_order_id : null;
-      let previousPo: { opex_master_id: string | null; opex_category_id: string | null } | null = null;
-
-      if (purchaseOrderId) {
-        const { data: prev, error: prevError } = await supabase
-          .from("purchase_orders")
-          .select("opex_master_id, opex_category_id")
-          .eq("id", purchaseOrderId)
-          .single();
-        if (prevError) throw prevError;
-        previousPo = prev;
-
-        // opex_category_id es lo que usan los reportes OPEX para agrupar el gasto;
-        // opex_master_id es lo que usa el cálculo de disponible. Van juntos.
-        const poUpdate: { opex_master_id: string; opex_category_id?: string } = { opex_master_id: target.id };
-        if (target.categoryId) poUpdate.opex_category_id = target.categoryId;
-        const { data: poRows, error: poError } = await supabase
-          .from("purchase_orders")
-          .update(poUpdate)
-          .eq("id", purchaseOrderId)
-          .select("id");
-        if (poError) throw poError;
-        if (!poRows || poRows.length === 0) {
-          throw new Error("No se pudo actualizar la OC asociada (sin permisos suficientes)");
-        }
-      }
-
-      const { data: reqRows, error: reqError } = await supabase
-        .from("oc_requests")
-        .update({ opex_master_id: target.id, line_name: target.name })
-        .eq("id", request.id)
-        .select("id");
-      if (reqError || !reqRows || reqRows.length === 0) {
-        // Se restaura la OC para no dejarla en una categoría distinta a la solicitud.
-        if (purchaseOrderId && previousPo) {
-          const { error: restoreError } = await supabase
-            .from("purchase_orders")
-            .update(previousPo)
-            .eq("id", purchaseOrderId);
-          if (restoreError) console.error("No se pudo restaurar la OC tras el fallo:", restoreError);
-        }
-        throw reqError ?? new Error("No se pudo actualizar la solicitud (sin permisos suficientes)");
-      }
+      // Una sola operación en la base: mueve la solicitud y, si ya se convirtió
+      // en OC, también la OC (el consumo del presupuesto se calcula desde ella).
+      // O se aplican ambos cambios o ninguno; valida además rol ADMIN, año,
+      // presupuesto abierto y vínculo con la OC.
+      const { error } = await supabase.rpc("change_oc_request_opex_line", {
+        p_request_id: request.id,
+        p_opex_master_id: target.id,
+      });
+      if (error) throw error;
 
       toast({ title: "Línea OPEX actualizada", description: `Imputada a ${target.name}` });
       setIsEditingOpexLine(false);

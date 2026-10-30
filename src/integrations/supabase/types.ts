@@ -7606,6 +7606,10 @@ export type Database = {
         Args: { p_batch: string; p_move_to?: string | null }
         Returns: Json
       }
+      change_oc_request_opex_line: {
+        Args: { p_opex_master_id: string; p_request_id: string }
+        Returns: undefined
+      }
       merge_maintenance_forms: {
         Args: { p_form_ids: string[] }
         Returns: string
