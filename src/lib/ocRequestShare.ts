@@ -312,3 +312,28 @@ export function validatePaymentPlanTotal(resolvedAmountsClp: number[], totalClp:
   }
   return null;
 }
+
+/**
+ * Líneas del PDF a partir de las líneas elegidas en el selector.
+ *
+ * `amount` de cada línea NO es "lo que se solicita": el selector la precarga
+ * con el saldo disponible de la línea (UF en CAPEX, CLP en OPEX). Por eso:
+ * - Una sola línea lleva el monto total de la solicitud. Usar su `amount`
+ *   mostraba el saldo completo de la línea, y en OPEX además lo multiplicaba
+ *   por la UF aunque ya estuviera en pesos (un PDF salió con $827.405.814.286
+ *   en una solicitud de $1.000.000).
+ * - Con varias líneas se respeta el reparto del usuario; solo se pasan a CLP
+ *   las que vienen en UF.
+ */
+export function buildShareLines(
+  lines: { lineName: string; amount: number }[],
+  opts: { totalAmountClp: number; amountsInClp: boolean; ufValue: number }
+): OCRequestShareLine[] {
+  if (lines.length === 1) {
+    return [{ lineName: lines[0].lineName, amountClp: Math.round(opts.totalAmountClp) }];
+  }
+  return lines.map((l) => ({
+    lineName: l.lineName,
+    amountClp: Math.round(opts.amountsInClp ? l.amount : l.amount * opts.ufValue),
+  }));
+}
