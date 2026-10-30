@@ -35,6 +35,8 @@ interface OCRequest {
   contract_id: string;
   budget_id: string | null;
   budget_line_id: string | null;
+  opex_master_id?: string | null;
+  year?: number | null;
   request_number: string;
   request_date: string;
   line_name: string;
@@ -129,6 +131,10 @@ interface OCRequestViewDialogProps {
   onRefresh?: () => void;
   readOnly?: boolean;
   ufValue?: number;
+  /** Habilita cambiar la categoría OPEX a la que se imputó la solicitud. */
+  isAdmin?: boolean;
+  /** CEBE del contrato, para que el PDF regenerado lo incluya como el original. */
+  contractCebe?: string | null;
 }
 
 // Helper: get effective UF value for this request
@@ -152,7 +158,9 @@ export const OCRequestViewDialog = ({
   formatUF,
   onRefresh,
   readOnly = false,
-  ufValue = 39700
+  ufValue = 39700,
+  isAdmin = false,
+  contractCebe = null
 }: OCRequestViewDialogProps) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -191,6 +199,14 @@ export const OCRequestViewDialog = ({
   const [editableLines, setEditableLines] = useState<EditableLine[]>([]);
   const [savingLines, setSavingLines] = useState(false);
 
+  // OPEX category assignment edit state (solo admin). Una solicitud OPEX se
+  // imputa a UNA categoría del presupuesto maestro (oc_requests.opex_master_id).
+  const [isEditingOpexLine, setIsEditingOpexLine] = useState(false);
+  const [opexCategories, setOpexCategories] = useState<{ id: string; categoryId: string | null; name: string }[]>([]);
+  const [selectedOpexId, setSelectedOpexId] = useState("");
+  const [loadingOpexCategories, setLoadingOpexCategories] = useState(false);
+  const [savingOpexLine, setSavingOpexLine] = useState(false);
+
   // Form assignments state
   const [formAssignments, setFormAssignments] = useState<FormAssignment[]>([]);
   const [availableForms, setAvailableForms] = useState<AvailableForm[]>([]);
@@ -212,6 +228,7 @@ export const OCRequestViewDialog = ({
 
   useEffect(() => {
     if (open && requestId) {
+      setIsEditingOpexLine(false);
       loadRequest();
     }
   }, [open, requestId]);
@@ -558,6 +575,137 @@ export const OCRequestViewDialog = ({
     }
   };
 
+  // OPEX: la imputación vive en oc_requests.opex_master_id (fila de
+  // opex_master_budget = categoría del año). No usa oc_budget_lines: esa tabla
+  // referencia budget_lines (CAPEX), así que una solicitud OPEX nunca tiene
+  // filas ahí y el editor CAPEX de arriba no aplica.
+  const handleStartEditOpexLine = async () => {
+    if (!request?.opex_master_id) return;
+    const currentId = request.opex_master_id;
+    setSelectedOpexId(currentId);
+    setIsEditingOpexLine(true);
+    setLoadingOpexCategories(true);
+    try {
+      const year = request.year ?? new Date(request.request_date).getFullYear();
+      const { data, error } = await supabase
+        .from("opex_master_budget")
+        .select("id, category:opex_categories(id, name)")
+        .eq("year", year)
+        .eq("is_closed", false);
+      if (error) throw error;
+
+      const rows = (data || []) as unknown as { id: string; category: { id: string; name: string } | null }[];
+      const categories = rows.map((row) => ({
+        id: row.id,
+        categoryId: row.category?.id ?? null,
+        name: row.category?.name ?? "Sin categoría",
+      }));
+      // La línea actual puede estar en un presupuesto ya cerrado: se conserva
+      // como opción para que el selector no quede vacío ni la pierda.
+      if (!categories.some((c) => c.id === currentId)) {
+        categories.push({ id: currentId, categoryId: null, name: request.line_name });
+      }
+      categories.sort((a, b) => a.name.localeCompare(b.name, "es"));
+      setOpexCategories(categories);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudieron cargar las categorías OPEX",
+      });
+      setIsEditingOpexLine(false);
+    } finally {
+      setLoadingOpexCategories(false);
+    }
+  };
+
+  const handleSaveOpexLine = async () => {
+    if (!request || !isAdmin) return;
+    const target = opexCategories.find((c) => c.id === selectedOpexId);
+    if (!target) {
+      toast({ variant: "destructive", title: "Error", description: "Seleccione una categoría OPEX" });
+      return;
+    }
+    if (target.id === request.opex_master_id) {
+      setIsEditingOpexLine(false);
+      return;
+    }
+
+    // El consumo del presupuesto OPEX se calcula desde la OC una vez
+    // convertida, así que ahí también hay que mover la imputación. Si no hay
+    // forma segura de ubicar esa OC, no se cambia nada: la solicitud y la OC
+    // quedarían en categorías distintas y el presupuesto descuadrado.
+    const isConverted = request.status === "converted";
+    if (isConverted && !request.purchase_order_id) {
+      toast({
+        variant: "destructive",
+        title: "No se puede cambiar la línea",
+        description: "La OC creada desde esta solicitud no está vinculada a ella. Cambie la categoría directamente en la OC.",
+      });
+      return;
+    }
+
+    setSavingOpexLine(true);
+    try {
+      const purchaseOrderId = isConverted ? request.purchase_order_id : null;
+      let previousPo: { opex_master_id: string | null; opex_category_id: string | null } | null = null;
+
+      if (purchaseOrderId) {
+        const { data: prev, error: prevError } = await supabase
+          .from("purchase_orders")
+          .select("opex_master_id, opex_category_id")
+          .eq("id", purchaseOrderId)
+          .single();
+        if (prevError) throw prevError;
+        previousPo = prev;
+
+        // opex_category_id es lo que usan los reportes OPEX para agrupar el gasto;
+        // opex_master_id es lo que usa el cálculo de disponible. Van juntos.
+        const poUpdate: { opex_master_id: string; opex_category_id?: string } = { opex_master_id: target.id };
+        if (target.categoryId) poUpdate.opex_category_id = target.categoryId;
+        const { data: poRows, error: poError } = await supabase
+          .from("purchase_orders")
+          .update(poUpdate)
+          .eq("id", purchaseOrderId)
+          .select("id");
+        if (poError) throw poError;
+        if (!poRows || poRows.length === 0) {
+          throw new Error("No se pudo actualizar la OC asociada (sin permisos suficientes)");
+        }
+      }
+
+      const { data: reqRows, error: reqError } = await supabase
+        .from("oc_requests")
+        .update({ opex_master_id: target.id, line_name: target.name })
+        .eq("id", request.id)
+        .select("id");
+      if (reqError || !reqRows || reqRows.length === 0) {
+        // Se restaura la OC para no dejarla en una categoría distinta a la solicitud.
+        if (purchaseOrderId && previousPo) {
+          const { error: restoreError } = await supabase
+            .from("purchase_orders")
+            .update(previousPo)
+            .eq("id", purchaseOrderId);
+          if (restoreError) console.error("No se pudo restaurar la OC tras el fallo:", restoreError);
+        }
+        throw reqError ?? new Error("No se pudo actualizar la solicitud (sin permisos suficientes)");
+      }
+
+      toast({ title: "Línea OPEX actualizada", description: `Imputada a ${target.name}` });
+      setIsEditingOpexLine(false);
+      loadRequest();
+      onRefresh?.();
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : (error as { message?: string })?.message ?? "No se pudo actualizar la línea OPEX",
+      });
+    } finally {
+      setSavingOpexLine(false);
+    }
+  };
+
   // Load available maintenance forms for the contract
   const loadAvailableForms = async () => {
     if (!request) return;
@@ -676,24 +824,47 @@ export const OCRequestViewDialog = ({
       // Se ofrece descargar/enviar de nuevo con los datos ya actualizados —
       // igual que al crearla, pero sin pedir Con Migo/Sin Migo otra vez.
       const effectiveUf = getEffectiveUf(request, ufValue);
+      const totalAmountClp = request.amount_clp || Math.round(request.amount_uf * effectiveUf);
+
+      // Mismo RUT que muestra el PDF original al crear la solicitud.
+      let supplierRut: string | null = null;
+      if (supplierId) {
+        const { data: supplierData } = await supabase
+          .from("suppliers")
+          .select("rut")
+          .eq("id", supplierId)
+          .single();
+        supplierRut = supplierData?.rut || null;
+      }
+
+      // Una solicitud OPEX no tiene filas en oc_budget_lines (esa tabla
+      // referencia budget_lines, que es CAPEX): su única línea es la categoría
+      // guardada en la propia solicitud, por el monto total. Sin esto el PDF
+      // saldría con la tabla de líneas vacía.
+      const shareLines = budgetLines.length > 0
+        ? budgetLines.map((l) => ({
+            lineName: l.line_name || "Línea",
+            amountClp: Math.round(l.amount_uf * effectiveUf),
+          }))
+        : [{ lineName: request.line_name || "Línea", amountClp: totalAmountClp }];
+
       setShareData({
         requestDate: request.request_date,
         currency: "CLP",
         contractNames: contractAllocations.length > 0
           ? contractAllocations.map((a) => a.contract_name)
           : [request.project_name].filter(Boolean),
+        contractCebe,
         description,
-        lines: budgetLines.map((l) => ({
-          lineName: l.line_name || "Línea",
-          amountClp: Math.round(l.amount_uf * effectiveUf),
-        })),
-        totalAmountClp: request.amount_clp || Math.round(request.amount_uf * effectiveUf),
+        lines: shareLines,
+        totalAmountClp,
         payments: paymentPlans.map((p) => ({
           description: p.description || "Pago",
           amountClp: paymentClp(p, request, ufValue),
           dueDate: p.due_date,
         })),
         supplierName,
+        supplierRut,
         sequenceNumber: request.sequence_number,
         migoChoice: request.migo_choice,
         requestId: request.id,
@@ -885,7 +1056,14 @@ export const OCRequestViewDialog = ({
   // budgetLines solo cubre la asignación múltiple (oc_budget_lines); la
   // asignación simple vive directo en oc_requests.budget_line_id y no
   // aparece ahí, así que sin este fallback el contador siempre mostraba (0).
-  const assignedLinesCount = budgetLines.length > 0 ? budgetLines.length : (request?.budget_line_id ? 1 : 0);
+  // Lo mismo aplica a OPEX: la categoría vive en oc_requests.opex_master_id.
+  const assignedLinesCount = budgetLines.length > 0
+    ? budgetLines.length
+    : (request?.budget_line_id || request?.opex_master_id ? 1 : 0);
+  // Solicitud OPEX de una sola categoría. Solo el admin puede cambiar la
+  // categoría, y puede hacerlo también con la solicitud ya convertida en OC.
+  const isOpexRequest = !!request && !request.budget_id && !!request.opex_master_id;
+  const canEditOpexLine = isAdmin && !readOnly && isOpexRequest;
 
   if (!open) return null;
 
@@ -1292,7 +1470,7 @@ export const OCRequestViewDialog = ({
             <TabsContent value="lines" className="space-y-4 mt-4">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-medium">Asignación a Línea(s) de Presupuesto</span>
-                {!readOnly && request.status === "pending" && !isEditingLines && (
+                {!readOnly && request.status === "pending" && !isEditingLines && !canEditOpexLine && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1304,6 +1482,29 @@ export const OCRequestViewDialog = ({
                     <Pencil className="h-3 w-3" />
                     Editar
                   </Button>
+                )}
+                {canEditOpexLine && !isEditingOpexLine && (
+                  <Button variant="outline" size="sm" onClick={handleStartEditOpexLine} className="gap-1">
+                    <Pencil className="h-3 w-3" />
+                    Editar
+                  </Button>
+                )}
+                {isEditingOpexLine && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setIsEditingOpexLine(false)} disabled={savingOpexLine} className="gap-1">
+                      <X className="h-3 w-3" />
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveOpexLine}
+                      disabled={savingOpexLine || loadingOpexCategories || !selectedOpexId}
+                      className="gap-1"
+                    >
+                      {savingOpexLine ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Guardar
+                    </Button>
+                  </div>
                 )}
                 {isEditingLines && (
                   <div className="flex gap-2">
@@ -1319,7 +1520,31 @@ export const OCRequestViewDialog = ({
                 )}
               </div>
 
-              {isEditingLines ? (
+              {isEditingOpexLine ? (
+                <div className="space-y-2">
+                  <Label>Categoría OPEX</Label>
+                  {loadingOpexCategories ? (
+                    <div className="flex justify-center py-3">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                  ) : (
+                    <Select value={selectedOpexId} onValueChange={setSelectedOpexId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione una categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {opexCategories.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    El monto total ({formatCLP(totalRequestClp)}) se imputa completo a la categoría elegida.
+                    {request.status === "converted" && " También se actualiza la OC creada desde esta solicitud."}
+                  </p>
+                </div>
+              ) : isEditingLines ? (
                 request.budget_id ? (
                   <MultipleLinesSelector
                     budgetId={request.budget_id}

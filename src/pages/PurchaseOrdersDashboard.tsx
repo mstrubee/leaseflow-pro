@@ -5033,6 +5033,7 @@ const PurchaseOrdersDashboard = () => {
         onRefresh={loadData}
         readOnly={false}
         ufValue={ufValue}
+        isAdmin={isAdmin}
       />
 
       {/* Convert OC Request Dialog */}

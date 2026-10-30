@@ -167,15 +167,22 @@ export const OCRequestsList = ({
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
-  
+  // El spinner que reemplaza toda la lista solo se muestra en la primera carga
+  // (o al cambiar de contrato/año). En recargas posteriores -- ej. tras
+  // "Guardar Cambios" en Ver/Editar Solicitud -- la lista sigue montada: si se
+  // reemplazara por el spinner, se desmontarían OCRequestViewDialog y su
+  // ventana de compartir, y el PDF nunca llegaría a mostrarse.
+  const hasLoadedOnce = useRef(false);
+
   const { toast } = useToast();
 
   useEffect(() => {
+    hasLoadedOnce.current = false;
     loadRequests();
   }, [contractId, year, budgetLineId]);
 
   const loadRequests = async () => {
-    setLoading(true);
+    if (!hasLoadedOnce.current) setLoading(true);
     try {
       // First get direct requests for this contract
       let query = supabase
@@ -302,6 +309,7 @@ export const OCRequestsList = ({
     } catch (error) {
       console.error("Error loading OC requests:", error);
     } finally {
+      hasLoadedOnce.current = true;
       setLoading(false);
     }
   };
@@ -1264,6 +1272,8 @@ export const OCRequestsList = ({
         requestId={viewRequestId}
         formatUF={formatUF}
         ufValue={ufValue}
+        isAdmin={isAdmin}
+        contractCebe={contractCebe}
         onRefresh={() => {
           loadRequests();
           onRefresh?.();
