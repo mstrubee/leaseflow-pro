@@ -29,6 +29,7 @@ import { formatCLP, cn } from "@/lib/utils";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData } from "@/lib/ocRequestShare";
+import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
 
 interface OCRequest {
   id: string;
@@ -822,54 +823,18 @@ export const OCRequestViewDialog = ({
       onRefresh?.();
 
       // Se ofrece descargar/enviar de nuevo con los datos ya actualizados —
-      // igual que al crearla, pero sin pedir Con Migo/Sin Migo otra vez.
-      const effectiveUf = getEffectiveUf(request, ufValue);
-      const totalAmountClp = request.amount_clp || Math.round(request.amount_uf * effectiveUf);
-
-      // Mismo RUT que muestra el PDF original al crear la solicitud.
-      let supplierRut: string | null = null;
-      if (supplierId) {
-        const { data: supplierData } = await supabase
-          .from("suppliers")
-          .select("rut")
-          .eq("id", supplierId)
-          .single();
-        supplierRut = supplierData?.rut || null;
+      // igual que al crearla, pero sin pedir Con Migo/Sin Migo otra vez. Se
+      // relee de la base (ya guardada) para que el PDF refleje lo persistido.
+      try {
+        setShareData(await loadOCRequestShareData(request.id, { ufValue, contractCebe }));
+      } catch (shareError) {
+        console.error("Error al preparar el PDF de la solicitud:", shareError);
+        toast({
+          variant: "destructive",
+          title: "Solicitud guardada, pero no se pudo preparar el PDF",
+          description: "Cierra y vuelve a abrir la solicitud para intentarlo de nuevo.",
+        });
       }
-
-      // Una solicitud OPEX no tiene filas en oc_budget_lines (esa tabla
-      // referencia budget_lines, que es CAPEX): su única línea es la categoría
-      // guardada en la propia solicitud, por el monto total. Sin esto el PDF
-      // saldría con la tabla de líneas vacía.
-      const shareLines = budgetLines.length > 0
-        ? budgetLines.map((l) => ({
-            lineName: l.line_name || "Línea",
-            amountClp: Math.round(l.amount_uf * effectiveUf),
-          }))
-        : [{ lineName: request.line_name || "Línea", amountClp: totalAmountClp }];
-
-      setShareData({
-        requestDate: request.request_date,
-        currency: "CLP",
-        contractNames: contractAllocations.length > 0
-          ? contractAllocations.map((a) => a.contract_name)
-          : [request.project_name].filter(Boolean),
-        contractCebe,
-        description,
-        lines: shareLines,
-        totalAmountClp,
-        payments: paymentPlans.map((p) => ({
-          description: p.description || "Pago",
-          amountClp: paymentClp(p, request, ufValue),
-          dueDate: p.due_date,
-        })),
-        supplierName,
-        supplierRut,
-        sequenceNumber: request.sequence_number,
-        migoChoice: request.migo_choice,
-        requestId: request.id,
-        verificationCode: request.verification_code,
-      });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {

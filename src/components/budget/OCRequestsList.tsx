@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet, RotateCcw } from "lucide-react";
+import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet, FileText, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -21,7 +21,8 @@ import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
-import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
 import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 
 interface OCRequest {
@@ -163,6 +164,10 @@ export const OCRequestsList = ({
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
+  // PDF de una solicitud ya existente (botón de la fila), distinto del que se
+  // ofrece justo al crear una: aquí Con Migo/Sin Migo ya está elegido.
+  const [pdfShareData, setPdfShareData] = useState<OCRequestShareData | null>(null);
+  const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
   const [importingFile, setImportingFile] = useState(false);
@@ -464,6 +469,18 @@ export const OCRequestsList = ({
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setReverting(false);
+    }
+  };
+
+  const handleOpenRequestPdf = async (request: OCRequest) => {
+    setPdfLoadingId(request.id);
+    try {
+      setPdfShareData(await loadOCRequestShareData(request.id, { ufValue, contractCebe }));
+    } catch (error) {
+      console.error("Error al preparar el PDF de la solicitud:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo preparar el PDF de la solicitud" });
+    } finally {
+      setPdfLoadingId(null);
     }
   };
 
@@ -858,10 +875,11 @@ export const OCRequestsList = ({
         contractNames: [contractName || ""].filter(Boolean),
         contractCebe,
         description: newRequestForm.description,
-        lines: validLines.map((l) => ({
-          lineName: l.lineName,
-          amountClp: Math.round(l.amount * currentUfValue),
-        })),
+        lines: buildShareLines(validLines, {
+          totalAmountClp,
+          amountsInClp: selectedBudgetId === "opex_master",
+          ufValue: currentUfValue,
+        }),
         totalAmountClp,
         sequenceNumber: requestData?.sequence_number,
         requestId: requestData?.id,
@@ -1106,9 +1124,21 @@ export const OCRequestsList = ({
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => handleOpenRequestPdf(request)}
+                        disabled={pdfLoadingId === request.id}
+                        className="h-7 px-2"
+                        title="Descargar PDF de la solicitud"
+                      >
+                        {pdfLoadingId === request.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <FileText className="h-3 w-3" />}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => exportToExcel(request)}
                         className="h-7 px-2"
-                        title="Descargar Excel"
+                        title="Descargar datos (CSV, abre en Excel)"
                       >
                         <Download className="h-3 w-3" />
                       </Button>
@@ -1652,6 +1682,13 @@ export const OCRequestsList = ({
         onOpenChange={(o) => { if (!o) setShareData(null); }}
         data={shareData}
         requestId={shareRequestId}
+      />
+
+      <ShareOCRequestDialog
+        open={!!pdfShareData}
+        onOpenChange={(o) => { if (!o) setPdfShareData(null); }}
+        data={pdfShareData}
+        requireMigoChoice={false}
       />
     </div>
   );
