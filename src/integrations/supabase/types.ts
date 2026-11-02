@@ -334,6 +334,36 @@ export type Database = {
         }
         Relationships: []
       }
+      autoplanet_business_cases: {
+        Row: {
+          computed: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          inputs: Json
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          computed?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inputs?: Json
+          name?: string
+          updated_at?: string
+        }
+        Update: {
+          computed?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inputs?: Json
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       board_report_shares: {
         Row: {
           contract_count: number
@@ -463,6 +493,7 @@ export type Database = {
       budget_lines: {
         Row: {
           amount_uf: number
+          authorized_at: string | null
           budget_id: string
           calc_percentage: number | null
           calc_source_line_id: string | null
@@ -486,6 +517,9 @@ export type Database = {
           parent_id: string | null
           progress_status_id: string | null
           quantity: number | null
+          quotation_file_name: string | null
+          quotation_file_url: string | null
+          quotation_storage_path: string | null
           status: string
           supplier_id: string | null
           supplier_name: string | null
@@ -498,6 +532,7 @@ export type Database = {
         }
         Insert: {
           amount_uf?: number
+          authorized_at?: string | null
           budget_id: string
           calc_percentage?: number | null
           calc_source_line_id?: string | null
@@ -521,6 +556,9 @@ export type Database = {
           parent_id?: string | null
           progress_status_id?: string | null
           quantity?: number | null
+          quotation_file_name?: string | null
+          quotation_file_url?: string | null
+          quotation_storage_path?: string | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
@@ -533,6 +571,7 @@ export type Database = {
         }
         Update: {
           amount_uf?: number
+          authorized_at?: string | null
           budget_id?: string
           calc_percentage?: number | null
           calc_source_line_id?: string | null
@@ -556,6 +595,9 @@ export type Database = {
           parent_id?: string | null
           progress_status_id?: string | null
           quantity?: number | null
+          quotation_file_name?: string | null
+          quotation_file_url?: string | null
+          quotation_storage_path?: string | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
@@ -869,6 +911,266 @@ export type Database = {
         }
         Relationships: []
       }
+      capex_approved_budget_files: {
+        Row: {
+          budget_id: string
+          file_name: string
+          file_path: string
+          id: string
+          uploaded_at: string
+        }
+        Insert: {
+          budget_id: string
+          file_name: string
+          file_path: string
+          id?: string
+          uploaded_at?: string
+        }
+        Update: {
+          budget_id?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capex_approved_budget_files_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "capex_approved_budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capex_approved_budget_increases: {
+        Row: {
+          amount_clp: number
+          budget_id: string
+          created_at: string
+          id: string
+          note: string | null
+        }
+        Insert: {
+          amount_clp: number
+          budget_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+        }
+        Update: {
+          amount_clp?: number
+          budget_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capex_approved_budget_increases_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "capex_approved_budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capex_approved_budgets: {
+        Row: {
+          amount_clp: number
+          created_at: string
+          id: string
+          include_caidos_in_disponible: boolean
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_clp?: number
+          created_at?: string
+          id?: string
+          include_caidos_in_disponible?: boolean
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_clp?: number
+          created_at?: string
+          id?: string
+          include_caidos_in_disponible?: boolean
+          updated_at?: string
+          year?: number
+        }
+        Relationships: []
+      }
+      capex_avance_status_types: {
+        Row: {
+          color: string | null
+          created_at: string
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      capex_budget_drafts: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          snapshot: Json | null
+          status: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          snapshot?: Json | null
+          status?: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          snapshot?: Json | null
+          status?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: []
+      }
+      capex_clasificacion_types: {
+        Row: {
+          color: string | null
+          created_at: string
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      capex_company_splits: {
+        Row: {
+          company_name: string
+          contract_id: string
+          created_at: string
+          display_order: number
+          excluded_from_capex_dashboard: boolean
+          id: string
+          percentage: number
+        }
+        Insert: {
+          company_name: string
+          contract_id: string
+          created_at?: string
+          display_order?: number
+          excluded_from_capex_dashboard?: boolean
+          id?: string
+          percentage: number
+        }
+        Update: {
+          company_name?: string
+          contract_id?: string
+          created_at?: string
+          display_order?: number
+          excluded_from_capex_dashboard?: boolean
+          id?: string
+          percentage?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capex_company_splits_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capex_new_location_budget: {
+        Row: {
+          category: string
+          contract_id: string
+          created_at: string
+          id: string
+          monthly_amount_clp: number
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          category: string
+          contract_id: string
+          created_at?: string
+          id?: string
+          monthly_amount_clp?: number
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          category?: string
+          contract_id?: string
+          created_at?: string
+          id?: string
+          monthly_amount_clp?: number
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capex_new_location_budget_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       closing_process_notes: {
         Row: {
           contract_id: string
@@ -986,6 +1288,7 @@ export type Database = {
           display_order: number | null
           id: string
           is_active: boolean | null
+          is_calendarizable: boolean
           name: string
           updated_at: string
         }
@@ -995,6 +1298,7 @@ export type Database = {
           display_order?: number | null
           id?: string
           is_active?: boolean | null
+          is_calendarizable?: boolean
           name: string
           updated_at?: string
         }
@@ -1004,6 +1308,7 @@ export type Database = {
           display_order?: number | null
           id?: string
           is_active?: boolean | null
+          is_calendarizable?: boolean
           name?: string
           updated_at?: string
         }
@@ -1772,6 +2077,9 @@ export type Database = {
       contracts: {
         Row: {
           business_case_url: string | null
+          capex_avance_status: string | null
+          capex_no_gantt_year_hint: number | null
+          capex_year_override: number | null
           clasificacion: string | null
           comite_gp_status: string | null
           company_id: string | null
@@ -1780,6 +2088,7 @@ export type Database = {
           display_currency: string | null
           drive_folder_id: string | null
           es_esquina: boolean | null
+          excluded_from_capex_dashboard: boolean
           id: string
           is_expired_but_operating: boolean | null
           metros_lineales_frente: number | null
@@ -1811,6 +2120,9 @@ export type Database = {
         }
         Insert: {
           business_case_url?: string | null
+          capex_avance_status?: string | null
+          capex_no_gantt_year_hint?: number | null
+          capex_year_override?: number | null
           clasificacion?: string | null
           comite_gp_status?: string | null
           company_id?: string | null
@@ -1819,6 +2131,7 @@ export type Database = {
           display_currency?: string | null
           drive_folder_id?: string | null
           es_esquina?: boolean | null
+          excluded_from_capex_dashboard?: boolean
           id?: string
           is_expired_but_operating?: boolean | null
           metros_lineales_frente?: number | null
@@ -1850,6 +2163,9 @@ export type Database = {
         }
         Update: {
           business_case_url?: string | null
+          capex_avance_status?: string | null
+          capex_no_gantt_year_hint?: number | null
+          capex_year_override?: number | null
           clasificacion?: string | null
           comite_gp_status?: string | null
           company_id?: string | null
@@ -1858,6 +2174,7 @@ export type Database = {
           display_currency?: string | null
           drive_folder_id?: string | null
           es_esquina?: boolean | null
+          excluded_from_capex_dashboard?: boolean
           id?: string
           is_expired_but_operating?: boolean | null
           metros_lineales_frente?: number | null
@@ -2363,8 +2680,147 @@ export type Database = {
           },
         ]
       }
+      gantt_overview_budget_items: {
+        Row: {
+          contract_id: string | null
+          created_at: string
+          created_by: string | null
+          date: string
+          fondo_promocion_uf: number | null
+          ggcc_uf_m2: number | null
+          id: string
+          name: string
+          otros_uf: number | null
+          superficie_m2: number | null
+          updated_at: string
+          valor_uf_m2: number | null
+        }
+        Insert: {
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          date: string
+          fondo_promocion_uf?: number | null
+          ggcc_uf_m2?: number | null
+          id?: string
+          name: string
+          otros_uf?: number | null
+          superficie_m2?: number | null
+          updated_at?: string
+          valor_uf_m2?: number | null
+        }
+        Update: {
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          date?: string
+          fondo_promocion_uf?: number | null
+          ggcc_uf_m2?: number | null
+          id?: string
+          name?: string
+          otros_uf?: number | null
+          superficie_m2?: number | null
+          updated_at?: string
+          valor_uf_m2?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_overview_budget_items_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_overview_extra_contracts: {
+        Row: {
+          added_by: string | null
+          contract_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          added_by?: string | null
+          contract_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          added_by?: string | null
+          contract_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_overview_extra_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: true
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_overview_statuses: {
+        Row: {
+          color: string
+          created_at: string
+          display_order: number
+          excludes_from_timeline: boolean
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          display_order?: number
+          excludes_from_timeline?: boolean
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          display_order?: number
+          excludes_from_timeline?: boolean
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gantt_overview_timeline_settings: {
+        Row: {
+          extended_until: string | null
+          id: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          extended_until?: string | null
+          id?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          extended_until?: string | null
+          id?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       gantt_task_dependencies: {
         Row: {
+          carry_over_enabled: boolean
+          carry_over_landing_business_day: number
+          carry_over_threshold_day: number | null
           created_at: string
           dep_type: string
           depends_on_task_id: string
@@ -2374,6 +2830,9 @@ export type Database = {
           task_id: string
         }
         Insert: {
+          carry_over_enabled?: boolean
+          carry_over_landing_business_day?: number
+          carry_over_threshold_day?: number | null
           created_at?: string
           dep_type?: string
           depends_on_task_id: string
@@ -2383,6 +2842,9 @@ export type Database = {
           task_id: string
         }
         Update: {
+          carry_over_enabled?: boolean
+          carry_over_landing_business_day?: number
+          carry_over_threshold_day?: number | null
           created_at?: string
           dep_type?: string
           depends_on_task_id?: string
@@ -2721,7 +3183,7 @@ export type Database = {
           id: string
           is_priority: boolean
           name: string
-          overview_status: string
+          overview_status_id: string | null
           service_contract_id: string | null
           source: string
           template_id: string | null
@@ -2735,7 +3197,7 @@ export type Database = {
           id?: string
           is_priority?: boolean
           name?: string
-          overview_status?: string
+          overview_status_id?: string | null
           service_contract_id?: string | null
           source?: string
           template_id?: string | null
@@ -2749,7 +3211,7 @@ export type Database = {
           id?: string
           is_priority?: boolean
           name?: string
-          overview_status?: string
+          overview_status_id?: string | null
           service_contract_id?: string | null
           source?: string
           template_id?: string | null
@@ -2761,6 +3223,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_timelines_overview_status_id_fkey"
+            columns: ["overview_status_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_overview_statuses"
             referencedColumns: ["id"]
           },
           {
@@ -4187,6 +4656,7 @@ export type Database = {
           paid_date: string | null
           payment_number: number
           purchase_order_id: string | null
+          quotation_number: string | null
           status: string
           updated_at: string
         }
@@ -4201,6 +4671,7 @@ export type Database = {
           paid_date?: string | null
           payment_number?: number
           purchase_order_id?: string | null
+          quotation_number?: string | null
           status?: string
           updated_at?: string
         }
@@ -4215,6 +4686,7 @@ export type Database = {
           paid_date?: string | null
           payment_number?: number
           purchase_order_id?: string | null
+          quotation_number?: string | null
           status?: string
           updated_at?: string
         }
@@ -4253,6 +4725,7 @@ export type Database = {
           project_name: string
           quotation_date: string
           quotation_number: string
+          storage_path: string | null
           supplier_id: string | null
           supplier_name: string | null
           updated_at: string
@@ -4274,6 +4747,7 @@ export type Database = {
           project_name: string
           quotation_date?: string
           quotation_number: string
+          storage_path?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
           updated_at?: string
@@ -4295,6 +4769,7 @@ export type Database = {
           project_name?: string
           quotation_date?: string
           quotation_number?: string
+          storage_path?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
           updated_at?: string
@@ -4464,11 +4939,13 @@ export type Database = {
           request_date: string
           request_number: string
           sequence_number: number | null
+          source_quotation_number: string | null
           status: string
           supplier_id: string | null
           supplier_name: string | null
           uf_value_at_entry: number | null
           updated_at: string
+          verification_code: string | null
           year: number
         }
         Insert: {
@@ -4494,11 +4971,13 @@ export type Database = {
           request_date?: string
           request_number: string
           sequence_number?: number | null
+          source_quotation_number?: string | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
           uf_value_at_entry?: number | null
           updated_at?: string
+          verification_code?: string | null
           year: number
         }
         Update: {
@@ -4524,11 +5003,13 @@ export type Database = {
           request_date?: string
           request_number?: string
           sequence_number?: number | null
+          source_quotation_number?: string | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
           uf_value_at_entry?: number | null
           updated_at?: string
+          verification_code?: string | null
           year?: number
         }
         Relationships: [
@@ -4582,6 +5063,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      oc_verification_secret: {
+        Row: {
+          id: boolean
+          secret: string
+        }
+        Insert: {
+          id?: boolean
+          secret: string
+        }
+        Update: {
+          id?: boolean
+          secret?: string
+        }
+        Relationships: []
       }
       operator_suppliers: {
         Row: {
@@ -7499,6 +7995,7 @@ export type Database = {
         Args: { p_comment: string; p_form_id: string }
         Returns: undefined
       }
+      apply_opex_category_mappings: { Args: { p_year: number }; Returns: Json }
       calculate_next_send_at: {
         Args: {
           p_days_before: number[]
@@ -7586,29 +8083,27 @@ export type Database = {
         }
         Returns: boolean
       }
-      apply_opex_category_mappings: {
-        Args: { p_year: number }
-        Returns: Json
-      }
-      merge_opex_categories: {
-        Args: { p_from: string[]; p_to_id: string | null; p_to_name: string | null; p_year: number }
-        Returns: string
-      }
-      retire_opex_category: {
-        Args: { p_category_id: string; p_year: number }
-        Returns: string
-      }
-      update_opex_category_merge: {
-        Args: { p_add: string[]; p_new_name: string | null; p_remove: string[]; p_to_id: string; p_year: number }
-        Returns: undefined
-      }
-      undo_opex_category_change: {
-        Args: { p_batch: string; p_move_to?: string | null }
-        Returns: Json
-      }
       merge_maintenance_forms: {
         Args: { p_form_ids: string[] }
         Returns: string
+      }
+      merge_opex_categories: {
+        Args: {
+          p_from: string[]
+          p_to_id: string
+          p_to_name: string
+          p_year: number
+        }
+        Returns: string
+      }
+      opex_assert_category_year_open: {
+        Args: { p_year: number }
+        Returns: undefined
+      }
+      opex_first_category_year: { Args: never; Returns: number }
+      opex_lock_sources_for_change: {
+        Args: { p_ids: string[]; p_year: number }
+        Returns: undefined
       }
       purge_deleted_pois: { Args: never; Returns: undefined }
       purge_deleted_routes: { Args: never; Returns: undefined }
@@ -7619,6 +8114,10 @@ export type Database = {
           approver_org_member: string
           approver_profile: string
         }[]
+      }
+      retire_opex_category: {
+        Args: { p_category_id: string; p_year: number }
+        Returns: string
       }
       set_budget_line_progress_status: {
         Args: { p_budget_line_id: string; p_status_name: string }
@@ -7632,9 +8131,27 @@ export type Database = {
         }
         Returns: undefined
       }
+      undo_opex_category_change: {
+        Args: { p_batch: string; p_move_to?: string }
+        Returns: Json
+      }
       unmerge_maintenance_forms: {
         Args: { p_group_id: string }
         Returns: undefined
+      }
+      verify_oc_request: {
+        Args: { p_code: string; p_id: string }
+        Returns: {
+          amount_clp: number
+          is_valid: boolean
+          line_name: string
+          project_name: string
+          request_date: string
+          request_number: string
+          sequence_number: number
+          status: string
+          supplier_name: string
+        }[]
       }
     }
     Enums: {
