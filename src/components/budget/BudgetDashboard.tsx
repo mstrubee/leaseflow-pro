@@ -123,6 +123,13 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const [ocRequeridasOpen, setOcRequeridasOpen] = useState(false);
   const [ocSolicitudesOpen, setOcSolicitudesOpen] = useState(false);
   const [ocOrdenesOpen, setOcOrdenesOpen] = useState(false);
+  // Al pasar un Requerimiento a Solicitud ("Solicitar OC") hay que abrir la
+  // sección "Solicitudes de OC": el diálogo de creación vive dentro de
+  // OCRequestsList, que no se monta mientras la sección está colapsada.
+  useEffect(() => {
+    if (ocRequiredConvertDraft) setOcSolicitudesOpen(true);
+  }, [ocRequiredConvertDraft]);
+
   // Al ejecutar una búsqueda (de vacío a no-vacío) se amplían las 3 secciones
   // automáticamente -- pero nunca se auto-colapsan, y el usuario puede
   // volver a colapsar cualquiera manualmente aunque la búsqueda siga activa.
@@ -1069,6 +1076,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                     refreshKey={refreshKey}
                     onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
                     searchTerm={ocSearchTerm}
+                    canRequest={isAdmin || hasPermission("budget_ordenes_compra", "edit")}
                   />
                 </CardContent>
               </CollapsibleContent>

@@ -4,14 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ChevronDown, ChevronRight, Pencil, Trash2, ArrowRightCircle, Download, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Trash2, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { resolveFileUrl } from "@/lib/storageUtils";
 import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
 import type { OCRequestPrefillDraft } from "./OCRequestsList";
-import type { OCRequiredGroup, OCRequiredGroupLine } from "@/lib/ocRequiredGroups";
+import { loadSolicitudesByQuotation, type OCRequiredGroup, type OCRequiredGroupLine } from "@/lib/ocRequiredGroups";
+import { buildPrefillDraftFromGroup } from "@/lib/ocRequiredDraft";
+import { OCRequiredGroupDetail } from "./OCRequiredGroupDetail";
 
 // Re-exportados para no romper a los demás archivos que ya los importan desde
 // acá -- la fuente de verdad ahora es lib/ocRequiredGroups.ts (compartida con
@@ -28,6 +30,8 @@ interface OCRequiredListProps {
   onRefresh?: () => void;
   /** Búsqueda compartida con OCRequestsList y PurchaseOrdersModule (ver BudgetDashboard). */
   searchTerm?: string;
+  /** Permite pasar un requerimiento Pendiente a Solicitud de OC (botón "Solicitar OC" del detalle). */
+  canRequest?: boolean;
 }
 
 /**
@@ -36,13 +40,14 @@ interface OCRequiredListProps {
  * CapexOCRequiredDialog.tsx). Primer eslabón del flujo Requerimiento de OC →
  * Solicitud de OC → OC.
  */
-export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, onConvert, refreshKey, onRefresh, searchTerm = "" }: OCRequiredListProps) {
+export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, onConvert, refreshKey, onRefresh, searchTerm = "", canRequest = true }: OCRequiredListProps) {
   const [groups, setGroups] = useState<OCRequiredGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editingGroup, setEditingGroup] = useState<OCRequiredGroup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OCRequiredGroup | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [requestingNumber, setRequestingNumber] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -70,11 +75,7 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
       const statusByLine = new Map((lines || []).map((l: any) => [l.id, l.status as string]));
 
       const quotationNumbers = [...new Set(rows.map((r) => r.quotation_number))];
-      const { data: convertedReqs } = await supabase
-        .from("oc_requests")
-        .select("source_quotation_number")
-        .in("source_quotation_number", quotationNumbers);
-      const convertedSet = new Set((convertedReqs || []).map((r: any) => r.source_quotation_number).filter(Boolean));
+      const solicitudesByNumber = await loadSolicitudesByQuotation(quotationNumbers);
 
       const byNumber = new Map<string, OCRequiredGroup>();
       for (const r of rows) {
@@ -93,7 +94,8 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
             supplierId: r.supplier_id ?? null,
             supplierName: r.supplier_name ?? null,
             lines: [],
-            converted: convertedSet.has(r.quotation_number),
+            converted: solicitudesByNumber.has(r.quotation_number),
+            solicitudes: solicitudesByNumber.get(r.quotation_number) ?? [],
           };
           byNumber.set(r.quotation_number, group);
         }
@@ -129,27 +131,16 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
     else toast.error("No se pudo abrir el archivo");
   };
 
-  const handleConvert = async (group: OCRequiredGroup) => {
-    const { data: plans } = await supabase
-      .from("oc_payment_plans")
-      .select("description, amount_clp, due_date")
-      .eq("quotation_number", group.quotationNumber)
-      .order("payment_number");
-
-    onConvert({
-      quotationNumber: group.quotationNumber,
-      lines: group.lines.map((l) => ({ lineId: l.budgetLineId, lineName: l.lineName, amountUf: l.amountUf })),
-      totalAmountClp: group.amountClp,
-      fileUrl: group.filePath,
-      fileName: group.fileName,
-      supplierId: group.supplierId,
-      supplierName: group.supplierName,
-      paymentPlan: (plans || []).map((p: any) => ({
-        description: p.description || "",
-        amount: String(Math.round(p.amount_clp || 0)),
-        due_date: p.due_date || "",
-      })),
-    });
+  const handleRequest = async (group: OCRequiredGroup) => {
+    setRequestingNumber(group.quotationNumber);
+    try {
+      onConvert(await buildPrefillDraftFromGroup(group));
+    } catch (error) {
+      console.error("Error al preparar la Solicitud de OC:", error);
+      toast.error("No se pudo preparar la Solicitud de OC");
+    } finally {
+      setRequestingNumber(null);
+    }
   };
 
   const handleDelete = async () => {
@@ -208,7 +199,7 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
               <TableHead>Proveedor</TableHead>
               <TableHead>Monto</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead className="w-[160px]">Acciones</TableHead>
+              <TableHead className="w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -242,17 +233,6 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {!isConverted && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            title="Convertir a Solicitud de OC"
-                            onClick={() => handleConvert(group)}
-                          >
-                            <ArrowRightCircle className="h-4 w-4 text-primary" />
-                          </Button>
-                        )}
-                        {!isConverted && (
                           <Button variant="ghost" size="icon" className="h-7 w-7" title="Editar" onClick={() => setEditingGroup(group)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -268,32 +248,14 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
                   {isOpen && (
                     <TableRow key={`${group.quotationNumber}-detail`}>
                       <TableCell colSpan={8} className="bg-muted/30">
-                        <div className="py-2 px-2 space-y-2">
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Proyecto: {group.projectName}</span>
-                            {group.filePath && (
-                              <Button variant="outline" size="sm" className="h-6 px-2 gap-1" onClick={() => openFile(group.filePath)}>
-                                <Download className="h-3 w-3" />
-                                {group.fileName || "Ver archivo"}
-                              </Button>
-                            )}
-                          </div>
-                          <div className="rounded-md border divide-y bg-background">
-                            {group.lines.map((line) => (
-                              <div key={line.budgetLineId} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                                <span className="truncate">{line.lineName}</span>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-xs text-muted-foreground">
-                                    UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                  <span className="text-[10px] uppercase text-muted-foreground">
-                                    {line.status === "autorizado" ? "Autorizado" : line.status === "solicita_autorizar" ? "Solicita Autorizar" : "No autorizado"}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        <OCRequiredGroupDetail
+                          group={group}
+                          canRequest={canRequest}
+                          requesting={requestingNumber === group.quotationNumber}
+                          onRequest={handleRequest}
+                          onOpenFile={openFile}
+                          showProject
+                        />
                       </TableCell>
                     </TableRow>
                   )}

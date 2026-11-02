@@ -100,6 +100,10 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Ba
 import { CentralizedOrderCreator, buildHierarchicalCapexLines, loadCapexLineUsage, filterCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
+import { OCRequestCreateDialog, type OCRequestPrefillDraft } from "@/components/budget/OCRequestCreateDialog";
+import { OCRequiredGroupDetail } from "@/components/budget/OCRequiredGroupDetail";
+import { loadSolicitudesByQuotation, loadContractCebe, type OCRequiredGroupSolicitud } from "@/lib/ocRequiredGroups";
+import { buildPrefillDraftFromGroup } from "@/lib/ocRequiredDraft";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
@@ -225,8 +229,18 @@ interface OCRequiredGroup {
   fileName: string | null;
   lines: OCRequiredGroupLine[];
   converted: boolean;
+  /** Solicitudes de OC originadas en este requerimiento (líneas a las que se imputaron). */
+  solicitudes: OCRequiredGroupSolicitud[];
   supplierId: string | null;
   supplierName: string | null;
+}
+
+/** Destino del diálogo "Nueva Solicitud de OC" abierto desde un Requerimiento. */
+interface RequestFromRequiredTarget {
+  contractId: string;
+  contractName: string;
+  contractCebe: string | null;
+  draft: OCRequestPrefillDraft | null;
 }
 
 interface OpexCategory {
@@ -333,6 +347,10 @@ const PurchaseOrdersDashboard = () => {
   const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
   const [ocRequiredGroups, setOcRequiredGroups] = useState<OCRequiredGroup[]>([]);
   const [expandedRequired, setExpandedRequired] = useState<Set<string>>(new Set());
+  // "Solicitar OC" desde el detalle de un Requerimiento: abre el diálogo de
+  // Nueva Solicitud de OC del contrato correspondiente, prellenado.
+  const [requestFromRequired, setRequestFromRequired] = useState<RequestFromRequiredTarget | null>(null);
+  const [requestingRequiredNumber, setRequestingRequiredNumber] = useState<string | null>(null);
   const [requeridasContractFilter, setRequeridasContractFilter] = useState("todos");
   const [requeridasStatusFilter, setRequeridasStatusFilter] = useState("todos");
   const [solicitaLines, setSolicitaLines] = useState<SolicitaAutorizacionLine[]>([]);
@@ -729,11 +747,7 @@ const PurchaseOrdersDashboard = () => {
         const statusByLine = new Map((linesData || []).map((l: any) => [l.id, l.status as string]));
 
         const quotationNumbers = [...new Set(quotationRows.map((r) => r.quotation_number))];
-        const { data: convertedReqsData } = await supabase
-          .from("oc_requests")
-          .select("source_quotation_number")
-          .in("source_quotation_number", quotationNumbers);
-        const convertedSet = new Set((convertedReqsData || []).map((r: any) => r.source_quotation_number).filter(Boolean));
+        const solicitudesByNumber = await loadSolicitudesByQuotation(quotationNumbers);
 
         const groupsByNumber = new Map<string, OCRequiredGroup>();
         for (const r of quotationRows) {
@@ -749,7 +763,8 @@ const PurchaseOrdersDashboard = () => {
               filePath: r.file_path,
               fileName: r.file_name,
               lines: [],
-              converted: convertedSet.has(r.quotation_number),
+              converted: solicitudesByNumber.has(r.quotation_number),
+              solicitudes: solicitudesByNumber.get(r.quotation_number) ?? [],
               supplierId: r.supplier_id ?? null,
               supplierName: r.supplier_name ?? null,
             };
@@ -844,6 +859,25 @@ const PurchaseOrdersDashboard = () => {
   const handleConvertRequest = (req: OCRequest) => {
     setConvertingRequest(req);
     setShowConvertDialog(true);
+  };
+
+  // Requerimiento de OC (pendiente) → Solicitud de OC: arma el prellenado y
+  // abre el diálogo de Nueva Solicitud del contrato del requerimiento.
+  const canRequestOC = isAdmin || hasPermission("budget_ordenes_compra", "edit");
+  const handleRequestOC = async (group: OCRequiredGroup) => {
+    setRequestingRequiredNumber(group.quotationNumber);
+    try {
+      const [draft, cebe] = await Promise.all([
+        buildPrefillDraftFromGroup(group),
+        loadContractCebe(group.contractId),
+      ]);
+      setRequestFromRequired({ contractId: group.contractId, contractName: group.projectName, contractCebe: cebe, draft });
+    } catch (error) {
+      console.error("Error al preparar la Solicitud de OC:", error);
+      toast.error("No se pudo preparar la Solicitud de OC");
+    } finally {
+      setRequestingRequiredNumber(null);
+    }
   };
 
   // Total CAPEX autorizado por presupuesto: suma solo líneas status="autorizado",
@@ -4705,36 +4739,13 @@ const PurchaseOrdersDashboard = () => {
                             {isOpen && (
                               <TableRow>
                                 <TableCell colSpan={9} className="bg-muted/30">
-                                  <div className="py-2 px-2 space-y-2">
-                                    {group.filePath && (
-                                      <div className="flex justify-end">
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-6 px-2 gap-1"
-                                          onClick={() => void openFile(group.filePath!)}
-                                        >
-                                          <Download className="h-3 w-3" />
-                                          {group.fileName || "Ver archivo"}
-                                        </Button>
-                                      </div>
-                                    )}
-                                    <div className="rounded-md border divide-y bg-background">
-                                      {group.lines.map((line) => (
-                                        <div key={line.budgetLineId} className="flex items-center justify-between px-3 py-1.5 text-sm">
-                                          <span className="truncate">{line.lineName}</span>
-                                          <div className="flex items-center gap-2 shrink-0">
-                                            <span className="text-xs text-muted-foreground">
-                                              UF {line.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                            <span className="text-[10px] uppercase text-muted-foreground">
-                                              {line.status === "autorizado" ? "Autorizado" : line.status === "solicita_autorizar" ? "Solicita Autorizar" : "No autorizado"}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
+                                  <OCRequiredGroupDetail
+                                    group={group}
+                                    canRequest={canRequestOC}
+                                    requesting={requestingRequiredNumber === group.quotationNumber}
+                                    onRequest={handleRequestOC}
+                                    onOpenFile={(path) => void openFile(path)}
+                                  />
                                 </TableCell>
                               </TableRow>
                             )}
@@ -5035,6 +5046,23 @@ const PurchaseOrdersDashboard = () => {
         ufValue={ufValue}
         isAdmin={isAdmin}
       />
+
+      {/* Nueva Solicitud de OC prellenada desde un Requerimiento de OC */}
+      {requestFromRequired && (
+        <OCRequestCreateDialog
+          key={requestFromRequired.contractId}
+          contractId={requestFromRequired.contractId}
+          contractName={requestFromRequired.contractName}
+          contractCebe={requestFromRequired.contractCebe}
+          year={parseInt(yearFilter)}
+          ufValue={ufValue}
+          formatUF={formatUF}
+          formatCLP={formatCLP}
+          prefillDraft={requestFromRequired.draft}
+          onPrefillConsumed={() => setRequestFromRequired((prev) => (prev ? { ...prev, draft: null } : prev))}
+          onCreated={loadData}
+        />
+      )}
 
       {/* Convert OC Request Dialog */}
       <ConvertOCRequestDialog

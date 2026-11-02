@@ -7,6 +7,14 @@ export interface OCRequiredGroupLine {
   status: string;
 }
 
+/** Solicitud de OC creada a partir de un requerimiento (oc_requests.source_quotation_number)
+ *  con las líneas de presupuesto a las que quedó imputada (oc_budget_lines). */
+export interface OCRequiredGroupSolicitud {
+  requestId: string;
+  requestNumber: string;
+  lines: { budgetLineId: string; lineName: string; amountUf: number }[];
+}
+
 export interface OCRequiredGroup {
   quotationNumber: string;
   quotationDate: string;
@@ -24,6 +32,9 @@ export interface OCRequiredGroup {
   supplierName: string | null;
   lines: OCRequiredGroupLine[];
   converted: boolean;
+  /** Solicitudes de OC originadas en este requerimiento. Solo se carga en las
+   *  vistas de lista (ver loadSolicitudesByQuotation); es opcional. */
+  solicitudes?: OCRequiredGroupSolicitud[];
 }
 
 /**
@@ -94,4 +105,71 @@ export async function loadOCRequiredGroupForLine(
     })),
     converted: !!(convertedReqs && convertedReqs.length > 0),
   };
+}
+
+/**
+ * Solicitudes de OC originadas en cada requerimiento, con las líneas a las que
+ * quedaron imputadas. Es lo que se muestra en el detalle de un requerimiento
+ * "Convertida" (puede diferir de las líneas del requerimiento original).
+ */
+export async function loadSolicitudesByQuotation(
+  quotationNumbers: string[]
+): Promise<Map<string, OCRequiredGroupSolicitud[]>> {
+  const result = new Map<string, OCRequiredGroupSolicitud[]>();
+  if (quotationNumbers.length === 0) return result;
+
+  const { data: requests, error: requestsError } = await supabase
+    .from("oc_requests")
+    .select("id, request_number, source_quotation_number")
+    .in("source_quotation_number", quotationNumbers);
+  if (requestsError) throw requestsError;
+  if (!requests || requests.length === 0) return result;
+
+  const requestIds = requests.map((r: any) => r.id as string);
+  const { data: budgetLines, error: linesError } = await supabase
+    .from("oc_budget_lines")
+    .select("oc_request_id, budget_line_id, amount_uf, budget_lines(name)")
+    .in("oc_request_id", requestIds);
+  if (linesError) throw linesError;
+
+  const linesByRequest = new Map<string, OCRequiredGroupSolicitud["lines"]>();
+  for (const l of (budgetLines || []) as any[]) {
+    const list = linesByRequest.get(l.oc_request_id) ?? [];
+    list.push({
+      budgetLineId: l.budget_line_id,
+      lineName: l.budget_lines?.name ?? "Línea",
+      amountUf: Number(l.amount_uf) || 0,
+    });
+    linesByRequest.set(l.oc_request_id, list);
+  }
+
+  for (const r of requests as any[]) {
+    const list = result.get(r.source_quotation_number) ?? [];
+    list.push({
+      requestId: r.id,
+      requestNumber: r.request_number,
+      lines: linesByRequest.get(r.id) ?? [],
+    });
+    result.set(r.source_quotation_number, list);
+  }
+  return result;
+}
+
+/** CEBE del contrato (campo personalizado "cebe"), usado en el PDF de la Solicitud de OC. */
+export async function loadContractCebe(contractId: string): Promise<string | null> {
+  const { data: field } = await supabase
+    .from("contract_custom_fields")
+    .select("id")
+    .ilike("field_name", "cebe")
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+  if (!field) return null;
+  const { data: value } = await supabase
+    .from("contract_custom_field_values")
+    .select("field_value")
+    .eq("contract_id", contractId)
+    .eq("field_id", field.id)
+    .maybeSingle();
+  return value?.field_value ?? null;
 }
