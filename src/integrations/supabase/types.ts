@@ -8139,6 +8139,16 @@ export type Database = {
         Args: { p_group_id: string }
         Returns: undefined
       }
+      update_opex_category_merge: {
+        Args: {
+          p_add: string[]
+          p_new_name: string
+          p_remove: string[]
+          p_to_id: string
+          p_year: number
+        }
+        Returns: undefined
+      }
       verify_oc_request: {
         Args: { p_code: string; p_id: string }
         Returns: {
