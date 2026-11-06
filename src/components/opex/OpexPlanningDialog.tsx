@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowDown, ArrowUp, ArrowUpDown, CalendarRange, Globe, Merge, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarRange, FileSpreadsheet, Globe, Merge, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
@@ -19,6 +19,7 @@ import { OpexGeneralAmountCell } from "@/components/opex/OpexGeneralAmountCell";
 import { OpexCategoryChangeDialog, type CategoryActionMode } from "@/components/opex/OpexCategoryChangeDialog";
 import { OpexCategoryChangesPanel } from "@/components/opex/OpexCategoryChangesPanel";
 import { OpexMergeEditDialog } from "@/components/opex/OpexMergeEditDialog";
+import { exportOpexPlanToExcel } from "@/lib/opexPlanningExcel";
 import { OpexUndoFusionDialog } from "@/components/opex/OpexUndoFusionDialog";
 import { useOpexCategoryChanges, type CategoryFusion } from "@/components/opex/useOpexCategoryChanges";
 import { matchesSearch, resolveCategoryId, selectionState, updateSelection } from "@/lib/opexCategories";
@@ -403,6 +404,24 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
     loadData();
   };
 
+  // Excel: una fila por categoría con su "Total {año}" (solo las que tienen monto), en el orden elegido en la tabla.
+  const exportRows = useMemo(
+    () =>
+      sortCategoryPlan(plan, categorySort)
+        .filter((r) => Math.round(r.totalProposalClp) > 0)
+        .map((r) => ({ name: r.name, amountClp: r.totalProposalClp })),
+    [plan, categorySort],
+  );
+  const handleExportExcel = async () => {
+    try {
+      const { filename } = await exportOpexPlanToExcel({ planYear, rows: exportRows });
+      toast.success(`Excel descargado: ${filename}`);
+    } catch (error) {
+      console.error("Error exporting OPEX plan to Excel:", error);
+      toast.error("No se pudo generar el Excel");
+    }
+  };
+
   if (!isAdmin) return null;
 
   return (
@@ -446,6 +465,16 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
           <p className="text-xs text-muted-foreground pb-2">
             Valor por defecto: {DEFAULT_INDEXATION_PCT}% (tasa implícita en el presupuesto {baseYear}).
           </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto mb-0.5"
+            disabled={loading || exportRows.length === 0}
+            onClick={handleExportExcel}
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-1" />
+            Exportar a Excel
+          </Button>
         </div>
 
         {loading ? (
