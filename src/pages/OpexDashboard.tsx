@@ -1086,8 +1086,8 @@ const OpexDashboard = () => {
                   </div> : <div className="space-y-3">
                     {contractSummaries.map(summary => {
                   const isExpanded = expandedContracts.has(summary.contract_id);
-                  // % of the TOTAL OPEX (OPEX Total card) consumed by this local, not per category
-                  const usagePercent = globalTotals.budgetUF > 0 ? summary.total_consumed / globalTotals.budgetUF * 100 : 0;
+                  // % of the TOTAL OPEX consumed by all locals ("Con OC" in the OPEX Total card) that belongs to this local, not per category
+                  const usagePercent = globalTotals.consumedUF > 0 ? summary.total_consumed / globalTotals.consumedUF * 100 : 0;
                   return <Collapsible key={summary.contract_id} open={isExpanded} onOpenChange={() => toggleContract(summary.contract_id)}>
                           <Card className="border-l-4" style={{
                       borderLeftColor: getCompanyColor(summary.company_id)
@@ -1119,7 +1119,7 @@ const OpexDashboard = () => {
                                   <div className="flex items-center gap-4">
                                     <div className="w-32">
                                       <Progress value={Math.min(usagePercent, 100)} className="h-2" />
-                                      <span className="text-xs text-muted-foreground" title="Consumo del local sobre el OPEX Total">{usagePercent.toFixed(1)}% usado</span>
+                                      <span className="text-xs text-muted-foreground" title="Consumo del local sobre el consumo OPEX total de todos los locales">{usagePercent.toFixed(1)}% usado</span>
                                     </div>
                                     <Button variant="ghost" size="sm" onClick={e => {
                                 e.stopPropagation();
