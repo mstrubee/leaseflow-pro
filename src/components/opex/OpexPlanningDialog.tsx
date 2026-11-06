@@ -26,6 +26,7 @@ import { OpexCategorySelectionBar } from "@/components/opex/OpexCategorySelectio
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
+  assignDefaultCategory,
   buildCategoryPlan,
   buildPlanLines,
   droppedByRetirement,
@@ -61,7 +62,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
   const planYear = baseYear + 1;
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [orders, setOrders] = useState<PlanningOrder[]>([]);
+  const [loadedOrders, setOrders] = useState<PlanningOrder[]>([]);
   const [items, setItems] = useState<PlanningItem[]>([]);
   // OC OPEX excluidas (tachadas) de la propuesta del año planificado.
   const [excludedOrderIds, setExcludedOrderIds] = useState<Set<string>>(new Set());
@@ -148,6 +149,12 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
   });
   const categories = categoryChanges.planCategories;
 
+  // Las OC OPEX sin categoría se cuentan en "Obras Civiles (en General)" solo para planificar; la OC no se modifica.
+  const orders = useMemo(
+    () => assignDefaultCategory(loadedOrders, categoryChanges.allCategories),
+    [loadedOrders, categoryChanges.allCategories],
+  );
+
   // Solo lo no excluido alimenta la propuesta y los análisis.
   const activeOrders = useMemo(() => orders.filter((o) => !excludedOrderIds.has(o.id)), [orders, excludedOrderIds]);
   const activeItems = useMemo(() => items.filter((i) => i.excluded_at === null), [items]);
@@ -180,6 +187,16 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
     () => droppedByRetirement(activeOrders, categoryChanges.mappingIndex, ufValue),
     [activeOrders, categoryChanges.mappingIndex, ufValue],
   );
+  // OC sin categoría contadas en cada categoría final (para avisarlo en la fila).
+  const assumedByCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeOrders.forEach((o) => {
+      if (!o.category_assumed || !o.opex_category_id) return;
+      const finalId = resolveCategoryId(o.opex_category_id, categoryChanges.mappingIndex);
+      if (finalId) counts.set(finalId, (counts.get(finalId) ?? 0) + 1);
+    });
+    return counts;
+  }, [activeOrders, categoryChanges.mappingIndex]);
   const monthlyReal = useMemo(() => sumByMonth(activeOrders, ufValue), [activeOrders, ufValue]);
   const topLocals = useMemo(() => rankBy(activeOrders, (o) => o.contract_name, ufValue), [activeOrders, ufValue]);
   const topSuppliers = useMemo(() => rankBy(activeOrders, (o) => o.supplier_name, ufValue), [activeOrders, ufValue]);
@@ -532,7 +549,14 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                           />
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">{r.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {r.name}
+                        {r.categoryId && assumedByCategory.has(r.categoryId) && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            Incluye {assumedByCategory.get(r.categoryId)} OC que no tenían categoría
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{r.orderCount}</TableCell>
                       <TableCell className="text-right">{formatClp(r.realClp)}</TableCell>
                       <TableCell className="text-right">{formatClp(r.avgMonthlyClp)}</TableCell>

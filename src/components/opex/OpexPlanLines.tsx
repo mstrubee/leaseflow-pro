@@ -59,7 +59,9 @@ export const OpexPlanLines = ({ lines, categoryName, busyKey, onExclude, onResto
         )}
       </TableCell>
       <TableCell className={line.excluded ? "line-through" : undefined}>{line.supplierName ?? "—"}</TableCell>
-      <TableCell className={line.excluded ? "line-through" : undefined}>{categoryName(line.categoryId)}</TableCell>
+      <TableCell className={line.excluded ? "line-through" : undefined}>{categoryName(line.categoryId)}
+        {line.categoryAssumed && <span className="block text-xs text-muted-foreground no-underline">La OC no tenía categoría</span>}
+      </TableCell>
       <TableCell className={`max-w-[220px] truncate ${line.excluded ? "line-through" : ""}`} title={line.description ?? undefined}>
         {line.description || "—"}
       </TableCell>
