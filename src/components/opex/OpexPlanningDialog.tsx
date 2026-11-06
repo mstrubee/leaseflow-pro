@@ -194,16 +194,6 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
     () => droppedByRetirement(activeOrders, categoryChanges.mappingIndex, ufValue),
     [activeOrders, categoryChanges.mappingIndex, ufValue],
   );
-  // OC sin categoría contadas en cada categoría final (para avisarlo en la fila).
-  const assumedByCategory = useMemo(() => {
-    const counts = new Map<string, number>();
-    activeOrders.forEach((o) => {
-      if (!o.category_assumed || !o.opex_category_id) return;
-      const finalId = resolveCategoryId(o.opex_category_id, categoryChanges.mappingIndex);
-      if (finalId) counts.set(finalId, (counts.get(finalId) ?? 0) + 1);
-    });
-    return counts;
-  }, [activeOrders, categoryChanges.mappingIndex]);
   const monthlyReal = useMemo(() => sumByMonth(activeOrders, ufValue), [activeOrders, ufValue]);
   const topLocals = useMemo(() => rankBy(activeOrders, (o) => o.contract_name, ufValue), [activeOrders, ufValue]);
   const topSuppliers = useMemo(() => rankBy(activeOrders, (o) => o.supplier_name, ufValue), [activeOrders, ufValue]);
@@ -569,14 +559,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                           />
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">
-                        {r.name}
-                        {r.categoryId && assumedByCategory.has(r.categoryId) && (
-                          <span className="block text-xs font-normal text-muted-foreground">
-                            Incluye {assumedByCategory.get(r.categoryId)} OC que no tenían categoría
-                          </span>
-                        )}
-                      </TableCell>
+                      <TableCell className="font-medium">{r.name}</TableCell>
                       <TableCell className="text-right">{r.orderCount}</TableCell>
                       <TableCell className="text-right">{formatClp(r.realClp)}</TableCell>
                       <TableCell className="text-right">{formatClp(r.avgMonthlyClp)}</TableCell>
