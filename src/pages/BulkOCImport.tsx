@@ -23,7 +23,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadFileToStorage, extractStoragePath } from "@/lib/storageUtils";
 import { useAuth } from "@/hooks/useAuth";
 import { ReconcileImportsDialog } from "@/components/budget/ReconcileImportsDialog";
-import { opexCategoryErrorMessage } from "@/lib/opexCategories";
+import {
+  OPEX_CATEGORY_COLUMNS,
+  FIRST_CATEGORY_REQUIRED_YEAR,
+  isCategoryValidForYear,
+  isOpexCategoryRequired,
+  opexCategoryErrorMessage,
+  yearFromDate,
+  type OpexCategoryRecord,
+} from "@/lib/opexCategories";
 import {
   parseOCExcelSheet, resolveRows, groupByOrderNumber,
   OCSupplier, GroupedOC, OCAllocation, OCRowStatus, DuplicateResolution,
@@ -118,9 +126,30 @@ export default function BulkOCImport() {
   const [progress, setProgress] = useState(0);
   const [showHistory, setShowHistory] = useState(true);
 
+  // Desde 2027 toda OC de OPEX necesita categoría; el Excel de SAP no la trae, así que se elige una para toda la importación.
+  const [opexCategories, setOpexCategories] = useState<OpexCategoryRecord[]>([]);
+  const [importCategoryId, setImportCategoryId] = useState<string | null>(null);
+
   // Inline editing in review table (key = "orderNumber:allocIdx" for local, "orderNumber" for supplier)
   const [editingLocalKey,    setEditingLocalKey]    = useState<string | null>(null);
   const [editingSupplierKey, setEditingSupplierKey] = useState<string | null>(null);
+
+  // Categorías OPEX (con vigencia) para asignarlas a las OC desde 2027.
+  useEffect(() => {
+    supabase
+      .from("opex_categories")
+      .select(OPEX_CATEGORY_COLUMNS)
+      .eq("is_active", true)
+      .order("display_order", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Error al cargar categorías OPEX:", error);
+          toast.error("No se pudieron cargar las categorías OPEX");
+          return;
+        }
+        setOpexCategories((data || []) as OpexCategoryRecord[]);
+      });
+  }, []);
 
   // ── Load reference data ────────────────────────────────────────────────────
 
@@ -530,6 +559,16 @@ export default function BulkOCImport() {
     ));
   }
 
+  // OC que se guardan (nuevas o reemplazadas) con fecha desde 2027: necesitan categoría. Las verificadas sin cambios no se tocan.
+  const needsCategory = (g: GroupedOC) =>
+    isOpexCategoryRequired(g.orderDate) && !(g.isDuplicate && g.duplicateResolution === "keep_existing");
+  const ocsNeedingCategory = grouped.filter(needsCategory);
+  // Solo categorías vigentes en el año de todas esas OC.
+  const importCategoryOptions = opexCategories.filter((c) =>
+    ocsNeedingCategory.every((g) => isCategoryValidForYear(c, yearFromDate(g.orderDate))),
+  );
+  const missingImportCategory = ocsNeedingCategory.length > 0 && !importCategoryId;
+
   const unresolvedDuplicates = grouped.filter(g => g.isDuplicate && g.duplicateResolution === null);
   const toImport             = grouped; // se procesan todas: nueva, reemplazo o verificación de existente
 
@@ -552,6 +591,10 @@ export default function BulkOCImport() {
       return;
     }
     if (!file) return;
+    if (missingImportCategory) {
+      toast.warning(`Elige la categoría OPEX: desde ${FIRST_CATEGORY_REQUIRED_YEAR} toda OC de OPEX debe tenerla.`);
+      return;
+    }
 
     setStage("importing");
     setProgress(0);
@@ -638,6 +681,8 @@ export default function BulkOCImport() {
       try {
         const orderYear    = g.orderDate ? parseInt(g.orderDate.slice(0, 4)) : new Date().getFullYear();
         const primaryAlloc = g.allocations.find(a => a.contractId) ?? g.allocations[0];
+        // La categoría elegida se aplica solo a las OC desde 2027; las anteriores se importan como siempre.
+        const categoryFields = importCategoryId && isOpexCategoryRequired(g.orderDate) ? { opex_category_id: importCategoryId } : {};
 
         if (g.isDuplicate && g.duplicateResolution === "keep_existing" && g.existingId) {
           // Un solo UPDATE por order_number: no hace falta reconciliar por
@@ -665,6 +710,7 @@ export default function BulkOCImport() {
             order_date:              g.orderDate,
             import_pending_supplier: !g.supplierId,
             import_batch_id:         batchId,
+            ...categoryFields,
           };
 
           if (existingRows.length > 1) {
@@ -783,6 +829,7 @@ export default function BulkOCImport() {
           import_pending_supplier: !g.supplierId,
           import_pending_local:    g.allocations.some(a => !a.contractId),
           import_batch_id:         batchId,
+          ...categoryFields,
         };
 
         const { data: newOC, error: insertErr } = await (supabase
@@ -843,6 +890,7 @@ export default function BulkOCImport() {
     setRawRows([]);
     setGrouped([]);
     setMappings([]);
+    setImportCategoryId(null);
     setStage("idle");
     setProgress(0);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1034,6 +1082,31 @@ export default function BulkOCImport() {
                 </Card>
               ))}
             </div>
+
+            {/* Categoría OPEX para toda la importación (obligatoria desde 2027) */}
+            {ocsNeedingCategory.length > 0 && (
+              <Card className={missingImportCategory ? "border-amber-300" : undefined}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Categoría OPEX de la importación *</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Desde {FIRST_CATEGORY_REQUIRED_YEAR} toda OC de OPEX debe tener categoría y el Excel no la trae. La que elijas se
+                    asigna a las {ocsNeedingCategory.length} OC con fecha desde {FIRST_CATEGORY_REQUIRED_YEAR}; las OC anteriores se
+                    importan como siempre.
+                  </p>
+                  <SearchableSelect
+                    value={importCategoryId ?? ""}
+                    onValueChange={(val) => setImportCategoryId(val || null)}
+                    options={importCategoryOptions.map((c) => ({ value: c.id, label: c.name }))}
+                    placeholder="Buscar categoría OPEX…"
+                    emptyMessage="Ninguna categoría vigente coincide"
+                    className="w-full max-w-sm"
+                  />
+                  {missingImportCategory && <p className="text-xs text-amber-700">Elige una categoría para poder guardar.</p>}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Duplicates resolution */}
             {duplicates.length > 0 && (
@@ -1236,7 +1309,7 @@ export default function BulkOCImport() {
                 </Button>
                 <Button
                   size="lg"
-                  disabled={unresolvedDuplicates.length > 0 || toImport.length === 0}
+                  disabled={unresolvedDuplicates.length > 0 || toImport.length === 0 || missingImportCategory}
                   onClick={handleImport}
                 >
                   <Upload className="h-4 w-4 mr-2" />

@@ -28,6 +28,14 @@ export const isCategoryValidForYear = (category: CategoryValidity, year: number)
 export const yearFromDate = (date: string | null | undefined, fallbackYear: number = new Date().getFullYear()): number =>
   date && /^\d{4}/.test(date) ? parseInt(date.slice(0, 4), 10) : fallbackYear;
 
+// Desde este año toda OC de OPEX debe tener categoría (la base lo exige con un trigger; ver docs/opex-categorias-2027.md).
+export const FIRST_CATEGORY_REQUIRED_YEAR = 2027;
+export const OPEX_CATEGORY_REQUIRED_MESSAGE = `Desde ${FIRST_CATEGORY_REQUIRED_YEAR} toda OC de OPEX debe tener una categoría OPEX asignada`;
+
+// ¿Una OC OPEX con esta fecha (o, sin fecha, de este año) necesita categoría?
+export const isOpexCategoryRequired = (date: string | null | undefined, fallbackYear?: number): boolean =>
+  yearFromDate(date, fallbackYear) >= FIRST_CATEGORY_REQUIRED_YEAR;
+
 // Categorías vigentes en `year`. `keepIds` conserva las que ya usa el registro que se edita
 // (por ejemplo una OC anterior a una fusión), para que su categoría actual siga visible.
 export const categoriesForYear = <T extends { id: string } & CategoryValidity>(
@@ -57,11 +65,14 @@ export const resolveCategoryId = (id: string, index: Map<string, string | null>)
 // El trigger de purchase_orders rechaza una categoría que no está vigente en el año de la fecha de OC
 // con un mensaje ya en español; este texto permite reconocerlo.
 const NOT_VALID_FOR_YEAR_TEXT = "no está vigente para una OC";
+const CATEGORY_REQUIRED_TEXT = "debe tener una categoría OPEX asignada";
 
 // Mensaje en español para mostrar al usuario si el error es del trigger de vigencia, o null si es otro error.
 export const opexCategoryErrorMessage = (error: unknown): string | null => {
   const message = (error as { message?: string } | null)?.message;
-  return typeof message === "string" && message.includes(NOT_VALID_FOR_YEAR_TEXT) ? message : null;
+  return typeof message === "string" && (message.includes(NOT_VALID_FOR_YEAR_TEXT) || message.includes(CATEGORY_REQUIRED_TEXT))
+    ? message
+    : null;
 };
 
 export type CategoryNameResolution =

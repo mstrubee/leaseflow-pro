@@ -25,7 +25,13 @@ import { syncOCRequestLinesFromPurchaseOrder } from "@/lib/ocRequestLines";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
-import { categoriesForYear, isCategoryValidForYear, yearFromDate } from "@/lib/opexCategories";
+import {
+  OPEX_CATEGORY_REQUIRED_MESSAGE,
+  categoriesForYear,
+  isCategoryValidForYear,
+  isOpexCategoryRequired,
+  yearFromDate,
+} from "@/lib/opexCategories";
 
 interface PurchaseOrder {
   id: string;
@@ -672,6 +678,12 @@ export const PurchaseOrdersModule = ({
         }
       }
 
+      // Desde 2027 una OC de OPEX no se crea sin categoría (la base también lo exige).
+      if (newOrder.budget_type === "opex" && !newOrder.opex_category_id && isOpexCategoryRequired(newOrder.order_date, selectedYear)) {
+        toast({ variant: "destructive", title: "Falta la categoría OPEX", description: OPEX_CATEGORY_REQUIRED_MESSAGE });
+        return;
+      }
+
       const inputAmount = parseFloat(newOrder.amount) || 0;
       let amountUF: number;
       let amountCLP: number;
@@ -924,6 +936,11 @@ export const PurchaseOrdersModule = ({
 
   const handleUpdateOrder = async () => {
     if (!editOrder) return;
+
+    if (editFormData.budget_type === "opex" && !editFormData.opex_category_id && isOpexCategoryRequired(editFormData.order_date, selectedYear)) {
+      toast({ variant: "destructive", title: "Falta la categoría OPEX", description: OPEX_CATEGORY_REQUIRED_MESSAGE });
+      return;
+    }
     
     try {
       const inputAmount = parseFloat(editFormData.amount) || 0;

@@ -18,7 +18,10 @@
   ("Incluye N OC que no tenían categoría") y en "Líneas" cada OC lo indica. Sin migración.
 - Planificación, "Por categoría": las columnas «Categoría» y «Total 2027» ordenan al hacer clic (A-Z / Z-A y mayor a
   menor / menor a mayor). Por defecto, alfabético; "Sin categoría" siempre al final.
-- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`, `20261021120000`, `20261021180000`.
+- Desde 2027 una OC de OPEX no puede crearse (ni quedar) sin categoría: lo exige un trigger en la base y los formularios
+  (crear y editar OC, convertir solicitud). La importación masiva de OC (Excel de SAP, sin categoría) pide elegir una
+  categoría para toda la importación y la asigna a las OC con fecha desde 2027; las anteriores se importan igual que antes.
+- Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`, `20261021120000`, `20261021180000`, `20261106120000`.
 
 ### Etapa 5 — Refactoring (2026-06-29)
 - Eliminado sistema visual de permisos Lovable-era: `SelectableElement`, `FloatingPermissionSelector`, `PermissionSelectionContext`
