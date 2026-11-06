@@ -14,8 +14,8 @@
 - Deshacer una fusión o renombre siempre se permite antes de "Aplicar categorías 2027": los montos de la categoría creada
   (OPEX agregado, OC, presupuesto, adicionales, proveedores) vuelven a la categoría original que se elija en un diálogo.
 - Planificación: las OC OPEX del año base que no tenían categoría (fila "Sin categoría", que no se podía fusionar ni editar)
-  se cuentan ahora en «Obras Civiles (en General)», solo para planificar: la OC no se modifica. La fila lo avisa
-  ("Incluye N OC que no tenían categoría") y en "Líneas" cada OC lo indica. Sin migración.
+  se cuentan ahora en «Obras Civiles (en General)», solo para planificar: la OC no se modifica. En "Líneas" cada
+  OC lo indica (la fila de la categoría no lleva leyenda). Sin migración.
 - Planificación, "Por categoría": las columnas «Categoría» y «Total 2027» ordenan al hacer clic (A-Z / Z-A y mayor a
   menor / menor a mayor). Por defecto, alfabético; "Sin categoría" siempre al final.
 - Desde 2027 una OC de OPEX no puede crearse (ni quedar) sin categoría: lo exige un trigger en la base y los formularios
