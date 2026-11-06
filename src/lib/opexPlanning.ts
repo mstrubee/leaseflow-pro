@@ -1,4 +1,4 @@
-import { resolveCategoryId } from "@/lib/opexCategories";
+import { normalizeSearchText, resolveCategoryId } from "@/lib/opexCategories";
 
 // Cálculos del análisis y la propuesta de presupuesto OPEX del año siguiente.
 // Regla de negocio: se trabaja con lo comprometido en OC (no lo facturado) y
@@ -14,6 +14,8 @@ export interface PlanningOrder {
   amount_uf: number | null;
   order_date: string | null;
   opex_category_id: string | null;
+  // La OC no traía categoría: en la planificación se cuenta en la categoría por defecto (ver assignDefaultCategory).
+  category_assumed?: boolean;
   contract_name: string;
   supplier_name: string;
 }
@@ -47,6 +49,8 @@ export interface PlanLine {
   description: string | null;
   amountClp: number;
   excluded: boolean;
+  // La categoría no viene de la OC (estaba sin categoría): se asignó por defecto solo en la planificación.
+  categoryAssumed: boolean;
 }
 
 export interface CategoryPlanRow {
@@ -72,6 +76,21 @@ export interface ContractBreakdownRow {
 }
 
 export const UNCATEGORIZED_NAME = "Sin categoría";
+// Ninguna OC OPEX debería crearse sin categoría; las que existen sin ella se cuentan aquí.
+export const DEFAULT_UNCATEGORIZED_CATEGORY = "Obras Civiles (en General)";
+
+// Las OC OPEX sin categoría se cuentan en la categoría por defecto, solo para la planificación (no se modifica la OC).
+// Si esa categoría no existe, quedan como "Sin categoría".
+export const assignDefaultCategory = (
+  orders: PlanningOrder[],
+  categories: PlanningCategory[],
+  defaultName: string = DEFAULT_UNCATEGORIZED_CATEGORY,
+): PlanningOrder[] => {
+  const target = normalizeSearchText(defaultName);
+  const fallback = categories.find((c) => normalizeSearchText(c.name) === target);
+  if (!fallback) return orders;
+  return orders.map((o) => (o.opex_category_id === null ? { ...o, opex_category_id: fallback.id, category_assumed: true } : o));
+};
 const DAYS_PER_MONTH = 365.25 / 12;
 
 // Meses transcurridos del año base hasta hoy (fraccionario, mínimo 1 para no
@@ -244,6 +263,7 @@ export const buildPlanLines = (params: {
     description: o.description,
     amountClp: orderAmountClp(o, ufValue),
     excluded: excludedOrderIds.has(o.id),
+    categoryAssumed: o.category_assumed === true,
   }));
   const adminLines: PlanLine[] = items.map((i) => {
     const contract = contractCompanyNames(i.source_contract_id);
@@ -260,6 +280,7 @@ export const buildPlanLines = (params: {
       description: i.notes,
       amountClp: i.amount_clp,
       excluded: i.excluded_at !== null,
+      categoryAssumed: false,
     };
   });
   return [...adminLines, ...ocLines.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))];

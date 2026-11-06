@@ -160,6 +160,14 @@ DROP TABLE IF EXISTS public.opex_budget_plan_exclusions;
 ALTER TABLE public.opex_budget_plan_items DROP COLUMN excluded_at;
 ```
 
+## OC OPEX sin categoría
+
+Una OC OPEX no debería crearse sin categoría, pero existen del año base. En la planificación se cuentan en
+**«Obras Civiles (en General)»** (`DEFAULT_UNCATEGORIZED_CATEGORY` en `src/lib/opexPlanning.ts`, se busca por nombre sin
+distinguir mayúsculas ni tildes), así que no aparece la fila "Sin categoría". Es solo una asignación de la planificación:
+la OC no se modifica en la base. Si luego esa categoría se fusiona o retira, el gasto sigue a su categoría final. Si la
+categoría no existe, vuelve a aparecer "Sin categoría". Para ver cuáles son: pestaña "Líneas" (indica "La OC no tenía categoría").
+
 ## Dónde se filtran las categorías por año
 
 | Pantalla | Qué año usa |
