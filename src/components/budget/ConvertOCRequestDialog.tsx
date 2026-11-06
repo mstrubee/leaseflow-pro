@@ -46,7 +46,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
-import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
+import { OPEX_CATEGORY_REQUIRED_MESSAGE, categoriesForYear, isOpexCategoryRequired, yearFromDate } from "@/lib/opexCategories";
 
 interface ContractAllocation {
   contract_id: string;
@@ -221,6 +221,13 @@ export const ConvertOCRequestDialog = ({
         title: "Error",
         description: "Ingrese el número de OC",
       });
+      return;
+    }
+
+    // Desde 2027 una OC de OPEX no se crea sin categoría (la base también lo exige).
+    const isOpexRequest = !!(request.opex_master_id || request.opex_category_id || selectedCategoryId);
+    if (isOpexRequest && !(selectedCategoryId || request.opex_category_id) && isOpexCategoryRequired(null)) {
+      toast({ variant: "destructive", title: "Falta la categoría OPEX", description: OPEX_CATEGORY_REQUIRED_MESSAGE });
       return;
     }
 
@@ -575,7 +582,7 @@ export const ConvertOCRequestDialog = ({
                   <SelectValue placeholder="Seleccionar categoría" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Sin categoría</SelectItem>
+                  {!isOpexCategoryRequired(null) && <SelectItem value="none">Sin categoría</SelectItem>}
                   {/* La OC se crea con la fecha de hoy: solo categorías vigentes este año (más la ya elegida). */}
                   {categoriesForYear(opexCategories, yearFromDate(null), [selectedCategoryId, request?.opex_category_id]).map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
