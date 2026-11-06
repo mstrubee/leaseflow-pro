@@ -198,6 +198,27 @@ export const buildCategoryPlan = (params: {
     .sort((a, b) => b.totalProposalClp - a.totalProposalClp);
 };
 
+// Orden de la tabla "Por categoría": por defecto alfabético (A-Z). La fila "Sin categoría" siempre va al final.
+export type CategorySort = "name_asc" | "name_desc" | "total_desc" | "total_asc";
+export const DEFAULT_CATEGORY_SORT: CategorySort = "name_asc";
+
+export const sortCategoryPlan = (rows: CategoryPlanRow[], sort: CategorySort): CategoryPlanRow[] => {
+  const byName = (a: CategoryPlanRow, b: CategoryPlanRow) => a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+  const compare = (a: CategoryPlanRow, b: CategoryPlanRow) => {
+    switch (sort) {
+      case "name_desc":
+        return byName(b, a);
+      case "total_desc":
+        return b.totalProposalClp - a.totalProposalClp || byName(a, b);
+      case "total_asc":
+        return a.totalProposalClp - b.totalProposalClp || byName(a, b);
+      default:
+        return byName(a, b);
+    }
+  };
+  return [...rows].sort((a, b) => Number(a.categoryId === null) - Number(b.categoryId === null) || compare(a, b));
+};
+
 // Gasto con OC por mes calendario (índice 0 = enero).
 export const sumByMonth = (orders: PlanningOrder[], ufValue: number): number[] => {
   const months = new Array(12).fill(0);

@@ -16,6 +16,8 @@
 - Planificación: las OC OPEX del año base que no tenían categoría (fila "Sin categoría", que no se podía fusionar ni editar)
   se cuentan ahora en «Obras Civiles (en General)», solo para planificar: la OC no se modifica. La fila lo avisa
   ("Incluye N OC que no tenían categoría") y en "Líneas" cada OC lo indica. Sin migración.
+- Planificación, "Por categoría": las columnas «Categoría» y «Total 2027» ordenan al hacer clic (A-Z / Z-A y mayor a
+  menor / menor a mayor). Por defecto, alfabético; "Sin categoría" siempre al final.
 - Migraciones nuevas: `20261016120000`, `20261016180000`, `20261020120000`, `20261021120000`, `20261021180000`.
 
 ### Etapa 5 — Refactoring (2026-06-29)
