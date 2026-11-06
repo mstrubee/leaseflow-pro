@@ -35,6 +35,9 @@ export interface Supplier {
   contact_name: string | null;
   is_generic: boolean;
   is_internal_transfer: boolean;
+  /** Categoría de servicio (independiente de "rubro"): puede tener una, ambas o ninguna */
+  does_installations: boolean;
+  does_maintenance: boolean;
   category_id: string | null;
   created_at: string;
   updated_at: string;
@@ -79,4 +82,7 @@ export interface SupplierFormData {
   influence_zones: { region: string; commune: string | null }[];
   is_generic: boolean;
   is_internal_transfer: boolean;
+  /** Categoría de servicio: Instalaciones y/o Mantenciones (no excluyentes) */
+  does_installations: boolean;
+  does_maintenance: boolean;
 }

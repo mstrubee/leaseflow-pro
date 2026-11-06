@@ -26,5 +26,7 @@ dist-ssr
 # Supabase CLI temp files
 supabase/.temp/
 
-# Archivo solo para rama migration — nunca debe ir a main
-.env.production
+# Environment files (never commit credentials)
+.env
+.env.*
+!.env.example

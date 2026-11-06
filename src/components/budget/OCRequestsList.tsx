@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 // Card component removed - not in use currently
 import { Button } from "@/components/ui/button";
@@ -10,15 +11,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet } from "lucide-react";
+import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet, FileText, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { OCRequestViewDialog } from "./OCRequestViewDialog";
-import { MultipleLinesSelector } from "./MultipleLinesSelector";
-import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import type { OCRequestShareData } from "@/lib/ocRequestShare";
+import { OCRequestCreateDialog, OCRequestCreateDialogHandle } from "./OCRequestCreateDialog";
+export type { OCRequestPrefillDraft } from "./OCRequestCreateDialog";
+import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
+import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 
 interface OCRequest {
   id: string;
@@ -39,6 +44,9 @@ interface OCRequest {
   budget_type?: string; // Derived from fields or contract_budgets
   quotation_url?: string | null;
   quotation_file_name?: string | null;
+  // Requerimiento de OC de origen (ver OCRequiredList.tsx) -- si existe y la
+  // solicitud sigue "pending", permite "Revertir a Requerimiento".
+  source_quotation_number?: string | null;
   // Multi-contract allocation info
   is_multi_contract?: boolean;
   allocated_amount_uf?: number;
@@ -47,22 +55,10 @@ interface OCRequest {
   total_request_amount_clp?: number;
 }
 
-interface SelectedLine {
-  lineId: string;
-  lineName: string;
-  amount: number;
-  maxAmount: number;
-}
-
-interface PaymentPlanItem {
-  description: string;
-  amount: string;
-  due_date: string;
-}
-
 interface OCRequestsListProps {
   contractId: string;
   contractName?: string;
+  contractCebe?: string | null;
   budgetId?: string;
   year: number;
   ufValue: number;
@@ -72,11 +68,17 @@ interface OCRequestsListProps {
   isAdmin?: boolean;
   budgetLineId?: string;
   allowCreate?: boolean;
+  prefillDraft?: import("./OCRequestCreateDialog").OCRequestPrefillDraft | null;
+  onPrefillConsumed?: () => void;
+  /** Búsqueda y filtro de tipo compartidos con OCRequiredList y PurchaseOrdersModule (ver BudgetDashboard). */
+  searchTerm?: string;
+  typeFilter?: "all" | "capex" | "opex";
 }
 
 export const OCRequestsList = ({
   contractId,
   contractName = "",
+  contractCebe = null,
   budgetId,
   year,
   ufValue,
@@ -85,13 +87,19 @@ export const OCRequestsList = ({
   onRefresh,
   isAdmin = false,
   budgetLineId,
-  allowCreate = true
+  allowCreate = true,
+  prefillDraft,
+  onPrefillConsumed,
+  searchTerm = "",
+  typeFilter = "all"
 }: OCRequestsListProps) => {
   const [requests, setRequests] = useState<OCRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<OCRequest | null>(null);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRevertDialog, setShowRevertDialog] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [viewRequestId, setViewRequestId] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
@@ -99,40 +107,30 @@ export const OCRequestsList = ({
     order_number: "",
     supplier_name: ""
   });
-  
-  // Filter state
-  const [budgetTypeFilter, setBudgetTypeFilter] = useState<"all" | "capex" | "opex">("all");
-  
-  // New request dialog state
-  const [showNewRequestDialog, setShowNewRequestDialog] = useState(false);
-  const [newRequestTab, setNewRequestTab] = useState("basic");
-  const [budgetType, setBudgetType] = useState<"capex" | "opex">("capex");
-  const [availableBudgets, setAvailableBudgets] = useState<{ id: string; type: string; hasLines: boolean }[]>([]);
-  const [selectedBudgetId, setSelectedBudgetId] = useState("");
-  const [loadingBudgets, setLoadingBudgets] = useState(false);
-  const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
-  const [newRequestForm, setNewRequestForm] = useState({
-    description: "",
-    amount: "",
-    currency: "CLP" as "UF" | "CLP",
-    supplier_id: null as string | null,
-    supplier_name: null as string | null
-  });
-  const [creatingRequest, setCreatingRequest] = useState(false);
-  const [cancelConfirm, setCancelConfirm] = useState(false);
-  const [projectName, setProjectName] = useState(contractName);
+
+  // PDF de una solicitud ya existente (botón de la fila), distinto del que se
+  // ofrece justo al crear una: aquí Con Migo/Sin Migo ya está elegido.
+  const [pdfShareData, setPdfShareData] = useState<OCRequestShareData | null>(null);
+  const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
   const [importingFile, setImportingFile] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
-  
+  const createDialogRef = useRef<OCRequestCreateDialogHandle>(null);
+  // El spinner que reemplaza toda la lista solo se muestra en la primera carga
+  // (o al cambiar de contrato/año). En recargas posteriores -- ej. tras
+  // "Guardar Cambios" en Ver/Editar Solicitud -- la lista sigue montada: si se
+  // reemplazara por el spinner, se desmontarían OCRequestViewDialog y su
+  // ventana de compartir, y el PDF nunca llegaría a mostrarse.
+  const hasLoadedOnce = useRef(false);
+
   const { toast } = useToast();
 
   useEffect(() => {
+    hasLoadedOnce.current = false;
     loadRequests();
   }, [contractId, year, budgetLineId]);
 
   const loadRequests = async () => {
-    setLoading(true);
+    if (!hasLoadedOnce.current) setLoading(true);
     try {
       // First get direct requests for this contract
       let query = supabase
@@ -159,10 +157,15 @@ export const OCRequestsList = ({
           oc_requests!inner(
             id, request_number, request_date, line_name, project_name,
             description, amount_uf, amount_clp, supplier_name, status,
-            purchase_order_id, created_at, budget_id, budget_line_id, opex_master_id, quotation_url, quotation_file_name
+            purchase_order_id, created_at, budget_id, budget_line_id, opex_master_id, quotation_url, quotation_file_name,
+            source_quotation_number
           )
         `)
         .eq("contract_id", contractId);
+
+      if (allocError) {
+        console.error("Error loading oc_request_contract_allocations:", allocError);
+      }
 
       // Build a map of allocations by request ID for this contract
       const allocationsByRequestId: Record<string, { amount_uf: number; amount_clp: number }> = {};
@@ -254,6 +257,7 @@ export const OCRequestsList = ({
     } catch (error) {
       console.error("Error loading OC requests:", error);
     } finally {
+      hasLoadedOnce.current = true;
       setLoading(false);
     }
   };
@@ -324,14 +328,106 @@ export const OCRequestsList = ({
       setShowDeleteDialog(false);
       setSelectedRequest(null);
       loadRequests();
+      onRefresh?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
+  // "Volver atrás": una Solicitud de OC que vino de un Requerimiento (ver
+  // OCRequiredList.tsx) se puede reconvertir en Requerimiento eliminando la
+  // solicitud -- source_quotation_number ya no tendrá ninguna solicitud que
+  // lo marque "Convertida", así que OCRequiredList vuelve a mostrarlo como
+  // pendiente.
+  //
+  // Una Solicitud "Convertida a OC" que NO viene de un Requerimiento (se
+  // creó directo con "Nueva Solicitud") también se puede revertir -- no hay
+  // ningún Requerimiento al que volver, así que en ese caso la solicitud no
+  // se elimina: vuelve a quedar "pending" (desvinculada de la OC), lista
+  // para cargarle una OC de nuevo. Este es el caso típico de una OC que se
+  // eliminó manualmente desde "Órdenes de Compra y Facturas" dejando la
+  // solicitud "huérfana", apuntando a una OC que ya no existe.
+  //
+  // En ambos casos, si la solicitud estaba "Convertida a OC", la OC creada
+  // en esa conversión se manda a eliminados también (salvo que ya la
+  // hubieran borrado manualmente antes -- softDeletePurchaseOrder no hace
+  // nada si ya estaba eliminada). RLS solo permite el delete/update a
+  // admins: si la respuesta no trae filas afectadas, no se reventó por
+  // error sino que no tenía permiso.
+  const handleRevertToRequired = async () => {
+    if (!selectedRequest) return;
+    const hasRequerimientoOrigin = !!selectedRequest.source_quotation_number;
+
+    setReverting(true);
+    try {
+      if (hasRequerimientoOrigin) {
+        const { data, error } = await supabase
+          .from("oc_requests")
+          .delete()
+          .eq("id", selectedRequest.id)
+          .select("id");
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("oc_requests")
+          .update({ status: "pending", purchase_order_id: null })
+          .eq("id", selectedRequest.id)
+          .select("id");
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error("No se pudo revertir la solicitud (sin permisos suficientes)");
+        }
+      }
+
+      let ocDeleteWarning: string | null = null;
+      if (selectedRequest.status === "converted" && selectedRequest.purchase_order_id) {
+        try {
+          await softDeletePurchaseOrder(selectedRequest.purchase_order_id);
+        } catch (ocError: any) {
+          console.error("Error al eliminar la OC asociada al revertir:", ocError);
+          ocDeleteWarning = ocError.message || "No se pudo eliminar automáticamente la OC asociada";
+        }
+      }
+
+      toast(
+        ocDeleteWarning
+          ? { variant: "destructive", title: "Solicitud revertida con advertencia", description: `${ocDeleteWarning}. Elimínela manualmente desde "Órdenes de Compra y Facturas".` }
+          : {
+              title: "Solicitud revertida",
+              description: hasRequerimientoOrigin
+                ? "Vuelve a estar disponible como Requerimiento de OC pendiente"
+                : "La solicitud vuelve a estado Pendiente",
+            }
+      );
+      setShowRevertDialog(false);
+      setSelectedRequest(null);
+      loadRequests();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setReverting(false);
+    }
+  };
+
+  const handleOpenRequestPdf = async (request: OCRequest) => {
+    setPdfLoadingId(request.id);
+    try {
+      setPdfShareData(await loadOCRequestShareData(request.id, { ufValue, contractCebe }));
+    } catch (error) {
+      console.error("Error al preparar el PDF de la solicitud:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo preparar el PDF de la solicitud" });
+    } finally {
+      setPdfLoadingId(null);
+    }
+  };
+
   const exportToExcel = (request: OCRequest) => {
-    // Generate CSV content
-    const BOM = '\uFEFF';
     const headers = ['Número Solicitud', 'Fecha', 'Línea', 'Proyecto', 'Descripción', 'Monto UF', 'Monto CLP', 'Proveedor', 'Estado'];
     const row = [
       request.request_number,
@@ -339,22 +435,27 @@ export const OCRequestsList = ({
       request.line_name,
       request.project_name,
       request.description || '',
-      request.amount_uf.toFixed(2),
-      Math.round(request.amount_clp).toString(),
+      request.amount_uf,
+      Math.round(request.amount_clp),
       request.supplier_name || '',
       request.status === 'pending' ? 'Pendiente' : 'Convertida'
     ];
 
-    const csvContent = BOM + [
-      headers.join(';'),
-      row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(';')
-    ].join('\n');
+    const sheet = XLSX.utils.aoa_to_sheet([headers, row]);
+    sheet['!cols'] = [
+      { wch: 30 }, { wch: 12 }, { wch: 25 }, { wch: 25 }, { wch: 30 },
+      { wch: 12 }, { wch: 14 }, { wch: 25 }, { wch: 12 },
+    ];
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Solicitud de OC");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `${request.request_number}.csv`);
+    link.setAttribute('download', `${request.request_number}.xlsx`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -362,291 +463,21 @@ export const OCRequestsList = ({
     URL.revokeObjectURL(url);
   };
 
-  // Load available budgets when opening new request dialog
-  const handleOpenNewRequestDialog = async () => {
-    setShowNewRequestDialog(true);
-    setNewRequestTab("basic");
-    setBudgetType("capex");
-    setSelectedLines([]);
-    setPaymentPlan([]);
-    setCancelConfirm(false);
-    setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
-    setLoadingBudgets(true);
+  // Filtro de tipo y búsqueda compartidos con OCRequiredList/PurchaseOrdersModule
+  // (ver BudgetDashboard) — se aplican sobre las solicitudes ya cargadas.
+  const typeFiltered = typeFilter === "all"
+    ? requests
+    : requests.filter(r => r.budget_type === typeFilter);
 
-    try {
-      // Round 1 — all independent queries fire in parallel
-      // Note: is_closed filter intentionally omitted so lines from closed budgets
-      // remain accessible for OC request creation (budget closing ≠ line removal).
-      const [
-        contractResult,
-        capexBudgetsResult,
-        opexMasterResult,
-        opexContractResult
-      ] = await Promise.all([
-        !projectName
-          ? supabase.from("contracts").select("name").eq("id", contractId).single()
-          : Promise.resolve(null),
-        supabase.from("contract_budgets")
-          .select("id")
-          .eq("contract_id", contractId)
-          .eq("year", year)
-          .eq("budget_type", "capex"),
-        supabase.from("opex_master_budget")
-          .select("*", { count: "exact", head: true })
-          .eq("year", year),
-        supabase.from("contract_budgets")
-          .select("id")
-          .eq("contract_id", contractId)
-          .eq("year", year)
-          .eq("budget_type", "opex")
-          .maybeSingle()
-      ]);
-
-      if (contractResult?.data) setProjectName((contractResult.data as any).name);
-
-      const capexBudgets = capexBudgetsResult.data || [];
-      const hasOpexMaster = (opexMasterResult.count || 0) > 0;
-      const opexContractBudget = (opexContractResult as any)?.data ?? null;
-
-      // Build the list of budget IDs to check for lines
-      const countTargets: Array<{ id: string; type: "capex" | "opex" }> = [
-        ...capexBudgets.map(b => ({ id: b.id, type: "capex" as const })),
-        ...(opexContractBudget ? [{ id: opexContractBudget.id, type: "opex" as const }] : [])
-      ];
-
-      // Round 2 — line-count queries for all budgets in parallel (replaces the N+1 serial loop)
-      const lineCounts = await Promise.all(
-        countTargets.map(t =>
-          supabase
-            .from("budget_lines")
-            .select("*", { count: "exact", head: true })
-            .eq("budget_id", t.id)
-            .eq("status", "autorizado")
-        )
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredRequests = !normalizedSearch
+    ? typeFiltered
+    : typeFiltered.filter(r =>
+        r.request_number.toLowerCase().includes(normalizedSearch) ||
+        (r.description || "").toLowerCase().includes(normalizedSearch) ||
+        r.line_name.toLowerCase().includes(normalizedSearch) ||
+        (r.supplier_name || "").toLowerCase().includes(normalizedSearch)
       );
-
-      const budgetsWithLines: { id: string; type: string; hasLines: boolean }[] = [];
-      countTargets.forEach((t, i) => {
-        budgetsWithLines.push({ id: t.id, type: t.type, hasLines: (lineCounts[i].count || 0) > 0 });
-      });
-
-      // Fall back to centralised OPEX master when no contract-specific OPEX budget
-      if (!opexContractBudget && hasOpexMaster) {
-        budgetsWithLines.push({ id: "opex_master", type: "opex", hasLines: true });
-      }
-
-      setAvailableBudgets(budgetsWithLines);
-
-      // Auto-select first available budget
-      const firstWithLines = budgetsWithLines.find(b => b.hasLines);
-      if (firstWithLines) {
-        setBudgetType(firstWithLines.type as "capex" | "opex");
-        setSelectedBudgetId(firstWithLines.id);
-      }
-    } catch (error) {
-      console.error("Error loading budgets:", error);
-    } finally {
-      setLoadingBudgets(false);
-    }
-  };
-
-  const handleBudgetTypeChange = (type: "capex" | "opex") => {
-    setBudgetType(type);
-    setSelectedLines([]);
-    const budget = availableBudgets.find(b => b.type === type);
-    setSelectedBudgetId(budget?.id || "");
-  };
-
-  const addPaymentItem = () => {
-    setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
-  };
-
-  const removePaymentItem = (index: number) => {
-    setPaymentPlan(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) => {
-    setPaymentPlan(prev => prev.map((item, i) => 
-      i === index ? { ...item, [field]: value } : item
-    ));
-  };
-
-  const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
-    const today = new Date();
-    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '.');
-    
-    const { count } = await supabase
-      .from("oc_requests")
-      .select("*", { count: "exact", head: true })
-      .eq("request_date", today.toISOString().split('T')[0]);
-    
-    const correlative = (count || 0) + 1;
-    const correlativeStr = correlative.toString().padStart(3, '0');
-    
-    const cleanLineNames = lineNames.map(name => 
-      name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_')
-    ).join('+').substring(0, 60);
-    
-    const cleanProjectName = projectName.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_').substring(0, 30);
-    
-    return { number: `${dateStr}_${correlativeStr}_${cleanLineNames}_${cleanProjectName}`, correlative };
-  };
-
-  const handleCreateNewRequest = async () => {
-    // Validate amount from form
-    const enteredAmount = parseFloat(newRequestForm.amount) || 0;
-    if (enteredAmount <= 0) {
-      toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
-      return;
-    }
-
-    // Supplier is required
-    if (!newRequestForm.supplier_id) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
-      return;
-    }
-
-    // Payment plan must not exceed total requested
-    const totalPlanAmt = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-    if (paymentPlan.length > 0 && totalPlanAmt > enteredAmount) {
-      toast({ variant: "destructive", title: "Error", description: "El total planificado de pagos supera el monto de la solicitud. Use 'Cuadrar' para ajustar." });
-      return;
-    }
-
-    const validLines = selectedLines.filter(l => l.lineId);
-    if (validLines.length === 0) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea de imputación" });
-      return;
-    }
-
-    // Use provided UF value or fallback
-    const currentUfValue = ufValue > 0 ? ufValue : 38000;
-    
-    // Convert amount based on currency and budget type
-    // OPEX always works in CLP, CAPEX can be UF or CLP
-    let totalAmountUf: number;
-    let totalAmountClp: number;
-    const inputCurrency = newRequestForm.currency;
-    
-    if (inputCurrency === "CLP") {
-      totalAmountClp = Math.round(enteredAmount);
-      totalAmountUf = Math.round((enteredAmount / currentUfValue) * 10000) / 10000;
-    } else {
-      // UF
-      totalAmountUf = Math.round(enteredAmount * 10000) / 10000;
-      totalAmountClp = Math.round(enteredAmount * currentUfValue);
-    }
-
-    const lineNames = validLines.map(l => l.lineName);
-    const displayLineName = lineNames.join(' + ');
-
-    setCreatingRequest(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { number, correlative } = await generateRequestNumber(lineNames);
-
-      // For OPEX master, budget_id is "opex_master" - we need to handle this
-      const isOpexMaster = selectedBudgetId === "opex_master";
-      
-      // Create request
-      const { data: requestData, error } = await supabase.from("oc_requests").insert({
-        contract_id: contractId,
-        budget_id: isOpexMaster ? null : selectedBudgetId,
-        budget_line_id: validLines.length === 1 && !isOpexMaster ? validLines[0].lineId : null,
-        opex_master_id: isOpexMaster && validLines.length === 1 ? validLines[0].lineId : null,
-        request_number: number,
-        correlative_of_day: correlative,
-        request_date: new Date().toISOString().split('T')[0],
-        line_name: displayLineName,
-        project_name: projectName,
-        description: newRequestForm.description,
-        amount_uf: totalAmountUf,
-        amount_clp: totalAmountClp,
-        input_currency: inputCurrency,
-        uf_value_at_entry: currentUfValue,
-        supplier_id: newRequestForm.supplier_id,
-        supplier_name: newRequestForm.supplier_name,
-        year: year,
-        status: "pending",
-        created_by: user?.id
-      }).select().single();
-
-      if (error) throw error;
-
-      // Create budget line assignments
-      if (requestData) {
-        const lineAssignments = validLines.map(l => ({
-          oc_request_id: requestData.id,
-          budget_line_id: l.lineId,
-          amount_uf: l.amount
-        }));
-        await supabase.from("oc_budget_lines").insert(lineAssignments);
-
-        // Create payment plans
-        if (paymentPlan.length > 0) {
-          const planEntries = paymentPlan
-            .filter(p => parseFloat(p.amount) > 0)
-            .map((p, idx) => {
-              const pAmount = parseFloat(p.amount);
-              const amountUf = inputCurrency === "CLP" && currentUfValue > 0 
-                ? Math.round((pAmount / currentUfValue) * 10000) / 10000 
-                : pAmount;
-              return {
-                oc_request_id: requestData.id,
-                payment_number: idx + 1,
-                description: p.description || `Pago ${idx + 1}`,
-                amount_uf: amountUf,
-                due_date: p.due_date || null,
-                status: "pending"
-              };
-            });
-          if (planEntries.length > 0) {
-            await supabase.from("oc_payment_plans").insert(planEntries);
-          }
-        } else {
-          // No payment plan defined - assume single payment with full amount
-          await supabase.from("oc_payment_plans").insert({
-            oc_request_id: requestData.id,
-            payment_number: 1,
-            description: "Pago único",
-            amount_uf: totalAmountUf,
-            due_date: null,
-            status: "pending"
-          });
-        }
-      }
-
-      toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
-      setShowNewRequestDialog(false);
-      loadRequests();
-      onRefresh?.();
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setCreatingRequest(false);
-    }
-  };
-
-  // Filter requests by budget type — converted requests are always visible
-  const visibleRequests = requests;
-    
-  const filteredRequests = budgetTypeFilter === "all" 
-    ? visibleRequests 
-    : visibleRequests.filter(r => r.budget_type === budgetTypeFilter);
-  
-  const pendingRequests = filteredRequests.filter(r => r.status === "pending");
-  const convertedRequests = filteredRequests.filter(r => r.status === "converted");
-
-  const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  // totalSelected in same currency as form input
-  const totalSelected = parseFloat(newRequestForm.amount) || 0;
-
-  const capexBudget = availableBudgets.find(b => b.type === "capex");
-  const opexBudget = availableBudgets.find(b => b.type === "opex");
-
-  // Count by type for filter badges (only visible requests)
-  const capexCount = visibleRequests.filter(r => r.budget_type === "capex").length;
-  const opexCount = visibleRequests.filter(r => r.budget_type === "opex").length;
 
   const handleImportOCRequest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -657,23 +488,7 @@ export const OCRequestsList = ({
       const parsed = await parseOCRequestExcel(file);
       
       // Open the new request dialog and pre-fill with parsed data
-      await handleOpenNewRequestDialog();
-      
-      setNewRequestForm(prev => ({
-        ...prev,
-        description: parsed.description || prev.description,
-        amount: parsed.amount > 0 ? String(parsed.amount) : prev.amount,
-        currency: parsed.currency as "UF" | "CLP",
-        supplier_name: parsed.supplier_name || prev.supplier_name,
-      }));
-
-      if (parsed.paymentPlan.length > 0) {
-        setPaymentPlan(parsed.paymentPlan.map(p => ({
-          description: p.description,
-          amount: p.amount > 0 ? String(p.amount) : "",
-          due_date: p.due_date,
-        })));
-      }
+      await createDialogRef.current?.openFromImport(parsed);
 
       toast({ title: "Datos importados", description: "Los campos se han completado con los datos del archivo" });
     } catch (error: any) {
@@ -694,115 +509,77 @@ export const OCRequestsList = ({
 
   return (
     <div className="space-y-4">
-      {/* Header with filters and New Request button */}
-      <div className="flex items-center justify-between gap-4">
-        {/* Budget type filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Filtrar:</span>
-          <div className="flex gap-1">
-            <Button
-              size="sm"
-              variant={budgetTypeFilter === "all" ? "default" : "outline"}
-              onClick={() => setBudgetTypeFilter("all")}
-              className="h-7 text-xs"
-            >
-              Todos ({visibleRequests.length})
-            </Button>
-            <Button
-              size="sm"
-              variant={budgetTypeFilter === "capex" ? "default" : "outline"}
-              onClick={() => setBudgetTypeFilter("capex")}
-              className="h-7 text-xs"
-              disabled={capexCount === 0}
-            >
-              CAPEX ({capexCount})
-            </Button>
-            <Button
-              size="sm"
-              variant={budgetTypeFilter === "opex" ? "default" : "outline"}
-              onClick={() => setBudgetTypeFilter("opex")}
-              className="h-7 text-xs"
-              disabled={opexCount === 0}
-            >
-              OPEX ({opexCount})
-            </Button>
-          </div>
-        </div>
-        
-        {allowCreate && (
-          <div className="flex items-center gap-2">
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={() => generateOCRequestTemplate(contractName)}
-              title="Descargar plantilla Excel"
-              className="gap-1"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Plantilla</span>
-            </Button>
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={() => importFileRef.current?.click()}
-              disabled={importingFile}
-              title="Importar solicitud desde Excel"
-              className="gap-1"
-            >
-              {importingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              <span className="hidden sm:inline">Importar</span>
-            </Button>
-            <input
-              ref={importFileRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImportOCRequest}
-            />
-            <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nueva Solicitud
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {filteredRequests.length === 0 && (
-        <div className="text-center py-6 text-muted-foreground text-sm">
-          {requests.length === 0 
-            ? "No hay solicitudes de OC para este año"
-            : `No hay solicitudes de OC ${budgetTypeFilter.toUpperCase()}`
-          }
+      {/* Nueva Solicitud / Plantilla / Importar — la búsqueda y el filtro de
+          tipo ahora viven en BudgetDashboard, compartidos con OCRequiredList
+          y PurchaseOrdersModule. */}
+      {allowCreate && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => generateOCRequestTemplate(contractName)}
+            title="Descargar plantilla Excel"
+            className="gap-1"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Plantilla</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => importFileRef.current?.click()}
+            disabled={importingFile}
+            title="Importar solicitud desde Excel"
+            className="gap-1"
+          >
+            {importingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            <span className="hidden sm:inline">Importar</span>
+          </Button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleImportOCRequest}
+          />
+          <Button size="sm" onClick={() => void createDialogRef.current?.openNew()} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nueva Solicitud
+          </Button>
         </div>
       )}
-      
-      {/* Pending Requests */}
-      {pendingRequests.length > 0 && (
-        <div>
-          <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-              Pendientes ({pendingRequests.length})
-            </Badge>
-          </h4>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Número</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Línea</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pendingRequests.map((request) => (
-                <TableRow key={request.id}>
+
+      {filteredRequests.length === 0 ? (
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          {requests.length === 0
+            ? "No hay solicitudes de OC para este año"
+            : "No hay solicitudes de OC para la búsqueda o el filtro aplicado"
+          }
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Nº Solicitud</TableHead>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Línea</TableHead>
+              <TableHead>Titulo</TableHead>
+              <TableHead>Proveedor</TableHead>
+              <TableHead className="text-right">Monto</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredRequests.map((request) => {
+              const isConverted = request.status === "converted";
+              return (
+                <TableRow key={request.id} className={isConverted ? "opacity-60" : undefined}>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Badge variant="outline" className={request.budget_type === "capex" 
-                        ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
+                      <Badge variant="outline" className={request.budget_type === "capex"
+                        ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]"
                         : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
                       }>
                         {request.budget_type?.toUpperCase() || "N/A"}
@@ -815,8 +592,10 @@ export const OCRequestsList = ({
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
-                  <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
+                  <TableCell className="text-xs">{format(new Date(request.request_date), 'dd MMM yyyy', { locale: es })}</TableCell>
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
+                  <TableCell className="truncate max-w-[150px] text-muted-foreground">{request.description || "-"}</TableCell>
+                  <TableCell className="truncate max-w-[120px]">{request.supplier_name || '-'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-col items-end">
                       <span>{formatCLP(request.amount_clp || Math.round(request.amount_uf * ufValue))}</span>
@@ -828,7 +607,42 @@ export const OCRequestsList = ({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="truncate max-w-[120px]">{request.supplier_name || '-'}</TableCell>
+                  <TableCell>
+                    {isAdmin ? (
+                      <Badge
+                        variant={isConverted ? "default" : "outline"}
+                        className={`cursor-pointer gap-1 ${isConverted
+                          ? "bg-green-500 hover:bg-green-600"
+                          : "bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100"
+                        }`}
+                        title={request.source_quotation_number ? "Revertir a Requerimiento de OC" : "Revertir a Pendiente"}
+                        onClick={() => {
+                          // Pendiente sin Requerimiento de origen: no hay nada que revertir.
+                          // Convertida a OC sí se puede revertir aunque no tenga Requerimiento
+                          // de origen -- típicamente porque la OC asociada ya se eliminó
+                          // manualmente y la solicitud quedó "huérfana".
+                          const canRevert = !!request.source_quotation_number || isConverted;
+                          if (!canRevert) {
+                            toast({
+                              variant: "destructive",
+                              title: "No se puede revertir",
+                              description: "Esta solicitud no proviene de un Requerimiento de OC convertido.",
+                            });
+                            return;
+                          }
+                          setSelectedRequest(request);
+                          setShowRevertDialog(true);
+                        }}
+                      >
+                        {isConverted ? "Convertida a OC" : "Pendiente"}
+                        <RotateCcw className="h-3 w-3" />
+                      </Badge>
+                    ) : isConverted ? (
+                      <Badge variant="default" className="bg-green-500">Convertida a OC</Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">Pendiente</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button
@@ -846,99 +660,65 @@ export const OCRequestsList = ({
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => handleOpenRequestPdf(request)}
+                        disabled={pdfLoadingId === request.id}
+                        className="h-7 px-2"
+                        title="Descargar PDF de la solicitud"
+                      >
+                        {pdfLoadingId === request.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <FileText className="h-3 w-3" />}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => exportToExcel(request)}
                         className="h-7 px-2"
-                        title="Descargar Excel"
+                        title="Descargar datos (CSV, abre en Excel)"
                       >
                         <Download className="h-3 w-3" />
                       </Button>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedRequest(request);
-                          setConvertForm({ 
-                            order_number: "", 
-                            supplier_name: request.supplier_name || "" 
-                          });
-                          setShowConvertDialog(true);
-                        }}
-                        className="h-7 px-2 gap-1"
-                      >
-                        <Upload className="h-3 w-3" />
-                        Cargar OC
-                      </Button>
-                      {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedRequest(request);
-                            setShowDeleteDialog(true);
-                          }}
-                          className="h-7 px-2 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                      {!isConverted && (
+                        <>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setConvertForm({
+                                order_number: "",
+                                supplier_name: request.supplier_name || ""
+                              });
+                              setShowConvertDialog(true);
+                            }}
+                            className="h-7 px-2 gap-1"
+                          >
+                            <Upload className="h-3 w-3" />
+                            Cargar OC
+                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedRequest(request);
+                                setShowDeleteDialog(true);
+                              }}
+                              className="h-7 px-2 text-destructive hover:text-destructive"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {/* Converted Requests */}
-      {convertedRequests.length > 0 && (
-        <div>
-          <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-              Convertidas ({convertedRequests.length})
-            </Badge>
-          </h4>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Número Solicitud</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Línea</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {convertedRequests.map((request) => (
-                <TableRow key={request.id} className="opacity-60">
-                  <TableCell>
-                    <Badge variant="outline" className={request.budget_type === "capex" 
-                      ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
-                      : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
-                    }>
-                      {request.budget_type?.toUpperCase() || "N/A"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
-                  <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
-                  <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex flex-col items-end">
-                      <span>{formatCLP(request.amount_clp || Math.round(request.amount_uf * ufValue))}</span>
-                      <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="default" className="bg-green-500">
-                      Convertida a OC
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
 
       {/* Convert to OC Dialog */}
@@ -1016,6 +796,41 @@ export const OCRequestsList = ({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Revert Confirmation */}
+      <AlertDialog open={showRevertDialog} onOpenChange={setShowRevertDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {selectedRequest?.source_quotation_number ? "¿Revertir a Requerimiento de OC?" : "¿Revertir solicitud a Pendiente?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedRequest?.source_quotation_number ? (
+                <>
+                  La solicitud {selectedRequest?.request_number} se eliminará y el requerimiento de OC de origen volverá a
+                  quedar pendiente, disponible para editar o volver a convertir.
+                </>
+              ) : (
+                <>
+                  La solicitud {selectedRequest?.request_number} no viene de un Requerimiento de OC, así que volverá a
+                  quedar en estado "Pendiente" (no se elimina) para poder cargarle una OC nuevamente.
+                </>
+              )}{" "}
+              {selectedRequest?.status === "converted" && selectedRequest?.purchase_order_id && (
+                <> La orden de compra que se había creado a partir de esta solicitud también se enviará a eliminados.</>
+              )}{" "}
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reverting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRevertToRequired} disabled={reverting}>
+              {reverting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Revertir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* View/Edit Dialog */}
       <OCRequestViewDialog
         open={showViewDialog}
@@ -1023,356 +838,37 @@ export const OCRequestsList = ({
         requestId={viewRequestId}
         formatUF={formatUF}
         ufValue={ufValue}
+        isAdmin={isAdmin}
+        contractCebe={contractCebe}
         onRefresh={() => {
           loadRequests();
           onRefresh?.();
         }}
       />
 
-      {/* New Request Dialog */}
-      <Dialog
-        open={showNewRequestDialog}
-        onOpenChange={(open) => {
-          // Any close trigger (backdrop click, Escape, X button) shows inline
-          // confirmation instead of immediately closing the dialog.
-          if (!open) setCancelConfirm(true);
+      <OCRequestCreateDialog
+        ref={createDialogRef}
+        contractId={contractId}
+        contractName={contractName}
+        contractCebe={contractCebe}
+        year={year}
+        ufValue={ufValue}
+        formatUF={formatUF}
+        formatCLP={formatCLP}
+        prefillDraft={prefillDraft}
+        onPrefillConsumed={onPrefillConsumed}
+        onCreated={() => {
+          loadRequests();
+          onRefresh?.();
         }}
-      >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Nueva Solicitud de OC{contractName ? `, ${contractName}` : ""}</DialogTitle>
-            <DialogDescription>
-              Crear solicitud para el año {year}
-            </DialogDescription>
-          </DialogHeader>
+      />
 
-          {loadingBudgets ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : availableBudgets.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>No hay presupuestos disponibles para el año {year}.</p>
-              <p className="text-sm mt-2">Cree un presupuesto CAPEX u OPEX primero.</p>
-            </div>
-          ) : (
-            <Tabs value={newRequestTab} onValueChange={setNewRequestTab}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="basic">Tipo y Datos</TabsTrigger>
-                <TabsTrigger value="lines" disabled={!selectedBudgetId}>Líneas</TabsTrigger>
-                <TabsTrigger value="payments" disabled={selectedLines.length === 0}>Pagos</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="basic" className="space-y-4 mt-4">
-                {/* Budget Type Selection */}
-                <div className="space-y-2">
-                  <Label>Tipo de Presupuesto *</Label>
-                  <div className="flex gap-4">
-                    <Button
-                      type="button"
-                      variant={budgetType === "capex" ? "default" : "outline"}
-                      onClick={() => handleBudgetTypeChange("capex")}
-                      disabled={!capexBudget?.hasLines}
-                      className="flex-1"
-                    >
-                      CAPEX
-                      {capexBudget?.hasLines ? (
-                        <Badge variant="secondary" className="ml-2 bg-green-100 text-green-700">Disponible</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="ml-2">Sin líneas</Badge>
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={budgetType === "opex" ? "default" : "outline"}
-                      onClick={() => handleBudgetTypeChange("opex")}
-                      disabled={!opexBudget?.hasLines}
-                      className="flex-1"
-                    >
-                      OPEX
-                      {opexBudget?.hasLines ? (
-                        <Badge variant="secondary" className="ml-2 bg-green-100 text-green-700">Disponible</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="ml-2">Sin líneas</Badge>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label>Titulo</Label>
-                  <Textarea
-                    value={newRequestForm.description}
-                    onChange={(e) => setNewRequestForm(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Titulo"
-                    rows={2}
-                  />
-                </div>
-
-                {/* Amount + Currency */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Monto *</Label>
-                    <Input
-                      type="number"
-                      value={newRequestForm.amount}
-                      onChange={(e) => setNewRequestForm(prev => ({ ...prev, amount: e.target.value }))}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Moneda</Label>
-                    <Select 
-                      value={newRequestForm.currency} 
-                      onValueChange={(v: "UF" | "CLP") => setNewRequestForm(prev => ({ ...prev, currency: v }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UF">UF</SelectItem>
-                        <SelectItem value="CLP">$</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Show equivalent */}
-                {parseFloat(newRequestForm.amount) > 0 && ufValue > 0 && (
-                  <div className="text-xs text-muted-foreground space-y-0.5">
-                    {newRequestForm.currency === "CLP" ? (
-                      <>
-                        <p className="font-medium text-foreground">$ {Math.round(parseFloat(newRequestForm.amount)).toLocaleString("es-CL")}</p>
-                        <p>Equivalente: UF {(parseFloat(newRequestForm.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-medium text-foreground">$ {Math.round(parseFloat(newRequestForm.amount) * ufValue).toLocaleString("es-CL")}</p>
-                        <p>Ingresado: UF {parseFloat(newRequestForm.amount).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Supplier */}
-                <div className="space-y-2">
-                  <Label>Proveedor *</Label>
-                  <SupplierSelect
-                    value={newRequestForm.supplier_id}
-                    onChange={(id, name) => setNewRequestForm(prev => ({ 
-                      ...prev, 
-                      supplier_id: id, 
-                      supplier_name: name 
-                    }))}
-                  />
-                </div>
-
-                {selectedBudgetId && (
-                  <Button 
-                    onClick={() => setNewRequestTab("lines")} 
-                    className="w-full"
-                  >
-                    Continuar a Selección de Líneas
-                  </Button>
-                )}
-              </TabsContent>
-
-              <TabsContent value="lines" className="space-y-4 mt-4">
-                {selectedBudgetId && (
-                  <MultipleLinesSelector
-                    budgetId={selectedBudgetId}
-                    selectedLines={selectedLines}
-                    onSelectionChange={setSelectedLines}
-                    formatUF={formatUF}
-                    formatCLP={formatCLP}
-                    year={year}
-                    contractId={contractId}
-                    ufValue={ufValue}
-                  />
-                )}
-
-                {selectedLines.length > 0 && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setNewRequestTab("basic")}>
-                      Atrás
-                    </Button>
-                    <Button onClick={() => setNewRequestTab("payments")} className="flex-1">
-                      Continuar a Plan de Pagos
-                    </Button>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="payments" className="space-y-4 mt-4">
-                <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos (opcional)</Label>
-                  <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
-                    <Plus className="h-3 w-3" />
-                    Agregar Pago
-                  </Button>
-                </div>
-
-                {paymentPlan.length === 0 ? (
-                  <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
-                    <p>No hay pagos planificados.</p>
-                    <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {paymentPlan.map((item, idx) => {
-                      const isLastRow = idx === paymentPlan.length - 1;
-                      const showCuadrar = isLastRow && totalPlanned > totalSelected;
-                      return (
-                        <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                          <div className={`space-y-1 ${showCuadrar ? "col-span-3" : "col-span-4"}`}>
-                            <Label className="text-xs">Descripción</Label>
-                            <Input
-                              value={item.description}
-                              onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
-                              placeholder={`Pago ${idx + 1}`}
-                            />
-                          </div>
-                          <div className="col-span-3 space-y-1">
-                            <Label className="text-xs">Monto ({newRequestForm.currency})</Label>
-                            <Input
-                              type="number"
-                              value={item.amount}
-                              onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                            />
-                          </div>
-                          <div className={`space-y-1 ${showCuadrar ? "col-span-3" : "col-span-4"}`}>
-                            <Label className="text-xs">Vencimiento (opcional)</Label>
-                            <Input
-                              type="date"
-                              value={item.due_date}
-                              onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
-                            />
-                          </div>
-                          {showCuadrar && (
-                            <div className="col-span-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                className="h-9 w-full text-xs"
-                                title="Ajustar este pago para que el total no supere el monto de la solicitud"
-                                onClick={() => {
-                                  const otherSum = paymentPlan.slice(0, -1).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-                                  const adjusted = Math.max(0, totalSelected - otherSum);
-                                  updatePaymentItem(idx, "amount", adjusted.toFixed(2));
-                                }}
-                              >
-                                Cuadrar
-                              </Button>
-                            </div>
-                          )}
-                          <div className="col-span-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removePaymentItem(idx)}
-                              className="h-9 w-9 text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    <div className="p-3 bg-muted/50 rounded-lg text-sm space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total planificado:</span>
-                        <div className="text-right">
-                          <span className={`font-medium ${totalPlanned > totalSelected ? 'text-destructive' : ''}`}>
-                            {newRequestForm.currency === "CLP" 
-                              ? formatCLP(totalPlanned) 
-                              : formatCLP(totalPlanned * (ufValue > 0 ? ufValue : 38000))}
-                          </span>
-                          <div className="text-[11px] text-muted-foreground">
-                            {newRequestForm.currency === "CLP" 
-                              ? formatUF(ufValue > 0 ? totalPlanned / ufValue : 0)
-                              : formatUF(totalPlanned)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total solicitud:</span>
-                        <div className="text-right">
-                          <span className="font-medium">
-                            {newRequestForm.currency === "CLP" 
-                              ? formatCLP(totalSelected) 
-                              : formatCLP(totalSelected * (ufValue > 0 ? ufValue : 38000))}
-                          </span>
-                          <div className="text-[11px] text-muted-foreground">
-                            {newRequestForm.currency === "CLP" 
-                              ? formatUF(ufValue > 0 ? totalSelected / ufValue : 0)
-                              : formatUF(totalSelected)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setNewRequestTab("lines")}>
-                    Atrás
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-          )}
-
-          <DialogFooter className="mt-4">
-            {cancelConfirm ? (
-              <div className="flex items-center gap-3 w-full">
-                <span className="text-sm text-muted-foreground flex-1">
-                  ¿Cancelar y perder los datos ingresados?
-                </span>
-                <Button variant="outline" size="sm" onClick={() => setCancelConfirm(false)}>
-                  No, volver
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    setCancelConfirm(false);
-                    setShowNewRequestDialog(false);
-                  }}
-                >
-                  Sí, cancelar
-                </Button>
-              </div>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setCancelConfirm(true)}>
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleCreateNewRequest}
-                  disabled={
-                    creatingRequest ||
-                    selectedLines.length === 0 ||
-                    availableBudgets.length === 0 ||
-                    !newRequestForm.amount ||
-                    parseFloat(newRequestForm.amount) <= 0 ||
-                    !newRequestForm.supplier_id ||
-                    (paymentPlan.length > 0 && totalPlanned > totalSelected)
-                  }
-                >
-                  {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Crear Solicitud
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ShareOCRequestDialog
+        open={!!pdfShareData}
+        onOpenChange={(o) => { if (!o) setPdfShareData(null); }}
+        data={pdfShareData}
+        requireMigoChoice={false}
+      />
     </div>
   );
 };

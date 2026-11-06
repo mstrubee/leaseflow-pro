@@ -3,9 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Secure CORS configuration - only allow explicit trusted origins
 const ALLOWED_ORIGINS = [
-  'https://tgxiqvfpirwvhktgqqfa.lovable.app',
-  'https://id-preview--73a8d508-7010-4c00-aa8e-6eb117cc7286.lovable.app',
-  'https://rental-flow-desk.lovable.app',
+  'https://gplanet.vercel.app',
+  'https://leaseflow-cx7iispoy-matias-strubes-projects-ad768903.vercel.app',
   'http://localhost:5173',
   'http://localhost:8080',
 ];
@@ -87,7 +86,7 @@ serve(async (req) => {
   try {
     let { documentContent, documentUrl } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    
+
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
@@ -244,8 +243,8 @@ IMPORTANTE:
       console.log("Using filename-based extraction for:", fileName);
       messages.push({
         role: "user",
-        content: `No se pudo leer el contenido del documento "${fileName}". 
-        
+        content: `No se pudo leer el contenido del documento "${fileName}".
+
 Basándote en el nombre del archivo, genera datos de ejemplo realistas para un contrato de arriendo comercial chileno:
 - Si el nombre sugiere una empresa o ubicación, úsalas
 - Genera valores típicos para contratos comerciales en Chile

@@ -14,7 +14,7 @@ export interface BudgetTotal {
 }
 
 const SELECT_COLS =
-  "id, budget_id, parent_id, name, description, amount_uf, status, display_order, quantity, unit_type, currency, unit_price, template_line_id, supplier_id, supplier_name, category_id, calc_type, calc_source_line_id, calc_percentage, progress_status_id, is_surcharge, surcharge_parent_line_id, surcharge_reason, merged_into_line_id, original_amount_uf, is_ghost, moved_to_line_id, moved_at, moved_by";
+  "id, budget_id, parent_id, name, description, amount_uf, status, display_order, quantity, unit_type, currency, unit_price, template_line_id, supplier_id, supplier_name, category_id, calc_type, calc_source_line_id, calc_percentage, is_surcharge, surcharge_parent_line_id, surcharge_reason, merged_into_line_id, original_amount_uf, is_ghost, moved_to_line_id, moved_at, moved_by";
 
 /**
  * Load CAPEX/OPEX totals for a set of budget IDs using the *same* aggregation

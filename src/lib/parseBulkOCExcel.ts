@@ -43,7 +43,7 @@ export interface OCAllocation {
   pendingLocal: boolean;
 }
 
-export type DuplicateResolution = "keep_existing" | "replace" | "keep_both" | null;
+export type DuplicateResolution = "keep_existing" | "replace" | null;
 
 export interface GroupedOC {
   orderNumber: string;
@@ -59,6 +59,8 @@ export interface GroupedOC {
   isDuplicate: boolean;
   existingId: string | null;
   duplicateResolution: DuplicateResolution;
+  /** Monto de la OC ya existente, para comparar contra totalAmountClp. */
+  existingAmountClp: number | null;
 }
 
 export interface ParseSheetResult {
@@ -312,6 +314,7 @@ export function groupByOrderNumber(parsedRows: ParsedOCRow[]): GroupedOC[] {
         isDuplicate:         false,
         existingId:          null,
         duplicateResolution: null,
+        existingAmountClp:   null,
       });
     }
   }

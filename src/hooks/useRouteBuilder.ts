@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getOsrmRoute } from "@/lib/osrmRoute";
 import { detectMaintenanceType } from "@/components/maintenance/types";
 import { findNearbyHardwareStores, type HardwareStore } from "@/lib/findHardwareStore";
+import { scheduleMaintenanceTask } from "@/lib/scheduleMaintenanceTask";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -176,15 +177,9 @@ function matchFormsToLocation(
   allForms: RouteForm[],
   companyByContract: Map<string, CompanyKey>,
   contractNameById: Map<string, string>,
+  linkedContractIds: Set<string>,
 ): RouteForm[] {
   if (allForms.length === 0) return [];
-
-  // Si el local está VINCULADO a un contrato (asignado por el admin al renombrar/
-  // agregar), emparejar EXACTO por contract_id. Evita falsos positivos por ciudad
-  // (ej. un "Casablanca" nuevo capturando forms del "Casablanca" original).
-  if (loc.contract_id) {
-    return allForms.filter((f) => f.contract_id === loc.contract_id);
-  }
 
   const localName = norm(loc.local_name ?? "");
   const localCode = norm(loc.local_code ?? "");
@@ -193,12 +188,13 @@ function matchFormsToLocation(
   const locCompany = detectCompany(loc.folder, loc.local_code, loc.local_name, loc.name);
   // Ciudad del local: el name sin el prefijo de empresa ("Agroplanet Casablanca" → "casablanca")
   const locCity = locName.replace(/^(agro|auto)planet\s+/, "");
-  // Nombre "pelado": sin el prefijo de código del local ("AP0048-Rotonda Atena" → "rotonda atena").
-  // Permite emparejar con contract_name sin código ("Rotonda Atenas").
+  // Nombre "pelado": sin prefijo de empresa ni código del local
+  // ("AP0048-Rotonda Atena" → "rotonda atena", "Agroplanet Linares Bodega" → "linares bodega").
+  // Permite emparejar con contract_name sin código ("Rotonda Atenas", "Linares Bodega Imple").
   const stripCode = (s: string) => s.replace(/^[a-z]{1,4}\s*\d+\s*[-–]\s*/, "").trim();
-  const bareName = stripCode(localName || locName);
+  const bareName = stripCode((localName || locName).replace(/^(agro|auto)planet\s+/, ""));
 
-  return allForms.filter((f) => {
+  const matchesByName = (f: RouteForm): boolean => {
     // Candidatos de nombre de contrato: el guardado en el form Y el nombre real del
     // contrato (de la tabla contracts, que lleva el código del local, ej. "AP0049-…").
     const candidates = [
@@ -229,7 +225,9 @@ function matchFormsToLocation(
       if (localName && (cn === localName || cn.includes(localName))) return true;
       // Nombre "pelado" sin código ("AP0048-Rotonda Atena" → "rotonda atena" ⊂ "Rotonda Atenas").
       // Ambiguo entre locales homónimos → exige misma empresa confirmada.
-      if (bareName && bareName.length >= 5 && cityNeedsSameCompany && (cn === bareName || cn.includes(bareName))) return true;
+      // Igualdad exacta vale con cualquier largo ("Buin"); el match por substring
+      // exige ≥5 letras para no capturar contratos ajenos con nombres cortos.
+      if (bareName && cityNeedsSameCompany && (cn === bareName || (bareName.length >= 5 && cn.includes(bareName)))) return true;
       // Ciudad: igualdad exacta Y misma empresa confirmada (no mezclar AG/AP ni
       // distintos locales de la misma ciudad).
       if (locCity && cn === locCity && cityNeedsSameCompany) return true;
@@ -238,7 +236,23 @@ function matchFormsToLocation(
     }
 
     return false;
-  });
+  };
+
+  // Local VINCULADO a un contrato (columna contract_id, asignada por el admin o el
+  // backfill): emparejamiento EXACTO. Evita falsos positivos por ciudad (ej. un
+  // "Casablanca" nuevo capturando forms del "Casablanca" original) y adivinanzas
+  // por nombre ("P40" ↔ "AP0049-Gran Avenida").
+  // Los forms "no reclamados" (su contrato no está vinculado a NINGÚN local, ej.
+  // "10 de Julio Web" o "Linares Bodega Imple" que comparten recinto con otro
+  // contrato) conservan el fallback por nombre para no desaparecer del mapa.
+  if (loc.contract_id) {
+    return allForms.filter((f) =>
+      f.contract_id === loc.contract_id ||
+      ((!f.contract_id || !linkedContractIds.has(f.contract_id)) && matchesByName(f)),
+    );
+  }
+
+  return allForms.filter(matchesByName);
 }
 
 // ---------------------------------------------------------------------------
@@ -623,8 +637,13 @@ export function useRouteBuilder(editTourId?: string | null) {
   // ---------------------------------------------------------------------------
   const formsByLocation = useMemo(() => {
     const map = new Map<string, RouteForm[]>();
+    // Contratos ya reclamados por algún local vinculado: sus forms solo aparecen
+    // en ese local (el fallback por nombre no puede volver a capturarlos).
+    const linkedContractIds = new Set(
+      locations.map((l) => l.contract_id).filter((id): id is string => !!id),
+    );
     for (const loc of locations) {
-      const matched = matchFormsToLocation(loc, allForms, companyByContract, contractNameById);
+      const matched = matchFormsToLocation(loc, allForms, companyByContract, contractNameById, linkedContractIds);
       // Colapsar forms fusionados en un representante (el de mayor criticidad del grupo)
       const groups = new Map<string, RouteForm[]>();
       const singles: RouteForm[] = [];
@@ -1338,15 +1357,31 @@ export function useRouteBuilder(editTourId?: string | null) {
       const realLocIds = new Set(locations.map((l) => l.id));
 
       // Agrupar los TRAMOS (parada-día) por día. Una parada partida aparece en
-      // varios días con sus forms respectivos (e.formIds).
-      const byDay = new Map<number, { stopIndex: number; formIds: string[] }[]>();
+      // varios días con sus forms respectivos (e.formIds). arrivalTime se
+      // retiene por tramo (no solo por día) para nombrar la tarea de Gantt
+      // que se crea más abajo con la hora real de ESA parada.
+      const byDay = new Map<number, { stopIndex: number; formIds: string[]; arrivalTime: string }[]>();
       const dayStartByIndex = new Map<number, string>();
       schedule.forEach((e) => {
         if (!byDay.has(e.dayIndex)) byDay.set(e.dayIndex, []);
-        byDay.get(e.dayIndex)!.push({ stopIndex: e.stopIndex, formIds: e.formIds });
+        byDay.get(e.dayIndex)!.push({ stopIndex: e.stopIndex, formIds: e.formIds, arrivalTime: e.arrivalTime });
         // Hora de inicio del día = llegada del primer tramo de ese día
         if (!dayStartByIndex.has(e.dayIndex)) dayStartByIndex.set(e.dayIndex, e.arrivalTime);
       });
+
+      // Cronograma de mantenciones: mapa formId → gantt_task_id existente (o
+      // null), para actualizar en vez de duplicar tareas al reprogramar el
+      // mismo form (incluida una parada partida entre dos días de la misma
+      // gira). Se resuelve una sola vez antes del loop de días.
+      const allScheduledFormIds = Array.from(new Set(schedule.flatMap((e) => e.formIds)));
+      const taskIdByForm = new Map<string, string | null>();
+      if (calendarize && allScheduledFormIds.length > 0) {
+        const { data: formsWithTask } = await supabase
+          .from("maintenance_forms")
+          .select("id, gantt_task_id")
+          .in("id", allScheduledFormIds);
+        (formsWithTask || []).forEach((f: any) => taskIdByForm.set(f.id, f.gantt_task_id ?? null));
+      }
 
       const tourId = crypto.randomUUID();
       const days = [...byDay.keys()].sort((a, b) => a - b);
@@ -1436,6 +1471,46 @@ export function useRouteBuilder(editTourId?: string | null) {
               formErr = (await supabase.from("maintenance_route_forms").insert(baseRows)).error;
             }
             if (formErr) throw new Error(formErr.message);
+
+            // Cronograma de mantenciones: además de guardar la parada de la
+            // gira, reflejar cada form como tarea del cronograma del contrato
+            // (mismo mecanismo que el botón "Programar" — scheduleMaintenanceTask),
+            // así "Programaciones" y el Gantt de mantenciones del contrato
+            // muestran lo que ya se definió acá, sin que el usuario tenga que
+            // programar cada form a mano de nuevo. Solo si la gira quedó
+            // calendarizada (dayDate) y la parada es un local real con
+            // contrato (las ad-hoc — compras/ferretería — no tienen a qué
+            // contrato asociar una tarea). Best-effort: un fallo acá no debe
+            // impedir que la gira se guarde, que es el dato primario.
+            //
+            // Limitación conocida: si al EDITAR una gira se saca un form que
+            // antes sí estaba, su tarea de Gantt queda con la fecha vieja —
+            // no se borra ni desvincula acá (requeriría diffear el set de
+            // forms viejo vs. nuevo de la gira reemplazada).
+            if (dayDate && stop.location?.contract_id) {
+              for (const fid of dayFormIds) {
+                try {
+                  const result = await scheduleMaintenanceTask({
+                    contractId: stop.location.contract_id,
+                    formId: fid,
+                    existingTaskId: taskIdByForm.get(fid) ?? null,
+                    // routeName ya suele empezar con "Ruta " (convención del
+                    // usuario, ej. "Ruta 2026.08.25 RM2") — no se antepone un
+                    // segundo "Ruta " para no duplicarlo.
+                    name: `${routeName.trim()} — ${stop.location.name} (${tramo.arrivalTime})`,
+                    startDate: dayDate,
+                    durationDays: 1,
+                  });
+                  if ("error" in result) {
+                    console.error("[saveRoute] scheduleMaintenanceTask", fid, result.error);
+                  } else {
+                    taskIdByForm.set(fid, result.taskId);
+                  }
+                } catch (err) {
+                  console.error("[saveRoute] scheduleMaintenanceTask", fid, err);
+                }
+              }
+            }
           }
         }
       }

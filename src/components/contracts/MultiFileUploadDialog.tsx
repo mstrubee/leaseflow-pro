@@ -23,6 +23,7 @@ import { Upload, File, X, CheckCircle2, AlertCircle, Loader2, FolderUp } from "l
 import { useToast } from "@/hooks/use-toast";
 import { sanitizeFileName, validateFile } from "@/lib/fileValidation";
 import { cn } from "@/lib/utils";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface FileUploadItem {
   file: File;
@@ -343,7 +344,10 @@ export function MultiFileUploadDialog({
 
       if (driveError || !driveData) {
         await supabase.storage.from("repository-files").remove([uploadPath]).catch(() => {});
-        throw new Error(driveData?.error || driveError?.message || "No se pudo subir el archivo a Drive");
+        const message = driveData?.error
+          ? driveData.error
+          : await getFunctionErrorMessage(driveError, "No se pudo subir el archivo a Drive");
+        throw new Error(message);
       }
       
       const driveFileId = driveData.driveFileId || driveData.id;

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Download } from "lucide-react";
 import * as XLSX from "xlsx";
+import { isCategoryValidForYear } from "@/lib/opexCategories";
 
 interface OpexTemplateDownloadProps {
   year: number;
@@ -16,14 +17,15 @@ export const OpexTemplateDownload = ({ year }: OpexTemplateDownloadProps) => {
     setIsLoading(true);
 
     try {
-      // Get all active categories
-      const { data: categories, error } = await supabase
+      // Categorías vigentes en el año de la plantilla (las fusionadas o retiradas no aparecen desde su año)
+      const { data: allCategories, error } = await supabase
         .from("opex_categories")
-        .select("name")
+        .select("name, is_active, valid_from_year, valid_to_year")
         .eq("is_active", true)
         .order("display_order");
 
       if (error) throw error;
+      const categories = (allCategories || []).filter((c) => isCategoryValidForYear(c, year));
 
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();

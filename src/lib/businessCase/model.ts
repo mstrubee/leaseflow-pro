@@ -100,6 +100,28 @@ export const defaultAdminConfig: AdminConfig = {
   ],
 };
 
+// ---------- Formato de local ----------
+// Tradicional y Express se diferencian sólo en la dotación y en el capital de
+// trabajo (inventario). Elegir un formato precarga esos dos valores; después
+// quedan editables a mano como cualquier otro input.
+export const FORMATOS_LOCAL = ["Tradicional", "Express"] as const;
+export type FormatoLocal = (typeof FORMATOS_LOCAL)[number];
+export const FORMATO_PRESETS: Record<FormatoLocal, { personalY1: number; inventarioMM: number }> = {
+  Tradicional: { personalY1: 8.5, inventarioMM: 100 },
+  Express: { personalY1: 6.5, inventarioMM: 60 },
+};
+
+// ---------- Ocupación: costo objetivo (MM CLP/mes) ----------
+// El input sigue siendo un %, pero ese % se calibra para que, sobre la Venta
+// Año 1 (MM/mes), el costo de ocupación resultante sea el objetivo por
+// formato. Se recalcula cada vez que cambian la Venta Año 1 o el formato
+// (ver setFormato/updateVentaConCrecimiento en useBusinessCaseV2); el input
+// queda editable a mano después, igual que personalY1 con el preset de formato.
+export const OCUPACION_TARGET_MM: Record<FormatoLocal, number> = {
+  Tradicional: 1.5,
+  Express: 1.2,
+};
+
 // ---------- Inputs editables del business case (por contrato) ----------
 export interface BCInputs {
   // Proyecto
@@ -107,20 +129,43 @@ export interface BCInputs {
   direccion: string;
   comuna: string;
   tipo: string; // Autoplanet / Agroplanet
+  formato: FormatoLocal; // Tradicional / Express (dotación + capital de trabajo)
   categoria: string; // Nuevo / Ampliación / ...
   descripcion: string;
 
   // Contrato
   superficie: number; // m²
-  ufM2: number; // UF/m² (canon = superficie × ufM2)
+  ufM2: number; // UF/m² del tramo base, antes de cualquier escalación (canon base = superficie × ufM2)
+  // Tramos de arriendo escalonado, sincronizados desde el contrato (rent_escalations).
+  // Solo lectura: no editables desde el BC. Ver canonUfForLeaseMonth en computeBC.
+  escalations: BCEscalation[];
+  regimeRentIsUfM2: boolean;
+  // Fondo de Promoción: % del canon (fondo_promocion_percentage del contrato).
+  // Sincronizado desde el contrato, solo lectura (mismo trato que escalations).
+  fondoPromocionPct: number;
   graciaMeses: number;
   durContratoAnios: number;
   inicio: string; // ISO date (entrega/inicio)
+  /** ISO date del mes de apertura al público. Puede diferir del inicio de pago
+   *  de renta (inicio + gracia). Define los meses de operación del año 1
+   *  (ingresos) y, un mes antes, el inicio del pago de personal.
+   *  Si viene vacío se asume el inicio de pago de renta. */
+  apertura: string;
   gastoComunUf: number; // UF/mes
 
-  // UF
+  // UF real (inflación/IPC, ~3-4% anual) — SOLO convierte a CLP los montos en
+  // UF (canon, gasto común, fondo promoción, reajuste de personal). NO es la
+  // tasa de crecimiento de ventas — ver ventaGrowthPct.
   ufBase: number;
   ufRates: number[]; // % por año [5]
+
+  // Tasa de maduración de ventas: la usa updateVentaConCrecimiento (hook) para
+  // proyectar los años de "Venta (MM/mes)" hacia adelante/atrás al editar uno.
+  // Es una curva de ventas del local (puede ser 20-30%+ en los primeros años),
+  // sin relación con el crecimiento real de la UF — antes compartía el campo
+  // ufRates con la conversión UF→CLP, lo que inflaba canon/gasto común con
+  // tasas de venta en vez de inflación real.
+  ventaGrowthPct: number[]; // % por año [5]
 
   // Económico
   waccRate: number; // %
@@ -151,16 +196,25 @@ export interface BCInputs {
 
 export interface BCInvRow { id: string; nombre: string; metodo: InvMethod; monto: number; pct: number; nota?: string }
 
+export interface BCCanonYearBreakdown { meses: number; ufMes: number }
+
 export interface BCResult {
   canonUF: number;
   garantiaUF: number;
-  mesesY1: number;
+  mesesY1: number; // meses de RENTA del año 1 (desde inicio + gracia)
   mesesArr: number[]; // [0, mesesY1, 12,12,12,12]
+  mesesOperacion: number; // meses de OPERACIÓN del año 1 (desde la apertura) → ingresos
+  mesesPersonal: number; // meses de PERSONAL del año 1 (= operación + 1, se contrata antes)
+  anoApertura: number; // año calendario de apertura al público = "Año 1" real (primer año que efectivamente se vende)
   ufStarts: number[]; // 5
   ufAvgs: number[]; // 5 (promedio geométrico)
   inv: { rows: BCInvRow[]; total: number; fisica: number; kt: number };
   // P&L (arrays de 6 columnas: índice 0 = año 0 pre-apertura)
   ingresos: number[];
+  // Tramos de "año de vida" que componen cada Ingresos[i] — para el detalle
+  // de cálculo en la UI. Índice 0 vacío. Ver también BCResult.scenarioFactor.
+  ingresosTramos: { anoVida: number; meses: number; tasa: number }[][];
+  scenarioFactor: number;
   costoVentas: number[];
   otrosCostos: number[];
   costosVar: number[];
@@ -171,6 +225,11 @@ export interface BCResult {
   tecnologia: number[];
   ocupacion: number[];
   canonArr: number[];
+  // UF/mes promedio de cada año-modelo (antes de convertir a CLP) y su
+  // desglose por tramo — para el detalle de cálculo en la UI. Índice 0 vacío.
+  canonUfPromedio: number[];
+  canonTramos: BCCanonYearBreakdown[][];
+  fondoPromocion: number[];
   gastoComun: number[];
   gavs: number[];
   ebitda: number[];
@@ -231,6 +290,73 @@ function round(v: number, d = 2): number {
   return Math.round((Number.isFinite(v) ? v : 0) * p) / p;
 }
 
+export function ocupPctFromVenta(formato: FormatoLocal, ventaMesY1: number): number {
+  if (!ventaMesY1 || ventaMesY1 <= 0) return 0;
+  return round((OCUPACION_TARGET_MM[formato] / ventaMesY1) * 100, 2);
+}
+
+// ---------- tramos de canon (escalonamiento) ----------
+export interface BCCanonTier {
+  fromMonth: number; // mes ABSOLUTO desde effective_date (mismo criterio que rent_escalations.month_number)
+  ufM2: number;
+  totalUf: number;
+}
+
+/**
+ * Tramos de canon del contrato: el tramo base (superficie × ufM2, vigente
+ * desde que empieza a pagarse renta = graciaMeses+1) más cada escalación de
+ * inputs.escalations, en el mismo orden en que se aplican. Única fuente de
+ * verdad para el canon escalonado — la usan tanto computeBC (TIR/VAN/EBITDA)
+ * como la UI (para mostrar el desglose). Mismo criterio de UF/m² vs. monto
+ * fijo que "Canon Actual" en CommercialConditionsSummary.tsx.
+ */
+export function resolveCanonTiers(
+  inputs: Pick<BCInputs, "superficie" | "ufM2" | "escalations" | "regimeRentIsUfM2" | "graciaMeses">,
+): BCCanonTier[] {
+  const superficie = inputs.superficie || 0;
+  const baseTotal = round(superficie * (inputs.ufM2 || 0), 2);
+  const tiers: BCCanonTier[] = [
+    { fromMonth: (inputs.graciaMeses || 0) + 1, ufM2: inputs.ufM2 || 0, totalUf: baseTotal },
+  ];
+  const sortedEsc = (inputs.escalations || []).slice().sort((a, b) => a.monthNumber - b.monthNumber);
+  for (const esc of sortedEsc) {
+    const needsMultiply = esc.isUfM2 || (inputs.regimeRentIsUfM2 && !esc.isUfM2);
+    const totalUf = needsMultiply && superficie > 0 ? round(esc.amount * superficie, 2) : round(esc.amount, 2);
+    const ufM2 = superficie > 0 ? round(totalUf / superficie, 4) : 0;
+    tiers.push({ fromMonth: esc.monthNumber, ufM2, totalUf });
+  }
+  return tiers.sort((a, b) => a.fromMonth - b.fromMonth);
+}
+
+/**
+ * Canon UF/m² promedio a lo largo de TODA la duración del contrato,
+ * ponderado por los meses que dura cada tramo (sin escalonamiento, da
+ * exactamente ufM2 — un solo tramo cubre todo el contrato). Solo considera
+ * el arriendo (los tramos de resolveCanonTiers): gasto común, fondo de
+ * promoción y otros cobros no entran acá, tienen sus propios campos. Se usa
+ * para mostrar en "Supuestos" un UF/m² representativo cuando hay
+ * escalonamiento, en vez de solo el tramo inicial.
+ */
+export function averageCanonUfM2(
+  inputs: Pick<BCInputs, "superficie" | "ufM2" | "escalations" | "regimeRentIsUfM2" | "graciaMeses" | "durContratoAnios">,
+): number {
+  const tiers = resolveCanonTiers(inputs);
+  const totalMonths = Math.round((inputs.durContratoAnios || 0) * 12);
+  if (tiers.length <= 1 || totalMonths <= 0) return inputs.ufM2 || 0;
+  let weightedSum = 0;
+  let coveredMonths = 0;
+  for (let i = 0; i < tiers.length; i++) {
+    const start = tiers[i].fromMonth;
+    if (start > totalMonths) break;
+    const end = i < tiers.length - 1 ? Math.min(tiers[i + 1].fromMonth - 1, totalMonths) : totalMonths;
+    const months = end - start + 1;
+    if (months <= 0) continue;
+    weightedSum += tiers[i].ufM2 * months;
+    coveredMonths += months;
+  }
+  return coveredMonths > 0 ? weightedSum / coveredMonths : inputs.ufM2 || 0;
+}
+
 // ---------- cálculo principal (réplica de recalcAll del HTML) ----------
 export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminConfig): BCResult {
   const superficie = inputs.superficie || 0;
@@ -239,20 +365,81 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const { starts, avgs } = calcUF(ufBase, inputs.ufRates);
 
   // Contrato derivado
-  const canonUF = round(superficie * ufM2, 2);
-  const garantiaUF = canonUF;
   const gracia = inputs.graciaMeses || 0;
-  let mesesY1 = 3;
+
+  // Canon con escalonamiento: los tramos de resolveCanonTiers están en mes
+  // ABSOLUTO desde effective_date (igual que rent_escalations.month_number),
+  // por eso hay que sumarle la gracia para comparar con el "mes de renta" del
+  // BC (que cuenta desde el inicio de pago de canon = inicio + gracia).
+  const canonTiers = resolveCanonTiers(inputs);
+  const canonUfForLeaseMonth = (leaseMonth: number): number => {
+    const mesAbsoluto = leaseMonth + gracia;
+    let v = canonTiers[0]?.totalUf ?? 0;
+    for (const t of canonTiers) {
+      if (t.fromMonth > mesAbsoluto) break;
+      v = t.totalUf;
+    }
+    return v;
+  };
+  const canonUF = canonUfForLeaseMonth(1);
+  const garantiaUF = canonUF;
+  // Meses que quedan del año calendario contando el mes de la fecha dada:
+  // diciembre → 1, agosto → 5, enero → 12.
+  const mesesHastaFinDeAno = (iso: string): number => {
+    const d = new Date(iso + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return 12;
+    return Math.min(12, Math.max(0, 12 - d.getMonth()));
+  };
+
+  // Igual que mesesHastaFinDeAno, pero prorrateando el mes en que cae la fecha
+  // según el día: si la renta empieza a mitad de mes, ese mes no se cobra
+  // completo. Ej.: fin de gracia el 10 de noviembre → se cobra (30-10+1)/30 de
+  // noviembre + diciembre completo = 1,7 meses (no 2, que es lo que daba
+  // mesesHastaFinDeAno al mirar solo el mes e ignorar el día). El caso del
+  // día 1 da exactamente el mismo resultado que la versión sin prorratear
+  // ((30-1+1)/30 = 1), así que no cambia nada para el caso más común.
+  const mesesProporcionalesHastaFinDeAno = (iso: string): number => {
+    const d = new Date(iso + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return 12;
+    const mes = d.getMonth();
+    const dia = d.getDate();
+    const diasDelMes = new Date(d.getFullYear(), mes + 1, 0).getDate();
+    const fraccionPrimerMes = Math.max(0, Math.min(1, (diasDelMes - dia + 1) / diasDelMes));
+    const mesesCompletosRestantes = Math.max(0, 11 - mes);
+    return Math.min(12, fraccionPrimerMes + mesesCompletosRestantes);
+  };
+
+  // Meses de RENTA del año 1: desde el inicio de pago de canon (inicio + gracia).
+  let dtCanonIso = inputs.inicio || "";
   if (inputs.inicio) {
-    const dtInicio = new Date(inputs.inicio + "T00:00:00");
-    const dtCanon = new Date(dtInicio);
+    const dtCanon = new Date(inputs.inicio + "T00:00:00");
     dtCanon.setMonth(dtCanon.getMonth() + gracia);
-    const anoInicio = dtCanon.getFullYear();
-    const finAno = new Date(anoInicio, 11, 31);
-    const diffMs = finAno.getTime() - dtCanon.getTime();
-    mesesY1 = Math.min(12, Math.max(1, Math.round(diffMs / (30.44 * 24 * 3600 * 1000)) + 1));
+    dtCanonIso = dtCanon.toISOString().slice(0, 10);
   }
+  const mesesY1 = dtCanonIso ? mesesProporcionalesHastaFinDeAno(dtCanonIso) : 3;
   const mesesArr = [0, mesesY1, 12, 12, 12, 12];
+
+  // Meses de OPERACIÓN de cada año calendario (desde la apertura al público) y
+  // meses de PERSONAL del año 1 (empieza un mes antes de abrir). Son
+  // calendarios distintos al de la renta: un local puede abrir antes o
+  // después de empezar a pagar canon. Si no hay fecha de apertura cargada, se
+  // asume el inicio de pago de renta.
+  const aperturaIso = inputs.apertura || dtCanonIso;
+  const anoRenta = dtCanonIso ? new Date(dtCanonIso + "T00:00:00").getFullYear() : 0;
+  const dApertura = new Date(aperturaIso + "T00:00:00");
+  const anoApertura = Number.isNaN(dApertura.getTime()) ? anoRenta : dApertura.getFullYear();
+  // Meses de operación de CADA año calendario 1..5, no solo del año 1: si ese
+  // año calendario es anterior al de apertura no opera, si es el de apertura
+  // opera desde ese mes hasta fin de año, y si es posterior opera los 12
+  // meses completos.
+  const mesesOperArr = [0, 0, 0, 0, 0, 0];
+  for (let i = 1; i <= 5; i++) {
+    const anoCalendario = anoRenta + i - 1;
+    mesesOperArr[i] =
+      anoCalendario < anoApertura ? 0 : anoCalendario > anoApertura ? 12 : mesesHastaFinDeAno(aperturaIso);
+  }
+  const mesesOperacion = mesesOperArr[1];
+  const mesesPersonal = Math.min(12, mesesOperacion + 1);
 
   // Inversión (por categoría)
   const lineas = (admin.invLineas[inputs.categoria] || admin.invLineas["Nuevo"]).filter((l) => l.activo);
@@ -275,16 +462,92 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const kt = ktRow ? ktRow.monto : 0;
   const totalCapex = total;
 
-  // Canon y gasto común (MM CLP) — año 0 = 0; años 1..5 con UF promedio del año anterior
+  // Canon y gasto común (MM CLP) — año 0 = 0; años 1..5 con UF promedio del año
+  // anterior. gastoComunUf viene en UF/m² (mismo criterio que ufM2 para el
+  // canon), así que hay que multiplicarlo por la superficie — antes no se
+  // hacía y un gasto común de 0,05 UF/m² quedaba prácticamente en cero en vez
+  // de multiplicarse por los m² del local.
   const gcomUF = inputs.gastoComunUf || 0;
-  const canonArr = mesesArr.map((m, i) => (i === 0 ? 0 : round(-canonUF * m * avgs[i - 1] / 1e6, 4)));
-  const gastoComun = mesesArr.map((m, i) => (i === 0 ? 0 : round(-gcomUF * m * avgs[i - 1] / 1e6, 4)));
+  // canonArr por año: promedio del canon UF mes a mes (según los tramos de
+  // escalonamiento) dentro de ese año-modelo, multiplicado por los meses del
+  // año y la UF promedio del año anterior — mismo criterio de conversión a
+  // CLP que antes. Solo el año 1 (mesesY1) puede ser fraccionario (proración
+  // de día de inicio); para el lookup de tramo se redondea a meses enteros,
+  // preservando el "m" exacto para la conversión a CLP. Sin escalaciones el
+  // resultado es idéntico al cálculo anterior (canonUF constante).
+  // Fondo de Promoción: % del canon (fondo_promocion_percentage del contrato,
+  // mismo campo que alimenta la columna "F.Prom" de rentPeriods.ts) — sigue el
+  // mismo canon escalonado que canonArr, así que se derivan del mismo
+  // promedio mensual en vez de recorrer los tramos dos veces.
+  const fondoPromPct = (inputs.fondoPromocionPct || 0) / 100;
+  // canonTramos: por año, los tramos de canon que efectivamente cayeron
+  // dentro de ese año-modelo (meses consecutivos al mismo UF/mes), agrupados
+  // para poder mostrar "X meses a Y UF/mes" en el detalle de cálculo de la UI
+  // (botón "ver cálculo" en Proyecciones) sin recorrer los tramos de nuevo ahí.
+  let mesRentaCursor = 0;
+  const canonTramos: BCCanonYearBreakdown[][] = [];
+  const canonUfPromedioArr = mesesArr.map((m, i) => {
+    if (i === 0 || m <= 0) { canonTramos.push([]); return 0; }
+    const mesesEnteros = Math.max(1, Math.round(m));
+    let sumaUf = 0;
+    const segmentos: BCCanonYearBreakdown[] = [];
+    for (let k = 1; k <= mesesEnteros; k++) {
+      const v = canonUfForLeaseMonth(mesRentaCursor + k);
+      sumaUf += v;
+      const last = segmentos[segmentos.length - 1];
+      if (last && last.ufMes === v) last.meses += 1;
+      else segmentos.push({ meses: 1, ufMes: v });
+    }
+    mesRentaCursor += mesesEnteros;
+    canonTramos.push(segmentos);
+    return sumaUf / mesesEnteros;
+  });
+  const canonArr = canonUfPromedioArr.map((canonUfPromedio, i) =>
+    i === 0 ? 0 : round(-canonUfPromedio * mesesArr[i] * avgs[i - 1] / 1e6, 4),
+  );
+  const fondoPromocion = canonUfPromedioArr.map((canonUfPromedio, i) =>
+    i === 0 ? 0 : round(-canonUfPromedio * fondoPromPct * mesesArr[i] * avgs[i - 1] / 1e6, 4),
+  );
+  const gastoComun = mesesArr.map((m, i) => (i === 0 ? 0 : round(-gcomUF * superficie * m * avgs[i - 1] / 1e6, 4)));
 
   // Ventas
   const sf = inputs.scenario === "opt" ? 1.1 : inputs.scenario === "cons" ? 0.85 : 1.0;
   const v = inputs.ventaMes || [];
-  const ventaMes = [0, v[0] ?? 60, v[1] ?? 80, v[2] ?? 90, v[3] ?? 95, v[4] ?? 99.75];
-  const ingresos = ventaMes.map((vv, i) => round(vv * mesesArr[i] * sf, 2));
+  // ventaMes[k] es la tasa mensual del AÑO DE VIDA k+1 del local (de
+  // maduración: recién abierto → régimen), no del año calendario. Como el
+  // local no necesariamente abre el 1 de enero, un año calendario de
+  // operación puede mezclar el tramo final de un año de vida con el tramo
+  // inicial del siguiente — si eso no se reparte mes a mes, un año calendario
+  // completo queda valorizado de golpe a la tasa del año de vida más nuevo
+  // (más alta), inflando ingresos y, en cascada, EBITDA/TIR/VAN.
+  const ventaVida = [v[0] ?? 60, v[1] ?? 80, v[2] ?? 90, v[3] ?? 95, v[4] ?? 99.75];
+  const tasaVida = (anoVidaIdx: number) => ventaVida[Math.min(Math.max(anoVidaIdx, 0), 4)];
+  let vidaAcumulada = 0; // meses de vida transcurridos al cierre del último año calendario procesado
+  const ingresos = [0];
+  // ingresosTramos: por año, los 1-2 tramos de "año de vida" que lo componen
+  // (mismo detalle que la fórmula de arriba) — para poder mostrar "X meses ×
+  // Y MM/mes" en el detalle de cálculo de la UI (botón "ver cálculo" en
+  // Proyecciones) sin recorrer la lógica de vidaAcumulada otra vez ahí.
+  const ingresosTramos: { anoVida: number; meses: number; tasa: number }[][] = [[]];
+  for (let i = 1; i <= 5; i++) {
+    const meses = mesesOperArr[i];
+    if (meses <= 0) { ingresos.push(0); ingresosTramos.push([]); continue; }
+    const anoVidaInicio = Math.floor(vidaAcumulada / 12);
+    const mesesRestantesAnoVida = (anoVidaInicio + 1) * 12 - vidaAcumulada;
+    const tramos: { anoVida: number; meses: number; tasa: number }[] = [];
+    let ing: number;
+    if (meses <= mesesRestantesAnoVida) {
+      ing = tasaVida(anoVidaInicio) * meses;
+      tramos.push({ anoVida: anoVidaInicio + 1, meses, tasa: tasaVida(anoVidaInicio) });
+    } else {
+      ing = tasaVida(anoVidaInicio) * mesesRestantesAnoVida + tasaVida(anoVidaInicio + 1) * (meses - mesesRestantesAnoVida);
+      tramos.push({ anoVida: anoVidaInicio + 1, meses: mesesRestantesAnoVida, tasa: tasaVida(anoVidaInicio) });
+      tramos.push({ anoVida: anoVidaInicio + 2, meses: meses - mesesRestantesAnoVida, tasa: tasaVida(anoVidaInicio + 1) });
+    }
+    ingresos.push(round(ing * sf, 2));
+    ingresosTramos.push(tramos);
+    vidaAcumulada += meses;
+  }
 
   // Márgenes
   const mDir = (inputs.margenDir || 0) / 100;
@@ -296,10 +559,20 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const margenCtrib = ingresos.map((x, i) => round(x + costoVentas[i] + otrosCostos[i] + costosVar[i], 2));
 
   // Costos
-  const perCr = (inputs.personalCrec || 0) / 100;
-  const personalCostoY1 = (inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0); // personas × MM/persona
-  const personal = [0];
-  for (let i = 1; i < 6; i++) personal.push(i === 1 ? -round(personalCostoY1, 2) : round(personal[i - 1] * (1 + perCr), 2));
+  // Personal — mismo modelo que la planilla oficial del business case:
+  //   · Año 1: se prorratea por los meses de personal (= meses de operación + 1,
+  //     porque se contrata un mes antes de abrir), no se cobra el año completo.
+  //   · Años 2..5: costo base × 12 reajustado por la variación de UF del año
+  //     anterior, SIN acumular año contra año.
+  // costoPersonaMM viene en MM CLP/año → /12 para dejarlo mensual.
+  const personalMensual = ((inputs.personalY1 || 0) * (inputs.costoPersonaMM || 0)) / 12;
+  const personal = [0, -round(personalMensual * mesesPersonal, 2)];
+  for (let i = 2; i < 6; i++) {
+    const ufPrev = starts[i - 2] || 0;
+    const ufCur = starts[i - 1] || 0;
+    const varUf = ufCur ? (ufCur - ufPrev) / ufCur : 0; // = (Cn-Cn-1)/Cn de la planilla
+    personal.push(-round(personalMensual * 12 * (1 + varUf), 2));
+  }
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
   const ocupPct = (inputs.ocupPct || 0) / 100;
@@ -313,7 +586,10 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const depreciacion = [0, -depr, -depr, -depr, -depr, -depr];
 
   const gavs = [0, 1, 2, 3, 4, 5].map((i) =>
-    round(personal[i] + publicidad[i] + gastosGral[i] + tecnologia[i] + ocupacion[i] + canonArr[i] + gastoComun[i], 2),
+    round(
+      personal[i] + publicidad[i] + gastosGral[i] + tecnologia[i] + ocupacion[i] + canonArr[i] + fondoPromocion[i] + gastoComun[i],
+      2,
+    ),
   );
   const ebitda = ingresos.map((_, i) => round(margenCtrib[i] + gavs[i], 2));
   const ebit = ebitda.map((x, i) => round(x + depreciacion[i], 2));
@@ -333,20 +609,44 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const ebitdaMargin5 = ingresos[5] ? ebitda[5] / ingresos[5] : 0;
 
   return {
-    canonUF, garantiaUF, mesesY1, mesesArr, ufStarts: starts, ufAvgs: avgs,
+    canonUF, garantiaUF, mesesY1, mesesArr, mesesOperacion, mesesPersonal, anoApertura,
+    ufStarts: starts, ufAvgs: avgs,
     inv: { rows: invRows, total, fisica, kt },
-    ingresos, costoVentas, otrosCostos, costosVar, margenCtrib,
-    personal, publicidad, gastosGral, tecnologia, ocupacion, canonArr, gastoComun,
+    ingresos, ingresosTramos, scenarioFactor: sf, costoVentas, otrosCostos, costosVar, margenCtrib,
+    personal, publicidad, gastosGral, tecnologia, ocupacion, canonArr,
+    canonUfPromedio: canonUfPromedioArr, canonTramos,
+    fondoPromocion, gastoComun,
     gavs, ebitda, depreciacion, ebit, impuesto, udi, ros, capex, flujoOp, payback,
     totalCapex, tir, van, paybackAnio, ebitdaMargin5,
   };
 }
 
 // ---------- defaults / prefill desde el contrato ----------
+// id presente = tramo real de rent_escalations (permite sincronizar ediciones
+// de monto de vuelta al contrato); ausente en escalations sin persistir aún.
+export interface BCEscalation { id?: string; monthNumber: number; amount: number; isUfM2: boolean }
+
 export interface BCSeed {
   nombre?: string; direccion?: string; comuna?: string; tipo?: string;
   superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null;
   durContratoAnios?: number | null; inicio?: string | null; ufBase?: number;
+  graciaMeses?: number | null;
+  // Metadatos para la sincronización bidireccional Business Case ↔ Contrato:
+  // al abrir, estos campos siempre reflejan el contrato (no lo guardado en
+  // el BC); al editarlos en el BC, se escriben de vuelta al contrato/versión.
+  contractVersionId?: string;
+  rentField?: "initial_rent" | "regime_rent";
+  rentIsUfM2?: boolean;
+  gastoComunSyncable?: boolean; // true solo si la metodología de gasto común es "uf_m2"
+  // Tramos de arriendo escalonado (solo lectura: siempre reflejan el contrato,
+  // no son editables desde el BC ni se sincronizan de vuelta). Ver computeBC.
+  escalations?: BCEscalation[] | null;
+  regimeRentIsUfM2?: boolean;
+  fondoPromocionPct?: number | null;
+  // Desglose "Arriendo por periodo" (Canon+GGCC+F.Prom+Otros=Total por tramo),
+  // igual al que muestra la ficha del contrato. Solo para mostrar — no
+  // participa del cálculo de TIR/VAN (que usa escalations vía resolveCanonTiers).
+  contractPeriods?: import("./rentPeriods").RentPeriodRow[];
 }
 
 export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = defaultAdminConfig): BCInputs {
@@ -357,16 +657,22 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     direccion: seed.direccion ?? "",
     comuna: seed.comuna ?? "",
     tipo,
+    formato: "Tradicional",
     categoria: admin.categorias[0],
     descripcion: "",
     superficie: seed.superficie ?? 0,
     ufM2: seed.ufM2 ?? 0.375,
+    escalations: seed.escalations ?? [],
+    regimeRentIsUfM2: seed.regimeRentIsUfM2 ?? false,
+    fondoPromocionPct: seed.fondoPromocionPct ?? 0,
     graciaMeses: 2,
     durContratoAnios: seed.durContratoAnios ?? 10,
     inicio: seed.inicio ?? new Date().toISOString().slice(0, 10),
+    apertura: "", // vacío = se asume el inicio de pago de renta (inicio + gracia)
     gastoComunUf: seed.gastoComunUf ?? 0,
     ufBase: seed.ufBase ?? 39485.65,
     ufRates: [3.8, 3.3, 3.0, 3.0, 3.0],
+    ventaGrowthPct: [3.8, 3.3, 3.0, 3.0, 3.0],
     waccRate: 12,
     taxRate: 27,
     scenario: "base",
@@ -374,12 +680,14 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     margenDir: d.margenDir,
     otrosCostosDir: 0.3,
     costosVar: 5,
-    personalY1: d.personalY1,
+    // Dotación inicial: la del formato por defecto (Tradicional). El default por
+    // tipo de proyecto sigue rigiendo margen y años de depreciación.
+    personalY1: FORMATO_PRESETS.Tradicional.personalY1,
     costoPersonaMM: 9.6, // ~$800k CLP/mes por persona (costo empresa)
     personalCrec: 3.4,
     gralPct: 1.03,
     tecPct: 1.8,
-    ocupPct: 1.28,
+    ocupPct: ocupPctFromVenta("Tradicional", 60), // 60 = ventaMes[0] de abajo
     capexDepreciable: 155,
     deprAnos: d.anosDepr,
     invOverrides: {},

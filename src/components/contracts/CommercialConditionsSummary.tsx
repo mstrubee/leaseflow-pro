@@ -1,12 +1,12 @@
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight, RefreshCw, Download } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight, RefreshCw, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logosHeader from "@/assets/logos-header.png";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
-import { addMonths, format, subMonths, parseISO } from "date-fns";
+import { addMonths, differenceInCalendarMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { supabase } from "@/integrations/supabase/client";
@@ -58,6 +58,7 @@ interface ContractVersion {
   gastos_comunes_fixed_admin_uf?: number | null;
   has_extended_gastos_comunes?: boolean | null;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
   notice_bilaterality?: string | null;
   otros_egresos_amount?: number | null;
   otros_egresos_description?: string | null;
@@ -97,6 +98,122 @@ interface CommercialConditionsSummaryProps {
   onRenegotiationSuccess?: () => void;
   displayCurrency?: "UF" | "CLP";
   terminationNotices?: TerminationNoticeForChart[];
+}
+
+// Parsea el rango de meses de una fila de escalationPeriods/paymentSchedule a
+// partir de su label: "M3-M120" -> {start:3,end:120}; "M1 (Gracia)" (gracia de
+// 1 mes, sin guión) -> {start:1,end:1}; "M1-M2 (Gracia)" -> {start:1,end:2};
+// "Mes 1 (parcial...)" (fila especial del PDF para el mes 1 prorrateado) ->
+// {start:1,end:1}.
+function parsePeriodMonthRange(label: string): { start: number; end: number } | null {
+  const match = label.match(/^(?:Mes\s+|M)(\d+)(?:-M(\d+))?/);
+  if (!match) return null;
+  const start = parseInt(match[1], 10);
+  const end = match[2] ? parseInt(match[2], 10) : start;
+  return { start, end };
+}
+
+// "Agosto '26" -- nombre completo del mes en español, capitalizado, con año
+// abreviado a 2 dígitos. monthNumber es 1-based y relativo a startDate (mes 1
+// = el mes calendario de startDate).
+function monthYearLabel(monthNumber: number, startDate: Date): string {
+  const d = addMonths(startDate, monthNumber - 1);
+  const raw = format(d, "MMMM ''yy", { locale: es });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+// "Agosto '26" o, si el rango cubre más de un mes, "Agosto '26 - Julio '27".
+function periodDateLabel(label: string, startDate: Date | undefined | null): string {
+  if (!startDate) return "";
+  const range = parsePeriodMonthRange(label);
+  if (!range) return "";
+  return range.start === range.end
+    ? monthYearLabel(range.start, startDate)
+    : `${monthYearLabel(range.start, startDate)} - ${monthYearLabel(range.end, startDate)}`;
+}
+
+interface PeriodRow {
+  label: string;
+  canon: number;
+  ggcc: number;
+  fProm: number;
+  otros: number;
+  total: number;
+  ufM2: number | null;
+  isGrace?: true;
+}
+
+// Parte en dos la fila de escalationPeriods que contiene el mes calendario en
+// que termina la gracia (dates.paymentStartDate = fecha inicio + meses de
+// gracia, "días corridos" -- NO el número de filas etiquetadas "Gracia").
+// Sin esto, cuando el contrato no arranca el día 1, la gracia se cortaba en
+// el límite de la fila M{graceMonths} (mes calendario, no aniversario), lo
+// que subestimaba los días de gracia reales cada vez que el día de inicio no
+// era el 1: ej. inicio 27-ago con 2 meses de gracia real llega hasta el
+// 27-oct, pero antes se cobraba TODO octubre como si la gracia hubiera
+// terminado el 30-sep.
+function splitAtGraceBoundary(
+  rows: PeriodRow[],
+  paymentStartDate: Date,
+  contractStartDate: Date,
+  fullPeriods: PeriodRow[]
+): PeriodRow[] {
+  const payDay = paymentStartDate.getDate();
+  if (payDay <= 1) return rows; // el límite ya cae justo al inicio de un mes: nada que partir
+
+  const daysInTargetMonth = new Date(paymentStartDate.getFullYear(), paymentStartDate.getMonth() + 1, 0).getDate();
+  const graceDays = payDay - 1;
+  const payingDays = daysInTargetMonth - payDay + 1;
+  const factorGrace = graceDays / daysInTargetMonth;
+  const factorPaying = payingDays / daysInTargetMonth;
+
+  const targetMonth = differenceInCalendarMonths(paymentStartDate, contractStartDate) + 1;
+  const idx = rows.findIndex((r) => {
+    const range = parsePeriodMonthRange(r.label);
+    return range !== null && targetMonth >= range.start && targetMonth <= range.end;
+  });
+  if (idx === -1) return rows;
+
+  const target = rows[idx];
+  const range = parsePeriodMonthRange(target.label)!;
+  const suffix = target.isGrace ? " (Gracia)" : "";
+
+  // Tasa de gracia mensual: si la fila que se parte ya es de gracia, usa sus
+  // propios valores; si no (el caso reportado -- la gracia termina a mitad de
+  // una fila que hoy se ve 100% pagada), usa la fila de gracia original de
+  // escalationPeriods (misma GGCC/Otros mensuales, el canon siempre es $0).
+  const graceRate = target.isGrace ? target : fullPeriods.find((p) => p.isGrace) ?? { ...target, canon: 0, fProm: 0 };
+
+  // Una sola fila para el mes de transición (no dos): "N días de gracia" +
+  // "pago parcial de N/N días" describen el mismo mes calendario, mostrarlo
+  // en dos líneas es redundante y confunde más de lo que aclara.
+  const graceCanon = graceRate.canon * factorGrace;
+  const graceGgcc = graceRate.ggcc * factorGrace;
+  const graceFProm = graceRate.fProm * factorGrace;
+  const graceOtros = graceRate.otros * factorGrace;
+  const payingCanon = target.canon * factorPaying;
+  const payingGgcc = target.ggcc * factorPaying;
+  const payingFProm = target.fProm * factorPaying;
+  const payingOtros = target.otros * factorPaying;
+
+  const mergedRow: PeriodRow = {
+    label: `M${targetMonth} (${graceDays} días de gracia. Pago parcial de ${payingDays}/${daysInTargetMonth} días)`,
+    canon: graceCanon + payingCanon,
+    ggcc: graceGgcc + payingGgcc,
+    fProm: graceFProm + payingFProm,
+    otros: graceOtros + payingOtros,
+    total: graceCanon + graceGgcc + graceFProm + graceOtros + payingCanon + payingGgcc + payingFProm + payingOtros,
+    ufM2:
+      graceRate.ufM2 !== null && target.ufM2 !== null
+        ? graceRate.ufM2 * factorGrace + target.ufM2 * factorPaying
+        : null,
+  };
+
+  const rangeLabel = (start: number, end: number) => (start === end ? `M${start}${suffix}` : `M${start}-M${end}${suffix}`);
+  const before: PeriodRow[] = range.start < targetMonth ? [{ ...target, label: rangeLabel(range.start, targetMonth - 1) }] : [];
+  const after: PeriodRow[] = range.end > targetMonth ? [{ ...target, label: rangeLabel(targetMonth + 1, range.end) }] : [];
+
+  return [...rows.slice(0, idx), ...before, mergedRow, ...after, ...rows.slice(idx + 1)];
 }
 export function CommercialConditionsSummary({
   version,
@@ -218,6 +335,34 @@ export function CommercialConditionsSummary({
     return "";
   };
 
+  // Compact UF/m² (or $/m²) label, used by the Total Arriendo Actual/Promedio columns
+  const formatPerM2 = (amount: number) => {
+    if (!superficieEdificadaLocal || superficieEdificadaLocal <= 0) return null;
+    const perM2 = amount / superficieEdificadaLocal;
+    return displayCurrency === "CLP"
+      ? `$${Math.round(perM2).toLocaleString("es-CL")}/m²`
+      : `${perM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`;
+  };
+
+  // UF/m² real: la columna "UF/m²" del detalle SIEMPRE debe ser UF, aunque
+  // el contrato esté en CLP -- antes dividía el monto crudo en CLP por la
+  // superficie y lo mostraba como si fuera UF (ej. "$4.000.000/380m²" =
+  // 10.526, etiquetado "10.526 UF/m²", un valor absurdo para UF/m²).
+  const toRealUfPerM2 = (amount: number): number | null => {
+    if (!superficieEdificadaLocal || superficieEdificadaLocal <= 0) return null;
+    if (displayCurrency === "CLP") {
+      return ufValue > 0 ? amount / ufValue / superficieEdificadaLocal : null;
+    }
+    return amount / superficieEdificadaLocal;
+  };
+
+  // Monto con decimales según la moneda del contrato: sin decimales en CLP,
+  // 2 decimales en UF. Antes las tablas de detalle forzaban 2 decimales
+  // siempre, mostrando "4.000.000,00" para un contrato en CLP.
+  const fmtAmount = (v: number) => displayCurrency === "CLP"
+    ? Math.round(v).toLocaleString("es-CL")
+    : v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   // Secondary format for guarantee - always uses historical UF from signed date
   const formatSecondaryGuarantee = (amount: number) => {
     if (displayCurrency === "CLP") {
@@ -331,6 +476,11 @@ export function CommercialConditionsSummary({
       noticeDateLabel = "vencido";
     }
     
+    // Fecha en que efectivamente empieza a pagarse el arriendo: fecha de
+    // inicio del contrato (no la de firma) + meses de gracia. Con 0 meses
+    // de gracia coincide con startDate.
+    const paymentStartDate = addMonths(startDate, version.grace_months || 0);
+
     return {
       startDate,
       endDate,
@@ -339,7 +489,8 @@ export function CommercialConditionsSummary({
       noticeDateLabel,
       isInAutoRenewal,
       currentRenewalNumber,
-      currentRenewalEndDate
+      currentRenewalEndDate,
+      paymentStartDate
     };
   }, [version, signedDate, noticeRanges]);
   const formatDateShort = (date: Date) => {
@@ -380,39 +531,46 @@ export function CommercialConditionsSummary({
     return today < startDate;
   }, [version.effective_date, signedDate]);
 
-  // Calculate current rent based on escalations, periodic adjustments, and current month
-  // For contracts not started yet, we use the regime rent (projected rent)
-  const currentRent = useMemo(() => {
-    // Calculate current month
+  // Mes actual del contrato (1 = mes de inicio); null si no hay fecha de
+  // inicio conocida (ni effective_date ni signedDate). Único punto donde se
+  // calcula "qué mes es hoy" -- currentRent y totalArriendo ("Actual") lo
+  // reusan para no divergir entre sí.
+  const currentMonth = useMemo(() => {
     const startDate = version.effective_date
       ? new Date(version.effective_date)
       : signedDate
         ? new Date(signedDate)
         : null;
-    
-    if (!startDate) {
-      // If escalations exist, show initial rent; otherwise regime rent
-      return hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
-    }
-    
+    if (!startDate) return null;
+
     const today = new Date();
     const diffTime = today.getTime() - startDate.getTime();
-    const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-    
-    // For contracts that haven't started yet, show initial rent if escalations exist
-    if (currentMonth < 1) {
-      return hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+    return Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
+  }, [version.effective_date, signedDate]);
+
+  // Calculate current rent based on escalations, periodic adjustments, and current month
+  // initial_rent siempre tiene prioridad sobre regime_rent cuando está
+  // cargado (mismo criterio que rentField en buildSeed.ts): en la práctica
+  // el analista tipea el canon real en "initial_rent" y deja "regime_rent"
+  // en su default (0), tenga o no escalonamiento el contrato. Antes esto
+  // solo miraba initial_rent cuando hasEscalations era true, así que un
+  // contrato SIN escalaciones (o que aún no arrancó) mostraba canon $0
+  // —el de regime_rent— aunque initial_rent tuviera el valor real cargado.
+  const currentRent = useMemo(() => {
+    if (currentMonth === null || currentMonth < 1) {
+      return actualInitialRent || actualRegimeRent;
     }
-    
+
     // Check grace period - only apply for active contracts
     const graceMonths = version.grace_months || 0;
     if (currentMonth <= graceMonths && currentMonth >= 1) {
       return 0;
     }
-    
-    // If no escalations and no adjustments, return actual regime rent
+
+    // If no escalations and no adjustments, el canon se mantiene flat en
+    // initial_rent (o regime_rent si no hay initial_rent cargado)
     if (!hasEscalations && !hasAdjustments) {
-      return actualRegimeRent;
+      return actualInitialRent || actualRegimeRent;
     }
     
     // Start with base rent from escalations or regime rent
@@ -461,7 +619,7 @@ export function CommercialConditionsSummary({
     }
     
     return rent;
-  }, [version, signedDate, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent, superficieEdificadaLocal]);
+  }, [currentMonth, version, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent, superficieEdificadaLocal]);
 
   // Label: "Canon Actual" when contract is active with escalations/adjustments,
   // "Canon Inicial" when not started but has escalations, otherwise "Canon de Arriendo"
@@ -522,9 +680,6 @@ export function CommercialConditionsSummary({
   // Otros egresos
   const otrosEgresosAmount = version.otros_egresos_amount || 0;
 
-  // Total arriendo calculation (Canon actual + GGCC + FP + Otros)
-  const totalArriendo = currentRent + (gastosComunesTotalUF || 0) + (fondoPromocionAmount || 0) + otrosEgresosAmount;
-
   // Full periods breakdown: escalations + periodic adjustments through contract end
   const escalationPeriods = useMemo(() => {
     const superficie = superficieEdificadaLocal || 0;
@@ -533,21 +688,65 @@ export function CommercialConditionsSummary({
     const otros = version.otros_egresos_amount || 0;
     const ggcc = gastosComunesTotalUF || 0;
     const durationMonths = version.duration_months;
+    // Los meses de gracia eximen el canon (y por lo tanto el Fondo de
+    // Promoción, que es % del canon), pero los GGCC siguen aplicando salvo
+    // que se marque explícitamente lo contrario (default true = histórico).
+    // "Otros Egresos" nunca se exime por gracia (no se pidió esa excepción).
+    const graceGgccApplies = version.grace_ggcc_applies !== false;
+    const graceGgcc = graceGgccApplies ? ggcc : 0;
 
-    // When no escalations/adjustments, return a single period row
+    // UF/m² real: el monto de cada fila está en displayCurrency (CLP o UF),
+    // pero esta columna siempre debe representar UF/m² -- si el contrato
+    // está en CLP, primero se convierte a UF antes de dividir por m².
+    const toUfM2 = (amount: number): number | null => {
+      if (superficie <= 0) return null;
+      if (displayCurrency === "CLP") {
+        return ufValue > 0 ? amount / ufValue / superficie : null;
+      }
+      return amount / superficie;
+    };
+
+    // Fila del período de gracia (canon $0, GGCC según el flag), para que
+    // "Ver detalle" muestre explícitamente qué meses están exentos en vez
+    // de saltarlos en silencio. isGrace marca la fila para excluirla de los
+    // cálculos de promedio (ver payingPeriods más abajo).
+    const graceRow = graceMonths > 0 ? {
+      label: graceMonths === 1 ? "M1 (Gracia)" : `M1-M${graceMonths} (Gracia)`,
+      canon: 0,
+      ggcc: graceGgcc,
+      fProm: 0,
+      otros,
+      total: graceGgcc + otros,
+      ufM2: toUfM2(graceGgcc + otros),
+      isGrace: true as const,
+    } : null;
+
+    // When no escalations/adjustments, return the grace row (if any) plus a
+    // single period row for the rest of the contract. Usa el canon de
+    // régimen (actualInitialRent||actualRegimeRent), NO currentRent --
+    // currentRent es el snapshot de HOY (0 durante los meses de gracia),
+    // pero este detalle debe reflejar el arriendo real vigente durante el
+    // contrato, igual que ya hace la rama con escalonamiento/reajustes de
+    // más abajo (que arranca sus milestones en graceMonths+1 en vez de
+    // mostrar $0 para todo el contrato). Antes esto hacía que "Arriendo
+    // Inicial" y el detalle por período mostraran 0 en TODOS los meses de
+    // un contrato con meses de gracia, no solo en los meses de gracia —
+    // caso real: Osorno (2026), 2 meses de gracia.
     if (!hasEscalations && !hasAdjustments) {
-      const periodCanon = currentRent;
+      const periodCanon = actualInitialRent || actualRegimeRent;
       const periodFProm = periodCanon * (fondoPct / 100);
       const periodTotal = periodCanon + ggcc + periodFProm + otros;
-      return [{
-        label: `M1-M${durationMonths}`,
+      const startMonth = graceMonths > 0 ? graceMonths + 1 : 1;
+      const mainRow = {
+        label: `M${startMonth}-M${durationMonths}`,
         canon: periodCanon,
         ggcc,
         fProm: periodFProm,
         otros,
         total: periodTotal,
-        ufM2: superficie > 0 ? periodTotal / superficie : null,
-      }];
+        ufM2: toUfM2(periodTotal),
+      };
+      return graceRow ? [graceRow, mainRow] : [mainRow];
     }
     const escalations = version.rent_escalations || [];
     const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
@@ -622,7 +821,8 @@ export function CommercialConditionsSummary({
       otros: number;
       total: number;
       ufM2: number | null;
-    }> = [];
+      isGrace?: true;
+    }> = graceRow ? [graceRow] : [];
 
     for (let i = 0; i < sortedMilestones.length; i++) {
       const startMonth = sortedMilestones[i];
@@ -640,48 +840,143 @@ export function CommercialConditionsSummary({
         fProm: periodFProm,
         otros,
         total: periodTotal,
-        ufM2: superficie > 0 ? periodTotal / superficie : null,
+        ufM2: toUfM2(periodTotal),
       });
     }
 
     return periods;
-  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent, currentRent]);
+  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent, displayCurrency, ufValue]);
 
-  // Weighted average total arriendo across all escalation periods
+  // "Total Arriendo Actual": identifica el mes de HOY (currentMonth) y toma
+  // el total de la fila de escalationPeriods que lo contiene -- incluida la
+  // fila de gracia, con su propio criterio de GGCC (grace_ggcc_applies).
+  // Antes esto se recalculaba por separado (currentRent + gastosComunesTotalUF
+  // + fondoPromocionAmount + otros), lo que ignoraba grace_ggcc_applies para
+  // GGCC y podía divergir de lo que mostraba "Ver detalle" para ese mismo mes.
+  //
+  // Contrato que aún no arranca (fecha futura, típico "en negociación"):
+  // "Actual" = $0, porque hoy literalmente no hay obligación de pago -- el
+  // contrato no ha comenzado. Antes mostraba una proyección del arriendo
+  // futuro, lo que contradecía "lo que efectivamente se esté pagando hoy" y
+  // se veía como un monto arbitrario para contratos aún en negociación. La
+  // proyección real sigue disponible en "Total Arriendo Promedio",
+  // "Arriendo Inicial" y "Ver detalle" (ninguno de esos cambia).
+  const totalArriendo = useMemo(() => {
+    if (currentMonth === null || currentMonth < 1) return 0;
+    const matched = escalationPeriods.find((p) => {
+      const range = parsePeriodMonthRange(p.label);
+      return range !== null && currentMonth >= range.start && currentMonth <= range.end;
+    });
+    if (matched) return matched.total;
+    // Más allá de la duración del contrato (ya venció, sin dato de renovación): último período
+    return escalationPeriods[escalationPeriods.length - 1]?.total ?? 0;
+  }, [currentMonth, escalationPeriods]);
+
+  // escalationPeriods incluye la fila de gracia (para mostrarla en "Ver
+  // detalle"), pero los promedios/"primer período que paga" deben excluirla
+  // -- si no, un contrato con gracia promediaría de menos (suma sobre más
+  // meses de los que cuenta el denominador, que ya excluye la gracia).
+  const payingPeriods = useMemo(
+    () => escalationPeriods.filter((p) => !p.isGrace),
+    [escalationPeriods],
+  );
+
+  // Cronograma para el PDF de "Resumen del Contrato": igual que
+  // escalationPeriods (cada fila = valor mensual vigente en ese rango, ya
+  // sea gracia o pago), pero separando el Mes 1 en su propia fila
+  // prorrateada por día cuando el contrato no arranca el día 1 del mes --
+  // ej. inicio el 16: Mes 1 solo cubre 16 días de N, Mes 2 en adelante ya
+  // es un mes completo. El prorrateo aplica a cualquier cargo vigente ese
+  // mes (canon si no hay gracia, o GGCC si la gracia lo incluye).
+  const paymentSchedule = useMemo(() => {
+    if (!dates?.startDate || escalationPeriods.length === 0) return escalationPeriods;
+    const startDay = dates.startDate.getDate();
+    if (startDay <= 1) return escalationPeriods;
+
+    const daysInStartMonth = new Date(dates.startDate.getFullYear(), dates.startDate.getMonth() + 1, 0).getDate();
+    const daysRemaining = daysInStartMonth - startDay + 1;
+    const factor = daysRemaining / daysInStartMonth;
+
+    const [first, ...rest] = escalationPeriods;
+    const range = parsePeriodMonthRange(first.label);
+    if (!range) return escalationPeriods;
+
+    const graceSuffix = first.isGrace ? " (Gracia)" : "";
+    const prorated = {
+      ...first,
+      label: `Mes 1 (parcial, ${daysRemaining} de ${daysInStartMonth} días)${graceSuffix}`,
+      canon: first.canon * factor,
+      ggcc: first.ggcc * factor,
+      fProm: first.fProm * factor,
+      otros: first.otros * factor,
+      total: first.total * factor,
+      ufM2: first.ufM2 !== null ? first.ufM2 * factor : null,
+    };
+
+    if (range.end === range.start) {
+      // El primer tramo era solo el mes 1: queda reemplazado por la fila prorrateada
+      return [prorated, ...rest];
+    }
+
+    const remainderLabel = (range.start + 1) === range.end
+      ? `M${range.start + 1}${graceSuffix}`
+      : `M${range.start + 1}-M${range.end}${graceSuffix}`;
+    const remainder = { ...first, label: remainderLabel };
+
+    let built = [prorated, remainder, ...rest];
+
+    // La gracia es "días corridos" desde la fecha de inicio (dates.paymentStartDate
+    // = inicio + meses de gracia), no un número de filas etiquetadas "Gracia" --
+    // si ese límite cae a mitad de un mes calendario, esa fila se parte en un
+    // tramo aún exento y un tramo ya pagado.
+    const graceMonths = version.grace_months || 0;
+    if (graceMonths > 0 && dates.paymentStartDate) {
+      built = splitAtGraceBoundary(built, dates.paymentStartDate, dates.startDate, escalationPeriods);
+    }
+
+    return built;
+  }, [escalationPeriods, dates?.startDate, dates?.paymentStartDate, version.grace_months]);
+
+  // Weighted average total arriendo across paying periods (excluye la fila
+  // de gracia). El fallback de 1 período usa payingPeriods[0].total (canon
+  // real, sin gracia) y no totalArriendo (snapshot de HOY, 0 durante la
+  // gracia) -- mismo motivo que el fix de escalationPeriods: un contrato
+  // sin escalonamiento en gracia debe promediar el arriendo real, no $0.
   const totalArriendoPromedio = useMemo(() => {
-    if (escalationPeriods.length <= 1) return totalArriendo;
+    if (payingPeriods.length <= 1) return payingPeriods[0]?.total ?? totalArriendo;
     const durationMonths = version.duration_months;
-    if (durationMonths <= 0) return totalArriendo;
+    if (durationMonths <= 0) return payingPeriods[0]?.total ?? totalArriendo;
     const graceMonths = version.grace_months || 0;
     const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
-    
+
     let weightedSum = 0;
-    for (const p of escalationPeriods) {
+    for (const p of payingPeriods) {
       const match = p.label.match(/M(\d+)-M(\d+)/);
       if (match) {
         const months = parseInt(match[2]) - parseInt(match[1]) + 1;
         weightedSum += p.total * months;
       }
     }
-    
+
     const totalMonths = durationMonths - (initialStart - 1);
-    return totalMonths > 0 ? weightedSum / totalMonths : totalArriendo;
-  }, [hasEscalations, escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
+    return totalMonths > 0 ? weightedSum / totalMonths : (payingPeriods[0]?.total ?? totalArriendo);
+  }, [payingPeriods, totalArriendo, version.duration_months, version.grace_months]);
 
   // Calculate guarantee amount based on type
   const guaranteeAmount = useMemo(() => {
     if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
-      const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+      const baseRent = actualInitialRent || actualRegimeRent;
       return version.guarantee_multiplier * baseRent;
     }
     if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
-      // Weighted average of CANON only (not total arriendo)
-      if (escalationPeriods.length > 1) {
+      // Weighted average of CANON only (not total arriendo), excluyendo la
+      // gracia (payingPeriods)
+      if (payingPeriods.length > 1) {
         const durationMonths = version.duration_months;
         const graceMonths = version.grace_months || 0;
         const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
         let weightedSum = 0;
-        for (const p of escalationPeriods) {
+        for (const p of payingPeriods) {
           const match = p.label.match(/M(\d+)-M(\d+)/);
           if (match) {
             const months = parseInt(match[2]) - parseInt(match[1]) + 1;
@@ -689,10 +984,10 @@ export function CommercialConditionsSummary({
           }
         }
         const totalMonths = durationMonths - (initialStart - 1);
-        const avgCanon = totalMonths > 0 ? weightedSum / totalMonths : currentRent;
+        const avgCanon = totalMonths > 0 ? weightedSum / totalMonths : (payingPeriods[0]?.canon ?? currentRent);
         return version.guarantee_multiplier * avgCanon;
       }
-      return version.guarantee_multiplier * currentRent;
+      return version.guarantee_multiplier * (payingPeriods[0]?.canon ?? currentRent);
     }
     if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
       if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
@@ -706,17 +1001,17 @@ export function CommercialConditionsSummary({
       return version.guarantee_fixed_amount;
     }
     return null;
-  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee, escalationPeriods, totalArriendoPromedio, totalArriendo]);
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, currentRent, displayCurrency, ufValue, historicalUFForGuarantee, payingPeriods, version.duration_months, version.grace_months]);
 
   const fondoPromocionPromedio = useMemo(() => {
-    if (!hasEscalations || escalationPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
+    if (!hasEscalations || payingPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
     const durationMonths = version.duration_months;
     if (durationMonths <= 0) return fondoPromocionAmount;
     const graceMonths = version.grace_months || 0;
     const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
 
     let weightedSum = 0;
-    for (const p of escalationPeriods) {
+    for (const p of payingPeriods) {
       const match = p.label.match(/M(\d+)-M(\d+)/);
       if (match) {
         const months = parseInt(match[2]) - parseInt(match[1]) + 1;
@@ -726,7 +1021,7 @@ export function CommercialConditionsSummary({
 
     const totalMonths = durationMonths - (initialStart - 1);
     return totalMonths > 0 ? weightedSum / totalMonths : fondoPromocionAmount;
-  }, [hasEscalations, escalationPeriods, fondoPromocionAmount, version.duration_months, version.grace_months]);
+  }, [hasEscalations, payingPeriods, fondoPromocionAmount, version.duration_months, version.grace_months]);
 
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
@@ -764,20 +1059,38 @@ export function CommercialConditionsSummary({
     doc.text("Detalle Total Arriendo", pageWidth / 2, y, { align: "center" });
     y += 10;
 
-    // Summary
+    // Summary: Actual (mes en curso, sujeto a gracia) y Promedio, igual que en pantalla
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    const pdfDisplayTotal = hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
-    const totalLabel = hasEscalations && escalationPeriods.length > 1
-      ? `Total Arriendo Promedio: ${formatPrimary(pdfDisplayTotal)}`
-      : `Total Arriendo: ${formatPrimary(pdfDisplayTotal)}`;
-    doc.text(totalLabel, 14, y);
+    doc.text(`Total Arriendo Actual: ${formatPrimary(totalArriendo)}`, 14, y);
     y += 5;
-    
-    if (superficieEdificadaLocal && superficieEdificadaLocal > 0) {
+    if (displayCurrency === "CLP" && formatSecondary(totalArriendo)) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text(`(${(pdfDisplayTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`, 14, y);
+      doc.text(`(${formatSecondary(totalArriendo)})`, 14, y);
+      y += 5;
+    }
+    if (formatPerM2(totalArriendo)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`(${formatPerM2(totalArriendo)})`, 14, y);
+      y += 5;
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(`Total Arriendo Promedio: ${formatPrimary(totalArriendoPromedio)}`, 14, y);
+    y += 5;
+    if (displayCurrency === "CLP" && formatSecondary(totalArriendoPromedio)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`(${formatSecondary(totalArriendoPromedio)})`, 14, y);
+      y += 5;
+    }
+    if (formatPerM2(totalArriendoPromedio)) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`(${formatPerM2(totalArriendoPromedio)})`, 14, y);
       y += 5;
     }
 
@@ -801,7 +1114,7 @@ export function CommercialConditionsSummary({
       periodHead.push("Total");
       if (hasSurface) periodHead.push("UF/m²");
 
-      const fmt2 = (v: number) => v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmt2 = fmtAmount;
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const periodBody = escalationPeriods.map(p => {
@@ -833,6 +1146,156 @@ export function CommercialConditionsSummary({
     doc.save("total-arriendo.pdf");
   };
 
+  // PDF export: resumen completo del contrato (fechas, garantía, cronograma
+  // de pagos con el mes 1 prorrateado por día, y gastos de entrada aparte).
+  const handleDownloadContractSummaryPDF = async () => {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 10;
+
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, "PNG", 14, y, 50, 20);
+    } catch {}
+    y += 25;
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Resumen del Contrato", pageWidth / 2, y, { align: "center" });
+    y += 10;
+
+    // Fechas y plazos
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Fechas y Plazos", 14, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+
+    const dateLines: string[] = [];
+    if (signedDate) dateLines.push(`Fecha Firma: ${format(parseISO(signedDate), "dd MMM yyyy", { locale: es })}`);
+    if (dates?.startDate) dateLines.push(`Fecha Inicio: ${formatDateShort(dates.startDate)}`);
+    if (dates?.paymentStartDate) {
+      const graceNote = (version.grace_months || 0) > 0 ? ` (tras ${version.grace_months} ${version.grace_months === 1 ? "mes" : "meses"} de gracia)` : "";
+      dateLines.push(`Inicio Pago Arriendo: ${formatDateShort(dates.paymentStartDate)}${graceNote}`);
+    }
+    if (dates?.endDate) dateLines.push(`Fecha Término: ${formatDateShort(dates.endDate)} (${version.duration_months} meses)`);
+    if (version.auto_renewal) {
+      dateLines.push(`Renovación Automática: ${version.auto_renewal_months ? `${version.auto_renewal_months} meses` : "sin plazo definido"} (${version.auto_renewal_type === "bilateral" ? "Bilateral" : "Unilateral GP"})`);
+    }
+    if (dates?.noticeDate) dateLines.push(`Fecha Tope Aviso: ${formatDateShort(dates.noticeDate)}`);
+
+    for (const line of dateLines) {
+      doc.text(line, 14, y);
+      y += 4.5;
+    }
+    y += 3;
+
+    // Garantía
+    if (guaranteeAmount !== null) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Garantía", 14, y);
+      y += 5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const guaranteeDesc = guaranteeType === "avg_rent"
+        ? `${version.guarantee_multiplier}x canon promedio`
+        : guaranteeType === "multiplier"
+          ? `${version.guarantee_multiplier}x canon`
+          : `monto fijo en ${version.guarantee_fixed_currency === "CLP" ? "$" : "UF"}`;
+      doc.text(`${formatPrimary(guaranteeAmount)} (${guaranteeDesc})`, 14, y);
+      y += 7;
+    }
+
+    // Cronograma de pagos (mes 1 prorrateado por día si el inicio no es el día 1)
+    if (paymentSchedule.length > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("Cronograma de Pagos", 14, y);
+      y += 4;
+
+      const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
+
+      // Columnas fijas: Periodo, Mes, Canon, GGCC, F.Prom, Total, UF/m² --
+      // GGCC y F.Prom se muestran siempre en 0,00 cuando no aplican (antes se
+      // ocultaba la columna entera si todas las filas daban 0, lo que corría
+      // el resto de las columnas de lugar entre contratos).
+      const schedHead: string[] = ["Periodo", "Mes", "Canon", "GGCC", "F.Prom", "Total"];
+      if (hasSurface) schedHead.push("UF/m²");
+
+      const fmt2 = fmtAmount;
+      const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
+
+      const schedBody = paymentSchedule.map(p => {
+        const row: string[] = [
+          p.label,
+          periodDateLabel(p.label, dates?.startDate),
+          fmt2(p.canon),
+          fmt2(p.ggcc),
+          fmt2(p.fProm),
+          fmt2(p.total),
+        ];
+        if (hasSurface) row.push(fmt3(p.ufM2));
+        return row;
+      });
+
+      // Periodo con ancho fijo generoso para que las etiquetas largas ("M3
+      // (26 días de gracia. Pago parcial de 5/31 días)") no queden cortadas.
+      const schedColStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify"; cellWidth: number }>> = {
+        "0": { halign: "left", cellWidth: 68 },
+        "1": { halign: "left", cellWidth: 30 },
+      };
+      for (let i = 2; i < schedHead.length; i++) {
+        schedColStyles[i.toString()] = { halign: "right" };
+      }
+
+      autoTable(doc, {
+        startY: y,
+        head: [schedHead],
+        body: schedBody,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
+        columnStyles: schedColStyles,
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    }
+
+    // Gastos de Entrada -- aparte, son un pago único al inicio, no parte del cronograma mensual
+    if (entryExpenses.length > 0) {
+      if (y > 260) { doc.addPage(); y = 14; }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(`Gastos de Entrada (pago único): ${formatPrimary(entryExpensesTotal)}`, 14, y);
+      y += 4;
+
+      const entryBody = entryExpenses.map(e => [
+        e.name + (e.description ? ` (${e.description})` : ""),
+        e.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      ]);
+
+      autoTable(doc, {
+        startY: y,
+        head: [["Concepto", "Monto"]],
+        body: entryBody,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
+        columnStyles: { "0": { halign: "left" }, "1": { halign: "right" } },
+        margin: { left: 14, right: 14 },
+      });
+    }
+
+    doc.save("resumen-contrato.pdf");
+  };
+
   return <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
@@ -851,6 +1314,24 @@ export function CommercialConditionsSummary({
             <p className="text-sm font-medium">
               {dates?.startDate ? formatDateShort(dates.startDate) : "Sin definir"}
             </p>
+          </div>
+
+          {/* Inicio Pago Arriendo: fecha de inicio del contrato + meses de
+              gracia (no la fecha de firma). Con 0 meses de gracia coincide
+              con Fecha Inicio. */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <DollarSign className="h-3 w-3" />
+              Inicio Pago Arriendo
+            </div>
+            <p className="text-sm font-medium">
+              {dates?.paymentStartDate ? formatDateShort(dates.paymentStartDate) : "Sin definir"}
+            </p>
+            {(version.grace_months || 0) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                (tras {version.grace_months} {version.grace_months === 1 ? "mes" : "meses"} de gracia)
+              </p>
+            )}
           </div>
 
           {/* Fecha Término */}
@@ -947,36 +1428,51 @@ export function CommercialConditionsSummary({
               <Users className="h-3 w-3" />
               Tipo de Aviso
             </div>
-            <Badge variant={version.notice_bilaterality === "bilateral" ? "default" : "secondary"} className="text-xs">
-              {version.notice_bilaterality === "bilateral" ? "Bilateral" : "Unilateral GP"}
+            <Badge
+              variant={version.notice_bilaterality === "bilateral" ? "default" : version.notice_bilaterality === "unilateral_arrendador" ? "destructive" : "secondary"}
+              className="text-xs"
+            >
+              {version.notice_bilaterality === "bilateral"
+                ? "Bilateral"
+                : version.notice_bilaterality === "unilateral_arrendador"
+                  ? "Unilateral Arrendador"
+                  : "Unilateral GP"}
             </Badge>
           </div>
 
-          {/* Total Arriendo */}
+          {/* Total Arriendo: Actual (mes en curso, sujeto a gracia) vs. Promedio (representativo del contrato) en 2 columnas */}
           <div className="space-y-1 col-span-2 md:col-span-1 bg-primary/5 rounded-lg p-3 -m-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              {escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
-            </div>
-            <p className="text-lg font-bold text-primary">
-              {formatPrimary(escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
-            </p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {(() => {
-                const displayTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
-                return (
-                  <>
-                    <span>{formatSecondary(displayTotal)}</span>
-                    {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
-                      <span>
-                        ({displayCurrency === "CLP" 
-                          ? `$${Math.round(displayTotal / superficieEdificadaLocal).toLocaleString("es-CL")}/m²` 
-                          : `${(displayTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`})
-                      </span>
-                    )}
-                  </>
-                );
-              })()}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <DollarSign className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Total Arriendo Actual</span>
+                </div>
+                <p className="text-base font-bold text-primary leading-tight truncate">
+                  {formatPrimary(totalArriendo)}
+                </p>
+                {displayCurrency === "CLP" && formatSecondary(totalArriendo) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatSecondary(totalArriendo)}</p>
+                )}
+                {formatPerM2(totalArriendo) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatPerM2(totalArriendo)}</p>
+                )}
+              </div>
+              <div className="min-w-0 border-l border-border/50 pl-2">
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <DollarSign className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Total Arriendo Promedio</span>
+                </div>
+                <p className="text-base font-bold text-primary leading-tight truncate">
+                  {formatPrimary(totalArriendoPromedio)}
+                </p>
+                {displayCurrency === "CLP" && formatSecondary(totalArriendoPromedio) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatSecondary(totalArriendoPromedio)}</p>
+                )}
+                {formatPerM2(totalArriendoPromedio) && (
+                  <p className="text-[10px] text-muted-foreground truncate">{formatPerM2(totalArriendoPromedio)}</p>
+                )}
+              </div>
             </div>
             {/* Composición colapsable */}
             <div className="flex items-center justify-between pt-1 border-t border-border/50">
@@ -997,19 +1493,34 @@ export function CommercialConditionsSummary({
                   {totalArriendoExpanded ? "Ocultar detalle" : "Ver detalle"}
                 </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDownloadTotalArriendoPDF();
-                }}
-                title="Descargar PDF"
-              >
-                <Download className="h-3 w-3 text-muted-foreground" />
-              </Button>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDownloadTotalArriendoPDF();
+                  }}
+                  title="Descargar PDF (Total Arriendo)"
+                >
+                  <Download className="h-3 w-3 text-muted-foreground" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDownloadContractSummaryPDF();
+                  }}
+                  title="Descargar Resumen del Contrato"
+                >
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              </div>
             </div>
             {totalArriendoExpanded && (
               <div className="text-[10px] text-muted-foreground space-y-0.5 animate-in slide-in-from-top-1 duration-200">
@@ -1035,11 +1546,11 @@ export function CommercialConditionsSummary({
                       {escalationPeriods.map((p, idx) => (
                         <tr key={idx} className="border-t border-border/30">
                           <td className="py-0.5 text-muted-foreground">{p.label}</td>
-                          <td className="py-0.5 text-right">{p.canon.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-0.5 text-right">{p.ggcc > 0 ? p.ggcc.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                          <td className="py-0.5 text-right">{p.fProm > 0 ? p.fProm.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                          <td className="py-0.5 text-right">{p.otros > 0 ? p.otros.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                          <td className="py-0.5 text-right font-medium text-foreground">{p.total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-0.5 text-right">{fmtAmount(p.canon)}</td>
+                          <td className="py-0.5 text-right">{p.ggcc > 0 ? fmtAmount(p.ggcc) : "-"}</td>
+                          <td className="py-0.5 text-right">{p.fProm > 0 ? fmtAmount(p.fProm) : "-"}</td>
+                          <td className="py-0.5 text-right">{p.otros > 0 ? fmtAmount(p.otros) : "-"}</td>
+                          <td className="py-0.5 text-right font-medium text-foreground">{fmtAmount(p.total)}</td>
                           {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
                             <td className="py-0.5 text-right text-muted-foreground">{p.ufM2?.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td>
                           )}
@@ -1060,7 +1571,7 @@ export function CommercialConditionsSummary({
 
           {/* Total Arriendo Inicial (canon + GGCC + F.Prom + Otros, sin meses de gracia) */}
           {(() => {
-            const firstPeriod = escalationPeriods[0];
+            const firstPeriod = payingPeriods[0];
             const initialTotal = firstPeriod ? firstPeriod.total : (actualInitialRent || actualRegimeRent);
             return (
               <div className="space-y-1">
@@ -1077,9 +1588,9 @@ export function CommercialConditionsSummary({
                 <p className="text-xs text-muted-foreground">
                   {formatSecondary(initialTotal)}
                 </p>
-                {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                {toRealUfPerM2(initialTotal) !== null && (
                   <p className="text-xs text-muted-foreground">
-                    ({(initialTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
+                    ({toRealUfPerM2(initialTotal)!.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
                   </p>
                 )}
               </div>
@@ -1158,9 +1669,9 @@ export function CommercialConditionsSummary({
               </div>
               <p className="text-sm font-medium">
                 {formatPrimary(gastosComunesTotalUF)}
-                {gastosComunesMethodology === "uf_m2" && superficieEdificadaLocal > 0 && gastosComunesTotalUF > 0 && (
+                {gastosComunesMethodology === "uf_m2" && gastosComunesTotalUF > 0 && toRealUfPerM2(gastosComunesTotalUF) !== null && (
                   <span className="text-xs font-normal text-muted-foreground ml-1">
-                    ({(gastosComunesTotalUF / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
+                    ({toRealUfPerM2(gastosComunesTotalUF)!.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
                   </span>
                 )}
               </p>
@@ -1179,13 +1690,13 @@ export function CommercialConditionsSummary({
           {fondoPromocionAmount !== null && fondoPromocionAmount > 0 && <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Megaphone className="h-3 w-3" />
-                Fondo Promoción{hasEscalations && escalationPeriods.length > 1 ? " (Promedio)" : ""}
+                Fondo Promoción{hasEscalations && payingPeriods.length > 1 ? " (Promedio)" : ""}
               </div>
               <p className="text-sm font-medium">
-                {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
+                {formatPrimary(hasEscalations && payingPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatSecondary(hasEscalations && escalationPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
+                {formatSecondary(hasEscalations && payingPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
                 ({version.fondo_promocion_percentage}% del canon)

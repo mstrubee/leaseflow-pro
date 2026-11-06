@@ -39,9 +39,10 @@ interface AuditEntry {
 interface BudgetTrashPanelProps {
   budgetId: string;
   onRestore: () => void;
+  isAdmin?: boolean;
 }
 
-export const BudgetTrashPanel = ({ budgetId, onRestore }: BudgetTrashPanelProps) => {
+export const BudgetTrashPanel = ({ budgetId, onRestore, isAdmin = false }: BudgetTrashPanelProps) => {
   const [deletedLines, setDeletedLines] = useState<DeletedLine[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +51,8 @@ export const BudgetTrashPanel = ({ budgetId, onRestore }: BudgetTrashPanelProps)
   const [restoring, setRestoring] = useState<string | null>(null);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [lineToRestore, setLineToRestore] = useState<DeletedLine | null>(null);
+  const [showEmptyTrashDialog, setShowEmptyTrashDialog] = useState(false);
+  const [emptyingTrash, setEmptyingTrash] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -142,6 +145,36 @@ export const BudgetTrashPanel = ({ budgetId, onRestore }: BudgetTrashPanelProps)
       setRestoring(null);
       setShowRestoreDialog(false);
       setLineToRestore(null);
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    setEmptyingTrash(true);
+    try {
+      const ids = deletedLines.map((l) => l.id);
+      const { error } = await supabase
+        .from("budget_lines")
+        .delete()
+        .in("id", ids);
+
+      if (error) throw error;
+
+      toast({
+        title: "Papelera vaciada",
+        description: `${ids.length} línea(s) eliminada(s) permanentemente.`,
+      });
+
+      await loadDeletedLines();
+    } catch (error: any) {
+      console.error("Error emptying trash:", error);
+      toast({
+        title: "Error al vaciar la papelera",
+        description: error.message || "No se pudo vaciar la papelera",
+        variant: "destructive",
+      });
+    } finally {
+      setEmptyingTrash(false);
+      setShowEmptyTrashDialog(false);
     }
   };
 
@@ -283,15 +316,31 @@ export const BudgetTrashPanel = ({ budgetId, onRestore }: BudgetTrashPanelProps)
       {deletedLines.length > 0 && (
         <Collapsible open={isTrashOpen} onOpenChange={setIsTrashOpen}>
           <Card className="border-destructive/30">
-            <CollapsibleTrigger asChild>
-              <CardHeader className="py-3 cursor-pointer hover:bg-muted/50">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                  {isTrashOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                  Papelera ({deletedLines.length} líneas eliminadas)
-                </CardTitle>
-              </CardHeader>
-            </CollapsibleTrigger>
+            <CardHeader className="py-3">
+              <div className="flex items-center justify-between gap-2">
+                <CollapsibleTrigger asChild>
+                  <CardTitle className="flex items-center gap-2 text-sm font-medium cursor-pointer hover:opacity-80 flex-1">
+                    {isTrashOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                    Papelera ({deletedLines.length} líneas eliminadas)
+                  </CardTitle>
+                </CollapsibleTrigger>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowEmptyTrashDialog(true);
+                    }}
+                    className="h-7 px-2 text-xs shrink-0"
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Vaciar papelera
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
             <CollapsibleContent>
               <CardContent className="pt-0">
                 <Table>
@@ -431,6 +480,39 @@ export const BudgetTrashPanel = ({ budgetId, onRestore }: BudgetTrashPanelProps)
             >
               <RotateCcw className="h-4 w-4 mr-2" />
               Restaurar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Empty Trash Confirmation Dialog (admin only) */}
+      <Dialog open={showEmptyTrashDialog} onOpenChange={setShowEmptyTrashDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Vaciar papelera</DialogTitle>
+            <DialogDescription>
+              ¿Eliminar permanentemente las {deletedLines.length} línea(s) de la papelera?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex items-center gap-2 p-3 bg-destructive/10 rounded-md">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+              <p className="text-sm text-muted-foreground">
+                Esta acción no se puede deshacer. Las líneas ya no podrán restaurarse desde la papelera.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEmptyTrashDialog(false)} disabled={emptyingTrash}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleEmptyTrash}
+              disabled={emptyingTrash}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Vaciar papelera
             </Button>
           </DialogFooter>
         </DialogContent>
