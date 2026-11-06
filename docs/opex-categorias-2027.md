@@ -168,6 +168,23 @@ distinguir mayúsculas ni tildes), así que no aparece la fila "Sin categoría".
 la OC no se modifica en la base. Si luego esa categoría se fusiona o retira, el gasto sigue a su categoría final. Si la
 categoría no existe, vuelve a aparecer "Sin categoría". Para ver cuáles son: pestaña "Líneas" (indica "La OC no tenía categoría").
 
+## Categoría obligatoria en OC OPEX desde 2027
+
+Migración `20261106120000`: el trigger `trg_po_opex_category_year` (función `check_po_opex_category_year`) rechaza una OC
+con fecha (o, sin fecha, `year`) desde 2027 que sea OPEX (`budget_classification = 'OPEX'` o `opex_master_id` informado)
+y no tenga `opex_category_id`. En UPDATE solo valida si cambia fecha, año, categoría, clasificación o presupuesto
+maestro, así que editar otros campos nunca se bloquea. Las OC de 2026 o anteriores y las CAPEX no se afectan.
+En la app: crear y editar OC y "Convertir solicitud" bloquean el guardado sin categoría; la importación masiva
+(`/purchase-orders/bulk-import`) pide una categoría para toda la importación, que se asigna solo a las OC con fecha desde 2027.
+Verificación:
+```sql
+SELECT
+  (SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_po_opex_category_year' AND NOT tgisinternal) AS trigger__esperado_1,
+  pg_get_functiondef('public.check_po_opex_category_year()'::regprocedure) LIKE '%debe tener una categoría OPEX asignada%' AS regla_nueva__esperado_true,
+  (SELECT prosecdef FROM pg_proc WHERE proname = 'check_po_opex_category_year') AS security_definer__esperado_false;
+```
+Reversión: volver a crear la función y el trigger de `20261020120000` (solo vigencia, sin la regla de categoría obligatoria).
+
 ## Dónde se filtran las categorías por año
 
 | Pantalla | Qué año usa |
