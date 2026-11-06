@@ -90,14 +90,12 @@ interface ContractOpexSummary {
   categories: {
     category_id: string;
     category_name: string;
-    master_budget: number;
-    additional_budget: number;
     consumed: number;
-    available: number;
+    // Total OPEX (master + additionals, all locals) assigned to this category.
+    // Used as the denominator of the per-category "Uso" column.
+    category_budget: number;
   }[];
-  total_budget: number;
   total_consumed: number;
-  total_available: number;
 }
 
 // Colors for categories in chart (distinct, accessible colors)
@@ -290,7 +288,20 @@ const OpexDashboard = () => {
     }
   };
 
-  // Build contract summaries
+  // Total OPEX per category (master budget + local additionals of all locals), in UF.
+  // The sum over all categories equals the "OPEX Total" card (globalTotals.budgetUF).
+  const categoryBudgetUF = useMemo(() => {
+    const map = new Map<string, number>();
+    masterBudgets.forEach(m => {
+      map.set(m.category_id, (map.get(m.category_id) || 0) + Math.abs(m.amount_uf || 0));
+    });
+    localAdditionals.forEach(a => {
+      map.set(a.category_id, (map.get(a.category_id) || 0) + Math.abs(a.amount_uf || 0));
+    });
+    return map;
+  }, [masterBudgets, localAdditionals]);
+
+  // Build contract summaries (only consumption: locals/categories with OPEX purchase orders)
   const contractSummaries = useMemo(() => {
     const summaries: ContractOpexSummary[] = [];
     contracts.forEach(contract => {
@@ -307,33 +318,22 @@ const OpexDashboard = () => {
         // Apply category filter
         if (categoryFilter !== "todos" && category.id !== categoryFilter) return;
 
-        // Get master budget for this category
-        const masterBudget = masterBudgets.find(m => m.category_id === category.id);
-        const masterAmount = masterBudget?.amount_uf || 0;
-
-        // Get local additional for this contract/category
-        const additional = localAdditionals.find(a => a.contract_id === contract.id && a.category_id === category.id);
-        const additionalAmount = additional?.amount_uf || 0;
-
         // Get consumption for this contract/category
         const consumption = consumptions.find(c => c.contract_id === contract.id && c.category_id === category.id);
-        const consumedAmount = consumption?.consumed_uf || 0;
+        const consumedAmount = Math.abs(consumption?.consumed_uf || 0);
 
-        // Only include if there's any budget or consumption
-        if (masterAmount > 0 || additionalAmount > 0 || consumedAmount > 0) {
+        // Only include categories where this local actually incurred expenses
+        if (consumedAmount > 0) {
           contractCategories.push({
             category_id: category.id,
             category_name: category.name,
-            master_budget: masterAmount,
-            additional_budget: additionalAmount,
             consumed: consumedAmount,
-            available: masterAmount + additionalAmount - consumedAmount
+            category_budget: categoryBudgetUF.get(category.id) || 0
           });
         }
       });
-      if (contractCategories.length > 0 || categoryFilter === "todos") {
-        const totalBudget = contractCategories.reduce((sum, c) => sum + c.master_budget + c.additional_budget, 0);
-        const totalConsumed = contractCategories.reduce((sum, c) => sum + c.consumed, 0);
+      if (contractCategories.length > 0) {
+        contractCategories.sort((a, b) => b.consumed - a.consumed);
         summaries.push({
           contract_id: contract.id,
           contract_name: contract.name,
@@ -341,14 +341,12 @@ const OpexDashboard = () => {
           company_name: contract.company_name || "Sin empresa",
           company_names: contract.company_names || [],
           categories: contractCategories,
-          total_budget: totalBudget,
-          total_consumed: totalConsumed,
-          total_available: totalBudget - totalConsumed
+          total_consumed: contractCategories.reduce((sum, c) => sum + c.consumed, 0)
         });
       }
     });
-    return summaries.filter(s => s.categories.length > 0 || categoryFilter === "todos");
-  }, [contracts, categories, masterBudgets, localAdditionals, consumptions, searchTerm, contractFilter, categoryFilter, companyFilter]);
+    return summaries;
+  }, [contracts, categories, consumptions, categoryBudgetUF, searchTerm, contractFilter, categoryFilter, companyFilter]);
 
   // Calculate totals - now in CLP as primary (use absolute values)
   const globalTotals = useMemo(() => {
@@ -1100,7 +1098,8 @@ const OpexDashboard = () => {
                   </div> : <div className="space-y-3">
                     {contractSummaries.map(summary => {
                   const isExpanded = expandedContracts.has(summary.contract_id);
-                  const usagePercent = summary.total_budget > 0 ? summary.total_consumed / summary.total_budget * 100 : 0;
+                  // % of the TOTAL OPEX consumed by all locals ("Con OC" in the OPEX Total card) that belongs to this local, not per category
+                  const usagePercent = globalTotals.consumedUF > 0 ? summary.total_consumed / globalTotals.consumedUF * 100 : 0;
                   return <Collapsible key={summary.contract_id} open={isExpanded} onOpenChange={() => toggleContract(summary.contract_id)}>
                           <Card className="border-l-4" style={{
                       borderLeftColor: getCompanyColor(summary.company_id)
@@ -1123,17 +1122,9 @@ const OpexDashboard = () => {
                                         </Badge>
                                       </div>
                                       <div className="flex items-center gap-4 mt-1">
-                                        <span className="text-sm text-muted-foreground">
-                                          Presupuesto: $ {Math.round(Math.abs(summary.total_budget) * (ufValue || 0)).toLocaleString("es-CL")}
-                                          <span className="text-xs ml-1">({Math.abs(summary.total_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
-                                        </span>
                                         <span className="text-sm text-orange-600">
                                           Consumido: $ {Math.round(Math.abs(summary.total_consumed) * (ufValue || 0)).toLocaleString("es-CL")}
                                           <span className="text-xs ml-1">({Math.abs(summary.total_consumed).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
-                                        </span>
-                                        <span className={`text-sm ${summary.total_available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                          Disponible: $ {Math.round(Math.abs(summary.total_available) * (ufValue || 0)).toLocaleString("es-CL")}
-                                          <span className="text-xs ml-1">({Math.abs(summary.total_available).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                       </div>
                                     </div>
@@ -1141,7 +1132,7 @@ const OpexDashboard = () => {
                                   <div className="flex items-center gap-4">
                                     <div className="w-32">
                                       <Progress value={Math.min(usagePercent, 100)} className="h-2" />
-                                      <span className="text-xs text-muted-foreground">{usagePercent.toFixed(0)}% usado</span>
+                                      <span className="text-xs text-muted-foreground" title="Consumo del local sobre el consumo OPEX total de todos los locales">{usagePercent.toFixed(1)}% usado</span>
                                     </div>
                                     <Button variant="ghost" size="sm" onClick={e => {
                                 e.stopPropagation();
@@ -1159,45 +1150,25 @@ const OpexDashboard = () => {
                                   <TableHeader>
                                     <TableRow>
                                       <TableHead>Categoría</TableHead>
-                                      <TableHead className="text-right">Presupuesto Maestro</TableHead>
-                                      <TableHead className="text-right">Adicional Local</TableHead>
-                                      <TableHead className="text-right">Total Presupuesto</TableHead>
                                       <TableHead className="text-right">Consumido</TableHead>
-                                      <TableHead className="text-right">Disponible</TableHead>
-                                      <TableHead className="w-32">Uso</TableHead>
+                                      <TableHead className="w-48">Uso</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {summary.categories.map(cat => {
-                                const totalBudget = cat.master_budget + cat.additional_budget;
-                                const catUsage = totalBudget > 0 ? cat.consumed / totalBudget * 100 : 0;
+                                // % of this category's total OPEX consumed by this local
+                                const catUsage = cat.category_budget > 0 ? cat.consumed / cat.category_budget * 100 : 0;
                                 return <TableRow key={cat.category_id}>
                                           <TableCell className="font-medium">{cat.category_name}</TableCell>
-                                          <TableCell className="text-right">
-                                            <div>$ {Math.round(Math.abs(cat.master_budget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
-                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.master_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
-                                          </TableCell>
-                                          <TableCell className="text-right">
-                                            <div>$ {Math.round(Math.abs(cat.additional_budget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
-                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.additional_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
-                                          </TableCell>
-                                          <TableCell className="text-right font-medium">
-                                            <div>$ {Math.round(Math.abs(totalBudget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
-                                            <div className="text-xs text-muted-foreground">({Math.abs(totalBudget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
-                                          </TableCell>
                                           <TableCell className="text-right text-orange-600">
-                                            <div>$ {Math.round(Math.abs(cat.consumed) * (ufValue || 0)).toLocaleString("es-CL")}</div>
-                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.consumed).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
-                                          </TableCell>
-                                          <TableCell className={`text-right ${cat.available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                            <div>$ {Math.round(Math.abs(cat.available) * (ufValue || 0)).toLocaleString("es-CL")}</div>
-                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.available).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
+                                            <div>$ {Math.round(cat.consumed * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({cat.consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2" title="Consumo del local sobre el OPEX total de la categoría">
                                               <Progress value={Math.min(catUsage, 100)} className="h-2 flex-1" />
-                                              <span className="text-xs text-muted-foreground w-10 text-right">
-                                                {catUsage.toFixed(0)}%
+                                              <span className="text-xs text-muted-foreground w-12 text-right">
+                                                {cat.category_budget > 0 ? `${catUsage.toFixed(1)}%` : "—"}
                                               </span>
                                             </div>
                                           </TableCell>
