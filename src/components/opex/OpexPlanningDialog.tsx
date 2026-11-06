@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarRange, Globe, Merge, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarRange, Globe, Merge, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
@@ -29,11 +29,14 @@ import {
   assignDefaultCategory,
   buildCategoryPlan,
   buildPlanLines,
+  DEFAULT_CATEGORY_SORT,
   droppedByRetirement,
   monthsElapsed,
   orderAmountClp,
   rankBy,
+  sortCategoryPlan,
   sumByMonth,
+  type CategorySort,
   type PlanLine,
   type PlanningItem,
   type PlanningOrder,
@@ -78,6 +81,7 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
   // Fusionar, renombrar y retirar categorías (rigen desde el año planificado).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [categorySearch, setCategorySearch] = useState("");
+  const [categorySort, setCategorySort] = useState<CategorySort>(DEFAULT_CATEGORY_SORT);
   const [changeDialog, setChangeDialog] = useState<{ mode: CategoryActionMode; sourceIds: string[]; batchId?: string } | null>(null);
   const [retireConfirmId, setRetireConfirmId] = useState<string | null>(null);
   const [editingFusion, setEditingFusion] = useState<CategoryFusion | null>(null);
@@ -173,7 +177,10 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
     [activeOrders, categories, activeItems, months, indexationPct, ufValue, categoryChanges.mappingIndex],
   );
   // Búsqueda por nombre: se muestran todos los resultados. La selección vive aparte (por id), así que sobrevive a cualquier búsqueda.
-  const visiblePlan = useMemo(() => plan.filter((r) => matchesSearch(r.name, categorySearch)), [plan, categorySearch]);
+  const visiblePlan = useMemo(
+    () => sortCategoryPlan(plan.filter((r) => matchesSearch(r.name, categorySearch)), categorySort),
+    [plan, categorySearch, categorySort],
+  );
   const visibleSelectableIds = useMemo(
     () => visiblePlan.flatMap((r) => (r.categoryId ? [r.categoryId] : [])),
     [visiblePlan],
@@ -517,13 +524,26 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
                         }
                       />
                     </TableHead>
-                    <TableHead>Categoría</TableHead>
+                    <TableHead>
+                      <SortButton
+                        label="Categoría"
+                        direction={categorySort === "name_asc" ? "asc" : categorySort === "name_desc" ? "desc" : null}
+                        onClick={() => setCategorySort(categorySort === "name_asc" ? "name_desc" : "name_asc")}
+                      />
+                    </TableHead>
                     <TableHead className="text-right">OC</TableHead>
                     <TableHead className="text-right">Con OC a la fecha</TableHead>
                     <TableHead className="text-right">Promedio mensual</TableHead>
                     <TableHead className="text-right">Propuesta base</TableHead>
                     <TableHead className="text-right">OPEX agregado</TableHead>
-                    <TableHead className="text-right">Total {planYear}</TableHead>
+                    <TableHead className="text-right">
+                      <SortButton
+                        label={`Total ${planYear}`}
+                        align="end"
+                        direction={categorySort === "total_desc" ? "desc" : categorySort === "total_asc" ? "asc" : null}
+                        onClick={() => setCategorySort(categorySort === "total_desc" ? "total_asc" : "total_desc")}
+                      />
+                    </TableHead>
                     <TableHead className="w-24" />
                   </TableRow>
                 </TableHeader>
@@ -887,6 +907,32 @@ export const OpexPlanningDialog = ({ baseYear, ufValue, onCategoriesChange, cont
         </AlertDialogContent>
       </AlertDialog>
     </Dialog>
+  );
+};
+
+// Encabezado de columna que ordena la tabla; muestra la dirección activa (A-Z / Z-A, mayor-menor / menor-mayor).
+const SortButton = ({
+  label,
+  direction,
+  onClick,
+  align = "start",
+}: {
+  label: string;
+  direction: "asc" | "desc" | null;
+  onClick: () => void;
+  align?: "start" | "end";
+}) => {
+  const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Ordenar por ${label}`}
+      className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${align === "end" ? "ml-auto" : ""} ${direction ? "text-foreground" : ""}`}
+    >
+      {label}
+      <Icon className={`h-3.5 w-3.5 ${direction ? "" : "opacity-40"}`} />
+    </button>
   );
 };
 
