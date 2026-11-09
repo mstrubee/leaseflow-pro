@@ -28,6 +28,7 @@ import {
 import { AlertForm, AlertData } from "./AlertForm";
 import { useAlertsNavigation } from "./AlertsReturnButton";
 import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface Alert {
   id: string;
@@ -261,9 +262,10 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
         description: "Revisa tu bandeja de entrada",
       });
     } catch (error: any) {
+      const message = await getFunctionErrorMessage(error, "No se pudo enviar el email de prueba");
       toast({
         title: "Error",
-        description: error.message || "No se pudo enviar el email de prueba",
+        description: message,
         variant: "destructive",
       });
     } finally {

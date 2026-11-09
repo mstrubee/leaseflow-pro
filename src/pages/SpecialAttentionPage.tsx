@@ -9,7 +9,6 @@ import { ContractSearchSelect, type ContractOption } from "@/components/contract
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
 import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, Trash2, CalendarCheck, Loader2 } from "lucide-react";
 import { MeetingsRegistryDialog } from "@/components/special-attention/MeetingsRegistryDialog";
-import { SelectableElement } from "@/components/admin/SelectableElement";
 import { exportSpecialAttentionPDF } from "@/components/special-attention/exportSpecialAttentionPDF";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -197,7 +196,6 @@ const SpecialAttentionPage = () => {
   };
 
   return (
-    <SelectableElement elementId="special_attention" label="Atención Especial">
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-3">
@@ -367,7 +365,6 @@ const SpecialAttentionPage = () => {
         contracts={contracts}
       />
     </div>
-    </SelectableElement>
   );
 };
 

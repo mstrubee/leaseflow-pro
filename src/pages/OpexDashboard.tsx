@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ContractSearchSelect } from "@/components/contracts/ContractSearchSelect";
-import { getCompanyNames } from "@/components/contracts/CompanyLogo";
+import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,6 +21,7 @@ import { useOpexNavigation } from "@/components/opex/OpexReturnButton";
 import { OpexCreateDialog } from "@/components/opex/OpexCreateDialog";
 import { OpexCategoryManager } from "@/components/opex/OpexCategoryManager";
 import { OpexCloseYear } from "@/components/opex/OpexCloseYear";
+import { OpexPlanningDialog } from "@/components/opex/OpexPlanningDialog";
 import { OpexTemplateDownload } from "@/components/opex/OpexTemplateDownload";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -85,6 +86,7 @@ interface ContractOpexSummary {
   contract_name: string;
   company_id: string | null;
   company_name: string;
+  company_names: string[];
   categories: {
     category_id: string;
     category_name: string;
@@ -337,6 +339,7 @@ const OpexDashboard = () => {
           contract_name: contract.name,
           company_id: contract.company_id,
           company_name: contract.company_name || "Sin empresa",
+          company_names: contract.company_names || [],
           categories: contractCategories,
           total_budget: totalBudget,
           total_consumed: totalConsumed,
@@ -426,6 +429,7 @@ const OpexDashboard = () => {
     interface ChartDataItem {
       contract_id: string;
       name: string;
+      company_names: string[];
       total_budget: number;
       total_consumed: number;
       percent_consumed: number;
@@ -493,6 +497,7 @@ const OpexDashboard = () => {
         data.push({
           contract_id: contract.id,
           name: contract.name,
+          company_names: contract.company_names || [],
           total_budget: totalBudget,
           total_consumed: totalConsumed,
           percent_consumed: percentConsumed,
@@ -593,6 +598,12 @@ const OpexDashboard = () => {
                     contracts={contracts}
                     categories={categories}
                     onSuccess={loadData} 
+                  />
+                  <OpexPlanningDialog
+                    baseYear={new Date().getFullYear()}
+                    ufValue={ufValue}
+                    onCategoriesChange={loadData}
+                    contracts={contracts}
                   />
                   <OpexCategoryManager onCategoryChange={loadData} />
                   <OpexCloseYear year={parseInt(yearFilter)} ufValue={ufValue} onSuccess={loadData} />
@@ -871,6 +882,7 @@ const OpexDashboard = () => {
                             className="w-3 h-3 rounded-full flex-shrink-0" 
                             style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
                           />
+                          <CompanyLogo companyNames={item.company_names} size="sm" />
                           <span className="text-xs font-medium truncate flex-1">{item.name}</span>
                           <span className="text-xs text-muted-foreground">
                             $ {Math.round(item.total_consumed * (ufValue || 0)).toLocaleString("es-CL")} ({item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
@@ -1100,6 +1112,7 @@ const OpexDashboard = () => {
                                     {isExpanded ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2">
+                                        <CompanyLogo companyNames={summary.company_names} size="sm" />
                                         <CardTitle className="text-base">{summary.contract_name}</CardTitle>
                                         <Badge variant="outline" style={{
                                     backgroundColor: getCompanyColor(summary.company_id) + "20",

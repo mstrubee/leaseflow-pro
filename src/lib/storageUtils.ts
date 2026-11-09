@@ -5,7 +5,7 @@ const SIGNED_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
 // Private buckets whose stored values (storage:// paths or legacy public URLs)
 // must be converted to short-lived signed URLs before they can be fetched/displayed.
-const PRIVATE_BUCKETS = ["repository-files", "ot-files"] as const;
+const PRIVATE_BUCKETS = ["repository-files", "ot-files", "expense-receipts"] as const;
 
 /**
  * Resolve any stored file reference to a usable URL.

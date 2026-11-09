@@ -66,7 +66,7 @@ interface RouteCalendarProps {
 }
 
 export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
-  const { isAdmin, isOperador, user } = useAuth();
+  const { isAdmin, isOperador, hasPermission, user } = useAuth();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   // Cambiar de mes con la rueda del mouse/trackpad (desktop) o con swipe (móvil).
@@ -429,7 +429,7 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
           </div>
         )}
 
-        {!isOperador && !exportMode && (
+        {hasPermission("maintenance_armar_rutas", "view") && !exportMode && (
           <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-gray-500" onClick={openTrash}>
             <Trash2 className="w-3.5 h-3.5" /> Papelera
           </Button>
@@ -506,7 +506,7 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
                   className="w-full text-left mb-0.5 group"
                   onClick={(e) => { if (exportMode) return; e.stopPropagation(); setSelected(r); }}
                   onContextMenu={(e) => {
-                    if (exportMode || isOperador) return;
+                    if (exportMode || !hasPermission("maintenance_armar_rutas", "view")) return;
                     e.preventDefault(); e.stopPropagation();
                     setCtxMenu({ x: e.clientX, y: e.clientY, route: r });
                   }}
@@ -658,7 +658,7 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
 
                 {/* Actions */}
                 <div className="flex flex-col gap-2 pt-2">
-                  {(isAdmin || isOperador) && (
+                  {(isAdmin || hasPermission("maintenance_ejecutar_rutas", "edit")) && (
                     <Button
                       className="w-full"
                       onClick={() => {
@@ -666,10 +666,10 @@ export function RouteCalendar({ onEditRoute }: RouteCalendarProps = {}) {
                         setSelected(null);
                       }}
                     >
-                      {isOperador ? "Ejecutar ruta" : "Ver ejecución"}
+                      {hasPermission("maintenance_ejecutar_rutas", "edit") && !isAdmin ? "Ejecutar ruta" : "Ver ejecución"}
                     </Button>
                   )}
-                  {onEditRoute && !isOperador && (
+                  {onEditRoute && hasPermission("maintenance_armar_rutas", "view") && (
                     <Button
                       variant="outline"
                       className="w-full gap-2"

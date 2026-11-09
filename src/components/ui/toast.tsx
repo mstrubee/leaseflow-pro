@@ -14,7 +14,11 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      // z-[1400]: por encima del AlertDialog (z-[1300]/z-[1301]) y del Dialog
+      // (z-[1100]/z-[1101]). Un aviso disparado mientras hay un cartel de
+      // confirmación abierto debe seguir siendo legible; con el z-[100] anterior
+      // quedaba detrás del overlay oscuro del AlertDialog.
+      "fixed top-0 z-[1400] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
       className,
     )}
     {...props}

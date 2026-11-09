@@ -6,6 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -16,6 +18,12 @@ interface ComiteGPStatus {
   color: string;
   display_order: number;
   is_active: boolean;
+  // Si está marcado, un contrato "En Negociación" con este Estado de Comité
+  // aparece en el desplegable de "Agregar Ítem" de la Línea de tiempo
+  // general de Cartas Gantt (/reports > Cartas Gantt - Vista General) --
+  // ver GanttOverviewTimeline.tsx. Antes esos ítems se creaban con nombre
+  // libre, lo que generaba duplicados cuando el contrato real ya existía.
+  is_calendarizable: boolean;
 }
 
 const COLOR_OPTIONS = [
@@ -42,7 +50,7 @@ export function ComiteGPStatusManager() {
 
   const loadStatuses = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("comite_gp_statuses")
       .select("*")
       .eq("is_active", true)
@@ -89,6 +97,16 @@ export function ComiteGPStatusManager() {
     } finally { setSaving(false); }
   };
 
+  const handleToggleCalendarizable = async (s: ComiteGPStatus) => {
+    const next = !s.is_calendarizable;
+    setStatuses((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_calendarizable: next } : x)));
+    const { error } = await (supabase as any).from("comite_gp_statuses").update({ is_calendarizable: next }).eq("id", s.id);
+    if (error) {
+      toast.error("Error al guardar");
+      setStatuses((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_calendarizable: !next } : x)));
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteConfirm) return;
     const { error } = await supabase.from("comite_gp_statuses")
@@ -119,8 +137,12 @@ export function ComiteGPStatusManager() {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground max-w-xl">
           Define los estados disponibles para la columna "Comité GP" en contratos en negociación.
+          El toggle "Calendarizable" determina si un contrato "En Negociación" con ese estado se puede
+          elegir en el desplegable de "Agregar Ítem" de la Línea de tiempo general de Cartas Gantt
+          (/reports → Cartas Gantt - Vista General) -- el mecanismo para proyectar un local aún sin
+          contrato formal en el presupuesto, sin crear duplicados cuando el contrato real ya existe.
         </p>
         <Button onClick={openCreate} size="sm">
           <Plus className="h-4 w-4 mr-2" />
@@ -139,6 +161,7 @@ export function ComiteGPStatusManager() {
               <TableHead className="w-20">Orden</TableHead>
               <TableHead>Color</TableHead>
               <TableHead>Nombre</TableHead>
+              <TableHead>Calendarizable</TableHead>
               <TableHead className="w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -157,6 +180,12 @@ export function ComiteGPStatusManager() {
                 </TableCell>
                 <TableCell>{getColorDot(s.color)}</TableCell>
                 <TableCell className="font-medium">{s.name}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={s.is_calendarizable} onCheckedChange={() => handleToggleCalendarizable(s)} />
+                    {s.is_calendarizable && <Badge variant="outline" className="text-[10px]">Calendarizable</Badge>}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>

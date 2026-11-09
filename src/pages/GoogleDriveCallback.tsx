@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 export default function GoogleDriveCallback() {
   const [searchParams] = useSearchParams();
@@ -40,8 +41,9 @@ export default function GoogleDriveCallback() {
         setStatus("success");
         setMessage(data?.message || "Google Drive conectado exitosamente");
       } catch (err: any) {
+        const message = await getFunctionErrorMessage(err, "Error al conectar con Google Drive");
         setStatus("error");
-        setMessage(err?.message || "Error al conectar con Google Drive");
+        setMessage(message);
       }
     };
 

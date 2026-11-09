@@ -37,6 +37,9 @@ export interface MaintenanceForm {
   resolution_observations: string | null;
   ot_file_url: string | null;
   merge_group_id: string | null;
+  // Tarea vinculada en el cronograma de mantenciones del contrato (categoría
+  // "maintenance" en gantt_timelines). Null si el form aún no fue programado.
+  gantt_task_id: string | null;
 }
 
 export interface ParsedMaintenanceRow {
