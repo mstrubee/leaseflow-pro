@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.resolve-activation-link]
 verify_jwt = false
+
+[functions.match-suppliers]
+verify_jwt = false

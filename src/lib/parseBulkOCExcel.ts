@@ -1,4 +1,7 @@
 import * as XLSX from "xlsx";
+import {
+  findSupplierMatch, compactSupplierName, SupplierMatchSource,
+} from "@/lib/supplierMatching";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,6 +35,7 @@ export interface ParsedOCRow extends RawOCRow {
   contractName: string | null;
   supplierId: string | null;
   supplierName: string;
+  supplierSource: SupplierMatchSource | null;
   status: OCRowStatus;
 }
 
@@ -53,6 +57,7 @@ export interface GroupedOC {
   allocations: OCAllocation[];
   supplierId: string | null;
   supplierName: string;
+  supplierSource: SupplierMatchSource | null;
   rawProveedor: string;
   isMultiContract: boolean;
   status: OCRowStatus;
@@ -203,45 +208,55 @@ function stripLeadingZeros(s: string): string {
   return s.replace(/^0+/, "") || "0";
 }
 
+/** Supplier chosen outside the plain name match (AI or manual), keyed by `supplierOverrideKey`. */
+export interface SupplierOverride extends OCSupplier {
+  source: Exclude<SupplierMatchSource, "exact" | "fuzzy">;
+}
+
+/**
+ * Key used to share a supplier decision between every row with the "same" raw name.
+ * Rows with no supplier name in the Excel can't be shared, so they're keyed per OC.
+ */
+export function supplierOverrideKey(rawName: string, orderNumber: string): string {
+  return compactSupplierName(rawName) || `oc:${orderNumber}`;
+}
+
+/** Key used to share a local decision between every row with the same Centro code. */
+export function centroKey(centro: string | null | undefined): string {
+  const c = (centro ?? "").trim().toUpperCase();
+  // "H0473P1290" / "0473" / "473" → "473". Anything else is compared as-is.
+  const numeric = c.match(/^H?(\d+)(?:P\d+)?$/);
+  return numeric ? stripLeadingZeros(numeric[1]) : c;
+}
+
 export function resolveRows(
   rawRows: RawOCRow[],
   locations: OCLocation[],
   suppliers: OCSupplier[],
+  supplierOverrides?: Map<string, SupplierOverride>,
 ): ParsedOCRow[] {
-  // Build CEBE → location map (index by extracted code, with/without leading zeros)
+  // CEBE → location. Later entries win, so manual mappings (appended last) override known ones.
   const cebeMap = new Map<string, OCLocation>();
   for (const loc of locations) {
-    const code = extractCenterCode(loc.centro_sap);
-    if (!code) continue;
-    cebeMap.set(code, loc);
-    cebeMap.set(stripLeadingZeros(code), loc);
+    const key = centroKey(loc.centro_sap);
+    if (!key || key === "0") continue;
+    cebeMap.set(key, loc);
   }
 
-  // Build supplier name → supplier map
-  const supplierMap = new Map<string, OCSupplier>();
-  for (const s of suppliers) {
-    supplierMap.set(norm(s.name), s);
-  }
+  // Many rows share the same supplier name: match each distinct name once.
+  const matchCache = new Map<string, ReturnType<typeof findSupplierMatch<OCSupplier>>>();
+  const matchSupplier = (rawName: string) => {
+    if (!matchCache.has(rawName)) matchCache.set(rawName, findSupplierMatch(rawName, suppliers));
+    return matchCache.get(rawName) ?? null;
+  };
 
   return rawRows.map(row => {
-    const centroExact = row.centro.trim();
-    const centroStripped = stripLeadingZeros(centroExact);
+    const loc = cebeMap.get(centroKey(row.centro)) ?? null;
 
-    const loc =
-      cebeMap.get(centroExact) ??
-      cebeMap.get(centroStripped) ??
-      [...cebeMap.entries()].find(([k]) =>
-        stripLeadingZeros(k) === centroStripped
-      )?.[1] ??
-      null;
-
-    const provNorm = norm(row.proveedorRaw);
-    const supplier =
-      supplierMap.get(provNorm) ??
-      [...supplierMap.entries()].find(([k]) =>
-        k.includes(provNorm) || (provNorm.length > 4 && provNorm.includes(k))
-      )?.[1] ??
-      null;
+    const override = supplierOverrides?.get(supplierOverrideKey(row.proveedorRaw, row.orderNumber));
+    const match = override ? null : matchSupplier(row.proveedorRaw);
+    const supplier: OCSupplier | null = override ?? match?.supplier ?? null;
+    const supplierSource: SupplierMatchSource | null = override?.source ?? match?.source ?? null;
 
     const pendingLocal     = !loc;
     const pendingSupplier  = !supplier;
@@ -259,6 +274,7 @@ export function resolveRows(
       contractName: loc?.contract_name ?? null,
       supplierId:   supplier?.id       ?? null,
       supplierName: supplier?.name     ?? row.proveedorRaw,
+      supplierSource,
       status,
     };
   });
@@ -308,6 +324,7 @@ export function groupByOrderNumber(parsedRows: ParsedOCRow[]): GroupedOC[] {
         }],
         supplierId:          row.supplierId,
         supplierName:        row.supplierName,
+        supplierSource:      row.supplierSource,
         rawProveedor:        row.proveedorRaw,
         isMultiContract:     false,
         status:              row.status,
