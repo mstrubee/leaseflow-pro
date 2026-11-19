@@ -113,6 +113,18 @@ const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
 
 ---
 
+## Plan de pagos (monto o % del total; último pago = saldo)
+- Todo diálogo que cree un plan de pagos debe usar `PaymentPlanEditor` (`src/components/budget/PaymentPlanEditor.tsx`) y la
+  matemática de `src/lib/paymentPlan.ts` — no reimplementar. Cada pago se define por monto o por % del total; el **último
+  pago es siempre el saldo** y se recalcula solo, en tiempo real. Guardar los montos **resueltos** (`resolvePaymentPlan`),
+  no el texto tipeado, y en planes en UF pasar a pesos con `paymentsToClp` (el último pago en pesos = total − anteriores,
+  para que cuadre exacto pese al redondeo).
+- Usado en: `CapexOCRequiredDialog`, `OCRequestDialog`, `OCRequestCreateDialog`, `CentralizedOrderCreator`. Los pagos ya
+  guardados (pestaña Pagos de `OCRequestViewDialog`) se agregan de a uno con `$ / % / Saldo` y muestran el % de cada pago.
+  `PaymentPlanManager.tsx` no se usa en ningún lugar (código muerto).
+
+---
+
 ## OPEX: categorías por año (desde 2027)
 - Renombrar, fusionar y retirar categorías OPEX rige **solo desde 2027**; 2026 no se toca. "Eliminar" = retirar
   (`valid_to_year`), nunca borrar. Una OC solo usa categorías vigentes en el año de su fecha de OC (trigger en la base).

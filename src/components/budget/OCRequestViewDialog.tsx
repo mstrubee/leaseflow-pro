@@ -1016,6 +1016,12 @@ export const OCRequestViewDialog = ({
   const totalPaidClp = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + paymentClp(p, request, ufValue), 0);
   const totalRequestClp = request?.amount_clp || ufToClp(request?.amount_uf || 0, request, ufValue);
   const remainingClp = totalRequestClp - totalPlannedClp;
+  // % de un monto en pesos respecto del total de la solicitud (para mostrar en
+  // tiempo real cuánto del total representa cada pago).
+  const pctOfTotal = (clp: number) =>
+    totalRequestClp > 0
+      ? `${((clp / totalRequestClp) * 100).toLocaleString("es-CL", { maximumFractionDigits: 2 })} %`
+      : "-";
 
   const isMultiContract = contractAllocations.length > 0;
   // budgetLines solo cubre la asignación múltiple (oc_budget_lines); la
@@ -1729,6 +1735,7 @@ export const OCRequestViewDialog = ({
                       <TableHead>#</TableHead>
                       <TableHead>Descripción</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
+                      <TableHead className="text-right">% del total</TableHead>
                       <TableHead>Vencimiento</TableHead>
                       <TableHead>Estado</TableHead>
                       {!readOnly && request.status === "pending" && <TableHead className="text-right">Acciones</TableHead>}
@@ -1782,6 +1789,9 @@ export const OCRequestViewDialog = ({
                                 <span className="text-[10px] text-muted-foreground">{formatUF(plan.amount_uf)}</span>
                               </div>
                             )}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            {pctOfTotal(paymentClp(plan, request, ufValue))}
                           </TableCell>
                           <TableCell className="text-xs">
                             {plan.due_date ? format(new Date(plan.due_date), 'dd/MM/yyyy', { locale: es }) : "-"}
@@ -1866,21 +1876,21 @@ export const OCRequestViewDialog = ({
                           const calcClp = totalRequestClp * parseFloat(newPayment.amount) / 100;
                           return (
                             <p className="text-[10px] text-muted-foreground">
-                              = {formatCLP(calcClp)} · {formatUF(calcClp / effectiveUf)}
+                              = {formatCLP(calcClp)} · {formatUF(calcClp / effectiveUf)} · {pctOfTotal(calcClp)} del total
                             </p>
                           );
                         }
                         if (newPayment.input_mode === "balance" && remainingClp > 0) {
                           return (
                             <p className="text-[10px] text-muted-foreground">
-                              ≈ {formatUF(remainingClp / effectiveUf)}
+                              ≈ {formatUF(remainingClp / effectiveUf)} · {pctOfTotal(remainingClp)} del total
                             </p>
                           );
                         }
                         if (newPayment.input_mode === "clp" && parseFloat(newPayment.amount) > 0) {
                           return (
                             <p className="text-[10px] text-muted-foreground">
-                              ≈ {formatUF(parseFloat(newPayment.amount) / effectiveUf)}
+                              ≈ {formatUF(parseFloat(newPayment.amount) / effectiveUf)} · {pctOfTotal(parseFloat(newPayment.amount))} del total
                             </p>
                           );
                         }
@@ -1931,7 +1941,19 @@ export const OCRequestViewDialog = ({
                   </div>
                   {remainingClp > 0 && newPayment.input_mode !== "balance" && (
                     <p className="text-xs text-muted-foreground">
-                      Sugerencia: quedan {formatCLP(remainingClp)} sin planificar
+                      Quedan {formatCLP(remainingClp)} ({pctOfTotal(remainingClp)}) sin planificar
+                      {paymentPlans.length >= 1 && (
+                        <>
+                          {" · "}
+                          <button
+                            type="button"
+                            className="underline underline-offset-2 hover:text-foreground"
+                            onClick={() => setNewPayment(prev => ({ ...prev, input_mode: "balance", amount: "" }))}
+                          >
+                            Cuadrar el último pago con el saldo
+                          </button>
+                        </>
+                      )}
                     </p>
                   )}
                 </div>
