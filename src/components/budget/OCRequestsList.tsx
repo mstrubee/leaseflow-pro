@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet } from "lucide-react";
+import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet, FileText, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -19,6 +19,8 @@ import { OCRequestViewDialog } from "./OCRequestViewDialog";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
+import { validateFile } from "@/lib/fileValidation";
+import { uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 
 interface OCRequest {
   id: string;
@@ -99,7 +101,10 @@ export const OCRequestsList = ({
     order_number: "",
     supplier_name: ""
   });
-  
+  // PDF of the purchase order (required to convert a request into an OC)
+  const [ocFile, setOcFile] = useState<File | null>(null);
+  const ocFileInputRef = useRef<HTMLInputElement>(null);
+
   // Filter state
   const [budgetTypeFilter, setBudgetTypeFilter] = useState<"all" | "capex" | "opex">("all");
   
@@ -265,8 +270,25 @@ export const OCRequestsList = ({
       return;
     }
 
+    if (!ocFile) {
+      toast({ variant: "destructive", title: "Error", description: "Debe cargar el archivo PDF de la OC" });
+      return;
+    }
+
     setConverting(true);
     try {
+      // Upload the OC PDF first (Storage + contract's OC folder). If it fails, no OC is created.
+      const uploadResult = await uploadFileToMultipleContracts(ocFile, [contractId], convertForm.order_number.trim());
+      if (!uploadResult.primaryUrl) {
+        throw new Error(uploadResult.failed[0]?.error || "No se pudo subir el archivo PDF de la OC");
+      }
+      if (uploadResult.failed.length > 0) {
+        toast({
+          title: "Archivo subido parcialmente",
+          description: "El PDF se guardó, pero no pudo respaldarse en la carpeta de OC del contrato",
+        });
+      }
+
       // Create the actual purchase order using the budget_id from the request
       const { data: ocData, error: ocError } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
@@ -280,7 +302,7 @@ export const OCRequestsList = ({
         uf_value_at_entry: ufValue,
         year: year,
         status: "abierta",
-        attachment_url: selectedRequest.quotation_url || null
+        attachment_url: uploadResult.primaryUrl
       }).select("id").single();
 
       if (ocError) throw ocError;
@@ -299,7 +321,7 @@ export const OCRequestsList = ({
       toast({ title: "Solicitud convertida", description: `OC ${convertForm.order_number} creada exitosamente` });
       setShowConvertDialog(false);
       setSelectedRequest(null);
-      setConvertForm({ order_number: "", supplier_name: "" });
+      resetConvertForm();
       loadRequests();
       onRefresh?.();
     } catch (error: any) {
@@ -307,6 +329,40 @@ export const OCRequestsList = ({
     } finally {
       setConverting(false);
     }
+  };
+
+  const resetConvertForm = () => {
+    setConvertForm({ order_number: "", supplier_name: "" });
+    setOcFile(null);
+    if (ocFileInputRef.current) ocFileInputRef.current.value = "";
+  };
+
+  const handleConvertDialogChange = (open: boolean) => {
+    if (converting) return; // don't close while uploading/creating
+    setShowConvertDialog(open);
+    if (!open) resetConvertForm();
+  };
+
+  const handleOcFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const validation = validateFile(file);
+    if (!isPdf || !validation.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Archivo no válido",
+        description: validation.error || "El archivo de la OC debe ser un PDF",
+      });
+      e.target.value = "";
+      return;
+    }
+    setOcFile(file);
+  };
+
+  const handleRemoveOcFile = () => {
+    setOcFile(null);
+    if (ocFileInputRef.current) ocFileInputRef.current.value = "";
   };
 
   const handleDelete = async () => {
@@ -942,28 +998,29 @@ export const OCRequestsList = ({
       )}
 
       {/* Convert to OC Dialog */}
-      <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
-        <DialogContent>
-          <DialogHeader>
+      <Dialog open={showConvertDialog} onOpenChange={handleConvertDialogChange}>
+        {/* grid-cols-[minmax(0,1fr)] + min-w-0 children: long names wrap instead of overflowing the dialog */}
+        <DialogContent className="w-[calc(100%-2rem)] max-w-xl max-h-[90vh] overflow-y-auto grid-cols-[minmax(0,1fr)]">
+          <DialogHeader className="pr-6">
             <DialogTitle>Cargar OC a Solicitud</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="break-words">
               Solicitud: <strong>{selectedRequest?.request_number}</strong>
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4">
+
+          <div className="space-y-4 min-w-0">
             <div className="p-3 rounded-md bg-muted/50 border text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Monto:</span>
-                <span className="font-medium">{selectedRequest && formatCLP(selectedRequest.amount_clp || Math.round(selectedRequest.amount_uf * ufValue))}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground shrink-0">Monto:</span>
+                <span className="font-medium text-right">{selectedRequest && formatCLP(selectedRequest.amount_clp || Math.round(selectedRequest.amount_uf * ufValue))}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">UF:</span>
-                <span className="text-xs">{selectedRequest && formatUF(selectedRequest.amount_uf)}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground shrink-0">UF:</span>
+                <span className="text-xs text-right">{selectedRequest && formatUF(selectedRequest.amount_uf)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Línea:</span>
-                <span>{selectedRequest?.line_name}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground shrink-0">Línea:</span>
+                <span className="min-w-0 text-right break-words">{selectedRequest?.line_name}</span>
               </div>
             </div>
 
@@ -984,13 +1041,52 @@ export const OCRequestsList = ({
                 placeholder="Nombre del proveedor"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label>Archivo OC (PDF) *</Label>
+              {ocFile ? (
+                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 border rounded-lg">
+                  <FileText className="h-5 w-5 text-green-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" title={ocFile.name}>{ocFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{(ocFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveOcFile}
+                    disabled={converting}
+                    title="Quitar archivo"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => ocFileInputRef.current?.click()}
+                >
+                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">Click para subir el archivo de la OC</p>
+                  <p className="text-xs text-muted-foreground mt-1">Solo PDF</p>
+                </div>
+              )}
+              <input
+                ref={ocFileInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={handleOcFileSelect}
+              />
+            </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConvertDialog(false)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => handleConvertDialogChange(false)} disabled={converting}>
               Cancelar
             </Button>
-            <Button onClick={handleConvertToOC} disabled={converting}>
+            <Button onClick={handleConvertToOC} disabled={converting || !convertForm.order_number.trim() || !ocFile}>
               {converting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear OC
             </Button>
