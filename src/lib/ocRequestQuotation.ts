@@ -25,6 +25,20 @@ function base64ToBlob(base64: string, mimeType?: string): Blob {
   return new Blob([bytes], { type: mimeType || "application/octet-stream" });
 }
 
+const MIME_EXTENSIONS: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+};
+
+/** Si el nombre no trae extensión, se la agrega según el tipo del archivo (algunos flujos validan por extensión). */
+const withExtension = (name: string, mimeType: string): string =>
+  /\.[a-z0-9]{2,5}$/i.test(name) ? name : `${name}${MIME_EXTENSIONS[mimeType] ?? ""}`;
+
 /**
  * Obtiene los bytes de la cotización: primero la copia de Supabase Storage
  * (rápida) y, si no existe o ya fue purgada, desde Drive vía la Edge Function
@@ -38,7 +52,7 @@ export async function fetchQuotationFile(ref: OCRequestQuotationRef): Promise<Qu
   if (storagePath) {
     try {
       const { data, error } = await supabase.storage.from(BUCKET).download(storagePath);
-      if (!error && data) return { blob: data, fileName: fallbackName };
+      if (!error && data) return { blob: data, fileName: withExtension(fallbackName, data.type) };
     } catch (error) {
       console.warn("No se pudo leer la cotización desde Storage, se prueba con Drive.", error);
     }
@@ -51,7 +65,8 @@ export async function fetchQuotationFile(ref: OCRequestQuotationRef): Promise<Qu
         body: { action: "downloadFile", driveFileId },
       });
       if (!error && data?.base64) {
-        return { blob: base64ToBlob(data.base64, data.mimeType), fileName: ref.fileName || data.fileName || fallbackName };
+        const blob = base64ToBlob(data.base64, data.mimeType);
+        return { blob, fileName: withExtension(ref.fileName || data.fileName || fallbackName, blob.type) };
       }
       console.warn("No se pudo descargar la cotización desde Drive:", (data as { error?: string })?.error || error?.message);
     } catch (error) {
