@@ -70,7 +70,7 @@ export function ContractStatsCards() {
   if (!stats) return null;
 
   return (
-    <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+    <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
       <Card
         className="cursor-pointer hover:shadow-lg transition-shadow"
         onClick={() => handleCardClick()}
@@ -136,20 +136,6 @@ export function ContractStatsCards() {
             <p className="text-xs text-muted-foreground font-medium text-yellow-600">En Negociación</p>
             <div className="text-2xl font-bold text-yellow-600">{stats.totalNegociacion}</div>
             <p className="text-[10px] text-muted-foreground">Pendientes de firma</p>
-            {stats.totalRechazados > 0 && (
-              <div
-                className="mt-1 cursor-pointer hover:bg-red-100/50 rounded transition-colors inline-flex items-center gap-1"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate("/contracts?status=en_negociacion&rechazados=true");
-                }}
-              >
-                <XCircle className="h-3 w-3 text-red-500" />
-                <span className="text-[10px] font-medium text-red-600">
-                  Rechazados: {stats.totalRechazados}
-                </span>
-              </div>
-            )}
           </div>
           <Clock className="h-5 w-5 text-yellow-600" />
         </CardContent>
@@ -166,6 +152,25 @@ export function ContractStatsCards() {
             <p className="text-[10px] text-muted-foreground">Contratos vencidos</p>
           </div>
           <AlertTriangle className="h-5 w-5 text-red-600" />
+        </CardContent>
+      </Card>
+
+      {/* Última posición, a la derecha (pedido explícito) -- reemplaza al
+          botón "Rechazados" que vivía en el header de /contracts. Un
+          contrato acá dejó de ser una alternativa: no debe aparecer en
+          ningún otro listado de "En Negociación" (desplegables de
+          contratos, etc.), aunque se pueda revisar/revivir más adelante. */}
+      <Card
+        className="border-red-500/20 bg-red-500/5 cursor-pointer hover:shadow-lg transition-shadow"
+        onClick={() => navigate("/contracts?status=en_negociacion&rechazados=true")}
+      >
+        <CardContent className="flex items-center justify-between py-3 px-4">
+          <div>
+            <p className="text-xs text-muted-foreground font-medium text-red-600">Rechazados</p>
+            <div className="text-2xl font-bold text-red-600">{stats.totalRechazados}</div>
+            <p className="text-[10px] text-muted-foreground">Descartados de negociación</p>
+          </div>
+          <XCircle className="h-5 w-5 text-red-600" />
         </CardContent>
       </Card>
     </div>

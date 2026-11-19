@@ -13,9 +13,9 @@
 import { get, set } from "idb-keyval";
 import type { PoiFolder, SavedPoi } from "@/geoloc/types/pois";
 
-const POIS_KEY = (uid: string) => `lovable.cache.pois.${uid}`;
-const TRASH_KEY = (uid: string) => `lovable.cache.trashed.${uid}`;
-const FOLDERS_KEY = (uid: string) => `lovable.cache.folders.${uid}`;
+const POIS_KEY = (uid: string) => `geoplanet.cache.pois.${uid}`;
+const TRASH_KEY = (uid: string) => `geoplanet.cache.trashed.${uid}`;
+const FOLDERS_KEY = (uid: string) => `geoplanet.cache.folders.${uid}`;
 
 export interface PoiCacheSnapshot {
   pois: SavedPoi[];

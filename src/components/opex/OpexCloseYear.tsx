@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Lock, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { OpexRetiredCategoriesNotice } from "@/components/opex/OpexRetiredCategoriesNotice";
 
 interface OpexCloseYearProps {
   year: number;
@@ -271,6 +272,8 @@ export const OpexCloseYear = ({ year, ufValue, onSuccess }: OpexCloseYearProps) 
                         ✓ Todo el consumo está facturado. No hay saldos pendientes.
                       </div>
                     )}
+
+                    <OpexRetiredCategoriesNotice year={year} />
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
