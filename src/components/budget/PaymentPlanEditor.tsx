@@ -22,6 +22,8 @@ interface PaymentPlanEditorProps<T extends PaymentPlanRow> {
   /** Total del plan, en la moneda del plan. */
   total: number;
   currency: "CLP" | "UF";
+  /** Si viene (y el plan es en pesos), se muestra el UF referencial de cada pago. */
+  ufValue?: number;
   /** Crea un pago nuevo (cada diálogo puede tener campos extra). */
   newItem: (index: number) => T;
   title?: string;
@@ -38,6 +40,7 @@ export function PaymentPlanEditor<T extends PaymentPlanRow>({
   onChange,
   total,
   currency,
+  ufValue,
   newItem,
   title = "Plan de Pagos *",
 }: PaymentPlanEditorProps<T>) {
@@ -153,6 +156,9 @@ export function PaymentPlanEditor<T extends PaymentPlanRow>({
                     {!isLast && mode === "percent"
                       ? `= ${formatPaymentAmount(r.amount, currency)}`
                       : `= ${formatPercent(r.percent)} del total`}
+                    {currency === "CLP" && ufValue && ufValue > 0 && r.amount > 0
+                      ? ` · ≈ ${formatPaymentAmount(r.amount / ufValue, "UF")}`
+                      : ""}
                   </span>
                   <Input
                     type="date"

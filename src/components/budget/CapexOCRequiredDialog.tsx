@@ -481,6 +481,7 @@ export function CapexOCRequiredDialog({
                 onChange={setPaymentPlan}
                 total={montoClp}
                 currency="CLP"
+                ufValue={ufValue}
                 newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
               />
 
