@@ -5035,7 +5035,7 @@ const PurchaseOrdersDashboard = () => {
 
           <TabsContent value="solicita">
             {/* Solicita Autorización Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -5054,13 +5054,27 @@ const PurchaseOrdersDashboard = () => {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" />
-                    Aprobadas (sin requerimiento de OC)
+                    Aprobadas Sin Requerimiento OC
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-600">{solicitaApproved.length}</div>
                   <p className="text-xs text-muted-foreground">
                     {formatCLP(solicitaApproved.reduce((sum, l) => sum + l.amount_uf * ufValue, 0))}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Observadas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600">{solicitaObserved.length}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatCLP(solicitaObserved.reduce((sum, l) => sum + l.amount_uf * ufValue, 0))}
                   </p>
                 </CardContent>
               </Card>
