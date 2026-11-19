@@ -47,20 +47,31 @@ La migración está completa, Lovable retirado:
 - **NUNCA** hacer `git push` a `main` sin confirmación explícita de Matias
 - Todo el trabajo va en rama `migration`
 
-### Merge a `migration`: autorización permanente (Matias, 2026-10-15)
-- Cuando una sesión trabaja en una rama propia (p. ej. `claude/...`), al terminar y verificar un cambio Claude **hace el merge a `migration` y lo pushea sin pedir confirmación**. Vercel despliega desde `migration`.
-- Condiciones previas: pipeline de revisión sin alertas pendientes, `npx tsc --noEmit` sin errores nuevos respecto a `migration`, `git fetch` hecho y conflictos resueltos conservando lo que ya tiene `migration`.
+### Merge a `migration`: autorización permanente (Matias, 2026-10-15; reconfirmada 2026-11-19: "siempre mergea")
+- Cuando una sesión trabaja en una rama propia (p. ej. `claude/...`), al terminar y verificar un cambio Claude **hace el merge a `migration` sin pedir confirmación**. Vercel despliega desde `migration` (es la rama de producción del proyecto `leaseflow-pro`).
+- Condiciones previas: pipeline de revisión sin alertas pendientes, `npx tsc --noEmit` sin errores nuevos respecto a `migration` (hoy hay errores de tipos preexistentes en `BudgetLineTree.tsx`/`BudgetModule.tsx`: comparar el conjunto antes y después, no exigir 0), `npx vite build` OK, `git fetch` hecho y conflictos resueltos conservando lo que ya tiene `migration`.
 - **No cubre `main`**: sigue requiriendo confirmación explícita de Matias.
-- **No cubre `supabase/migrations/` ni `supabase/config.toml`** (ni SQL sobre ninguna DB): si un cambio los toca, confirmar antes.
-- Si el pipeline da `PLATFORM ⚠️`, esperar confirmación antes de mergear.
+- **No cubre `supabase/migrations/`, `supabase/config.toml`, `.env` ni `src/integrations/supabase/client.ts`** (ni SQL sobre ninguna DB): si un cambio los toca, confirmar antes.
+- Si el pipeline da `PLATFORM ⚠️`, el build falla o el PR tiene conflictos sin resolver, esperar confirmación antes de mergear.
+
+### Flujo de trabajo (sesiones en la nube / Claude Code)
+Todo se hace desde la sesión de Claude; ya no se usa Lovable. Para cada cambio:
+1. **Partir de `migration`, no de `main`.** Las ramas de sesión pueden nacer de `main`, que está cientos de commits atrás: `git fetch origin migration` y mezclar/partir de ahí antes de editar (si no, el cambio puede aplicarse sobre código viejo y dar conflictos).
+2. Trabajar en la rama de la sesión (`claude/...`), cambios pequeños, un commit por tema.
+3. Verificar: `npx tsc --noEmit` (sin errores nuevos) y `npx vite build`.
+4. Subir la rama y abrir un **PR hacia `migration`** (el PR trae una vista previa de Vercel para probar). Sin plantilla de PR: descripción con qué cambia, verificación y qué no se probó.
+5. **Mergear el PR** (merge commit, como el resto del historial) según la autorización de arriba.
+6. Confirmar que Vercel despliega el commit mergeado (proyecto `leaseflow-pro`, rama `migration`; estado `BUILDING` → `READY`).
+7. Traer `migration` a la rama de la sesión (`git merge --ff-only origin/migration`) y pushearla, para que quede alineada.
+8. Informar a Matias, en lenguaje simple: qué se cambió, que ya está mergeado y qué conviene probar en producción.
 
 ### DB: solo operar sobre `ilcumthwzhmtumaklgvo`
 - **NUNCA** correr SQL en `tgxiqvfpirwvhktgqqfa` (DB de Lovable, legacy) sin confirmación explícita de Matias — aunque esté retirada, no se debe tocar por default
 - Para SQL en DB oficial: usar Management API con PAT disponible en memoria
 
 ### Antes de cualquier commit verificar:
-1. `git branch` → debe decir `migration`
-2. Ningún archivo de `supabase/migrations/` ni `supabase/config.toml` modificado
+1. `git branch` → nunca `main`. Debe ser `migration` o la rama propia de la sesión (`claude/...`), que luego va a `migration` por PR
+2. Ningún archivo de `supabase/migrations/`, `supabase/config.toml`, `.env` ni `src/integrations/supabase/client.ts` modificado (salvo que Matias lo haya pedido)
 
 ---
 
