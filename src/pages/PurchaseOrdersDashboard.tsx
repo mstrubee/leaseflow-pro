@@ -58,6 +58,7 @@ import {
   ChevronsUpDown,
   X,
   FileText,
+  Loader2,
   FileX,
   Receipt,
   Trash2,
@@ -101,6 +102,9 @@ import { CentralizedOrderCreator, buildHierarchicalCapexLines, loadCapexLineUsag
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 import { OCRequestCreateDialog, type OCRequestPrefillDraft } from "@/components/budget/OCRequestCreateDialog";
+import { CapexOCRequiredDialog } from "@/components/budget/CapexOCRequiredDialog";
+import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
+import { fetchQuotationFile } from "@/lib/ocRequestQuotation";
 import { OCRequiredGroupDetail } from "@/components/budget/OCRequiredGroupDetail";
 import { loadSolicitudesByQuotation, loadContractCebe, type OCRequiredGroupSolicitud } from "@/lib/ocRequiredGroups";
 import { buildPrefillDraftFromGroup } from "@/lib/ocRequiredDraft";
@@ -191,9 +195,11 @@ interface Contract {
   company_names?: string[];
 }
 
-/** Una línea de presupuesto (CAPEX u OPEX) en estado "Solicita Autorizar",
- *  o ya "Autorizado" mientras siga dentro de la ventana de 24hs de
- *  "Aprobadas" (ver loadData > solicitaLines y la pestaña homónima). */
+/** Una línea de presupuesto (CAPEX u OPEX) en estado "Solicita Autorizar", u
+ *  "Observada" (rechazada), o ya "Autorizado" en "Aprobadas": las CAPEX
+ *  autorizadas permanecen ahí (sin importar la antigüedad) hasta que tengan un
+ *  Requerimiento de OC; las OPEX solo durante 24hs, porque no tienen flujo de
+ *  requerimiento (ver loadData > solicitaLines y la pestaña homónima). */
 interface SolicitaAutorizacionLine {
   id: string;
   name: string;
@@ -207,6 +213,12 @@ interface SolicitaAutorizacionLine {
   /** Cotización adjunta al pedir autorización (ver SolicitaAutorizarDialog). */
   quotation_file_url: string | null;
   quotation_file_name: string | null;
+  /** Copia de esa cotización en Supabase Storage (puede ser null). */
+  quotation_storage_path: string | null;
+  /** Moneda en que está definida la línea (UF si no viene). */
+  currency: string | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
   budget_id: string;
   contract_id: string;
   year: number;
@@ -332,6 +344,7 @@ const PurchaseOrdersDashboard = () => {
   // Desarrollo") queda habilitado acá, sin hardcodear el nombre del rol.
   const canManagePurchaseOrders = hasPermission("purchase_orders", "edit");
   const { ufValue } = useEconomicIndicators();
+  const { statuses: progressStatuses } = useBudgetProgressStatuses();
   const { openFile, getSecureUrl } = useSecureFileAccess();
   const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
 
@@ -793,22 +806,56 @@ const PurchaseOrdersDashboard = () => {
       }
 
       // Load "Solicita Autorización" (líneas CAPEX/OPEX pidiendo autorización,
-      // + ya autorizadas hace menos de 24hs -- ver pestaña homónima). Cross-
-      // contrato, igual que Requerimientos de OC arriba.
+      // + Aprobadas + Observadas -- ver pestaña homónima). Cross-contrato, igual
+      // que Requerimientos de OC arriba.
+      //  - Aprobadas CAPEX: TODAS las autorizadas que aún no tienen Requerimiento de
+      //    OC, sin importar la fecha ni la antigüedad (salen al crear el requerimiento).
+      //  - Aprobadas OPEX: solo las autorizadas hace menos de 24hs (no tienen flujo de
+      //    requerimiento, así que no pueden "salir" de otra manera).
       const authorizedCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      // select("*") y no una lista de columnas: así las dos primeras consultas no
+
+      // PostgREST devuelve como máximo 1000 filas por consulta: se pagina.
+      const PAGE_SIZE = 1000;
+      const fetchAllPages = async (
+        build: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>
+      ): Promise<{ data: any[]; error: any }> => {
+        const all: any[] = [];
+        for (let from = 0; ; from += PAGE_SIZE) {
+          const { data, error } = await build(from, from + PAGE_SIZE - 1);
+          if (error) return { data: all, error };
+          all.push(...(data || []));
+          if (!data || data.length < PAGE_SIZE) break;
+        }
+        return { data: all, error: null };
+      };
+
+      // select("*") y no una lista de columnas en Pendientes/Observadas: así no
       // fallan si las columnas rejected_* de la migración aún no existen.
-      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedLinesData, error: approvedLinesError }, { data: observedLinesData, error: observedLinesError }] = await Promise.all([
+      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedCapexData, error: approvedCapexError }, { data: approvedOpexData, error: approvedOpexError }, { data: observedLinesData, error: observedLinesError }] = await Promise.all([
         supabase
           .from("budget_lines")
           .select("*, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "solicita_autorizar"),
+        fetchAllPages((from, to) =>
+          supabase
+            .from("budget_lines")
+            .select("id, name, amount_uf, status, authorized_at, rejected_at, rejection_note, quotation_file_url, quotation_file_name, quotation_storage_path, currency, supplier_id, supplier_name, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+            .is("deleted_at", null)
+            .eq("status", "autorizado")
+            .eq("is_ghost", false)
+            .eq("is_surcharge", false)
+            .is("merged_into_line_id", null)
+            .eq("contract_budgets.budget_type", "capex")
+            .order("id")
+            .range(from, to)
+        ),
         supabase
           .from("budget_lines")
           .select("*, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "autorizado")
+          .eq("contract_budgets.budget_type", "opex")
           .gte("authorized_at", authorizedCutoffIso),
         // Observadas: solicitudes rechazadas por un admin (vuelven a "No Autorizado"
         // con la marca rejected_at) -- siguen en este listado hasta que se vuelvan
@@ -821,9 +868,27 @@ const PurchaseOrdersDashboard = () => {
           .not("rejected_at", "is", null),
       ]);
       if (pendingLinesError) console.error("Error loading solicita_autorizar lines:", pendingLinesError);
-      if (approvedLinesError) console.error("Error loading recently approved lines:", approvedLinesError);
+      if (approvedCapexError) console.error("Error loading approved CAPEX lines:", approvedCapexError);
+      if (approvedOpexError) console.error("Error loading recently approved OPEX lines:", approvedOpexError);
       if (observedLinesError) console.error("Error loading observed lines:", observedLinesError);
-      const solicitaRows = [...(pendingLinesData || []), ...(approvedLinesData || []), ...(observedLinesData || [])];
+
+      // Aprobadas CAPEX: se descartan las que ya tienen Requerimiento de OC
+      // (oc_quotations, aunque esté convertido o guardado temporalmente) y las
+      // líneas madre -- su propio `status` es vestigial y no admiten requerimiento.
+      const lineIdsWithRequirement = new Set<string>(quotationRows.map((r) => r.budget_line_id));
+      const approvedCapexCandidates = approvedCapexData.filter((r: any) => !lineIdsWithRequirement.has(r.id));
+      const parentIds = new Set<string>();
+      for (let i = 0; i < approvedCapexCandidates.length; i += 100) {
+        const chunk = approvedCapexCandidates.slice(i, i + 100).map((r: any) => r.id);
+        const { data: childRows, error: childError } = await fetchAllPages((from, to) =>
+          supabase.from("budget_lines").select("id, parent_id").in("parent_id", chunk).is("deleted_at", null).order("id").range(from, to)
+        );
+        if (childError) console.error("Error loading child lines:", childError);
+        childRows.forEach((c: any) => c.parent_id && parentIds.add(c.parent_id));
+      }
+      const approvedCapexLeaves = approvedCapexCandidates.filter((r: any) => !parentIds.has(r.id));
+
+      const solicitaRows = [...(pendingLinesData || []), ...approvedCapexLeaves, ...(approvedOpexData || []), ...(observedLinesData || [])];
       setSolicitaLines(
         solicitaRows.map((r: any) => ({
           id: r.id,
@@ -835,6 +900,10 @@ const PurchaseOrdersDashboard = () => {
           rejection_note: r.rejection_note ?? null,
           quotation_file_url: r.quotation_file_url ?? null,
           quotation_file_name: r.quotation_file_name ?? null,
+          quotation_storage_path: r.quotation_storage_path ?? null,
+          currency: r.currency ?? null,
+          supplier_id: r.supplier_id ?? null,
+          supplier_name: r.supplier_name ?? null,
           budget_id: r.budget_id,
           contract_id: r.contract_budgets?.contract_id,
           year: r.contract_budgets?.year,
@@ -1442,7 +1511,7 @@ const PurchaseOrdersDashboard = () => {
     // Una línea de valor 0 no puede estar pendiente de aprobación (no hay nada que
     // autorizar): se oculta aunque la BD aún la tenga en "solicita_autorizar"
     // (datos previos a la regla que lo impide al marcarla). Las ya autorizadas
-    // (ventana de 24hs) no se tocan.
+    // no se tocan (ver solicitaApproved para las que ya tienen requerimiento).
     let filtered = solicitaLines.filter(
       (l) => l.year === yearNum && (l.status !== "solicita_autorizar" || Math.abs(l.amount_uf) > 0.0001)
     );
@@ -1463,12 +1532,62 @@ const PurchaseOrdersDashboard = () => {
   }, [solicitaLines, yearFilter, searchTerm, solicitaContractFilter, contracts]);
 
   const solicitaPending = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "solicita_autorizar"), [filteredSolicitaLines]);
-  const solicitaApproved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "autorizado"), [filteredSolicitaLines]);
+  // Aprobadas = autorizadas que aún no tienen Requerimiento de OC (sin importar la
+  // antigüedad): al crear el requerimiento la línea sale de acá en el acto, sin esperar
+  // a que se recargue la lista (ocRequiredGroups trae todos los requerimientos).
+  const requiredLineIds = useMemo(
+    () => new Set(ocRequiredGroups.flatMap((g) => g.lines.map((line) => line.budgetLineId))),
+    [ocRequiredGroups]
+  );
+  const solicitaApproved = useMemo(
+    () => filteredSolicitaLines.filter((l) => l.status === "autorizado" && !requiredLineIds.has(l.id)),
+    [filteredSolicitaLines, requiredLineIds]
+  );
   const solicitaObserved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "no_autorizado"), [filteredSolicitaLines]);
 
   // Rechazar / ver observación (admin y quienes pueden autorizar).
   // Solo el admin autoriza y rechaza (también lo exige la base).
   const canAuthorizeLines = isAdmin;
+
+  // "Requerir OC" desde Aprobadas: abre el diálogo de "Marcar OC Requerida" para esa
+  // línea (mismo flujo que el badge de Estado de Avance en el contrato; para cambiar
+  // ese estado se exige el permiso propio budget_editar_estado).
+  const canRequireOC = isAdmin || hasPermission("budget_editar_estado", "edit");
+  const [requiringLineId, setRequiringLineId] = useState<string | null>(null);
+  const [requireOcTarget, setRequireOcTarget] = useState<{
+    line: SolicitaAutorizacionLine;
+    ocRequeridaStatusId: string;
+    initialFile: File | null;
+  } | null>(null);
+
+  const handleRequireOC = async (l: SolicitaAutorizacionLine) => {
+    const ocRequeridaStatusId = progressStatuses.find((st) => st.name.trim().toLowerCase() === "oc requerida")?.id;
+    if (!ocRequeridaStatusId) {
+      toast.error('No se encontró el estado "OC Requerida"');
+      return;
+    }
+    setRequiringLineId(l.id);
+    try {
+      // Si la línea ya trae la cotización adjunta (la de "Solicita Autorización"), se
+      // precarga en el diálogo para no pedirla de nuevo.
+      let initialFile: File | null = null;
+      if (l.quotation_file_url || l.quotation_storage_path) {
+        const quotation = await fetchQuotationFile({
+          fileName: l.quotation_file_name,
+          storagePath: l.quotation_storage_path,
+          driveUrl: l.quotation_file_url,
+        });
+        if (quotation) {
+          initialFile = new File([quotation.blob], quotation.fileName, { type: quotation.blob.type });
+        } else {
+          toast.info("No se pudo recuperar la cotización adjunta a la línea; adjúntala en el diálogo.");
+        }
+      }
+      setRequireOcTarget({ line: l, ocRequeridaStatusId, initialFile });
+    } finally {
+      setRequiringLineId(null);
+    }
+  };
   const [rejectingLine, setRejectingLine] = useState<SolicitaAutorizacionLine | null>(null);
   const [rejectSaving, setRejectSaving] = useState(false);
   const [observationLine, setObservationLine] = useState<SolicitaAutorizacionLine | null>(null);
@@ -4935,7 +5054,7 @@ const PurchaseOrdersDashboard = () => {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" />
-                    Aprobadas (últimas 24 horas)
+                    Aprobadas (sin requerimiento de OC)
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -5198,6 +5317,22 @@ const PurchaseOrdersDashboard = () => {
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-2">
+                                    {l.budget_type === "capex" && canRequireOC && (
+                                      <Button
+                                        size="sm"
+                                        className="gap-1"
+                                        title="Avanzar esta línea a Requerimiento de OC"
+                                        disabled={requiringLineId === l.id}
+                                        onClick={() => void handleRequireOC(l)}
+                                      >
+                                        {requiringLineId === l.id ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <ClipboardList className="h-3 w-3" />
+                                        )}
+                                        Requerir OC
+                                      </Button>
+                                    )}
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -5339,6 +5474,38 @@ const PurchaseOrdersDashboard = () => {
         ufValue={ufValue}
         isAdmin={isAdmin}
       />
+
+      {/* Marcar OC Requerida desde "Aprobadas" > Requerir OC */}
+      {requireOcTarget && (
+        <CapexOCRequiredDialog
+          open
+          onOpenChange={(o) => { if (!o) setRequireOcTarget(null); }}
+          contractId={requireOcTarget.line.contract_id}
+          projectName={contracts.find((c) => c.id === requireOcTarget.line.contract_id)?.name ?? ""}
+          originLine={{
+            id: requireOcTarget.line.id,
+            name: requireOcTarget.line.name,
+            amount_uf: requireOcTarget.line.amount_uf,
+            currency: requireOcTarget.line.currency === "CLP" ? "CLP" : "UF",
+            status: requireOcTarget.line.status,
+            supplier_id: requireOcTarget.line.supplier_id,
+            supplier_name: requireOcTarget.line.supplier_name,
+          }}
+          ocRequeridaStatusId={requireOcTarget.ocRequeridaStatusId}
+          ufValue={ufValue}
+          formatCLP={formatCLP}
+          convertUFToPesos={(uf) => Math.round(uf * ufValue)}
+          initialFile={requireOcTarget.initialFile}
+          onComplete={() => {
+            // La línea sale de "Aprobadas" en el acto (ya tiene requerimiento) y se
+            // recarga todo para que aparezca en "Requerimientos de OC".
+            const lineId = requireOcTarget.line.id;
+            setSolicitaLines((prev) => prev.filter((x) => x.id !== lineId));
+            setRequireOcTarget(null);
+            loadData();
+          }}
+        />
+      )}
 
       {/* Nueva Solicitud de OC prellenada desde un Requerimiento de OC */}
       {requestFromRequired && (

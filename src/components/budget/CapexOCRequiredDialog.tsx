@@ -37,15 +37,17 @@ interface CapexOCRequiredDialogProps {
   ufValue: number;
   formatCLP: (amount: number) => string;
   convertUFToPesos: (uf: number) => number;
-  /** El padre entra en modo selección de líneas directamente en la página.
+  /** El padre entra en modo selección de líneas directamente en la página. Si no se pasa
+   *  (ej. el diálogo se abre desde "Aprobadas" en /purchase-orders, donde no hay árbol
+   *  de líneas), se oculta "Seleccionar líneas adicionales" y se trabaja solo con la línea de origen.
    *  initialIds queda pre-tildado (incluye siempre la línea de origen, que
    *  además queda bloqueada para no poder destildarla). */
-  onRequestLineSelection: (initialIds: string[]) => void;
+  onRequestLineSelection?: (initialIds: string[]) => void;
   /** Se actualiza (junto con additionalLinesVersion) cuando el usuario termina
    *  de seleccionar líneas en la página -- puede ser [] si terminó sin elegir
    *  ninguna. */
-  additionalLines: CapexLineRef[];
-  additionalLinesVersion: number;
+  additionalLines?: CapexLineRef[];
+  additionalLinesVersion?: number;
   /** Cotización ya subida previamente (ver CotizadoUploadDialog.tsx > "Avanzar
    *  a Requerimiento de OC") -- si viene, se pre-carga y el diálogo arranca
    *  directo en el paso "amount" en vez de pedir el archivo de nuevo. */
@@ -119,8 +121,8 @@ export function CapexOCRequiredDialog({
   formatCLP,
   convertUFToPesos,
   onRequestLineSelection,
-  additionalLines,
-  additionalLinesVersion,
+  additionalLines = [],
+  additionalLinesVersion = 0,
   initialFile,
   onComplete,
 }: CapexOCRequiredDialogProps) {
@@ -566,16 +568,18 @@ export function CapexOCRequiredDialog({
               <Button variant="outline" onClick={() => handleClose(false)}>
                 Cancelar
               </Button>
-              <Button
-                variant="outline"
-                disabled={!montoValido}
-                onClick={() => {
-                  setStep("selecting");
-                  onRequestLineSelection([originLine.id]);
-                }}
-              >
-                Seleccionar líneas adicionales
-              </Button>
+              {onRequestLineSelection && (
+                <Button
+                  variant="outline"
+                  disabled={!montoValido}
+                  onClick={() => {
+                    setStep("selecting");
+                    onRequestLineSelection([originLine.id]);
+                  }}
+                >
+                  Seleccionar líneas adicionales
+                </Button>
+              )}
               <Button
                 disabled={!montoValido}
                 onClick={() => { setFinalAdditionalLines([]); setStep("summary"); }}
@@ -600,16 +604,18 @@ export function CapexOCRequiredDialog({
               <Button variant="outline" onClick={() => handleClose(false)} disabled={!!saving}>
                 Cancelar
               </Button>
-              <Button
-                variant="outline"
-                disabled={!!saving}
-                onClick={() => {
-                  setStep("selecting");
-                  onRequestLineSelection([originLine.id, ...finalAdditionalLines.map((l) => l.id)]);
-                }}
-              >
-                Agregar o quitar líneas
-              </Button>
+              {onRequestLineSelection && (
+                <Button
+                  variant="outline"
+                  disabled={!!saving}
+                  onClick={() => {
+                    setStep("selecting");
+                    onRequestLineSelection([originLine.id, ...finalAdditionalLines.map((l) => l.id)]);
+                  }}
+                >
+                  Agregar o quitar líneas
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 onClick={() => handleSave("temp")}
