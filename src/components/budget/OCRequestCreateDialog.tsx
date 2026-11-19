@@ -16,6 +16,7 @@ import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
+import type { OCRequestQuotationRef } from "@/lib/ocRequestQuotation";
 import type { parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 
 interface SelectedLine {
@@ -35,6 +36,9 @@ export interface OCRequestPrefillDraft {
   totalAmountClp: number;
   fileUrl: string | null;
   fileName: string | null;
+  /** Copia de la cotización en Supabase Storage (puede ser null si ya se purgó); se usa para
+   *  incluirla en el ZIP que se descarga al compartir la solicitud. */
+  storagePath?: string | null;
   supplierId: string | null;
   supplierName: string | null;
   paymentPlan: PaymentPlanRow[];
@@ -101,7 +105,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
   // Al convertir una "OC Requerida" en Solicitud (ver OCRequiredList.tsx):
   // archivo a transferir y quotation_number de origen, para marcarlo
   // "Convertida" una vez creada la solicitud.
-  const [prefillFile, setPrefillFile] = useState<{ url: string | null; name: string | null }>({ url: null, name: null });
+  const [prefillFile, setPrefillFile] = useState<{ url: string | null; name: string | null; storagePath: string | null }>({ url: null, name: null, storagePath: null });
   const [conversionQuotationNumber, setConversionQuotationNumber] = useState<string | null>(null);
   // Al convertir, las líneas quedan fijas a las que ya traía el requerimiento
   // -- no se puede agregar ni quitar ninguna (a diferencia de una solicitud
@@ -122,7 +126,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     setPaymentPlan([]);
     setCancelConfirm(false);
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
-    setPrefillFile({ url: null, name: null });
+    setPrefillFile({ url: null, name: null, storagePath: null });
     setConversionQuotationNumber(null);
     setLinesLocked(false);
     setLoadingBudgets(true);
@@ -235,7 +239,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         supplier_name: prefillDraft.supplierName,
       }));
       setPaymentPlan(prefillDraft.paymentPlan);
-      setPrefillFile({ url: prefillDraft.fileUrl, name: prefillDraft.fileName });
+      setPrefillFile({ url: prefillDraft.fileUrl, name: prefillDraft.fileName, storagePath: prefillDraft.storagePath ?? null });
       setConversionQuotationNumber(prefillDraft.quotationNumber);
       setLinesLocked(true);
       onPrefillConsumed?.();
@@ -330,6 +334,13 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
 
     const lineNames = validLines.map(l => l.lineName);
     const displayLineName = lineNames.join(' + ');
+
+    // Cotización del Requerimiento de origen (flujo "Solicitar OC"): se captura aquí porque
+    // prefillFile se limpia al terminar de crear la solicitud, antes de armar el PDF a compartir.
+    const quotationRef: OCRequestQuotationRef | null =
+      prefillFile.url || prefillFile.storagePath
+        ? { fileName: prefillFile.name, storagePath: prefillFile.storagePath, driveUrl: prefillFile.url }
+        : null;
 
     setCreatingRequest(true);
     try {
@@ -434,7 +445,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
 
       toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
       setShowNewRequestDialog(false);
-      setPrefillFile({ url: null, name: null });
+      setPrefillFile({ url: null, name: null, storagePath: null });
       setConversionQuotationNumber(null);
       onCreated?.();
 
@@ -473,6 +484,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
           })),
         supplierName: newRequestForm.supplier_name,
         supplierRut,
+        quotation: quotationRef,
       });
       setShareRequestId(requestData?.id);
     } catch (error: any) {

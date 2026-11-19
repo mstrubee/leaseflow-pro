@@ -4,7 +4,7 @@ import type { OCRequiredGroup } from "@/lib/ocRequiredGroups";
 
 type OCRequiredDraftSource = Pick<
   OCRequiredGroup,
-  "quotationNumber" | "lines" | "amountClp" | "filePath" | "fileName" | "supplierId" | "supplierName"
+  "quotationNumber" | "lines" | "amountClp" | "filePath" | "fileName" | "storagePath" | "supplierId" | "supplierName"
 >;
 
 /**
@@ -25,6 +25,7 @@ export async function buildPrefillDraftFromGroup(group: OCRequiredDraftSource): 
     totalAmountClp: group.amountClp,
     fileUrl: group.filePath,
     fileName: group.fileName,
+    storagePath: group.storagePath,
     supplierId: group.supplierId,
     supplierName: group.supplierName,
     paymentPlan: (plans || []).map((p: any) => ({

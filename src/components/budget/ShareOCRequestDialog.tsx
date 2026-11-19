@@ -8,6 +8,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { fileToBase64 } from "@/lib/fileBase64";
 import { buildOCRequestPdf, ocRequestPdfFileName, downloadOCRequestPdf, OCRequestShareData } from "@/lib/ocRequestShare";
+import { fetchQuotationFile } from "@/lib/ocRequestQuotation";
+import { buildOCRequestZip, ocRequestZipFileName } from "@/lib/ocRequestZip";
 
 const LAST_METHOD_KEY = "oc_request_share_last_method";
 type ShareMethod = "email" | "download";
@@ -93,20 +95,39 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
     return doc.output("blob");
   };
 
+  /**
+   * Lo que se descarga: si la solicitud viene de un Requerimiento con cotización
+   * adjunta, un ZIP con la Solicitud (PDF) + la cotización; si no hay cotización,
+   * o no se pudo obtener el archivo, solo el PDF (y se avisa).
+   */
+  const buildDownload = async (): Promise<{ blob: Blob; fileName: string; zipped: boolean }> => {
+    const pdfBlob = await buildBlob();
+    const pdfFileName = ocRequestPdfFileName(data!);
+    if (data!.quotation) {
+      const quotationFile = await fetchQuotationFile(data!.quotation);
+      if (quotationFile) {
+        const zip = await buildOCRequestZip({ blob: pdfBlob, fileName: pdfFileName }, quotationFile);
+        return { blob: zip, fileName: ocRequestZipFileName(pdfFileName), zipped: true };
+      }
+      toast.warning("No se pudo obtener la cotización adjunta; se descarga solo la Solicitud de OC.");
+    }
+    return { blob: pdfBlob, fileName: pdfFileName, zipped: false };
+  };
+
   const handleDownload = async () => {
     if (!data) return;
     setDownloading(true);
     try {
-      const blob = await buildBlob();
-      const fileName = ocRequestPdfFileName(data);
+      const { blob, fileName, zipped } = await buildDownload();
       const result = await downloadOCRequestPdf(blob, fileName);
       if (result === "cancelled") return;
       rememberMethod("download");
-      toast.success(result === "saved" ? "PDF guardado" : "PDF descargado");
+      const what = zipped ? "ZIP" : "PDF";
+      toast.success(result === "saved" ? `${what} guardado` : `${what} descargado`);
       onOpenChange(false);
     } catch (err: any) {
       console.error("Error al descargar la Solicitud de OC:", err);
-      toast.error("No se pudo generar el PDF para descargar.");
+      toast.error("No se pudo generar el archivo para descargar.");
     } finally {
       setDownloading(false);
     }
@@ -148,8 +169,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       // en vez de dejar al usuario sin nada.
       toast.error("No se pudo enviar el correo. Se descargará el PDF para enviarlo manualmente.");
       try {
-        const blob = await buildBlob();
-        const fileName = ocRequestPdfFileName(data);
+        const { blob, fileName } = await buildDownload();
         await downloadOCRequestPdf(blob, fileName);
       } catch (downloadErr) {
         console.error("Además falló la descarga de respaldo:", downloadErr);
@@ -182,6 +202,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
           />
           <p className="text-xs text-muted-foreground">
             Se envía con el PDF adjunto. Si el envío no está disponible, se descarga en su lugar.
+            {data?.quotation && " La descarga viene en un ZIP con la Solicitud de OC y la cotización adjunta."}
           </p>
         </div>
 
@@ -224,7 +245,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
             className="w-full sm:w-auto"
           >
             {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
-            Descargar PDF
+            {data?.quotation ? "Descargar ZIP" : "Descargar PDF"}
           </Button>
           <Button
             variant={lastMethod === "email" ? "default" : "outline"}

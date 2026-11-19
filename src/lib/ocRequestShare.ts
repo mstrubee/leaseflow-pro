@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
+import type { OCRequestQuotationRef } from "@/lib/ocRequestQuotation";
 
 // ── Tipos compartidos por los 3 puntos donde se crea una Solicitud de OC
 // (OCRequestDialog, OCRequestsList, CentralizedOrderCreator en modo "request") ──
@@ -44,6 +45,9 @@ export interface OCRequestShareData {
   requestId?: string | null;
   /** oc_requests.verification_code -- código fijado por un trigger de DB al crear la solicitud, inalterable. */
   verificationCode?: string | null;
+  /** Cotización adjunta de origen (flujo "Solicitar OC" desde un Requerimiento). Si viene, al
+   *  descargar se entrega un ZIP con la Solicitud (PDF) y esta cotización. */
+  quotation?: OCRequestQuotationRef | null;
 }
 
 function fmtSequenceNumber(n: number | null | undefined): string {
@@ -253,7 +257,9 @@ async function pickSaveLocation(filename: string): Promise<SaveTarget> {
     }).showSaveFilePicker({
       suggestedName: filename,
       startIn: "downloads",
-      types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
+      types: filename.toLowerCase().endsWith(".zip")
+        ? [{ description: "ZIP", accept: { "application/zip": [".zip"] } }]
+        : [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
     });
     return { status: "ready", handle };
   } catch (error) {
@@ -266,7 +272,8 @@ async function pickSaveLocation(filename: string): Promise<SaveTarget> {
 export type OCRequestPdfDownloadResult = "saved" | "downloaded" | "cancelled";
 
 /**
- * Descarga el PDF ya generado. Si el navegador soporta elegir carpeta
+ * Descarga el archivo ya generado (el PDF de la solicitud o, si lleva la cotización,
+ * el ZIP; el tipo se deduce de la extensión). Si el navegador soporta elegir carpeta
  * (Chrome/Edge de escritorio), abre el selector en Descargas por defecto;
  * si no (Safari, Firefox, la mayoría de los navegadores móviles), cae en la
  * descarga normal del navegador — limitación real de esas plataformas, no

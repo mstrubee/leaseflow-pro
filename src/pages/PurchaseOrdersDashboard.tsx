@@ -233,6 +233,8 @@ interface OCRequiredGroup {
   amountUf: number;
   filePath: string | null;
   fileName: string | null;
+  /** Copia de la cotización en Supabase Storage (null si ya se purgó) -- se incluye en el ZIP de "Solicitar OC". */
+  storagePath: string | null;
   lines: OCRequiredGroupLine[];
   converted: boolean;
   /** Solicitudes de OC originadas en este requerimiento (líneas a las que se imputaron). */
@@ -769,6 +771,7 @@ const PurchaseOrdersDashboard = () => {
               amountUf: r.amount_uf || 0,
               filePath: r.file_path,
               fileName: r.file_name,
+              storagePath: r.storage_path ?? null,
               lines: [],
               converted: solicitudesByNumber.has(r.quotation_number),
               solicitudes: solicitudesByNumber.get(r.quotation_number) ?? [],
