@@ -1464,7 +1464,8 @@ const PurchaseOrdersDashboard = () => {
   const solicitaObserved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "no_autorizado"), [filteredSolicitaLines]);
 
   // Rechazar / ver observación (admin y quienes pueden autorizar).
-  const canAuthorizeLines = isAdmin || hasPermission("budget_autorizar", "edit");
+  // Solo el admin autoriza y rechaza (también lo exige la base).
+  const canAuthorizeLines = isAdmin;
   const [rejectingLine, setRejectingLine] = useState<SolicitaAutorizacionLine | null>(null);
   const [rejectSaving, setRejectSaving] = useState(false);
   const [observationLine, setObservationLine] = useState<SolicitaAutorizacionLine | null>(null);
@@ -5050,15 +5051,17 @@ const PurchaseOrdersDashboard = () => {
                                         Rechazar
                                       </Button>
                                     )}
-                                    <Button
-                                      size="sm"
-                                      className="gap-1"
-                                      onClick={() => handleApproveSolicitaLine(l.id)}
-                                      disabled={approvingLineId === l.id}
-                                    >
-                                      <Check className="h-3 w-3" />
-                                      Autorizar
-                                    </Button>
+                                    {canAuthorizeLines && (
+                                      <Button
+                                        size="sm"
+                                        className="gap-1"
+                                        onClick={() => handleApproveSolicitaLine(l.id)}
+                                        disabled={approvingLineId === l.id}
+                                      >
+                                        <Check className="h-3 w-3" />
+                                        Autorizar
+                                      </Button>
+                                    )}
                                   </div>
                                 </TableCell>
                               </TableRow>
