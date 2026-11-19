@@ -2,11 +2,11 @@
 --
 -- Problema: la política "Users can update budget_lines with permission" deja que
 -- cualquier usuario con permiso de edición de presupuesto modifique CUALQUIER columna,
--- incluido `status`. Que solo un admin / quien tenga `budget_autorizar` pueda autorizar
--- o rechazar hoy se controla únicamente en la interfaz.
+-- incluido `status`. Que solo el admin pueda autorizar o rechazar hoy se controla
+-- únicamente en la interfaz.
 --
 -- Este trigger lo exige en la base, sin tocar las políticas RLS:
---   * Quien NO puede autorizar (no admin y sin `budget_autorizar`) no puede:
+--   * Quien NO es admin no puede:
 --       - pasar una línea a "autorizado" ni sacarla de "autorizado";
 --       - rechazar una solicitud ("solicita_autorizar" -> "no_autorizado");
 --       - escribir rejected_at / rejection_note / rejected_by, salvo LIMPIARLAS al volver
@@ -34,10 +34,9 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_can_authorize :=
-    public.has_role(auth.uid(), 'admin'::app_role)
-    OR public.has_permission(auth.uid(), 'budget_autorizar'::text, 'edit'::permission_type)
-    OR public.has_permission(auth.uid(), 'budget_autorizar'::text, 'all'::permission_type);
+  -- Regla de negocio: solo el admin autoriza y rechaza (el permiso `budget_autorizar`
+  -- ya no habilita nada). has_role es la misma función que usa la política RLS de admins.
+  v_can_authorize := public.has_role(auth.uid(), 'admin'::app_role);
 
   IF v_can_authorize THEN
     RETURN NEW;

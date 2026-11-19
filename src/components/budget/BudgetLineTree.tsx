@@ -644,7 +644,9 @@ const BudgetLineItemInner = ({
   const canEditCantidades = isAdmin || (!isAuthorizedLine && hasPermission("budget_editar_cantidades", "edit"));
   const canEditMontos     = isAdmin || (!isAuthorizedLine && hasPermission("budget_editar_montos", "edit"));
   const canEditEstado     = isAdmin || hasPermission("budget_editar_estado", "edit");
-  const canAutorizar      = isAdmin || hasPermission("budget_autorizar", "edit");
+  // Regla de negocio: solo el admin autoriza/rechaza (el permiso budget_autorizar ya no
+  // habilita nada; la base lo exige igual con el trigger trg_budget_lines_guard_authorization).
+  const canAutorizar      = isAdmin;
   const canEditLineas     = isAdmin || hasPermission("budget_editar_lineas", "edit");
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
