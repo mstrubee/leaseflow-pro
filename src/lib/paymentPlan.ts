@@ -105,8 +105,18 @@ export function switchPaymentMode<T extends PaymentPlanRow>(
 }
 
 /**
- * Agrega un pago al final. El que era último (el saldo, derivado) pasa a ser
- * un pago normal con el monto que tenía, para no perderlo.
+ * Metodología del plan: la del primer pago. Si el primero se fijó en %, los que
+ * se agreguen después también nacen en %; si no, en monto. Con un solo pago (que
+ * es el saldo, derivado) no hay metodología elegida todavía: monto.
+ */
+export function planInputMode(rows: PaymentPlanRow[]): PaymentInputMode {
+  return rows.length >= 2 && rows[0].input_mode === "percent" ? "percent" : "amount";
+}
+
+/**
+ * Agrega un pago al final con la misma metodología del plan (ver planInputMode).
+ * El que era último (el saldo, derivado) pasa a ser un pago normal con lo que
+ * tenía -- en % o en monto, según la metodología -- para no perderlo.
  */
 export function appendPayment<T extends PaymentPlanRow>(
   rows: T[],
@@ -114,11 +124,15 @@ export function appendPayment<T extends PaymentPlanRow>(
   newRow: T,
 ): T[] {
   if (rows.length === 0) return [newRow];
+  const mode = planInputMode(rows);
   const lastIdx = rows.length - 1;
   const last = rows[lastIdx];
-  const lastAmount = resolved.payments[lastIdx]?.amount ?? 0;
-  const frozenLast = { ...last, input_mode: "amount" as const, amount: lastAmount > 0 ? String(lastAmount) : "" };
-  return [...rows.slice(0, lastIdx), frozenLast, newRow];
+  const lastResolved = resolved.payments[lastIdx];
+  const frozenLast =
+    mode === "percent"
+      ? { ...last, input_mode: "percent" as const, percent: lastResolved && lastResolved.amount > 0 ? String(lastResolved.percent) : "" }
+      : { ...last, input_mode: "amount" as const, amount: lastResolved && lastResolved.amount > 0 ? String(lastResolved.amount) : "" };
+  return [...rows.slice(0, lastIdx), frozenLast, { ...newRow, input_mode: mode }];
 }
 
 /**

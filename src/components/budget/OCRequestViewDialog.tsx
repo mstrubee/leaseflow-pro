@@ -919,7 +919,8 @@ export const OCRequestViewDialog = ({
       if (error) throw error;
 
       toast({ title: "Pago agregado" });
-      setNewPayment({ description: "", amount: "", due_date: "", input_mode: "clp" });
+      // Si el pago se fijó en %, el siguiente también parte en % (misma metodología).
+      setNewPayment(prev => ({ description: "", amount: "", due_date: "", input_mode: prev.input_mode === "percent" ? "percent" : "clp" }));
       loadRequest();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
