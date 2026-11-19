@@ -316,6 +316,7 @@ const PurchaseOrdersDashboard = () => {
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
   const invoiceFileInputRef = useRef<HTMLInputElement>(null);
+  const pendingInvoiceUploadRef = useRef<{ invoiceIds: string[]; contractId: string } | null>(null);
   const [uploadingInvoiceId, setUploadingInvoiceId] = useState<string | null>(null);
 
   // Credit notes storage
@@ -1878,9 +1879,18 @@ const PurchaseOrdersDashboard = () => {
     0
   );
 
-  // Handle invoice PDF upload
-  const handleInvoiceFileUpload = async (invoiceId: string, file: File, contractId: string) => {
-    setUploadingInvoiceId(invoiceId);
+  // Handle invoice PDF upload.
+  // `invoiceIds` has several entries for multi-contract invoices (one DB row per
+  // contract share the same invoice number); the same PDF is linked to all of them.
+  const handleInvoiceFileUpload = async (invoiceIds: string[], file: File, contractId: string) => {
+    if (invoiceIds.length === 0) return;
+
+    if (!file.type.includes("pdf") && !file.name.toLowerCase().endsWith(".pdf")) {
+      toast.error("Solo se permiten archivos PDF");
+      return;
+    }
+
+    setUploadingInvoiceId(invoiceIds[0]);
     try {
       const { backupInvoiceFileToRepository } = await import("@/lib/repositoryBackup");
       const { sanitizeFileName } = await import("@/lib/fileValidation");
@@ -1890,21 +1900,79 @@ const PurchaseOrdersDashboard = () => {
 
       if (!result.success) throw new Error(result.error || "Error al subir archivo");
 
-      // Update invoice with the Drive URL (or storage URL as fallback)
-      const finalUrl = result.driveUrl || "";
+      // Drive URL when available, Supabase Storage path as fallback
+      const finalUrl = result.driveUrl || result.storedUrl;
+      if (!finalUrl) throw new Error("No se obtuvo la URL del archivo subido");
+
       const { error: dbError } = await supabase
         .from("invoices")
         .update({ attachment_url: finalUrl })
-        .eq("id", invoiceId);
+        .in("id", invoiceIds);
       if (dbError) throw dbError;
 
-      toast.success("PDF de factura subido a Drive correctamente");
+      toast.success("PDF de factura subido correctamente");
       loadData();
     } catch (err: any) {
       toast.error("Error al subir archivo: " + (err?.message || "Error desconocido"));
     } finally {
       setUploadingInvoiceId(null);
     }
+  };
+
+  // Opens the file picker and remembers which invoice(s) the chosen PDF belongs to
+  const requestInvoicePdfUpload = (invoiceIds: string[], contractId: string) => {
+    pendingInvoiceUploadRef.current = { invoiceIds, contractId };
+    invoiceFileInputRef.current?.click();
+  };
+
+  // Invoice number as the entry point to its PDF:
+  // - with PDF → opens it; without PDF → offers to upload one
+  const renderInvoiceNumber = (opts: {
+    invoiceNumber: string;
+    attachmentUrl?: string | null;
+    invoiceIds: string[];
+    contractId: string;
+  }) => {
+    const { invoiceNumber, attachmentUrl, invoiceIds, contractId } = opts;
+
+    if (uploadingInvoiceId !== null && uploadingInvoiceId === invoiceIds[0]) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          {invoiceNumber}
+        </span>
+      );
+    }
+
+    if (attachmentUrl) {
+      return (
+        <button
+          type="button"
+          onClick={() => void openFile(attachmentUrl)}
+          className="inline-flex items-center gap-1.5 text-primary hover:underline underline-offset-2"
+          title="Ver PDF de factura"
+        >
+          <FileText className="h-3 w-3 text-emerald-600" />
+          {invoiceNumber}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => requestInvoicePdfUpload(invoiceIds, contractId)}
+        className="inline-flex items-center gap-1.5 hover:underline underline-offset-2"
+        title="Sin PDF adjunto: clic para subir el PDF de la factura"
+      >
+        <Receipt className="h-3 w-3 text-primary" />
+        {invoiceNumber}
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-500">
+          <Upload className="h-3 w-3" />
+          Subir PDF
+        </span>
+      </button>
+    );
   };
 
   if (authLoading) {
@@ -1917,6 +1985,21 @@ const PurchaseOrdersDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Shared hidden picker for invoice PDFs (see requestInvoicePdfUpload) */}
+      <input
+        ref={invoiceFileInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = ""; // allow picking the same file again later
+          const pending = pendingInvoiceUploadRef.current;
+          pendingInvoiceUploadRef.current = null;
+          if (!file || !pending) return;
+          void handleInvoiceFileUpload(pending.invoiceIds, file, pending.contractId);
+        }}
+      />
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[2000px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -2814,6 +2897,7 @@ const PurchaseOrdersDashboard = () => {
                                       total_amount_uf: number;
                                       total_amount_clp: number;
                                       reception_status: string;
+                                      attachment_url: string | null;
                                       contracts: Array<{
                                         id: string;
                                         contract_name: string;
@@ -2843,6 +2927,7 @@ const PurchaseOrdersDashboard = () => {
                                           order_id: inv.order_id,
                                         });
                                         existing.allInvoiceIds.push(inv.id);
+                                        existing.attachment_url = existing.attachment_url || inv.attachment_url || null;
                                       } else {
                                         invoiceMap.set(inv.invoice_number, {
                                           invoice_number: inv.invoice_number,
@@ -2850,6 +2935,7 @@ const PurchaseOrdersDashboard = () => {
                                           total_amount_uf: inv.amount_uf,
                                           total_amount_clp: invAmountClp,
                                           reception_status: inv.reception_status,
+                                          attachment_url: inv.attachment_url || null,
                                           contracts: [{
                                             id: inv.id,
                                             contract_name: inv.contract_name,
@@ -2980,8 +3066,13 @@ const PurchaseOrdersDashboard = () => {
                                                     </TableCell>
                                                     <TableCell className="text-sm py-1.5">
                                                       <div className="flex items-center gap-2">
-                                                        <Receipt className="h-3 w-3 text-primary" />
-                                                        {consolidated.invoice_number}
+                                                        {renderInvoiceNumber({
+                                                          invoiceNumber: consolidated.invoice_number,
+                                                          attachmentUrl: consolidated.attachment_url,
+                                                          invoiceIds: consolidated.allInvoiceIds,
+                                                          contractId: groupedOrder.orders.find(o => o.id === consolidated.contracts[0].order_id)?.contract_id
+                                                            ?? groupedOrder.orders[0].contract_id,
+                                                        })}
                                                       </div>
                                                     </TableCell>
                                                     <TableCell className="text-sm py-1.5">
@@ -3112,8 +3203,13 @@ const PurchaseOrdersDashboard = () => {
                                                 <TableRow key={invoice.id}>
                                                   <TableCell className="text-sm py-1.5">
                                                     <div className="flex items-center gap-2">
-                                                      <Receipt className="h-3 w-3 text-primary" />
-                                                      {invoice.invoice_number}
+                                                      {renderInvoiceNumber({
+                                                        invoiceNumber: invoice.invoice_number,
+                                                        attachmentUrl: invoice.attachment_url,
+                                                        invoiceIds: [invoice.id],
+                                                        contractId: groupedOrder.orders.find(o => o.id === invoice.order_id)?.contract_id
+                                                          ?? groupedOrder.orders[0].contract_id,
+                                                      })}
                                                     </div>
                                                   </TableCell>
                                                   <TableCell className="text-sm py-1.5">
@@ -3176,19 +3272,13 @@ const PurchaseOrdersDashboard = () => {
                                                         <Button
                                                           size="sm"
                                                           variant="ghost"
-                                                          onClick={() => {
-                                                            const input = document.createElement("input");
-                                                            input.type = "file";
-                                                            input.accept = ".pdf";
-                                                            input.onchange = (e) => {
-                                                              const file = (e.target as HTMLInputElement).files?.[0];
-                                                              if (file) {
-                                                                const order = groupedOrder.orders[0];
-                                                                handleInvoiceFileUpload(invoice.id, file, order.contract_id);
-                                                              }
-                                                            };
-                                                            input.click();
-                                                          }}
+                                                          onClick={() =>
+                                                            requestInvoicePdfUpload(
+                                                              [invoice.id],
+                                                              groupedOrder.orders.find(o => o.id === invoice.order_id)?.contract_id
+                                                                ?? groupedOrder.orders[0].contract_id
+                                                            )
+                                                          }
                                                           className="h-6 px-1.5"
                                                           title="Subir PDF de factura"
                                                           disabled={uploadingInvoiceId === invoice.id}

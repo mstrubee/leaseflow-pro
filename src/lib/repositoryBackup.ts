@@ -269,7 +269,7 @@ export async function backupInvoiceFileToRepository(
   contractId: string,
   file: File,
   fileName: string
-): Promise<{ success: boolean; fileId?: string; driveUrl?: string; error?: string }> {
+): Promise<{ success: boolean; fileId?: string; driveUrl?: string; storedUrl?: string; error?: string }> {
   try {
     const folders = await getOrCreateInvoiceFolders(contractId);
     if (folders.length === 0) {
@@ -299,7 +299,9 @@ export async function backupInvoiceFileToRepository(
       }
     }
 
-    return { success: true, fileId: primaryFileId, driveUrl: primaryDriveUrl };
+    // storedUrl = Supabase Storage fallback, so callers never end up without a URL
+    // when the Drive/repository lookup returns nothing.
+    return { success: true, fileId: primaryFileId, driveUrl: primaryDriveUrl, storedUrl };
   } catch (error: any) {
     console.error("Error backing up invoice file:", error);
     return { success: false, error: error.message };
