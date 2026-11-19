@@ -19,6 +19,9 @@ export interface CapexLineRef {
   id: string;
   name: string;
   amount_uf: number;
+  /** Moneda en que está definida la línea (UF si no viene). El monto del
+   *  requerimiento de OC se tipea por defecto en esa moneda. */
+  currency?: "UF" | "CLP";
   status: string;
   supplier_id?: string | null;
   supplier_name?: string | null;
@@ -131,7 +134,7 @@ export function CapexOCRequiredDialog({
   // Moneda en que se tipea el monto. El proceso (plan de pagos, comparación con
   // lo autorizado, OC) siempre es en pesos: si se ingresa en UF, se convierte a
   // CLP con el valor UF vigente y el UF ingresado queda solo como dato referencial.
-  const [currency, setCurrency] = useState<InputCurrency>("CLP");
+  const [currency, setCurrency] = useState<InputCurrency>(originLine.currency === "CLP" ? "CLP" : "UF");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanRow[]>([]);
@@ -171,7 +174,7 @@ export function CapexOCRequiredDialog({
     setFile(null);
     setPreviewUrl(null);
     setMonto("");
-    setCurrency("CLP");
+    setCurrency(originLine.currency === "CLP" ? "CLP" : "UF");
     setSupplierId(null);
     setSupplierName(null);
     setPaymentPlan([]);
@@ -450,6 +453,20 @@ export function CapexOCRequiredDialog({
                     placeholder={currency === "UF" ? "0,00" : "0"}
                   />
                 </div>
+                {/* Monto de la línea como referencia (no se escribe por defecto en el campo) */}
+                <p className="text-xs text-muted-foreground">
+                  {originLine.status === "autorizado" ? "Monto aprobado en la línea" : "Monto de la línea (no autorizado)"}:{" "}
+                  <span className="font-medium text-foreground">
+                    {originLine.currency === "CLP"
+                      ? formatCLP(convertUFToPesos(originLine.amount_uf))
+                      : `UF ${formatUfNumber(originLine.amount_uf)}`}
+                  </span>{" "}
+                  (
+                  {originLine.currency === "CLP"
+                    ? `UF ${formatUfNumber(originLine.amount_uf)}`
+                    : `≈ ${formatCLP(convertUFToPesos(originLine.amount_uf))}`}
+                  )
+                </p>
                 {/* Siempre se muestra el monto en pesos (con qué se va a trabajar) y su UF referencial */}
                 {montoClp > 0 && (
                   <div className="text-xs text-muted-foreground space-y-0.5">

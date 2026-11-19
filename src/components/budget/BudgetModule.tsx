@@ -79,13 +79,14 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const [linesWithDetails, setLinesWithDetails] = useState<Set<string>>(new Set());
 
   // Diálogo de cotización al marcar una línea CAPEX como "OC Requerida"
-  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null; initialFile: File | null } | null>(null);
+  const [ocRequiredPrompt, setOcRequiredPrompt] = useState<{ lineId: string; lineName: string; lineAmountUf: number; lineCurrency: "UF" | "CLP"; lineStatus: string; newStatusId: string; supplierId: string | null; supplierName: string | null; initialFile: File | null } | null>(null);
 
   // Diálogo liviano de subida de cotización al marcar una línea CAPEX como "Cotizado"
   const [cotizadoPrompt, setCotizadoPrompt] = useState<{
     lineId: string;
     lineName: string;
     lineAmountUf: number;
+    lineCurrency: "UF" | "CLP";
     lineStatus: string;
     newStatusId: string;
     supplierId: string | null;
@@ -534,6 +535,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       lineId: cotizadoPrompt.lineId,
       lineName: cotizadoPrompt.lineName,
       lineAmountUf: cotizadoPrompt.lineAmountUf,
+      lineCurrency: cotizadoPrompt.lineCurrency,
       lineStatus: cotizadoPrompt.lineStatus,
       newStatusId: ocRequeridaStatusId,
       supplierId: cotizadoPrompt.supplierId,
@@ -2465,6 +2467,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                       lineId,
                       lineName: line.name ?? "",
                       lineAmountUf: calculateLineLiveAmount(line, linesByIdCot, templatePricesMap, ufValue),
+                      lineCurrency: line.currency === "CLP" ? "CLP" : "UF",
                       lineStatus: line.status ?? "no_autorizado",
                       newStatusId: fromCotizadoStatusId,
                       supplierId: line.supplier_id ?? null,
@@ -2488,6 +2491,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     lineId,
                     lineName: line?.name ?? "",
                     lineAmountUf: liveAmountUf,
+                    lineCurrency: line?.currency === "CLP" ? "CLP" : "UF",
                     lineStatus: line?.status ?? "no_autorizado",
                     newStatusId,
                     supplierId: line?.supplier_id ?? null,
@@ -2514,6 +2518,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     lineId,
                     lineName: line?.name ?? "",
                     lineAmountUf: liveAmountUf,
+                    lineCurrency: line?.currency === "CLP" ? "CLP" : "UF",
                     lineStatus: line?.status ?? "no_autorizado",
                     newStatusId,
                     supplierId: line?.supplier_id ?? null,
@@ -3165,6 +3170,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
             id: ocRequiredPrompt.lineId,
             name: ocRequiredPrompt.lineName,
             amount_uf: ocRequiredPrompt.lineAmountUf,
+            currency: ocRequiredPrompt.lineCurrency,
             status: ocRequiredPrompt.lineStatus,
             supplier_id: ocRequiredPrompt.supplierId,
             supplier_name: ocRequiredPrompt.supplierName,
