@@ -155,7 +155,7 @@ const STATUS_BADGE_CLASS: Record<BudgetLine["status"], string> = {
   solicita_autorizar: "bg-orange-500 hover:bg-orange-600 text-white",
 };
 
-const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired, onEditOcRequired, onCotizado }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string) => void; onEditOcRequired?: (lineId: string) => void; onCotizado?: (lineId: string, newStatusId: string) => void }) => {
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, lineStatus, onOcRequired, onEditOcRequired, onCotizado }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean; lineStatus?: BudgetLine["status"]; onOcRequired?: (lineId: string, newStatusId: string, fromCotizadoStatusId?: string) => void; onEditOcRequired?: (lineId: string) => void; onCotizado?: (lineId: string, newStatusId: string) => void }) => {
   const { statuses, reload } = useBudgetProgressStatuses();
   const [open, setOpen] = useState(false);
   const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
@@ -195,6 +195,7 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, line
 
   // Esta línea ya tiene un requerimiento de OC creado (ver onEditOcRequired).
   const isOcRequerida = current?.name?.trim().toLowerCase() === "oc requerida";
+  const isCotizado = current?.name?.trim().toLowerCase() === "cotizado";
 
   // Al elegir "OC Requerida" de la lista: si la línea YA está en ese estado
   // (ya tiene un requerimiento asociado, aunque se haya creado junto con
@@ -206,7 +207,11 @@ const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent, line
     if (s.name.trim().toLowerCase() === "oc requerida") {
       setOpen(false);
       if (isOcRequerida && onEditOcRequired) onEditOcRequired(lineId);
-      else if (onOcRequired) onOcRequired(lineId, s.id);
+      // Si la línea ya está "Cotizado", se avisa al padre con el id de ese
+      // estado: si tiene una cotización subida, abre el diálogo "Cotización"
+      // (con el archivo adjunto y "Avanzar a Requerimiento de OC") en vez de
+      // ir directo al flujo de OC sin reconocer esa cotización.
+      else if (onOcRequired) onOcRequired(lineId, s.id, isCotizado && current ? current.id : undefined);
     } else if (s.name.trim().toLowerCase() === "cotizado" && onCotizado) {
       // Al elegir "Cotizado": el padre abre un diálogo liviano para adjuntar
       // la cotización (PDF/Word/Excel/imagen) antes de aplicar el cambio --
@@ -323,7 +328,7 @@ interface BudgetLineTreeProps {
   /** Se llama en vez de cambiar el estado directo cuando el usuario elige "OC
    *  Requerida" -- el padre debe abrir el diálogo de cotización antes de
    *  aplicar el cambio. Solo se pasa desde presupuestos CAPEX. */
-  onOcRequired?: (lineId: string, newStatusId: string) => void;
+  onOcRequired?: (lineId: string, newStatusId: string, fromCotizadoStatusId?: string) => void;
   /** Editar un requerimiento de OC YA creado (monto, archivo, líneas
    *  asociadas) directamente desde el badge "OC Requerida" del árbol, sin
    *  pasar por la pestaña "Órdenes de Compra". Visible para cualquiera que
@@ -552,7 +557,7 @@ interface BudgetLineItemProps {
   onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
-  onOcRequired?: (lineId: string, newStatusId: string) => void;
+  onOcRequired?: (lineId: string, newStatusId: string, fromCotizadoStatusId?: string) => void;
   onEditOcRequired?: (lineId: string) => void;
   onCotizado?: (lineId: string, newStatusId: string) => void;
   onSolicitaAutorizar?: (lineId: string) => void;

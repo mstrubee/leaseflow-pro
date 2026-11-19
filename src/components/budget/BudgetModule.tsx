@@ -2443,7 +2443,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 onCreateOCRequest={canManageOC ? handleCreateOCRequestFromLine : undefined}
                 onCreateInvoice={canManageOC ? handleCreateInvoiceFromLine : undefined}
                 onViewLineDetails={handleViewLineDetails}
-                onOcRequired={budgetType === "capex" ? (lineId, newStatusId) => {
+                onOcRequired={budgetType === "capex" ? (lineId, newStatusId, fromCotizadoStatusId) => {
                   const findLine = (items: BudgetLine[]): BudgetLine | null => {
                     for (const item of items) {
                       if (item.id === lineId) return item;
@@ -2455,6 +2455,26 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                     return null;
                   };
                   const line = findLine(lines);
+                  // La línea ya está "Cotizado" y tiene una cotización subida: se
+                  // abre el diálogo "Cotización" (modo ver) que muestra ese archivo
+                  // y desde el cual se avanza a "OC Requerida" con el mismo archivo
+                  // ya adjunto (ver handleAdvanceToOcRequerida).
+                  if (fromCotizadoStatusId && line?.quotation_file_url) {
+                    const linesByIdCot = new Map(flattenLines(lines).map((l) => [l.id, l]));
+                    setCotizadoPrompt({
+                      lineId,
+                      lineName: line.name ?? "",
+                      lineAmountUf: calculateLineLiveAmount(line, linesByIdCot, templatePricesMap, ufValue),
+                      lineStatus: line.status ?? "no_autorizado",
+                      newStatusId: fromCotizadoStatusId,
+                      supplierId: line.supplier_id ?? null,
+                      supplierName: line.supplier_name ?? null,
+                      existingFileUrl: line.quotation_file_url,
+                      existingFileName: line.quotation_file_name ?? null,
+                      existingStoragePath: line.quotation_storage_path ?? null,
+                    });
+                    return;
+                  }
                   setCapexAdditionalLines([]);
                   setCapexAdditionalLinesVersion(0);
                   // Monto en vivo, no el amount_uf guardado -- una línea "%" (Gastos
