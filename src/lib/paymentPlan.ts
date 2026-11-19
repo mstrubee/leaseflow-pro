@@ -120,3 +120,28 @@ export function appendPayment<T extends PaymentPlanRow>(
   const frozenLast = { ...last, input_mode: "amount" as const, amount: lastAmount > 0 ? String(lastAmount) : "" };
   return [...rows.slice(0, lastIdx), frozenLast, newRow];
 }
+
+/**
+ * Convierte el plan resuelto a pesos para guardarlo (`oc_payment_plans.amount_clp`).
+ * El último pago es el saldo TAMBIÉN en pesos (`total - anteriores`): convertir
+ * cada pago UF por separado puede sumar 1-2 pesos de diferencia por redondeo y
+ * dejar el plan sin cuadrar con el total.
+ */
+export function paymentsToClp(
+  resolved: ResolvedPlan,
+  currency: "CLP" | "UF",
+  ufValue: number,
+  totalClp: number,
+): number[] {
+  const out: number[] = [];
+  const lastIdx = resolved.payments.length - 1;
+  resolved.payments.forEach((p, i) => {
+    if (i < lastIdx) {
+      out.push(currency === "CLP" ? Math.round(p.amount) : Math.round(p.amount * ufValue));
+      return;
+    }
+    const previous = out.reduce((sum, v) => sum + v, 0);
+    out.push(p.amount > 0 ? Math.max(0, totalClp - previous) : 0);
+  });
+  return out;
+}
