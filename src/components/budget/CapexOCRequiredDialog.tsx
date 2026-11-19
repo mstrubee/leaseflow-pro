@@ -5,21 +5,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { FileUp, FileText, Loader2, AlertTriangle, CheckCircle2, Plus, X } from "lucide-react";
+import { FileUp, FileText, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { validatePaymentPlanTotal } from "@/lib/ocRequestShare";
-
-interface PaymentPlanItem {
-  description: string;
-  amount: string;
-  due_date: string;
-  /** % del monto total -- solo se muestra/edita cuando hay más de un pago. */
-  percent: string;
-}
+import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { PaymentPlanRow, resolvePaymentPlan } from "@/lib/paymentPlan";
 
 export interface CapexLineRef {
   id: string;
@@ -140,7 +134,7 @@ export function CapexOCRequiredDialog({
   const [currency, setCurrency] = useState<InputCurrency>("CLP");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanRow[]>([]);
   const [finalAdditionalLines, setFinalAdditionalLines] = useState<CapexLineRef[]>([]);
   const [saving, setSaving] = useState<"final" | "temp" | null>(null);
 
@@ -184,10 +178,6 @@ export function CapexOCRequiredDialog({
     setFinalAdditionalLines([]);
   };
 
-  const addPaymentItem = () =>
-    setPaymentPlan((prev) => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "", percent: "" }]);
-  const removePaymentItem = (index: number) => setPaymentPlan((prev) => prev.filter((_, i) => i !== index));
-
   // El monto requerido se puede ingresar en pesos o en UF.
   // - Pesos: se limpia todo lo que no sea dígito (puntos de miles, "$", etc.).
   // - UF: se convierte a pesos con el valor UF vigente (mismo redondeo que el
@@ -224,41 +214,14 @@ export function CapexOCRequiredDialog({
   };
 
   // Por defecto el plan de pagos es "un pago por el total" -- se arma solo,
-  // sin que el usuario tenga que agregar nada. Mientras siga habiendo un solo
-  // pago, su monto se mantiene igual al monto requerido si éste cambia.
+  // sin que el usuario tenga que agregar nada. Con un solo pago, ese pago es el
+  // saldo (100%) y sigue al monto requerido solo (ver PaymentPlanEditor).
   useEffect(() => {
     if (montoClp <= 0) return;
-    setPaymentPlan((prev) => {
-      if (prev.length === 0) {
-        return [{ description: "Pago único", amount: String(montoClp), due_date: "", percent: "100" }];
-      }
-      if (prev.length === 1) {
-        const pct = parseFloat(prev[0].percent) || 100;
-        const newAmount = String(Math.round((montoClp * pct) / 100));
-        if (prev[0].amount === newAmount) return prev;
-        return [{ ...prev[0], amount: newAmount }];
-      }
-      return prev;
-    });
+    setPaymentPlan((prev) =>
+      prev.length === 0 ? [{ description: "Pago único", amount: "", percent: "", due_date: "", input_mode: "amount" }] : prev
+    );
   }, [montoClp]);
-
-  // Al agregar un segundo pago (o editar uno ya existente), % y monto quedan
-  // ligados: editar uno recalcula el otro contra el monto total requerido.
-  const updatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) =>
-    setPaymentPlan((prev) => prev.map((item, i) => {
-      if (i !== index) return item;
-      if (field === "amount") {
-        const amt = parseFloat(value) || 0;
-        const percent = montoClp > 0 ? String(Math.round((amt / montoClp) * 10000) / 100) : item.percent;
-        return { ...item, amount: value, percent };
-      }
-      if (field === "percent") {
-        const pct = parseFloat(value) || 0;
-        const amount = montoClp > 0 ? String(Math.round((montoClp * pct) / 100)) : item.amount;
-        return { ...item, percent: value, amount };
-      }
-      return { ...item, [field]: value };
-    }));
 
   const handleClose = (o: boolean) => {
     if (!o) reset();
@@ -288,8 +251,11 @@ export function CapexOCRequiredDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialFile]);
 
+  // Cada pago se define por monto o por %, y el último es el saldo: los montos
+  // resueltos son los que se validan y se guardan (no el texto tipeado).
+  const resolvedPlan = resolvePaymentPlan(paymentPlan, montoClp, 0);
   const paymentPlanError = validatePaymentPlanTotal(
-    paymentPlan.filter((p) => parseFloat(p.amount) > 0).map((p) => Math.round(parseFloat(p.amount) || 0)),
+    resolvedPlan.payments.filter((p) => p.amount > 0).map((p) => p.amount),
     montoClp
   );
   // Un "Organismo público" (Municipalidad, Serviu, MOP, etc.) u otro proveedor
@@ -352,17 +318,21 @@ export function CapexOCRequiredDialog({
         return;
       }
 
-      const validPayments = paymentPlan.filter((p) => parseFloat(p.amount) > 0);
-      const planEntries = (validPayments.length > 0 ? validPayments : [{ description: "Pago único", amount: String(montoClp), due_date: "" }])
-        .map((p, idx) => ({
-          quotation_number: quotationNumber,
-          payment_number: idx + 1,
-          description: p.description || `Pago ${idx + 1}`,
-          amount_clp: Math.round(parseFloat(p.amount) || 0),
-          amount_uf: ufValue > 0 ? Math.round(((parseFloat(p.amount) || 0) / ufValue) * 10000) / 10000 : 0,
-          due_date: p.due_date || null,
-          status: "pending",
-        }));
+      const validPayments = paymentPlan
+        .map((p, idx) => ({ ...p, amountClp: resolvedPlan.payments[idx]?.amount ?? 0 }))
+        .filter((p) => p.amountClp > 0);
+      const planEntries = (validPayments.length > 0
+        ? validPayments
+        : [{ description: "Pago único", amountClp: montoClp, due_date: "" }]
+      ).map((p, idx) => ({
+        quotation_number: quotationNumber,
+        payment_number: idx + 1,
+        description: p.description || `Pago ${idx + 1}`,
+        amount_clp: p.amountClp,
+        amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+        due_date: p.due_date || null,
+        status: "pending",
+      }));
       const { error: paymentPlanError2 } = await (supabase as any).from("oc_payment_plans").insert(planEntries);
       if (paymentPlanError2) {
         toast.error("La cotización se asoció, pero no se pudo guardar el plan de pagos");
@@ -506,57 +476,13 @@ export function CapexOCRequiredDialog({
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos *</Label>
-                  <Button size="sm" variant="outline" onClick={addPaymentItem} className="h-7 gap-1">
-                    <Plus className="h-3 w-3" />
-                    Agregar Pago
-                  </Button>
-                </div>
-                {paymentPlan.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">Agrega al menos un pago.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {paymentPlan.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5">
-                        <Input
-                          value={item.description}
-                          onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
-                          placeholder="Descripción"
-                          className="h-8 text-xs flex-1 min-w-[7rem]"
-                        />
-                        {paymentPlan.length > 1 && (
-                          <Input
-                            type="number"
-                            value={item.percent}
-                            onChange={(e) => updatePaymentItem(idx, "percent", e.target.value)}
-                            placeholder="%"
-                            className="h-8 text-xs w-16"
-                          />
-                        )}
-                        <Input
-                          type="number"
-                          value={item.amount}
-                          onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
-                          placeholder="Monto $"
-                          className="h-8 text-xs w-28"
-                        />
-                        <Input
-                          type="date"
-                          value={item.due_date}
-                          onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
-                          className="h-8 text-xs w-36"
-                        />
-                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removePaymentItem(idx)}>
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {paymentPlanError && <p className="text-xs text-destructive">{paymentPlanError}</p>}
-              </div>
+              <PaymentPlanEditor
+                items={paymentPlan}
+                onChange={setPaymentPlan}
+                total={montoClp}
+                currency="CLP"
+                newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+              />
 
               <p className="text-[11px] text-muted-foreground">
                 Puedes asociar otras líneas CAPEX "Autorizado" del mismo presupuesto para cubrir este monto, o
