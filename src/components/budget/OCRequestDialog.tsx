@@ -8,12 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Download, FileSpreadsheet, Plus, Trash2, FileUp, FileText } from "lucide-react";
+import { Loader2, Download, FileSpreadsheet, FileUp, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { PaymentPlanRow, resolvePaymentPlan as resolvePlan } from "@/lib/paymentPlan";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 
 // Presupuesto/cotización adjuntado a la Solicitud -- mismas extensiones y
@@ -39,13 +41,6 @@ interface SelectedLine {
   lineName: string;
   amount: number;
   maxAmount: number;
-}
-
-interface PaymentPlanItem {
-  description: string;
-  amount: string;
-  due_date: string;
-  input_mode: "clp" | "percent" | "balance";
 }
 
 interface OCRequestDialogProps {
@@ -104,7 +99,7 @@ export const OCRequestDialog = ({
   });
   const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
   const [useMultipleLines, setUseMultipleLines] = useState(false);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanRow[]>([]);
   // Presupuesto/cotización adjuntado -- obligatorio para poder crear la
   // solicitud. Se sube al repositorio del contrato (carpeta "Solicitudes de
   // OC") recién al crear, no al elegir el archivo.
@@ -213,31 +208,17 @@ export const OCRequestDialog = ({
     return { number: requestNumber, correlative };
   };
 
-  /** Resuelve cada línea del plan de pagos a un monto CLP concreto — misma
-   *  lógica que se usaba solo al insertar, extraída para poder validar el
-   *  total ANTES de crear nada y para reutilizarla en el PDF de la Solicitud. */
+  /** Resuelve cada línea del plan de pagos a un monto CLP concreto (cada pago es
+   *  monto o %, y el último es el saldo -- ver lib/paymentPlan.ts). Se usa para
+   *  validar el total ANTES de crear nada y para el PDF de la Solicitud. */
   const resolvePaymentPlan = (amountClp: number) => {
+    const resolved = resolvePlan(paymentPlan, amountClp, 0);
     return paymentPlan
-      .map((p, idx) => {
-        let resolvedClp = 0;
-        if (p.input_mode === "balance") {
-          const previousSum = paymentPlan.slice(0, idx).reduce((sum, prev) => {
-            if (prev.input_mode === "percent") return sum + (amountClp * (parseFloat(prev.amount) || 0) / 100);
-            if (prev.input_mode === "balance") return sum;
-            return sum + (parseFloat(prev.amount) || 0);
-          }, 0);
-          resolvedClp = amountClp - previousSum;
-        } else if (p.input_mode === "percent") {
-          resolvedClp = amountClp * (parseFloat(p.amount) || 0) / 100;
-        } else {
-          resolvedClp = parseFloat(p.amount) || 0;
-        }
-        return {
-          description: p.description || `Pago ${idx + 1}`,
-          amountClp: Math.round(resolvedClp),
-          dueDate: p.due_date || null,
-        };
-      })
+      .map((p, idx) => ({
+        description: p.description || `Pago ${idx + 1}`,
+        amountClp: resolved.payments[idx]?.amount ?? 0,
+        dueDate: p.due_date || null,
+      }))
       .filter((e) => e.amountClp > 0);
   };
 
@@ -456,31 +437,6 @@ export const OCRequestDialog = ({
     setForm(prev => ({ ...prev, supplier_id: supplierId, supplier_name: supplierName }));
   };
 
-  const addPaymentItem = () => {
-    setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "", input_mode: "clp" }]);
-  };
-
-  const removePaymentItem = (index: number) => {
-    setPaymentPlan(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) => {
-    setPaymentPlan(prev => prev.map((item, i) => 
-      i === index ? { ...item, [field]: value } : item
-    ));
-  };
-
-  const resolvePaymentClp = (item: PaymentPlanItem, idx: number): number => {
-    const totalClp = form.currency === "CLP" ? (parseFloat(form.amount) || 0) : (parseFloat(form.amount) || 0) * ufValue;
-    if (item.input_mode === "percent") return totalClp * (parseFloat(item.amount) || 0) / 100;
-    if (item.input_mode === "balance") {
-      const prevSum = paymentPlan.slice(0, idx).reduce((s, p, i) => s + resolvePaymentClp(p, i), 0);
-      return Math.max(0, totalClp - prevSum);
-    }
-    return parseFloat(item.amount) || 0;
-  };
-
-  const totalPlanned = paymentPlan.reduce((sum, p, idx) => sum + resolvePaymentClp(p, idx), 0);
   const totalClpForPayments = form.currency === "CLP" ? (parseFloat(form.amount) || 0) : (parseFloat(form.amount) || 0) * ufValue;
   // Amount is always from the form
   const currentTotal = form.currency === "CLP" && ufValue > 0
@@ -710,121 +666,14 @@ export const OCRequestDialog = ({
           </TabsContent>
 
           <TabsContent value="payments" className="space-y-4 mt-4">
-            <div className="flex items-center justify-between">
-              <Label>Plan de Pagos *</Label>
-              <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
-                <Plus className="h-3 w-3" />
-                Agregar Pago
-              </Button>
-            </div>
-
-            {paymentPlan.length === 0 ? (
-              <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
-                <p>No hay pagos planificados.</p>
-                <p className="text-xs mt-1">Debes agregar al menos un pago para poder crear la solicitud.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {paymentPlan.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Descripción</Label>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
-                        placeholder={`Pago ${idx + 1}`}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Tipo</Label>
-                      <Select
-                        value={item.input_mode}
-                        onValueChange={(v) => {
-                          setPaymentPlan(prev => prev.map((p, i) => i === idx ? { ...p, input_mode: v as "clp" | "percent" | "balance", amount: v === "balance" ? "" : p.amount } : p));
-                        }}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="clp">$ Monto</SelectItem>
-                          <SelectItem value="percent">% del Total</SelectItem>
-                          {idx > 0 && <SelectItem value="balance">Saldo</SelectItem>}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">
-                        {item.input_mode === "percent" ? "Porcentaje" : "Monto ($)"}
-                      </Label>
-                      {item.input_mode === "balance" ? (
-                        <div className="h-9 flex items-center px-3 border rounded-md bg-muted/50 text-sm font-mono">
-                          $ {Math.round(resolvePaymentClp(item, idx)).toLocaleString("es-CL")}
-                        </div>
-                      ) : (
-                        <Input
-                          type="number"
-                          value={item.amount}
-                          onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
-                          placeholder={item.input_mode === "percent" ? "0-100" : "0"}
-                          min="0"
-                          max={item.input_mode === "percent" ? "100" : undefined}
-                        />
-                      )}
-                      {/* Equivalency display */}
-                      {(() => {
-                        const resolved = resolvePaymentClp(item, idx);
-                        if (resolved > 0 && ufValue > 0) {
-                          return (
-                            <p className="text-[10px] text-muted-foreground">
-                              {item.input_mode === "percent" && `= $ ${Math.round(resolved).toLocaleString("es-CL")} · `}
-                              ≈ UF {(resolved / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Vencimiento</Label>
-                      <Input
-                        type="date"
-                        value={item.due_date}
-                        onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => removePaymentItem(idx)}
-                        className="h-9 w-9 text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-
-                <div className="p-3 bg-muted/50 rounded-lg text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total planificado:</span>
-                    <span className={`font-medium ${totalPlanned > totalClpForPayments + 1 ? 'text-destructive' : ''}`}>
-                      $ {Math.round(totalPlanned).toLocaleString("es-CL")}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total solicitud:</span>
-                    <span className="font-medium">$ {Math.round(totalClpForPayments).toLocaleString("es-CL")}</span>
-                  </div>
-                  {totalPlanned > totalClpForPayments + 1 && (
-                    <p className="text-xs text-destructive mt-1">
-                      El plan de pagos excede el monto de la solicitud
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
+            <PaymentPlanEditor
+              items={paymentPlan}
+              onChange={setPaymentPlan}
+              total={Math.round(totalClpForPayments)}
+              currency="CLP"
+              ufValue={ufValue}
+              newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+            />
           </TabsContent>
         </Tabs>
 
