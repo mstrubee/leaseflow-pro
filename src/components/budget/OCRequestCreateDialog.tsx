@@ -15,7 +15,7 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
-import { PaymentPlanRow, paymentDecimals, resolvePaymentPlan } from "@/lib/paymentPlan";
+import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import type { parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 
 interface SelectedLine {
@@ -318,20 +318,8 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     // de comparar — si la moneda es UF, comparar los montos crudos con una
     // tolerancia de "1 peso" habría sido inútil (1 UF son ~$38.000).
     const resolvedPlan = resolvePaymentPlan(paymentPlan, enteredAmount, paymentDecimals(inputCurrency));
-    const toClp = (amount: number) =>
-      inputCurrency === "CLP" ? Math.round(amount) : Math.round(amount * currentUfValue);
-    // Montos en pesos de cada pago. El último es el saldo también en pesos
-    // (total - anteriores): convertir cada pago UF por separado puede sumar 1-2
-    // pesos de diferencia por redondeo y dejar el plan sin cuadrar.
-    const planClp: number[] = [];
-    resolvedPlan.payments.forEach((p, i) => {
-      if (i < resolvedPlan.payments.length - 1) {
-        planClp.push(toClp(p.amount));
-      } else {
-        const prev = planClp.reduce((sum, v) => sum + v, 0);
-        planClp.push(p.amount > 0 ? Math.max(0, totalAmountClp - prev) : 0);
-      }
-    });
+    // Montos en pesos de cada pago; el último es el saldo también en pesos.
+    const planClp = paymentsToClp(resolvedPlan, inputCurrency, currentUfValue, totalAmountClp);
     if (paymentPlan.length > 0) {
       const planError = validatePaymentPlanTotal(planClp, totalAmountClp);
       if (planError) {

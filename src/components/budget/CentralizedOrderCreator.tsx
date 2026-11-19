@@ -22,6 +22,8 @@ import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo
 import { formatCLP } from "@/lib/utils";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
 interface Contract {
@@ -68,12 +70,6 @@ interface ContractAllocation {
   cebe: string | null;
   amount: number;
   maintenanceFormIds: string[];
-}
-
-interface PaymentPlanItem {
-  description: string;
-  amount: string;
-  due_date: string;
 }
 
 export interface CapexBudgetLine {
@@ -260,7 +256,7 @@ export const CentralizedOrderCreator = ({
   const [isMultiContract, setIsMultiContract] = useState(false);
   const [singleContractId, setSingleContractId] = useState("");
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanRow[]>([]);
   
   // Maintenance form assignment
   const [assignToForm, setAssignToForm] = useState(false);
@@ -610,25 +606,6 @@ export const CentralizedOrderCreator = ({
     setContractAllocations(prev => prev.filter((_, i) => i !== index));
   };
   
-  // Handle adding payment plan item
-  const handleAddPaymentItem = () => {
-    setPaymentPlan(prev => [...prev, { description: "", amount: "", due_date: "" }]);
-  };
-  
-  // Handle updating payment item
-  const handleUpdatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) => {
-    setPaymentPlan(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-  
-  // Handle removing payment item
-  const handleRemovePaymentItem = (index: number) => {
-    setPaymentPlan(prev => prev.filter((_, i) => i !== index));
-  };
-  
   // Handle quotation file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -827,11 +804,13 @@ export const CentralizedOrderCreator = ({
         // antes nada lo garantizaba y un plan incompleto dejaba un pago sin
         // registrar. Se resuelve una sola vez y se reutiliza para el insert
         // y para el PDF que se comparte, en vez de recalcularlo dos veces.
-        const resolvedPayments = paymentPlan.map((p, idx) => {
-          const pAmount = parseFloat(p.amount) || 0;
-          const amountClp = formData.currency === "CLP" ? Math.round(pAmount) : Math.round(pAmount * ufValue);
-          return { description: p.description || `Pago ${idx + 1}`, amountClp, dueDate: p.due_date || null };
-        });
+        // Cada pago es monto o %, y el último es el saldo (ver lib/paymentPlan.ts);
+        // en pesos también, para que el plan cuadre exacto pese al redondeo en UF.
+        const resolvedPlan = resolvePaymentPlan(paymentPlan, enteredAmount, paymentDecimals(formData.currency));
+        const planClp = paymentsToClp(resolvedPlan, formData.currency, ufValue, totalAmountClp);
+        const resolvedPayments = paymentPlan
+          .map((p, idx) => ({ description: p.description || `Pago ${idx + 1}`, amountClp: planClp[idx] ?? 0, dueDate: p.due_date || null }))
+          .filter((p) => p.amountClp > 0);
         const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), totalAmountClp);
         if (planError) {
           throw new Error(planError);
@@ -1851,70 +1830,17 @@ export const CentralizedOrderCreator = ({
               </TabsContent>
 
               <TabsContent value="payments" className="mt-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos{mode === "request" ? " *" : " (opcional)"}</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={handleAddPaymentItem}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Agregar Pago
-                  </Button>
-                </div>
-
-                {paymentPlan.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    {mode === "request"
-                      ? "Debes agregar al menos un pago para poder crear la solicitud."
-                      : "Sin plan de pagos definido (se creará pago único automáticamente)"}
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Descripción</TableHead>
-                        <TableHead>Monto ({formData.currency})</TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead className="w-10"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paymentPlan.map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>
-                            <Input
-                              value={item.description}
-                              onChange={(e) => handleUpdatePaymentItem(idx, "description", e.target.value)}
-                              placeholder={`Pago ${idx + 1}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              value={item.amount}
-                              onChange={(e) => handleUpdatePaymentItem(idx, "amount", e.target.value)}
-                              min="0"
-                              step="1"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="date"
-                              value={item.due_date}
-                              onChange={(e) => handleUpdatePaymentItem(idx, "due_date", e.target.value)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleRemovePaymentItem(idx)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                <PaymentPlanEditor
+                  title={`Plan de Pagos${mode === "request" ? " *" : " (opcional)"}`}
+                  items={paymentPlan}
+                  onChange={setPaymentPlan}
+                  total={enteredAmount}
+                  currency={formData.currency}
+                  ufValue={ufValue > 0 ? ufValue : undefined}
+                  newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+                />
+                {paymentPlan.length === 0 && mode !== "request" && (
+                  <p className="text-xs text-muted-foreground">Sin plan de pagos definido (se creará pago único automáticamente).</p>
                 )}
               </TabsContent>
             </div>
