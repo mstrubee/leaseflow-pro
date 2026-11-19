@@ -8,12 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { PaymentPlanRow, paymentDecimals, resolvePaymentPlan } from "@/lib/paymentPlan";
 import type { parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 
 interface SelectedLine {
@@ -21,12 +23,6 @@ interface SelectedLine {
   lineName: string;
   amount: number;
   maxAmount: number;
-}
-
-interface PaymentPlanItem {
-  description: string;
-  amount: string;
-  due_date: string;
 }
 
 /** Prellenado al convertir un Requerimiento de OC (oc_quotations) en
@@ -41,7 +37,7 @@ export interface OCRequestPrefillDraft {
   fileName: string | null;
   supplierId: string | null;
   supplierName: string | null;
-  paymentPlan: PaymentPlanItem[];
+  paymentPlan: PaymentPlanRow[];
 }
 
 type ParsedOCRequestExcel = Awaited<ReturnType<typeof parseOCRequestExcel>>;
@@ -94,7 +90,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
   const [selectedBudgetId, setSelectedBudgetId] = useState("");
   const [loadingBudgets, setLoadingBudgets] = useState(false);
   const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanRow[]>([]);
   const [newRequestForm, setNewRequestForm] = useState({
     description: "",
     amount: "",
@@ -247,20 +243,6 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillDraft]);
 
-  const addPaymentItem = () => {
-    setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
-  };
-
-  const removePaymentItem = (index: number) => {
-    setPaymentPlan(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) => {
-    setPaymentPlan(prev => prev.map((item, i) => 
-      i === index ? { ...item, [field]: value } : item
-    ));
-  };
-
   const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '.');
@@ -330,18 +312,30 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     }
 
     // El plan de pagos debe sumar EXACTO el monto solicitado, no solo "no
-    // superarlo": un plan incompleto dejaría un pago sin registrar. Se
-    // convierte a CLP antes de comparar — si la moneda es UF, comparar los
-    // montos crudos con una tolerancia de "1 peso" habría sido inútil (1 UF
-    // son ~$38.000).
+    // superarlo": un plan incompleto dejaría un pago sin registrar. Cada pago es
+    // monto o %, y el último es el saldo (ver lib/paymentPlan.ts), así que solo
+    // falla si los pagos anteriores ya superan el total. Se convierte a CLP antes
+    // de comparar — si la moneda es UF, comparar los montos crudos con una
+    // tolerancia de "1 peso" habría sido inútil (1 UF son ~$38.000).
+    const resolvedPlan = resolvePaymentPlan(paymentPlan, enteredAmount, paymentDecimals(inputCurrency));
+    const toClp = (amount: number) =>
+      inputCurrency === "CLP" ? Math.round(amount) : Math.round(amount * currentUfValue);
+    // Montos en pesos de cada pago. El último es el saldo también en pesos
+    // (total - anteriores): convertir cada pago UF por separado puede sumar 1-2
+    // pesos de diferencia por redondeo y dejar el plan sin cuadrar.
+    const planClp: number[] = [];
+    resolvedPlan.payments.forEach((p, i) => {
+      if (i < resolvedPlan.payments.length - 1) {
+        planClp.push(toClp(p.amount));
+      } else {
+        const prev = planClp.reduce((sum, v) => sum + v, 0);
+        planClp.push(p.amount > 0 ? Math.max(0, totalAmountClp - prev) : 0);
+      }
+    });
     if (paymentPlan.length > 0) {
-      const resolvedPaymentsClp = paymentPlan.map((p) => {
-        const raw = parseFloat(p.amount) || 0;
-        return inputCurrency === "CLP" ? Math.round(raw) : Math.round(raw * currentUfValue);
-      });
-      const planError = validatePaymentPlanTotal(resolvedPaymentsClp, totalAmountClp);
+      const planError = validatePaymentPlanTotal(planClp, totalAmountClp);
       if (planError) {
-        toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: `${planError} Usa "Cuadrar" para ajustar.` });
+        toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: planError });
         return;
       }
     }
@@ -415,13 +409,14 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         // Create payment plans
         if (paymentPlan.length > 0) {
           const planEntries = paymentPlan
-            .filter(p => parseFloat(p.amount) > 0)
+            .map((p, i) => ({ ...p, resolved: resolvedPlan.payments[i]?.amount ?? 0, clp: planClp[i] ?? 0 }))
+            .filter(p => p.resolved > 0)
             .map((p, idx) => {
-              const pAmount = parseFloat(p.amount);
+              const pAmount = p.resolved;
               const amountUf = inputCurrency === "CLP" && currentUfValue > 0
                 ? Math.round((pAmount / currentUfValue) * 10000) / 10000
                 : pAmount;
-              const amountClp = inputCurrency === "CLP" ? Math.round(pAmount) : Math.round(pAmount * currentUfValue);
+              const amountClp = p.clp;
               return {
                 oc_request_id: requestData.id,
                 payment_number: idx + 1,
@@ -481,12 +476,11 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         requestId: requestData?.id,
         verificationCode: (requestData as any)?.verification_code,
         payments: paymentPlan
-          .filter((p) => parseFloat(p.amount) > 0)
+          .map((p, i) => ({ ...p, resolved: resolvedPlan.payments[i]?.amount ?? 0, clp: planClp[i] ?? 0 }))
+          .filter((p) => p.resolved > 0)
           .map((p) => ({
             description: p.description || "Pago",
-            amountClp: inputCurrency === "CLP"
-              ? Math.round(parseFloat(p.amount))
-              : Math.round(parseFloat(p.amount) * currentUfValue),
+            amountClp: p.clp,
             dueDate: p.due_date || null,
           })),
         supplierName: newRequestForm.supplier_name,
@@ -500,9 +494,10 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     }
   };
 
-  const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   // totalSelected in same currency as form input
   const totalSelected = parseFloat(newRequestForm.amount) || 0;
+  // Suma del plan ya resuelto (monto o %, último pago = saldo)
+  const totalPlanned = resolvePaymentPlan(paymentPlan, totalSelected, paymentDecimals(newRequestForm.currency)).planned;
 
   const capexBudget = availableBudgets.find(b => b.type === "capex");
   const opexBudget = availableBudgets.find(b => b.type === "opex");
@@ -729,117 +724,14 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
               </TabsContent>
 
               <TabsContent value="payments" className="space-y-4 mt-4">
-                <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos *</Label>
-                  <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
-                    <Plus className="h-3 w-3" />
-                    Agregar Pago
-                  </Button>
-                </div>
-
-                {paymentPlan.length === 0 ? (
-                  <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
-                    <p>No hay pagos planificados.</p>
-                    <p className="text-xs mt-1">Debes agregar al menos un pago para poder crear la solicitud.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {paymentPlan.map((item, idx) => {
-                      const isLastRow = idx === paymentPlan.length - 1;
-                      const showCuadrar = isLastRow && totalPlanned > totalSelected;
-                      return (
-                        <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                          <div className={`space-y-1 ${showCuadrar ? "col-span-3" : "col-span-4"}`}>
-                            <Label className="text-xs">Descripción</Label>
-                            <Input
-                              value={item.description}
-                              onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
-                              placeholder={`Pago ${idx + 1}`}
-                            />
-                          </div>
-                          <div className="col-span-3 space-y-1">
-                            <Label className="text-xs">Monto ({newRequestForm.currency})</Label>
-                            <Input
-                              type="number"
-                              value={item.amount}
-                              onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
-                              placeholder="0.00"
-                              step="0.01"
-                            />
-                          </div>
-                          <div className={`space-y-1 ${showCuadrar ? "col-span-3" : "col-span-4"}`}>
-                            <Label className="text-xs">Vencimiento (opcional)</Label>
-                            <Input
-                              type="date"
-                              value={item.due_date}
-                              onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
-                            />
-                          </div>
-                          {showCuadrar && (
-                            <div className="col-span-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                className="h-9 w-full text-xs"
-                                title="Ajustar este pago para que el total no supere el monto de la solicitud"
-                                onClick={() => {
-                                  const otherSum = paymentPlan.slice(0, -1).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-                                  const adjusted = Math.max(0, totalSelected - otherSum);
-                                  updatePaymentItem(idx, "amount", adjusted.toFixed(2));
-                                }}
-                              >
-                                Cuadrar
-                              </Button>
-                            </div>
-                          )}
-                          <div className="col-span-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removePaymentItem(idx)}
-                              className="h-9 w-9 text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    <div className="p-3 bg-muted/50 rounded-lg text-sm space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total planificado:</span>
-                        <div className="text-right">
-                          <span className={`font-medium ${totalPlanned > totalSelected ? 'text-destructive' : ''}`}>
-                            {newRequestForm.currency === "CLP" 
-                              ? formatCLP(totalPlanned) 
-                              : formatCLP(totalPlanned * (ufValue > 0 ? ufValue : 38000))}
-                          </span>
-                          <div className="text-[11px] text-muted-foreground">
-                            {newRequestForm.currency === "CLP" 
-                              ? formatUF(ufValue > 0 ? totalPlanned / ufValue : 0)
-                              : formatUF(totalPlanned)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total solicitud:</span>
-                        <div className="text-right">
-                          <span className="font-medium">
-                            {newRequestForm.currency === "CLP" 
-                              ? formatCLP(totalSelected) 
-                              : formatCLP(totalSelected * (ufValue > 0 ? ufValue : 38000))}
-                          </span>
-                          <div className="text-[11px] text-muted-foreground">
-                            {newRequestForm.currency === "CLP" 
-                              ? formatUF(ufValue > 0 ? totalSelected / ufValue : 0)
-                              : formatUF(totalSelected)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <PaymentPlanEditor
+                  items={paymentPlan}
+                  onChange={setPaymentPlan}
+                  total={totalSelected}
+                  currency={newRequestForm.currency}
+                  ufValue={ufValue > 0 ? ufValue : undefined}
+                  newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+                />
 
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setNewRequestTab("lines")}>
