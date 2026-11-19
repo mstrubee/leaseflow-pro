@@ -326,11 +326,20 @@ export const CentralizedOrderCreator = ({
   };
   
   // Handle quotation file selection
+  // Decision: creating a Purchase Order ("Nueva OC") requires the OC document as a PDF.
+  // "request" mode (Solicitud OC) keeps its optional quotation of any allowed type.
+  const isPdfFile = (file: File) =>
+    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setQuotationFile(file);
+    if (!file) return;
+    if (mode === "order" && !isPdfFile(file)) {
+      toast({ title: "Archivo inválido", description: "Solo se permiten archivos PDF", variant: "destructive" });
+      e.target.value = "";
+      return;
     }
+    setQuotationFile(file);
   };
   
   const handleRemoveFile = () => {
@@ -388,6 +397,12 @@ export const CentralizedOrderCreator = ({
   // Handle form submission
   const handleSubmit = async () => {
     // Validation
+    if (mode === "order" && (!quotationFile || !isPdfFile(quotationFile))) {
+      toast({ title: "Falta el PDF de la OC", description: "Debe adjuntar la OC en formato PDF para poder crearla", variant: "destructive" });
+      setActiveTab("basic");
+      return;
+    }
+
     if (mode === "order" && duplicateOCWarning) {
       toast({ title: "Error", description: "Número de OC ya existe. No se puede guardar.", variant: "destructive" });
       return;
@@ -927,13 +942,13 @@ export const CentralizedOrderCreator = ({
                 
                 {/* Quotation File Upload */}
                 <div className="space-y-2">
-                  <Label>Cotización (archivo)</Label>
+                  <Label>{mode === "order" ? "Orden de Compra (PDF) *" : "Cotización (archivo)"}</Label>
                   <input
                     ref={fileInputRef}
                     type="file"
                     onChange={handleFileSelect}
                     className="hidden"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    accept={mode === "order" ? ".pdf,application/pdf" : ".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"}
                   />
                   {!quotationFile ? (
                     <Button
@@ -944,7 +959,7 @@ export const CentralizedOrderCreator = ({
                       disabled={uploadingFile}
                     >
                       <Upload className="h-4 w-4 mr-2" />
-                      Subir cotización
+                      {mode === "order" ? "Subir OC en PDF" : "Subir cotización"}
                     </Button>
                   ) : (
                     <div className="flex items-center gap-2 p-2 border rounded bg-muted/50">
@@ -961,9 +976,14 @@ export const CentralizedOrderCreator = ({
                       </Button>
                     </div>
                   )}
+                  {mode === "order" && !quotationFile && (
+                    <p className="text-xs text-muted-foreground">
+                      Obligatorio: sin el PDF de la OC no es posible crearla.
+                    </p>
+                  )}
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="contracts" className="mt-4 space-y-4">
                 {/* Multi-contract toggle */}
                 <div className="flex items-center space-x-2">
@@ -1273,7 +1293,7 @@ export const CentralizedOrderCreator = ({
           <Button variant="outline" onClick={handleClose} disabled={loading}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || loadingData}>
+          <Button onClick={handleSubmit} disabled={loading || loadingData || (mode === "order" && !quotationFile)}>
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {mode === "request" ? "Crear Solicitud" : "Crear OC"}
           </Button>
