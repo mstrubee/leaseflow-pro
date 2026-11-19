@@ -105,6 +105,7 @@ import { OCRequestCreateDialog, type OCRequestPrefillDraft } from "@/components/
 import { CapexOCRequiredDialog } from "@/components/budget/CapexOCRequiredDialog";
 import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
 import { fetchQuotationFile } from "@/lib/ocRequestQuotation";
+import { loadApprovedCapexLines } from "@/lib/approvedCapexLines";
 import { OCRequiredGroupDetail } from "@/components/budget/OCRequiredGroupDetail";
 import { loadSolicitudesByQuotation, loadContractCebe, type OCRequiredGroupSolicitud } from "@/lib/ocRequiredGroups";
 import { buildPrefillDraftFromGroup } from "@/lib/ocRequiredDraft";
@@ -196,10 +197,10 @@ interface Contract {
 }
 
 /** Una línea de presupuesto (CAPEX u OPEX) en estado "Solicita Autorizar", u
- *  "Observada" (rechazada), o ya "Autorizado" en "Aprobadas": las CAPEX
- *  autorizadas permanecen ahí (sin importar la antigüedad) hasta que tengan un
- *  Requerimiento de OC; las OPEX solo durante 24hs, porque no tienen flujo de
- *  requerimiento (ver loadData > solicitaLines y la pestaña homónima). */
+ *  "Observada" (rechazada), o ya "Autorizado" en "Aprobadas": las CAPEX aprobadas
+ *  desde Pendientes permanecen ahí (sin importar la antigüedad) hasta que pasen a
+ *  la etapa de OC (ver loadApprovedCapexLines); las OPEX solo durante 24hs, porque
+ *  no tienen flujo de requerimiento (ver loadData > solicitaLines y la pestaña homónima). */
 interface SolicitaAutorizacionLine {
   id: string;
   name: string;
@@ -808,48 +809,24 @@ const PurchaseOrdersDashboard = () => {
       // Load "Solicita Autorización" (líneas CAPEX/OPEX pidiendo autorización,
       // + Aprobadas + Observadas -- ver pestaña homónima). Cross-contrato, igual
       // que Requerimientos de OC arriba.
-      //  - Aprobadas CAPEX: TODAS las autorizadas que aún no tienen Requerimiento de
-      //    OC, sin importar la fecha ni la antigüedad (salen al crear el requerimiento).
+      //  - Aprobadas CAPEX: líneas "Autorizado" que PROVIENEN de una aprobación desde
+      //    Pendientes (lo prueba budget_lines_audit: pasaron de solicita_autorizar a
+      //    autorizado), sin límite de fecha, y que aún no pasaron a la etapa de OC:
+      //    sin Requerimiento de OC definitivo (estado "OC Requerida"; el guardado
+      //    temporal las deja en "Cotizado" y NO cuenta) y sin OC ni Solicitud de OC
+      //    asociada. Ver loadApprovedCapexLines.
       //  - Aprobadas OPEX: solo las autorizadas hace menos de 24hs (no tienen flujo de
       //    requerimiento, así que no pueden "salir" de otra manera).
       const authorizedCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-      // PostgREST devuelve como máximo 1000 filas por consulta: se pagina.
-      const PAGE_SIZE = 1000;
-      const fetchAllPages = async (
-        build: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>
-      ): Promise<{ data: any[]; error: any }> => {
-        const all: any[] = [];
-        for (let from = 0; ; from += PAGE_SIZE) {
-          const { data, error } = await build(from, from + PAGE_SIZE - 1);
-          if (error) return { data: all, error };
-          all.push(...(data || []));
-          if (!data || data.length < PAGE_SIZE) break;
-        }
-        return { data: all, error: null };
-      };
-
       // select("*") y no una lista de columnas en Pendientes/Observadas: así no
       // fallan si las columnas rejected_* de la migración aún no existen.
-      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedCapexData, error: approvedCapexError }, { data: approvedOpexData, error: approvedOpexError }, { data: observedLinesData, error: observedLinesError }] = await Promise.all([
+      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedOpexData, error: approvedOpexError }, { data: observedLinesData, error: observedLinesError }, approvedCapexLeaves] = await Promise.all([
         supabase
           .from("budget_lines")
           .select("*, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "solicita_autorizar"),
-        fetchAllPages((from, to) =>
-          supabase
-            .from("budget_lines")
-            .select("id, name, amount_uf, status, authorized_at, rejected_at, rejection_note, quotation_file_url, quotation_file_name, quotation_storage_path, currency, supplier_id, supplier_name, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
-            .is("deleted_at", null)
-            .eq("status", "autorizado")
-            .eq("is_ghost", false)
-            .eq("is_surcharge", false)
-            .is("merged_into_line_id", null)
-            .eq("contract_budgets.budget_type", "capex")
-            .order("id")
-            .range(from, to)
-        ),
         supabase
           .from("budget_lines")
           .select("*, contract_budgets!inner(contract_id, year, budget_type)")
@@ -866,27 +843,11 @@ const PurchaseOrdersDashboard = () => {
           .is("deleted_at", null)
           .eq("status", "no_autorizado")
           .not("rejected_at", "is", null),
+        loadApprovedCapexLines(),
       ]);
       if (pendingLinesError) console.error("Error loading solicita_autorizar lines:", pendingLinesError);
-      if (approvedCapexError) console.error("Error loading approved CAPEX lines:", approvedCapexError);
       if (approvedOpexError) console.error("Error loading recently approved OPEX lines:", approvedOpexError);
       if (observedLinesError) console.error("Error loading observed lines:", observedLinesError);
-
-      // Aprobadas CAPEX: se descartan las que ya tienen Requerimiento de OC
-      // (oc_quotations, aunque esté convertido o guardado temporalmente) y las
-      // líneas madre -- su propio `status` es vestigial y no admiten requerimiento.
-      const lineIdsWithRequirement = new Set<string>(quotationRows.map((r) => r.budget_line_id));
-      const approvedCapexCandidates = approvedCapexData.filter((r: any) => !lineIdsWithRequirement.has(r.id));
-      const parentIds = new Set<string>();
-      for (let i = 0; i < approvedCapexCandidates.length; i += 100) {
-        const chunk = approvedCapexCandidates.slice(i, i + 100).map((r: any) => r.id);
-        const { data: childRows, error: childError } = await fetchAllPages((from, to) =>
-          supabase.from("budget_lines").select("id, parent_id").in("parent_id", chunk).is("deleted_at", null).order("id").range(from, to)
-        );
-        if (childError) console.error("Error loading child lines:", childError);
-        childRows.forEach((c: any) => c.parent_id && parentIds.add(c.parent_id));
-      }
-      const approvedCapexLeaves = approvedCapexCandidates.filter((r: any) => !parentIds.has(r.id));
 
       const solicitaRows = [...(pendingLinesData || []), ...approvedCapexLeaves, ...(approvedOpexData || []), ...(observedLinesData || [])];
       setSolicitaLines(
@@ -1511,7 +1472,7 @@ const PurchaseOrdersDashboard = () => {
     // Una línea de valor 0 no puede estar pendiente de aprobación (no hay nada que
     // autorizar): se oculta aunque la BD aún la tenga en "solicita_autorizar"
     // (datos previos a la regla que lo impide al marcarla). Las ya autorizadas
-    // no se tocan (ver solicitaApproved para las que ya tienen requerimiento).
+    // no se tocan (las reglas de Aprobadas se aplican al cargar).
     let filtered = solicitaLines.filter(
       (l) => l.year === yearNum && (l.status !== "solicita_autorizar" || Math.abs(l.amount_uf) > 0.0001)
     );
@@ -1532,17 +1493,10 @@ const PurchaseOrdersDashboard = () => {
   }, [solicitaLines, yearFilter, searchTerm, solicitaContractFilter, contracts]);
 
   const solicitaPending = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "solicita_autorizar"), [filteredSolicitaLines]);
-  // Aprobadas = autorizadas que aún no tienen Requerimiento de OC (sin importar la
-  // antigüedad): al crear el requerimiento la línea sale de acá en el acto, sin esperar
-  // a que se recargue la lista (ocRequiredGroups trae todos los requerimientos).
-  const requiredLineIds = useMemo(
-    () => new Set(ocRequiredGroups.flatMap((g) => g.lines.map((line) => line.budgetLineId))),
-    [ocRequiredGroups]
-  );
-  const solicitaApproved = useMemo(
-    () => filteredSolicitaLines.filter((l) => l.status === "autorizado" && !requiredLineIds.has(l.id)),
-    [filteredSolicitaLines, requiredLineIds]
-  );
+  // Aprobadas: las reglas (aprobada desde Pendientes, sin requerimiento definitivo ni OC)
+  // se aplican al cargar (loadApprovedCapexLines). Al crear un requerimiento definitivo la
+  // línea se quita en el acto (ver el diálogo "Requerir OC"); el guardado temporal la deja.
+  const solicitaApproved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "autorizado"), [filteredSolicitaLines]);
   const solicitaObserved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "no_autorizado"), [filteredSolicitaLines]);
 
   // Rechazar / ver observación (admin y quienes pueden autorizar).
@@ -5510,11 +5464,14 @@ const PurchaseOrdersDashboard = () => {
           formatCLP={formatCLP}
           convertUFToPesos={(uf) => Math.round(uf * ufValue)}
           initialFile={requireOcTarget.initialFile}
-          onComplete={() => {
-            // La línea sale de "Aprobadas" en el acto (ya tiene requerimiento) y se
-            // recarga todo para que aparezca en "Requerimientos de OC".
+          onComplete={(result) => {
+            // "Guardar" (definitivo): la línea sale de "Aprobadas" en el acto. "Guardar
+            // temporalmente" NO cuenta como requerimiento: la línea se queda ahí. En ambos
+            // casos se recarga todo para reflejar el estado real.
             const lineId = requireOcTarget.line.id;
-            setSolicitaLines((prev) => prev.filter((x) => x.id !== lineId));
+            if (result?.mode === "final") {
+              setSolicitaLines((prev) => prev.filter((x) => x.id !== lineId));
+            }
             setRequireOcTarget(null);
             loadData();
           }}

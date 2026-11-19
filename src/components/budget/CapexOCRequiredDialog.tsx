@@ -52,7 +52,9 @@ interface CapexOCRequiredDialogProps {
    *  a Requerimiento de OC") -- si viene, se pre-carga y el diálogo arranca
    *  directo en el paso "amount" en vez de pedir el archivo de nuevo. */
   initialFile?: File | null;
-  onComplete: () => void;
+  /** `mode`: "final" = "Guardar" (las líneas quedan en "OC Requerida"); "temp" = "Guardar
+   *  temporalmente" (quedan en "Cotizado", todavía sin requerimiento definitivo). */
+  onComplete: (result?: { mode: "final" | "temp" }) => void;
 }
 
 type Step = "upload" | "amount" | "selecting" | "summary";
@@ -360,7 +362,7 @@ export function CapexOCRequiredDialog({
           : `Línea marcada como "${statusLabel}"`
       );
       reset();
-      onComplete();
+      onComplete({ mode });
     } catch (error: any) {
       console.error("Error al procesar OC Requerida:", error);
       toast.error("Ocurrió un error al procesar la solicitud");

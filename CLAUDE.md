@@ -125,6 +125,19 @@ const canEditTasks = parentEdit || hasPermission("gantt_editar_tareas", "edit");
 
 ---
 
+## Solicita Autorización > "Aprobadas" (`/purchase-orders`)
+- Muestra las líneas **CAPEX** "Autorizado" que **provienen de una aprobación desde Pendientes** (lo prueba
+  `budget_lines_audit`: pasaron de `solicita_autorizar` a `autorizado`), sin límite de fecha, y que aún no pasaron a la etapa
+  de OC. Reglas en `src/lib/approvedCapexLines.ts`: no madre / traslado / recargo; **sin Requerimiento de OC definitivo**
+  (estado de avance "OC Requerida" — "Guardar temporalmente" deja la línea en "Cotizado" y **no cuenta**); sin OC
+  (directa o por tabla puente, sin contar eliminadas) ni Solicitud de OC asociada.
+- Botón "Requerir OC" abre `CapexOCRequiredDialog` para esa línea. Al guardar de forma definitiva sale de la lista; si se
+  borra el requerimiento, vuelve a aparecer. Las **OPEX** solo se listan 24 h (no tienen flujo de requerimiento).
+- Depende del historial en `budget_lines_audit`: una línea aprobada antes de que existiera, o autorizada directo en el
+  contrato sin pasar por Pendientes, no se lista.
+
+---
+
 ## OPEX: categorías por año (desde 2027)
 - Renombrar, fusionar y retirar categorías OPEX rige **solo desde 2027**; 2026 no se toca. "Eliminar" = retirar
   (`valid_to_year`), nunca borrar. Una OC solo usa categorías vigentes en el año de su fecha de OC (trigger en la base).
