@@ -511,6 +511,9 @@ export type Database = {
           merged_into_line_id: string | null
           moved_at: string | null
           moved_by: string | null
+          rejected_at: string | null
+          rejected_by: string | null
+          rejection_note: string | null
           moved_to_line_id: string | null
           name: string
           original_amount_uf: number | null
@@ -550,6 +553,9 @@ export type Database = {
           merged_into_line_id?: string | null
           moved_at?: string | null
           moved_by?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_note?: string | null
           moved_to_line_id?: string | null
           name: string
           original_amount_uf?: number | null
@@ -589,6 +595,9 @@ export type Database = {
           merged_into_line_id?: string | null
           moved_at?: string | null
           moved_by?: string | null
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_note?: string | null
           moved_to_line_id?: string | null
           name?: string
           original_amount_uf?: number | null

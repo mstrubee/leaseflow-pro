@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 import { sanitizeFileName } from "@/lib/fileValidation";
 import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
+import { clearLineRejections } from "@/lib/budgetLineRejection";
 
 export interface SolicitaAutorizarLineRef {
   id: string;
@@ -155,6 +156,9 @@ export function SolicitaAutorizarDialog({
         toast.error('Las líneas quedaron en "Solicita Autorizar", pero no se pudo guardar la cotización');
         return;
       }
+
+      // Al volver a pedir autorización se limpia la observación del rechazo anterior.
+      await clearLineRejections(targetIds);
 
       toast.success(
         targetLines.length > 1

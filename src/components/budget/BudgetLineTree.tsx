@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, CornerDownRight, GripVertical, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,8 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useBudgetProgressStatuses, getProgressColorClass } from "@/hooks/useBudgetProgressStatuses";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { LineObservationDialog, RejectAuthorizationDialog } from "./LineRejectionDialogs";
+import { rejectAuthorizationRequest, clearLineRejections } from "@/lib/budgetLineRejection";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -138,6 +140,12 @@ export interface BudgetLine {
   moved_to_line_id?: string | null;
   moved_at?: string | null;
   moved_by?: string | null;
+  /** Observación de rechazo: un admin rechazó la solicitud de autorización y la
+   *  línea volvió a "No Autorizado" (ver RejectAuthorizationDialog). rejected_at
+   *  es la marca de "Observado"; rejection_note puede venir vacía. */
+  rejected_at?: string | null;
+  rejection_note?: string | null;
+  rejected_by?: string | null;
   children?: BudgetLine[];
 }
 
@@ -629,7 +637,7 @@ const BudgetLineItemInner = ({
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
-  const { isAdmin, hasPermission } = useAuth();
+  const { isAdmin, hasPermission, user } = useAuth();
   // Una línea "autorizada" solo la puede editar (monto/cantidad) un admin --
   // ningún otro permiso la habilita, aunque tenga budget_editar_montos/cantidades.
   const isAuthorizedLine = line.status === "autorizado";
@@ -1156,6 +1164,26 @@ const BudgetLineItemInner = ({
   // pero no autorizar/rechazar directamente.
   const canRequestAuthorization = canAutorizar || canEditLineas;
   const [statusPopoverOpen, setStatusPopoverOpen] = useState(false);
+  // Observación de rechazo: la línea volvió a "No Autorizado" con la marca
+  // rejected_at. Solo se muestra mientras siga "No Autorizado".
+  const isObserved = line.status === "no_autorizado" && !!line.rejected_at;
+  const [observationOpen, setObservationOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const handleReject = async (note: string) => {
+    setRejecting(true);
+    try {
+      await rejectAuthorizationRequest(line.id, note, user?.id ?? null);
+      setRejectOpen(false);
+      toast.success("Solicitud rechazada: la línea volvió a No Autorizado");
+      onReload?.();
+    } catch (err: any) {
+      console.error("Error al rechazar la solicitud:", err);
+      toast.error(err?.message || "No se pudo rechazar la solicitud");
+    } finally {
+      setRejecting(false);
+    }
+  };
   const handleStatusSelect = (status: BudgetLine["status"]) => {
     setStatusPopoverOpen(false);
     if (readOnly || status === line.status) return;
@@ -1165,6 +1193,8 @@ const BudgetLineItemInner = ({
       return;
     }
     onUpdateLine(line.id, { status });
+    // El admin siempre puede autorizar, aun con observación: se limpia la marca.
+    if (status === "autorizado" && line.rejected_at) void clearLineRejections([line.id]);
   };
   const isNotAuthorized = line.status !== "autorizado";
 
@@ -1715,6 +1745,7 @@ const BudgetLineItemInner = ({
               )}
             </div>
           ) : (
+            <span className="relative inline-flex" onClick={(e) => e.stopPropagation()}>
             <Popover open={statusPopoverOpen} onOpenChange={(o) => canRequestAuthorization && !readOnly && setStatusPopoverOpen(o)}>
               <PopoverTrigger asChild>
                 <button type="button" onClick={(e) => e.stopPropagation()}>
@@ -1751,10 +1782,45 @@ const BudgetLineItemInner = ({
                         </Badge>
                       </button>
                     ))}
+                    {canAutorizar && line.status === "solicita_autorizar" && (
+                      <button
+                        type="button"
+                        onClick={() => { setStatusPopoverOpen(false); setRejectOpen(true); }}
+                        className="w-full text-left px-2 py-1.5 rounded hover:bg-accent"
+                      >
+                        <Badge variant="destructive" className="text-[10px] px-2 py-0 whitespace-nowrap">Rechazar</Badge>
+                      </button>
+                    )}
                   </div>
                 </PopoverContent>
               )}
             </Popover>
+            {isObserved && (
+              <button
+                type="button"
+                title="Ver observación"
+                aria-label="Ver observación"
+                onClick={() => setObservationOpen(true)}
+                className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
+              >
+                <MessageSquare className="h-2.5 w-2.5" />
+              </button>
+            )}
+            <LineObservationDialog
+              open={observationOpen}
+              onOpenChange={setObservationOpen}
+              lineName={line.name}
+              note={line.rejection_note}
+              rejectedAt={line.rejected_at}
+            />
+            <RejectAuthorizationDialog
+              open={rejectOpen}
+              onOpenChange={setRejectOpen}
+              lineName={line.name}
+              saving={rejecting}
+              onConfirm={handleReject}
+            />
+            </span>
           )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>

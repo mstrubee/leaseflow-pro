@@ -108,6 +108,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { loadBudgetTotals } from "@/lib/budgetTotals";
+import { rejectAuthorizationRequest, clearLineRejections } from "@/lib/budgetLineRejection";
+import { LineObservationDialog, RejectAuthorizationDialog } from "@/components/budget/LineRejectionDialogs";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
 import { Building2, Store } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
@@ -196,8 +198,12 @@ interface SolicitaAutorizacionLine {
   id: string;
   name: string;
   amount_uf: number;
-  status: "solicita_autorizar" | "autorizado";
+  status: "solicita_autorizar" | "autorizado" | "no_autorizado";
   authorized_at: string | null;
+  /** Observación del rechazo: una línea "no_autorizado" con rejected_at es una
+   *  solicitud rechazada ("Observado"). */
+  rejected_at: string | null;
+  rejection_note: string | null;
   /** Cotización adjunta al pedir autorización (ver SolicitaAutorizarDialog). */
   quotation_file_url: string | null;
   quotation_file_name: string | null;
@@ -787,22 +793,34 @@ const PurchaseOrdersDashboard = () => {
       // + ya autorizadas hace menos de 24hs -- ver pestaña homónima). Cross-
       // contrato, igual que Requerimientos de OC arriba.
       const authorizedCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedLinesData, error: approvedLinesError }] = await Promise.all([
+      // select("*") y no una lista de columnas: así las dos primeras consultas no
+      // fallan si las columnas rejected_* de la migración aún no existen.
+      const [{ data: pendingLinesData, error: pendingLinesError }, { data: approvedLinesData, error: approvedLinesError }, { data: observedLinesData, error: observedLinesError }] = await Promise.all([
         supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, status, authorized_at, quotation_file_url, quotation_file_name, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+          .select("*, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "solicita_autorizar"),
         supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, status, authorized_at, quotation_file_url, quotation_file_name, budget_id, contract_budgets!inner(contract_id, year, budget_type)")
+          .select("*, contract_budgets!inner(contract_id, year, budget_type)")
           .is("deleted_at", null)
           .eq("status", "autorizado")
           .gte("authorized_at", authorizedCutoffIso),
+        // Observadas: solicitudes rechazadas por un admin (vuelven a "No Autorizado"
+        // con la marca rejected_at) -- siguen en este listado hasta que se vuelvan
+        // a solicitar o se autoricen.
+        supabase
+          .from("budget_lines")
+          .select("*, contract_budgets!inner(contract_id, year, budget_type)")
+          .is("deleted_at", null)
+          .eq("status", "no_autorizado")
+          .not("rejected_at", "is", null),
       ]);
       if (pendingLinesError) console.error("Error loading solicita_autorizar lines:", pendingLinesError);
       if (approvedLinesError) console.error("Error loading recently approved lines:", approvedLinesError);
-      const solicitaRows = [...(pendingLinesData || []), ...(approvedLinesData || [])];
+      if (observedLinesError) console.error("Error loading observed lines:", observedLinesError);
+      const solicitaRows = [...(pendingLinesData || []), ...(approvedLinesData || []), ...(observedLinesData || [])];
       setSolicitaLines(
         solicitaRows.map((r: any) => ({
           id: r.id,
@@ -810,6 +828,8 @@ const PurchaseOrdersDashboard = () => {
           amount_uf: r.amount_uf || 0,
           status: r.status,
           authorized_at: r.authorized_at,
+          rejected_at: r.rejected_at ?? null,
+          rejection_note: r.rejection_note ?? null,
           quotation_file_url: r.quotation_file_url ?? null,
           quotation_file_name: r.quotation_file_name ?? null,
           budget_id: r.budget_id,
@@ -1441,6 +1461,16 @@ const PurchaseOrdersDashboard = () => {
 
   const solicitaPending = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "solicita_autorizar"), [filteredSolicitaLines]);
   const solicitaApproved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "autorizado"), [filteredSolicitaLines]);
+  const solicitaObserved = useMemo(() => filteredSolicitaLines.filter((l) => l.status === "no_autorizado"), [filteredSolicitaLines]);
+
+  // Rechazar / ver observación (admin y quienes pueden autorizar).
+  const canAuthorizeLines = isAdmin || hasPermission("budget_autorizar", "edit");
+  const [rejectingLine, setRejectingLine] = useState<SolicitaAutorizacionLine | null>(null);
+  const [rejectSaving, setRejectSaving] = useState(false);
+  const [observationLine, setObservationLine] = useState<SolicitaAutorizacionLine | null>(null);
+
+  const goToLineContract = (l: SolicitaAutorizacionLine) =>
+    navigate(`/contracts/${l.contract_id}?section=${l.budget_type === "opex" ? "opex" : "capex"}&returnTo=purchase-orders`);
 
   // Pinchar el nombre de la línea abre la cotización adjunta al solicitar
   // autorización. Si la línea no tiene cotización, se muestra solo el texto.
@@ -1464,12 +1494,14 @@ const PurchaseOrdersDashboard = () => {
     try {
       const { error } = await supabase.from("budget_lines").update({ status: "autorizado" }).eq("id", lineId);
       if (error) throw error;
+      // El admin siempre puede autorizar, aun cuando esté observada: se limpia la marca.
+      void clearLineRejections([lineId]);
       // Actualización local en vez de loadData(): recargar todo el dashboard
       // (con spinner) por cada línea aprobada hacía la pestaña lenta. Solo
       // cambia el estado de esta línea; pasa de "Pendientes" a "Aprobadas".
       const authorizedAt = new Date().toISOString();
       setSolicitaLines((prev) =>
-        prev.map((l) => (l.id === lineId ? { ...l, status: "autorizado", authorized_at: authorizedAt } : l))
+        prev.map((l) => (l.id === lineId ? { ...l, status: "autorizado", authorized_at: authorizedAt, rejected_at: null, rejection_note: null } : l))
       );
       setOcRequiredGroups((prev) =>
         prev.map((g) => ({
@@ -1483,6 +1515,29 @@ const PurchaseOrdersDashboard = () => {
       toast.error(error.message || "No se pudo autorizar la línea");
     } finally {
       setApprovingLineId(null);
+    }
+  };
+
+  const handleRejectSolicitaLine = async (note: string) => {
+    if (!rejectingLine) return;
+    setRejectSaving(true);
+    try {
+      const saved = await rejectAuthorizationRequest(rejectingLine.id, note, user?.id ?? null);
+      // Local en vez de loadData(), igual que al autorizar: pasa de "Pendientes" a "Observadas".
+      setSolicitaLines((prev) =>
+        prev.map((l) =>
+          l.id === rejectingLine.id
+            ? { ...l, status: "no_autorizado", rejected_at: saved.rejected_at, rejection_note: saved.rejection_note }
+            : l
+        )
+      );
+      toast.success("Solicitud rechazada: la línea volvió a No Autorizado");
+      setRejectingLine(null);
+    } catch (error: any) {
+      console.error("Error rejecting line:", error);
+      toast.error(error.message || "No se pudo rechazar la solicitud");
+    } finally {
+      setRejectSaving(false);
     }
   };
 
@@ -4928,7 +4983,7 @@ const PurchaseOrdersDashboard = () => {
             ) : filteredSolicitaLines.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center text-muted-foreground">
-                  No hay líneas pidiendo autorización para el año {yearFilter}
+                  No hay líneas pidiendo autorización (ni observadas) para el año {yearFilter}
                 </CardContent>
               </Card>
             ) : (
@@ -4972,15 +5027,121 @@ const PurchaseOrdersDashboard = () => {
                                   <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-[10px]">Solicita Autorizar</Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <Button
-                                    size="sm"
-                                    className="gap-1"
-                                    onClick={() => handleApproveSolicitaLine(l.id)}
-                                    disabled={approvingLineId === l.id}
-                                  >
-                                    <Check className="h-3 w-3" />
-                                    Autorizar
-                                  </Button>
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1"
+                                      title="Ir al contrato"
+                                      onClick={() => goToLineContract(l)}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      Ir al contrato
+                                    </Button>
+                                    {canAuthorizeLines && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="gap-1 text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700"
+                                        onClick={() => setRejectingLine(l)}
+                                        disabled={approvingLineId === l.id}
+                                      >
+                                        <X className="h-3 w-3" />
+                                        Rechazar
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      className="gap-1"
+                                      onClick={() => handleApproveSolicitaLine(l.id)}
+                                      disabled={approvingLineId === l.id}
+                                    >
+                                      <Check className="h-3 w-3" />
+                                      Autorizar
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {solicitaObserved.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Observadas ({solicitaObserved.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Proyecto</TableHead>
+                            <TableHead>Línea</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                            <TableHead>Estado</TableHead>
+                            <TableHead className="text-right">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {solicitaObserved.map((l) => {
+                            const contractName = contracts.find((c) => c.id === l.contract_id)?.name || "Sin contrato";
+                            return (
+                              <TableRow key={l.id}>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <CompanyLogo companyNames={[contractCompanyMap.get(l.contract_id) || ""].filter(Boolean)} size="sm" />
+                                    <span className="truncate max-w-[160px]">{contractName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="max-w-[180px]">{renderSolicitaLineName(l)}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={l.budget_type === "capex" ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"}>
+                                    {l.budget_type?.toUpperCase() || "N/A"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">{formatCLP(l.amount_uf * ufValue)}</TableCell>
+                                <TableCell>
+                                  <button type="button" title="Ver observación" onClick={() => setObservationLine(l)}>
+                                    <Badge className="bg-red-500 hover:bg-red-600 text-white text-[10px] cursor-pointer">Observado</Badge>
+                                  </button>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1"
+                                      title="Ir al contrato"
+                                      onClick={() => goToLineContract(l)}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      Ir al contrato
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1"
+                                      onClick={() => setObservationLine(l)}
+                                    >
+                                      Ver observación
+                                    </Button>
+                                    {canAuthorizeLines && (
+                                      <Button
+                                        size="sm"
+                                        className="gap-1"
+                                        onClick={() => handleApproveSolicitaLine(l.id)}
+                                        disabled={approvingLineId === l.id}
+                                      >
+                                        <Check className="h-3 w-3" />
+                                        Autorizar
+                                      </Button>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             );
@@ -5005,6 +5166,7 @@ const PurchaseOrdersDashboard = () => {
                             <TableHead>Tipo</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
                             <TableHead>Estado</TableHead>
+                            <TableHead className="text-right">Acciones</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -5028,6 +5190,20 @@ const PurchaseOrdersDashboard = () => {
                                 <TableCell>
                                   <Badge className="bg-green-500 text-[10px]">Autorizado</Badge>
                                 </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1"
+                                      title="Ir al contrato"
+                                      onClick={() => goToLineContract(l)}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      Ir al contrato
+                                    </Button>
+                                  </div>
+                                </TableCell>
                               </TableRow>
                             );
                           })}
@@ -5041,6 +5217,21 @@ const PurchaseOrdersDashboard = () => {
           </TabsContent>
         </Tabs>
       </main>
+
+      <RejectAuthorizationDialog
+        open={!!rejectingLine}
+        onOpenChange={(o) => { if (!o) setRejectingLine(null); }}
+        lineName={rejectingLine?.name ?? ""}
+        saving={rejectSaving}
+        onConfirm={handleRejectSolicitaLine}
+      />
+      <LineObservationDialog
+        open={!!observationLine}
+        onOpenChange={(o) => { if (!o) setObservationLine(null); }}
+        lineName={observationLine?.name ?? ""}
+        note={observationLine?.rejection_note}
+        rejectedAt={observationLine?.rejected_at}
+      />
 
       {/* First Delete Confirmation Dialog */}
       {/* First confirmation — diferencia órdenes vs solicitudes */}
