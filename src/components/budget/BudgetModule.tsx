@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake, CheckSquare } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search, Trash2, Eye, EyeOff, Snowflake, CheckSquare, Clock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
@@ -149,6 +149,10 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // hace subir el badge "No Autorizado" de una línea madre, p. ej. adicionales
   // pendientes que quedan anidados y son fáciles de pasar por alto).
   const [showOnlyUnauthorized, setShowOnlyUnauthorized] = useState(false);
+  // Mostrar solo líneas "Solicita Autorizar" (pendientes de aprobar). Solo admin.
+  // Es excluyente con "Solo No Autorizado": un mismo nodo no puede tener ambos
+  // estados, así que activar los dos a la vez dejaría el árbol siempre vacío.
+  const [showOnlyPending, setShowOnlyPending] = useState(false);
 
   // Congelar monto (aprobado por directorio)
   const [showFreezeDialog, setShowFreezeDialog] = useState(false);
@@ -489,10 +493,20 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       // editado monto/cantidad/precio/moneda directamente (ver
       // recalcPercentageLinesLocally), aunque el árbol ya muestre el correcto.
       .map((l) => ({ id: l.id, name: l.name, amount_uf: calculateLineLiveAmount(l, linesById, templatePricesMap, ufValue), status: l.status }));
-    setCapexAdditionalLines(chosen);
+    // "Solicita Autorizar" no admite líneas de valor 0: se descartan de la selección.
+    const isZero = (l: { amount_uf: number }) => Math.abs(l.amount_uf) <= 0.0001;
+    const discardedZero = selectionPurpose === "solicitaAutorizar" ? chosen.filter(isZero).length : 0;
+    if (discardedZero > 0) {
+      toast({
+        variant: "destructive",
+        title: "Líneas con valor 0 omitidas",
+        description: `${discardedZero} línea(s) con valor 0 no pueden marcarse como "Solicita Autorizar" y se quitaron de la selección.`,
+      });
+    }
+    setCapexAdditionalLines(selectionPurpose === "solicitaAutorizar" ? chosen.filter((l) => !isZero(l)) : chosen);
     setCapexAdditionalLinesVersion((v) => v + 1);
     handleExitSelectionMode();
-  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt, solicitaAutorizarPrompt, selectionPurpose, templatePricesMap, ufValue]);
+  }, [lines, selectedLineIds, flattenLines, handleExitSelectionMode, ocRequiredPrompt, solicitaAutorizarPrompt, selectionPurpose, templatePricesMap, ufValue, toast]);
 
   // Editar un requerimiento "OC Requerida" ya creado, directamente desde su
   // badge en el árbol -- sin restricción de permiso propia (ver
@@ -970,6 +984,20 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const handleUpdateLine = async (id: string, data: Partial<BudgetLine>) => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (budget?.is_closed) return;
+
+    // Guarda de seguridad: ninguna vía puede dejar una línea de valor 0 en "Solicita Autorizar".
+    if (data.status === "solicita_autorizar") {
+      const linesById = new Map(flattenLines(lines).map((l) => [l.id, l]));
+      const target = linesById.get(id);
+      if (target && Math.abs(calculateLineLiveAmount(target, linesById, templatePricesMap, ufValue)) <= 0.0001) {
+        toast({
+          variant: "destructive",
+          title: "No se puede solicitar autorización",
+          description: "Las líneas con valor 0 no pueden marcarse como \"Solicita Autorizar\".",
+        });
+        return;
+      }
+    }
 
     // Check if this is a status change and the line has children
     if (data.status) {
@@ -1512,7 +1540,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   // activos; una línea madre se conserva si alguna descendiente sobrevivió, o si
   // debe forzarse para no huerfanar una solicitud de adicional/descuento pendiente.
   const displayLines = useMemo(() => {
-    if (!hideZeroLines && !showOnlyUnauthorized) return lines;
+    if (!hideZeroLines && !showOnlyUnauthorized && !showOnlyPending) return lines;
     const keep = (nodes: BudgetLine[]): BudgetLine[] =>
       nodes.reduce<BudgetLine[]>((acc, n) => {
         const children = n.children ? keep(n.children) : [];
@@ -1523,7 +1551,8 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
           const hasValue = Math.abs(total) > 0.0001;
           const passesHideZero = !hideZeroLines || hasValue;
           const passesUnauthorizedOnly = !showOnlyUnauthorized || (n.status === "no_autorizado" && hasValue);
-          matchesSelf = passesHideZero && passesUnauthorizedOnly;
+          const passesPendingOnly = !showOnlyPending || (n.status === "solicita_autorizar" && hasValue);
+          matchesSelf = passesHideZero && passesUnauthorizedOnly && passesPendingOnly;
         }
         const forceKeep = !isLeaf && !!surchargeBaseIdsToForceKeep?.has(n.id);
         if (children.length > 0 || matchesSelf || forceKeep) {
@@ -1532,7 +1561,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
         return acc;
       }, []);
     return keep(lines);
-  }, [hideZeroLines, showOnlyUnauthorized, lines, templatePricesMap, ufValue, surchargeBaseIdsToForceKeep]);
+  }, [hideZeroLines, showOnlyUnauthorized, showOnlyPending, lines, templatePricesMap, ufValue, surchargeBaseIdsToForceKeep]);
 
   // Handle opening OC Request dialog from budget line
   const handleCreateOCRequestFromLine = async (budgetLineId: string, lineName: string) => {
@@ -2335,13 +2364,31 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 <Button
                   variant={showOnlyUnauthorized ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setShowOnlyUnauthorized((v) => !v)}
+                  onClick={() => {
+                    setShowOnlyUnauthorized((v) => !v);
+                    setShowOnlyPending(false);
+                  }}
                   className="gap-2"
                   title="Mostrar solo las líneas No Autorizado con valor mayor a $0"
                 >
                   <AlertTriangle className="h-4 w-4" />
                   {showOnlyUnauthorized ? "Ver todas" : "Solo No Autorizado"}
                 </Button>
+                {isAdmin && (
+                  <Button
+                    variant={showOnlyPending ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setShowOnlyPending((v) => !v);
+                      setShowOnlyUnauthorized(false);
+                    }}
+                    className="gap-2"
+                    title="Mostrar solo las líneas que solicitan autorización (Solicita Autorizar)"
+                  >
+                    <Clock className="h-4 w-4" />
+                    {showOnlyPending ? "Ver todas" : "Solo Pendientes de Aprobar"}
+                  </Button>
+                )}
                 {budgetType === "capex" && canExport && (
                   <Button
                     variant="outline"
@@ -2544,6 +2591,15 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                   setCapexAdditionalLinesVersion(0);
                   const linesById = new Map(flattenLines(lines).map((l) => [l.id, l]));
                   const liveAmountUf = line ? calculateLineLiveAmount(line, linesById, templatePricesMap, ufValue) : 0;
+                  // Regla: una línea con valor 0 no puede marcarse "Solicita Autorizar".
+                  if (Math.abs(liveAmountUf) <= 0.0001) {
+                    toast({
+                      variant: "destructive",
+                      title: "No se puede solicitar autorización",
+                      description: "Las líneas con valor 0 no pueden marcarse como \"Solicita Autorizar\".",
+                    });
+                    return;
+                  }
                   setSolicitaAutorizarPrompt({
                     lineId,
                     lineName: line?.name ?? "",
