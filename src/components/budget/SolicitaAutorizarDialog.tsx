@@ -112,6 +112,11 @@ export function SolicitaAutorizarDialog({
       if (!cotizadoStatusId) toast.error('No se encontró el estado "Cotizado"');
       return;
     }
+    // Última barrera: las líneas con valor 0 no pueden quedar en "Solicita Autorizar".
+    if (targetLines.some((l) => Math.abs(l.amount_uf || 0) <= 0.0001)) {
+      toast.error('Las líneas con valor 0 no pueden marcarse como "Solicita Autorizar"');
+      return;
+    }
     setSaving(true);
     try {
       const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
