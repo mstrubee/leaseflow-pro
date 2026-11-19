@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { FileUp, FileText, Loader2, AlertTriangle, CheckCircle2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -75,6 +76,30 @@ function previewKindOf(fileName: string): PreviewKind {
   return "none";
 }
 
+type InputCurrency = "CLP" | "UF";
+
+const formatUfNumber = (uf: number) =>
+  uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
+// Interpreta un monto en UF escrito por el usuario. Acepta formato chileno
+// ("1.234,56": punto de miles, coma decimal) y también punto decimal ("12.5").
+// Un único punto seguido de 1-2 dígitos se toma como decimal; con 3 dígitos o
+// varios puntos, como separador de miles.
+function parseUfInput(raw: string): number {
+  const cleaned = raw.replace(/[^\d.,]/g, "");
+  if (!cleaned) return 0;
+  let normalized: string;
+  if (cleaned.includes(",")) {
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else {
+    const dots = (cleaned.match(/\./g) || []).length;
+    const decimals = cleaned.split(".")[1] ?? "";
+    normalized = dots === 1 && decimals.length > 0 && decimals.length <= 2 ? cleaned : cleaned.replace(/\./g, "");
+  }
+  const n = parseFloat(normalized);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /**
  * Se abre al marcar una línea CAPEX como "OC Requerida". Flujo:
  * 1) subir la cotización (PDF, JPEG, PNG, Excel o Word); 2) previsualizarla (si el tipo lo permite) e ingresar el monto
@@ -109,6 +134,10 @@ export function CapexOCRequiredDialog({
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [monto, setMonto] = useState("");
+  // Moneda en que se tipea el monto. El proceso (plan de pagos, comparación con
+  // lo autorizado, OC) siempre es en pesos: si se ingresa en UF, se convierte a
+  // CLP con el valor UF vigente y el UF ingresado queda solo como dato referencial.
+  const [currency, setCurrency] = useState<InputCurrency>("CLP");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
@@ -148,6 +177,7 @@ export function CapexOCRequiredDialog({
     setFile(null);
     setPreviewUrl(null);
     setMonto("");
+    setCurrency("CLP");
     setSupplierId(null);
     setSupplierName(null);
     setPaymentPlan([]);
@@ -158,9 +188,40 @@ export function CapexOCRequiredDialog({
     setPaymentPlan((prev) => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "", percent: "" }]);
   const removePaymentItem = (index: number) => setPaymentPlan((prev) => prev.filter((_, i) => i !== index));
 
-  // El monto requerido se ingresa en pesos -- se limpia todo lo que no sea
-  // dígito (el usuario puede escribir puntos de miles, "$", etc.).
-  const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
+  // El monto requerido se puede ingresar en pesos o en UF.
+  // - Pesos: se limpia todo lo que no sea dígito (puntos de miles, "$", etc.).
+  // - UF: se convierte a pesos con el valor UF vigente (mismo redondeo que el
+  //   resto de la app: Math.round(UF * valorUF)). El proceso sigue en pesos.
+  const enteredUf = currency === "UF" ? parseUfInput(monto) : 0;
+  const montoClp =
+    currency === "UF"
+      ? ufValue > 0
+        ? Math.round(enteredUf * ufValue)
+        : 0
+      : parseInt(monto.replace(/\D/g, ""), 10) || 0;
+  // UF referencial que queda guardado: el ingresado tal cual (si se tipeó en
+  // UF) o el equivalente al valor UF vigente (si se tipeó en pesos).
+  const montoUfRef =
+    currency === "UF"
+      ? Math.round(enteredUf * 10000) / 10000
+      : ufValue > 0
+      ? Math.round((montoClp / ufValue) * 10000) / 10000
+      : 0;
+
+  // Al cambiar de moneda se convierte lo ya escrito para no perder el monto.
+  const handleCurrencyChange = (next: InputCurrency) => {
+    if (next === currency) return;
+    if (montoClp > 0 && ufValue > 0) {
+      setMonto(
+        next === "UF"
+          ? String(Math.round((montoClp / ufValue) * 10000) / 10000).replace(".", ",")
+          : String(montoClp)
+      );
+    } else {
+      setMonto("");
+    }
+    setCurrency(next);
+  };
 
   // Por defecto el plan de pagos es "un pago por el total" -- se arma solo,
   // sin que el usuario tenga que agregar nada. Mientras siga habiendo un solo
@@ -280,7 +341,7 @@ export function CapexOCRequiredDialog({
         storage_path: upload.storagePath ?? null,
         quotation_date: today,
         amount_clp: montoClp,
-        amount_uf: ufValue > 0 ? montoClp / ufValue : 0,
+        amount_uf: montoUfRef,
         supplier_id: supplierId,
         supplier_name: supplierName,
       }));
@@ -399,15 +460,40 @@ export function CapexOCRequiredDialog({
             </div>
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="capex-oc-monto">Monto requerido de la OC ($)</Label>
-                <Input
-                  id="capex-oc-monto"
-                  type="text"
-                  inputMode="numeric"
-                  value={monto}
-                  onChange={(e) => setMonto(e.target.value)}
-                  placeholder="0"
-                />
+                <Label htmlFor="capex-oc-monto">Monto requerido de la OC</Label>
+                <div className="flex items-center gap-2">
+                  <Select value={currency} onValueChange={(v) => handleCurrencyChange(v as InputCurrency)}>
+                    <SelectTrigger className="w-20 shrink-0" aria-label="Moneda del monto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CLP">$</SelectItem>
+                      <SelectItem value="UF">UF</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    id="capex-oc-monto"
+                    type="text"
+                    inputMode={currency === "UF" ? "decimal" : "numeric"}
+                    value={monto}
+                    onChange={(e) => setMonto(e.target.value)}
+                    placeholder={currency === "UF" ? "0,00" : "0"}
+                  />
+                </div>
+                {/* Siempre se muestra el monto en pesos (con qué se va a trabajar) y su UF referencial */}
+                {montoClp > 0 && (
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    <p className="font-medium text-foreground">{formatCLP(montoClp)}</p>
+                    <p>
+                      {currency === "UF"
+                        ? `Ingresado: UF ${formatUfNumber(enteredUf)} (valor UF ${formatCLP(ufValue)}). El proceso continúa en pesos.`
+                        : `Equivalente referencial: UF ${formatUfNumber(montoUfRef)}`}
+                    </p>
+                  </div>
+                )}
+                {currency === "UF" && ufValue <= 0 && (
+                  <p className="text-xs text-destructive">No hay valor UF disponible para convertir; ingresa el monto en pesos.</p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -511,7 +597,10 @@ export function CapexOCRequiredDialog({
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Monto requerido de la OC</span>
-              <span>{formatCLP(montoClp)}</span>
+              <span>
+                {formatCLP(montoClp)}{" "}
+                <span className="text-muted-foreground font-normal">(UF {formatUfNumber(montoUfRef)})</span>
+              </span>
             </div>
             {sufficient ? (
               <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 dark:bg-green-950/30 rounded-md px-3 py-2">
