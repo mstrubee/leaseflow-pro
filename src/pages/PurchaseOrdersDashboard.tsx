@@ -1416,7 +1416,13 @@ const PurchaseOrdersDashboard = () => {
 
   const filteredSolicitaLines = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    let filtered = solicitaLines.filter((l) => l.year === yearNum);
+    // Una línea de valor 0 no puede estar pendiente de aprobación (no hay nada que
+    // autorizar): se oculta aunque la BD aún la tenga en "solicita_autorizar"
+    // (datos previos a la regla que lo impide al marcarla). Las ya autorizadas
+    // (ventana de 24hs) no se tocan.
+    let filtered = solicitaLines.filter(
+      (l) => l.year === yearNum && (l.status !== "solicita_autorizar" || Math.abs(l.amount_uf) > 0.0001)
+    );
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
