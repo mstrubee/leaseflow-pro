@@ -156,12 +156,14 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
   };
 
   /**
-   * @param direct true = descarga normal del navegador, sin el selector "Guardar como".
-   *   Es la salida cuando el selector no funciona en el equipo del usuario (en algunos
-   *   Edge el selector se cierra con "cancelado" aunque se elija carpeta).
+   * @param mode "direct" = descarga normal del navegador (a su carpeta de descargas, con su
+   *   barra de descargas); es lo que hace el botón principal porque siempre funciona.
+   *   "picker" = abre el selector "Guardar como": en algunos Edge se cierra con "cancelado"
+   *   aunque se elija carpeta y no guarda nada (reportado por el usuario), por eso es opcional.
    */
-  const handleDownload = async (direct = false) => {
+  const handleDownload = async (mode: "direct" | "picker") => {
     if (!data) return;
+    const direct = mode === "direct";
     setDownloading(true);
     let target: SaveTarget | null = null;
     try {
@@ -176,7 +178,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       if (target.status === "cancelled") {
         // Antes volvía a esta pantalla en silencio y no se sabía si había pasado algo.
         toast.info("Guardado cancelado", {
-          description: "Si no cancelaste tú, usa «Descargar directo» (sin elegir carpeta).",
+          description: "Si no cancelaste tú, usa el botón «Descargar» (va directo a tu carpeta de descargas).",
         });
         return;
       }
@@ -241,7 +243,8 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       toast.error("No se pudo enviar el correo. Se descargará el PDF para enviarlo manualmente.");
       try {
         const { blob, fileName } = await buildDownload(quotation.status === "ready" ? quotation.file : null);
-        await downloadOCRequestPdf(blob, fileName);
+        // Directo: aquí ya no hay un clic reciente del usuario, así que el selector "Guardar como" no puede abrirse.
+        await downloadOCRequestPdf(blob, fileName, { status: "unsupported" });
       } catch (downloadErr) {
         console.error("Además falló la descarga de respaldo:", downloadErr);
       }
@@ -315,7 +318,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
         <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-2">
           <Button
             variant={lastMethod === "download" ? "default" : "outline"}
-            onClick={() => handleDownload(false)}
+            onClick={() => handleDownload("direct")}
             disabled={downloadDisabled}
             className="w-full sm:w-auto"
           >
@@ -338,10 +341,10 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
           variant="link"
           size="sm"
           className="h-auto p-0 text-xs text-muted-foreground self-center"
-          onClick={() => handleDownload(true)}
+          onClick={() => handleDownload("picker")}
           disabled={downloadDisabled}
         >
-          ¿No se guarda? Descargar directo (sin elegir carpeta)
+          Elegir carpeta para guardar…
         </Button>
       </DialogContent>
     </Dialog>
