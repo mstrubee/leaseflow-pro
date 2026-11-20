@@ -1657,6 +1657,18 @@ export const OCRequestViewDialog = ({
                             A imputar: {formatCLP(ufToClp(c.amountUf, request, ufValue))} ({formatUF(c.amountUf)})
                           </span>
                         </div>
+                        {(() => {
+                          // Asignado vs monto del contrato, en vivo: así se ve el
+                          // descuadre antes de guardar (misma tolerancia que el guardado).
+                          const assigned = c.lines.reduce((sum, l) => sum + (l.amount || 0), 0);
+                          const ok = Math.abs(assigned - c.amountUf) <= 0.01;
+                          return (
+                            <p className={cn("text-xs", ok ? "text-green-600" : "text-amber-600")}>
+                              Asignado: {formatCLP(ufToClp(assigned, request, ufValue))} ({formatUF(assigned)}) de {formatUF(c.amountUf)}
+                              {ok ? " ✓" : " — ajuste los montos de las líneas para que sumen el monto del contrato"}
+                            </p>
+                          );
+                        })()}
                         {c.budgetId ? (
                           <MultipleLinesSelector
                             budgetId={c.budgetId}
@@ -1668,6 +1680,7 @@ export const OCRequestViewDialog = ({
                             formatCLP={formatCLP}
                             ufValue={ufValue}
                             excludeRequestId={request.id}
+                            maxTotal={c.amountUf}
                           />
                         ) : (
                           <p className="text-xs text-amber-600">
@@ -1688,6 +1701,7 @@ export const OCRequestViewDialog = ({
                     formatCLP={formatCLP}
                     ufValue={ufValue}
                     excludeRequestId={request.id}
+                    maxTotal={request.amount_uf}
                   />
                 ) : null
               ) : budgetLines.length > 0 ? (
