@@ -75,6 +75,7 @@ interface OCRequest {
   quotation_file_name?: string | null;
   allocations?: ContractAllocation[];
   opex_category_id?: string | null;
+  budget_classification?: "CAPEX" | "OPEX" | null;
 }
 
 interface OpexCategory {
@@ -188,6 +189,12 @@ export const ConvertOCRequestDialog = ({
       return;
     }
 
+    // Carry the CAPEX/OPEX choice made on the request into the OC.
+    // Legacy requests have no classification: omit the key so behavior is unchanged for them.
+    const classificationFields = request.budget_classification
+      ? { budget_classification: request.budget_classification }
+      : {};
+
     setConverting(true);
     try {
       // Determine which contracts will receive the OC
@@ -231,6 +238,7 @@ export const ConvertOCRequestDialog = ({
               budget_id: request.budget_id,
               opex_master_id: request.opex_master_id,
               opex_category_id: selectedCategoryId || request.opex_category_id,
+              ...classificationFields,
               order_number: orderNumber,
               supplier_id: supplierId || request.supplier_id,
               supplier_name: supplierName || request.supplier_name,
@@ -272,6 +280,7 @@ export const ConvertOCRequestDialog = ({
           budget_id: request.budget_id,
           opex_master_id: request.opex_master_id,
           opex_category_id: selectedCategoryId || request.opex_category_id,
+          ...classificationFields,
           order_number: orderNumber,
           supplier_id: supplierId || request.supplier_id,
           supplier_name: supplierName || request.supplier_name,

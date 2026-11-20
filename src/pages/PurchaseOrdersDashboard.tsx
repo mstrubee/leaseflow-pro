@@ -166,6 +166,7 @@ interface OCRequest {
   allocations?: ContractAllocation[];
   quotation_url?: string | null;
   quotation_file_name?: string | null;
+  budget_classification?: "CAPEX" | "OPEX" | null;
 }
 
 interface Contract {

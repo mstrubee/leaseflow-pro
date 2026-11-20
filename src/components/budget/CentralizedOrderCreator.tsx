@@ -377,7 +377,10 @@ export const CentralizedOrderCreator = ({
       .like(numberField, `${datePrefix}%`);
     
     const correlative = (count || 0) + 1;
-    const categoryName = opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX";
+    // CAPEX has no OPEX category, so label the number with the classification itself
+    const categoryName = budgetType === "capex"
+      ? "CAPEX"
+      : opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX";
     
     return {
       number: `${datePrefix}_${correlative}_${categoryName}_${formData.project_name || "Centralizado"}`,
@@ -481,7 +484,10 @@ export const CentralizedOrderCreator = ({
           request_number: number,
           correlative_of_day: correlative,
           request_date: new Date().toISOString().split('T')[0],
-          line_name: opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
+          line_name: budgetType === "capex"
+            ? "CAPEX Centralizado"
+            : opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
+          budget_classification: budgetType.toUpperCase() as "CAPEX" | "OPEX",
           project_name: formData.project_name || "Centralizado",
           description: formData.description,
           amount_uf: totalAmountUf,

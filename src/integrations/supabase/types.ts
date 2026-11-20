@@ -3934,6 +3934,7 @@ export type Database = {
         Row: {
           amount_clp: number | null
           amount_uf: number | null
+          budget_classification: Database["public"]["Enums"]["budget_classification"] | null
           budget_id: string | null
           budget_line_id: string | null
           contract_id: string
@@ -3962,6 +3963,7 @@ export type Database = {
         Insert: {
           amount_clp?: number | null
           amount_uf?: number | null
+          budget_classification?: Database["public"]["Enums"]["budget_classification"] | null
           budget_id?: string | null
           budget_line_id?: string | null
           contract_id: string
@@ -3990,6 +3992,7 @@ export type Database = {
         Update: {
           amount_clp?: number | null
           amount_uf?: number | null
+          budget_classification?: Database["public"]["Enums"]["budget_classification"] | null
           budget_id?: string | null
           budget_line_id?: string | null
           contract_id?: string
