@@ -12,8 +12,9 @@
 // ============================================================
 import {
   BCInputs, BCSeed, buildDefaultBCInputs, calcIRR, calcNPV, computeBC, defaultAdminConfig, depreciationSchedule,
+  OCUPACION_TARGET_MM, ocupPctFromMonto, ocupPctFromVenta,
 } from "@/lib/businessCase/model";
-import type { AdminConfig } from "@/lib/businessCase/model";
+import type { AdminConfig, FormatoLocal } from "@/lib/businessCase/model";
 
 // ---------- Inversión ----------
 export type AutoInvCategory =
@@ -242,7 +243,7 @@ export function buildDefaultAutoplanetInputs(seed: BCSeed = {}): AutoplanetInput
 export function mergeAutoplanetInputs(stored: Partial<AutoplanetInputs> | null | undefined, seed: BCSeed = {}): AutoplanetInputs {
   const defaults = buildDefaultAutoplanetInputs(seed);
   if (!stored) return defaults;
-  return {
+  const merged: AutoplanetInputs = {
     ...defaults,
     ...stored,
     invLines: Array.isArray(stored.invLines) ? stored.invLines : defaults.invLines,
@@ -252,6 +253,32 @@ export function mergeAutoplanetInputs(stored: Partial<AutoplanetInputs> | null |
     otrosCostosCrec: Array.isArray(stored.otrosCostosCrec) ? stored.otrosCostosCrec : defaults.otrosCostosCrec,
     diasOperacionMes: stored.diasOperacionMes || defaults.diasOperacionMes,
   };
+  // Casos guardados antes del monto fijo de ocupación solo traen el %: se resuelve su monto.
+  if (!(typeof stored.ocupMesMM === "number" && Number.isFinite(stored.ocupMesMM) && stored.ocupMesMM >= 0)) {
+    merged.ocupMesMM = legacyOcupMesMM(stored.ocupPct, ventaMesY1Of(merged), merged.formato);
+  }
+  return merged;
+}
+
+/** Venta mensual del año 1 (MM CLP/mes) = suma de (unidades/día × días de operación × valor unitario) de las líneas de ingreso. */
+function ventaMesY1Of(inputs: Pick<AutoplanetInputs, "ingresoLines" | "diasOperacionMes">): number {
+  return inputs.ingresoLines.reduce(
+    (a, l) => a + ((l.unidadesDia || 0) * (inputs.diasOperacionMes || 30) * (l.valorUnitario || 0)) / 1e6, 0);
+}
+
+/**
+ * Monto fijo de ocupación (MM/mes) de un caso guardado cuando solo trae el % (de sus ingresos). Si ese % es el
+ * que traía por defecto (2,5 %) o el calibrado al objetivo, se vuelve al objetivo exacto (1,5); si se editó a
+ * mano se respeta (% × venta mensual del año 1). Sin ventas aún no hay cómo convertirlo: queda el objetivo.
+ */
+function legacyOcupMesMM(pct: number | undefined, ventaMesY1: number, formato: FormatoLocal | undefined): number {
+  const f: FormatoLocal = formato && formato in OCUPACION_TARGET_MM ? formato : "Tradicional";
+  const target = OCUPACION_TARGET_MM[f];
+  if (typeof pct !== "number" || !Number.isFinite(pct) || ventaMesY1 <= 0) return target;
+  const esDefault = Math.abs(pct - ocupPctFromMonto(OCUPACION_TARGET_MM.Tradicional, 60)) < 0.0051;
+  const esCalibrado = Math.abs(pct - ocupPctFromVenta(f, ventaMesY1)) < 0.0051;
+  if (esDefault || esCalibrado) return target;
+  return round((pct / 100) * ventaMesY1, 4);
 }
 
 const firstOf = (v: unknown): number => (Array.isArray(v) ? Number(v[0]) || 0 : Number(v) || 0);
@@ -310,7 +337,13 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   // Año 1 = primeros 12 meses de operación (no el resto del año calendario como en contratos): se normaliza el
   // inicio y la apertura al 1 de enero para que ningún año se prorratee. La gracia sigue restando meses de canon.
   const anio = (inputs.inicio || "").slice(0, 4) || String(new Date().getFullYear());
-  const base = computeBC({ ...inputs, inicio: `${anio}-01-01`, apertura: `${anio}-01-01`, categoria: "Nuevo", invOverrides: {} }, BASE_ADMIN);
+  // Ocupación: monto FIJO por mes de operación (inputs.ocupMesMM), reajustado por la UF desde el año 2 — mismo criterio
+  // que el Business Case de contratos. Como el inicio/apertura se normalizan al 1 de enero, todos los años son de 12
+  // meses y base.ocupacion ya es el costo que corresponde. El % de pantalla es solo informativo (monto ÷ venta año 1).
+  const ocupMesMM = typeof inputs.ocupMesMM === "number" && Number.isFinite(inputs.ocupMesMM) && inputs.ocupMesMM >= 0
+    ? inputs.ocupMesMM
+    : (OCUPACION_TARGET_MM[inputs.formato] ?? OCUPACION_TARGET_MM.Tradicional);
+  const base = computeBC({ ...inputs, ocupMesMM, inicio: `${anio}-01-01`, apertura: `${anio}-01-01`, categoria: "Nuevo", invOverrides: {} }, BASE_ADMIN);
   const superficie = inputs.superficie || 0;
   const ufBase = inputs.ufBase || 39485.65;
 
@@ -409,7 +442,6 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   const cVar = (inputs.costosVar || 0) / 100;
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
-  const ocupPct = (inputs.ocupPct || 0) / 100;
   const baseOwn: Record<Exclude<PnlBaseKey, "ingresos">, number[]> = {
     costoVentas: zeros(), // se compone de las líneas de ingreso (cada una con su margen)
     otrosCostos: zeros(), // solo líneas hijas
@@ -418,7 +450,7 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
     publicidad: base.publicidad,
     gastosGral: ing.map((x) => round(-Math.abs(x) * gralPct, 2)),
     tecnologia: ing.map((x) => round(-Math.abs(x) * tecPct, 2)),
-    ocupacion: ing.map((x) => round(-Math.abs(x) * ocupPct, 2)),
+    ocupacion: base.ocupacion, // monto fijo + inflación UF (no depende de los ingresos)
     canonArr: base.canonArr,
     gastoComun: base.gastoComun,
   };

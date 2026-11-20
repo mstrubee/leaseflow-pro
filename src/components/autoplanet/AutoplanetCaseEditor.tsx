@@ -12,6 +12,7 @@ import {
 import { Card, Field, FieldConv, Kpi, NumCell, Stat } from "@/components/contracts/BusinessCaseFinanciero";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 import type { BCInputs } from "@/lib/businessCase/model";
+import { ocupPctFromMonto } from "@/lib/businessCase/model";
 import {
   AutoInvLine, AutoInvMethod, AutoplanetInputs, AutoplanetResult, BLOCK_LABEL, INV_CATEGORIES,
   PnlNode, newInvLine,
@@ -273,8 +274,13 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
               <NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></FieldConv>
             <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "tecnologia", 1)))} MM`}>
               <NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></FieldConv>
-            <FieldConv label="Ocupación %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "ocupacion", 1)))} MM`}>
-              <NumCell value={inputs.ocupPct} disabled={ro} w="w-full" onChange={(v) => update("ocupPct", v)} /></FieldConv>
+            <FieldConv label="Ocupación %" conv={`Fijo $${fmtMM(inputs.ocupMesMM, 2)} MM/mes (año 1), sube con la UF. % sobre venta año 1; editarlo cambia el monto · A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "ocupacion", 1)))} MM`}>
+              {/* El % es informativo (monto ÷ venta mensual del año 1) y editable: cambiarlo a mano cambia el MONTO fijo. */}
+              <NumCell value={ocupPctFromMonto(inputs.ocupMesMM, result.ventaMes[0])} disabled={ro} w="w-full"
+                onChange={(v) => {
+                  const venta0 = result.ventaMes[0];
+                  if (venta0 > 0) mutate("ocupMesMM", (p) => ({ ...p, ocupMesMM: Math.round((v / 100) * venta0 * 1e4) / 1e4 }));
+                }} /></FieldConv>
             <FieldConv label="Personal Año 1 (n° personas)" conv={`= $${fmtMM(Math.abs(nodeOwn(result.operacionales, "personal", 1)))} MM/año`}>
               <NumCell value={inputs.personalY1} disabled={ro} w="w-full" onChange={(v) => update("personalY1", v)} /></FieldConv>
             <FieldConv label="Costo por persona (MM/año)" conv={`≈ $${fmtMM(inputs.costoPersonaMM / 12)} MM/mes`}>
