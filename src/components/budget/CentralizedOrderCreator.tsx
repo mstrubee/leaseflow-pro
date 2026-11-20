@@ -21,7 +21,7 @@ import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepo
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { formatCLP } from "@/lib/utils";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
-import { OCRequestShareData, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
@@ -79,8 +79,43 @@ export interface CapexBudgetLine {
   budget_id: string;
   parent_id: string | null;
   display_order: number | null;
+  /** budget_lines.status: solo "autorizado" admite imputar OC / solicitudes. */
+  status: string | null;
   depth: number;
   hasChildren: boolean;
+}
+
+/**
+ * Líneas CAPEX que se pueden mostrar en un selector para imputar una OC o una
+ * Solicitud de OC. Regla de negocio: el CAPEX siempre se asigna a una línea
+ * AUTORIZADA del contrato; las no autorizadas (no_autorizado, solicita_autorizar)
+ * no se pueden elegir. Mismo criterio que MultipleLinesSelector.
+ *
+ * - Hojas: solo las autorizadas y con monto > 0.
+ * - Madres (agrupadores): solo si alguna descendiente se muestra.
+ * - `keepIds`: hojas que se mantienen visibles aunque ya no estén autorizadas.
+ *   Solo para pantallas de EDICIÓN, para que el usuario pueda ver y quitar una
+ *   línea que ya tenía la OC; nunca para crear.
+ */
+export function selectableCapexLines<T extends { id: string; parent_id: string | null; status?: string | null; amount_uf: number; hasChildren: boolean }>(
+  lines: T[],
+  keepIds: readonly string[] = [],
+): T[] {
+  const keep = new Set(keepIds);
+  const byId = new Map(lines.map(l => [l.id, l]));
+  const visible = new Set<string>();
+  lines.forEach(l => {
+    if (l.hasChildren) return;
+    const selectable = l.status === "autorizado" && l.amount_uf > 0;
+    if (!selectable && !keep.has(l.id)) return;
+    // Marca la hoja y sus ancestros (se detiene al topar con uno ya marcado).
+    let current: T | undefined = l;
+    while (current && !visible.has(current.id)) {
+      visible.add(current.id);
+      current = current.parent_id ? byId.get(current.parent_id) : undefined;
+    }
+  });
+  return lines.filter(l => visible.has(l.id));
 }
 
 // Flatten budget lines into a hierarchical list (parents first, children
@@ -341,7 +376,7 @@ export const CentralizedOrderCreator = ({
       if (budgetIds.length > 0) {
         const { data: linesData } = await supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, budget_id, parent_id, display_order")
+          .select("id, name, amount_uf, budget_id, parent_id, display_order, status")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
         lines = buildHierarchicalCapexLines(linesData || []);
@@ -400,9 +435,13 @@ export const CentralizedOrderCreator = ({
       return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {year}.</p>;
     }
     const search = capexLineSearch[contractId] || "";
-    // Las líneas madre son solo agrupadores (visibles, no seleccionables, sin
-    // monto). Las hijas con monto autorizado $0 no se muestran.
-    const visibleLines = filterCapexLines(lines, search).filter(l => l.hasChildren || l.amount_uf > 0);
+    // Solo líneas AUTORIZADAS son seleccionables (ver selectableCapexLines). Las
+    // madre son agrupadores sin monto y solo aparecen si tienen una hija autorizada.
+    const authorizedLines = selectableCapexLines(lines);
+    if (authorizedLines.length === 0) {
+      return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas CAPEX autorizadas para el año {year}.</p>;
+    }
+    const visibleLines = filterCapexLines(authorizedLines, search);
     return (
       <div className="space-y-1">
         <Input
@@ -653,7 +692,7 @@ export const CentralizedOrderCreator = ({
   };
   
   // Generate request/order number
-  const generateNumber = async () => {
+  const generateNumber = async (capexLineNames: string[] = []) => {
     const today = new Date();
     const datePrefix = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
     
@@ -666,12 +705,49 @@ export const CentralizedOrderCreator = ({
       .like(numberField, `${datePrefix}%`);
     
     const correlative = (count || 0) + 1;
-    const categoryName = opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX";
-    
+    // CAPEX no tiene categoría OPEX: el número lleva el nombre de la(s) línea(s)
+    // imputada(s), igual que en OCRequestDialog. Antes caía en "OPEX" por defecto.
+    const categoryName = budgetType === "capex" && capexLineNames.length > 0
+      ? capexLineNames
+          .map(name => name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, "").trim().replace(/\s+/g, "_"))
+          .join("+")
+          .substring(0, 60)
+      : opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX";
+
     return {
       number: `${datePrefix}_${correlative}_${categoryName}_${formData.project_name || "Centralizado"}`,
       correlative
     };
+  };
+
+  /**
+   * Imputación de un CAPEX a sus líneas: por cada contrato, su monto (UF) se
+   * reparte entre las líneas elegidas en proporción a su disponible (misma regla
+   * que la OC directa). El resto del redondeo va a la última línea del contrato
+   * para que la suma cuadre exacto con el monto — la edición de la solicitud
+   * valida esa suma. No existe "CAPEX centralizado": toda solicitud CAPEX queda
+   * ligada a líneas autorizadas.
+   */
+  const buildCapexLineAssignments = (
+    perContract: { contractId: string; amountUf: number }[],
+  ): { lineId: string; lineName: string; amountUf: number; budgetId: string }[] => {
+    const round4 = (v: number) => Math.round(v * 10000) / 10000;
+    const result: { lineId: string; lineName: string; amountUf: number; budgetId: string }[] = [];
+    for (const c of perContract) {
+      const ids = capexLineSelections[c.contractId] || [];
+      const selected = (capexLinesByContract[c.contractId] || []).filter(l => ids.includes(l.id));
+      const split = splitAmountProportionally(
+        c.amountUf,
+        selected.map(l => ({ id: l.id, amount_uf: Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)) })),
+      );
+      let assigned = 0;
+      selected.forEach((l, i) => {
+        const amountUf = i === selected.length - 1 ? round4(c.amountUf - assigned) : round4(split[l.id] ?? 0);
+        assigned += amountUf;
+        result.push({ lineId: l.id, lineName: l.name, amountUf, budgetId: l.budget_id });
+      });
+    }
+    return result;
   };
   
   // Handle form submission
@@ -760,10 +836,23 @@ export const CentralizedOrderCreator = ({
         ? contractAllocations.map(a => ({ id: a.contractId, name: a.contractName }))
         : [{ id: singleContractId, name: contracts.find(c => c.id === singleContractId)?.name || "" }];
       for (const c of contractsToCheck) {
-        if ((capexLineSelections[c.id] || []).length === 0) {
+        const selectedIds = capexLineSelections[c.id] || [];
+        if (selectedIds.length === 0) {
           toast({
             title: "Faltan líneas de presupuesto",
             description: `Debe seleccionar al menos una línea del presupuesto CAPEX${c.name ? ` de ${c.name}` : ""}.`,
+            variant: "destructive"
+          });
+          return;
+        }
+        // Defensa: el CAPEX solo se imputa a líneas AUTORIZADAS. El selector ya no
+        // ofrece otras, pero una línea pudo des-autorizarse mientras el diálogo
+        // estaba abierto o quedar en una selección previa.
+        const allowedIds = new Set(selectableCapexLines(capexLinesByContract[c.id] || []).map(l => l.id));
+        if (selectedIds.some(id => !allowedIds.has(id))) {
+          toast({
+            title: "Línea no autorizada",
+            description: `Solo se pueden usar líneas CAPEX autorizadas${c.name ? ` (${c.name})` : ""}. Revise la selección.`,
             variant: "destructive"
           });
           return;
@@ -798,7 +887,47 @@ export const CentralizedOrderCreator = ({
       const masterLine = opexMasterLines.find(m => m.category_id === selectedCategoryId);
       
       const primaryContractId = isMultiContract ? contractAllocations[0]?.contractId : singleContractId;
-      
+
+      // CAPEX (solicitud u OC): el monto de cada contrato se imputa a las líneas
+      // autorizadas elegidas. El disponible por línea es real: nunca se puede
+      // asignar a una línea más de lo que le queda disponible (autorizado - ya
+      // consumido). Se valida ANTES de crear nada — si el monto ingresado supera
+      // el disponible conjunto de las líneas elegidas, se bloquea.
+      let capexAssignments: ReturnType<typeof buildCapexLineAssignments> = [];
+      if (budgetType === "capex") {
+        const contractsToValidate = isMultiContract
+          ? contractAllocations.map(a => ({
+              contractId: a.contractId,
+              contractName: a.contractName,
+              amountUf: formData.currency === "CLP"
+                ? Math.round((a.amount / ufValue) * 10000) / 10000
+                : Math.round(a.amount * 10000) / 10000,
+            }))
+          : [{
+              contractId: primaryContractId,
+              contractName: contracts.find(c => c.id === primaryContractId)?.name || "",
+              amountUf: totalAmountUf,
+            }];
+
+        for (const c of contractsToValidate) {
+          const lineIds = capexLineSelections[c.contractId || ""] || [];
+          const selectedLines = (capexLinesByContract[c.contractId || ""] || []).filter(l => lineIds.includes(l.id));
+          const availableSum = selectedLines.reduce(
+            (sum, l) => sum + Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)),
+            0
+          );
+          if (c.amountUf > availableSum + 0.01) {
+            throw new Error(
+              `El monto a asignar${c.contractName ? ` en ${c.contractName}` : ""} (UF ${c.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}) supera el disponible de las líneas seleccionadas (UF ${availableSum.toLocaleString("es-CL", { minimumFractionDigits: 2 })}). Seleccione más líneas o reduzca el monto.`
+            );
+          }
+        }
+
+        capexAssignments = buildCapexLineAssignments(
+          contractsToValidate.map(c => ({ contractId: c.contractId || "", amountUf: c.amountUf })),
+        );
+      }
+
       if (mode === "request") {
         // El plan de pagos debe sumar EXACTO el total, no solo no excederlo —
         // antes nada lo garantizaba y un plan incompleto dejaba un pago sin
@@ -817,23 +946,35 @@ export const CentralizedOrderCreator = ({
         }
 
         // Create OC Request
-        const { number, correlative } = await generateNumber();
-        
+        const { number, correlative } = await generateNumber(capexAssignments.map(l => l.lineName));
+
         // Upload quotation file if present
         let quotationData: { url: string; fileName: string } | null = null;
         if (quotationFile) {
           quotationData = await uploadQuotationFile();
         }
-        
+
+        // Cómo se guarda la imputación (mismo modelo que OCRequestDialog y
+        // lib/ocRequestLines.ts):
+        //  · CAPEX con 1 línea  → budget_line_id apunta a la línea.
+        //  · CAPEX con 2+ líneas → budget_line_id null y cada línea en oc_budget_lines.
+        //  · OPEX               → opex_master_id (la categoría); sin budget_id.
+        // No existe "CAPEX centralizado": antes una solicitud CAPEX se guardaba
+        // sin presupuesto ni líneas y se veía como OPEX.
+        const isCapexRequest = budgetType === "capex";
+        const requestLineName = isCapexRequest
+          ? capexAssignments.map(l => l.lineName).join(" + ")
+          : opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX Centralizado";
+
         const requestPayload: any = {
           contract_id: primaryContractId,
-          budget_id: null,
-          budget_line_id: null,
+          budget_id: isCapexRequest ? (capexBudgetIdByContract[primaryContractId] || null) : null,
+          budget_line_id: isCapexRequest && capexAssignments.length === 1 ? capexAssignments[0].lineId : null,
           opex_master_id: masterLine?.id || null,
           request_number: number,
           correlative_of_day: correlative,
           request_date: new Date().toISOString().split('T')[0],
-          line_name: opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
+          line_name: requestLineName,
           project_name: formData.project_name || "Centralizado",
           description: formData.description,
           amount_uf: totalAmountUf,
@@ -857,7 +998,20 @@ export const CentralizedOrderCreator = ({
           .single();
         
         if (requestError) throw requestError;
-        
+
+        // CAPEX con varias líneas: cada una vive en oc_budget_lines con su monto.
+        // Con una sola, basta budget_line_id (no debe haber filas en la tabla puente).
+        if (isCapexRequest && capexAssignments.length > 1 && requestData) {
+          const { error: linesError } = await supabase.from("oc_budget_lines").insert(
+            capexAssignments.map(l => ({
+              oc_request_id: requestData.id,
+              budget_line_id: l.lineId,
+              amount_uf: l.amountUf,
+            }))
+          );
+          if (linesError) throw linesError;
+        }
+
         // Create contract allocations if multi-contract
         if (isMultiContract && requestData) {
           const allocations = contractAllocations.map(a => {
@@ -932,13 +1086,21 @@ export const CentralizedOrderCreator = ({
             ? contractAllocations.map((a) => a.cebe).filter(Boolean).join(", ") || null
             : contracts.find((c) => c.id === primaryContractId)?.cebe || null,
           description: formData.description,
-          lines: [{
-            lineName: opexCategories.find((c) => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
-            amountClp: totalAmountClp,
-          }],
+          // CAPEX: las líneas reales con su reparto; OPEX: la categoría.
+          lines: isCapexRequest
+            ? buildShareLines(
+                capexAssignments.map(l => ({ lineName: l.lineName, amount: l.amountUf })),
+                { totalAmountClp, amountsInClp: false, ufValue },
+              )
+            : [{ lineName: requestLineName, amountClp: totalAmountClp }],
           totalAmountClp,
           payments: resolvedPayments,
           supplierName: formData.supplier_name,
+          // Cotización adjunta: sin esto el diálogo de compartir ofrecía solo el
+          // PDF y nunca el ZIP con la cotización.
+          quotation: quotationData
+            ? { fileName: quotationData.fileName, storagePath: quotationData.url, driveUrl: null }
+            : null,
           supplierRut,
           sequenceNumber: requestData?.sequence_number,
           requestId: requestData?.id,
@@ -946,42 +1108,8 @@ export const CentralizedOrderCreator = ({
         });
         setShareRequestId(requestData?.id);
       } else {
-        // El disponible por línea es real: nunca se puede asignar a una línea
-        // más de lo que le queda disponible (autorizado - ya consumido). Se
-        // valida ANTES de crear nada — si el monto ingresado supera el
-        // disponible conjunto de las líneas elegidas, se bloquea la OC.
-        if (budgetType === "capex") {
-          const contractsToValidate = isMultiContract
-            ? contractAllocations.map(a => ({
-                contractId: a.contractId,
-                contractName: a.contractName,
-                amountUf: formData.currency === "CLP"
-                  ? Math.round((a.amount / ufValue) * 10000) / 10000
-                  : Math.round(a.amount * 10000) / 10000,
-              }))
-            : [{
-                contractId: primaryContractId,
-                contractName: contracts.find(c => c.id === primaryContractId)?.name || "",
-                amountUf: totalAmountUf,
-              }];
-
-          for (const c of contractsToValidate) {
-            const lineIds = capexLineSelections[c.contractId || ""] || [];
-            const selectedLines = (capexLinesByContract[c.contractId || ""] || []).filter(l => lineIds.includes(l.id));
-            const availableSum = selectedLines.reduce(
-              (sum, l) => sum + Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)),
-              0
-            );
-            if (c.amountUf > availableSum + 0.01) {
-              throw new Error(
-                `El monto a asignar${c.contractName ? ` en ${c.contractName}` : ""} (UF ${c.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}) supera el disponible de las líneas seleccionadas (UF ${availableSum.toLocaleString("es-CL", { minimumFractionDigits: 2 })}). Seleccione más líneas o reduzca el monto.`
-              );
-            }
-          }
-        }
-
         // Create Purchase Order directly
-        const { number } = await generateNumber();
+        const { number } = await generateNumber(capexAssignments.map(l => l.lineName));
         const orderNumber = formData.order_number || number;
         
         // For multi-contract OCs, upload file directly to each contract's Drive folder

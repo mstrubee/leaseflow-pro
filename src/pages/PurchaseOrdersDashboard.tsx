@@ -98,7 +98,7 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { CentralizedOrderCreator, buildHierarchicalCapexLines, loadCapexLineUsage, filterCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
+import { CentralizedOrderCreator, buildHierarchicalCapexLines, loadCapexLineUsage, filterCapexLines, selectableCapexLines, type CapexBudgetLine } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 import { OCRequestCreateDialog, type OCRequestPrefillDraft } from "@/components/budget/OCRequestCreateDialog";
@@ -2236,7 +2236,7 @@ const PurchaseOrdersDashboard = () => {
       if (budgetIds.length > 0) {
         const { data: linesData } = await supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, budget_id, parent_id, display_order")
+          .select("id, name, amount_uf, budget_id, parent_id, display_order, status")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
         lines = buildHierarchicalCapexLines(linesData || []);
@@ -6081,10 +6081,11 @@ const PurchaseOrdersDashboard = () => {
                 const lines = editCapexLinesByContract[c.contract_id];
                 const selected = editCapexSelections[c.contract_id] || [];
                 const search = editCapexLineSearch[c.contract_id] || "";
-                // Las líneas madre son solo agrupadores (visibles, no
-                // seleccionables, sin monto); las hijas con monto $0 se ocultan.
+                // Solo líneas AUTORIZADAS son seleccionables; las madre son agrupadores
+                // y aparecen si tienen una hija autorizada. Las que la OC ya tiene
+                // asignadas se mantienen visibles para poder quitarlas.
                 const visibleLines = lines
-                  ? filterCapexLines(lines, search).filter(l => l.hasChildren || l.amount_uf > 0)
+                  ? filterCapexLines(selectableCapexLines(lines, selected), search)
                   : [];
                 return (
                   <div key={c.contract_id} className="space-y-1.5 pt-2 border-t">
