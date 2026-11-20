@@ -155,7 +155,12 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
     return { blob: pdfBlob, fileName: pdfFileName, zipped: false };
   };
 
-  const handleDownload = async () => {
+  /**
+   * @param direct true = descarga normal del navegador, sin el selector "Guardar como".
+   *   Es la salida cuando el selector no funciona en el equipo del usuario (en algunos
+   *   Edge el selector se cierra con "cancelado" aunque se elija carpeta).
+   */
+  const handleDownload = async (direct = false) => {
     if (!data) return;
     setDownloading(true);
     let target: SaveTarget | null = null;
@@ -167,8 +172,14 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       // Lo PRIMERO del clic: abrir el selector "Guardar como". Solo se puede mientras
       // dura el gesto del usuario (~5 s); armar el archivo antes lo dejaba fuera de ese
       // plazo y la descarga no salía. El archivo se arma después y se escribe en el destino.
-      target = await pickSaveLocation(targetName);
-      if (target.status === "cancelled") return;
+      target = direct ? { status: "unsupported" } : await pickSaveLocation(targetName);
+      if (target.status === "cancelled") {
+        // Antes volvía a esta pantalla en silencio y no se sabía si había pasado algo.
+        toast.info("Guardado cancelado", {
+          description: "Si no cancelaste tú, usa «Descargar directo» (sin elegir carpeta).",
+        });
+        return;
+      }
 
       const { blob, fileName, zipped } = await buildDownload(quotationFile);
       const result = await downloadOCRequestPdf(blob, fileName, target);
@@ -304,7 +315,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
         <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-2">
           <Button
             variant={lastMethod === "download" ? "default" : "outline"}
-            onClick={handleDownload}
+            onClick={() => handleDownload(false)}
             disabled={downloadDisabled}
             className="w-full sm:w-auto"
           >
@@ -321,6 +332,17 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
             Enviar por correo
           </Button>
         </DialogFooter>
+
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-xs text-muted-foreground self-center"
+          onClick={() => handleDownload(true)}
+          disabled={downloadDisabled}
+        >
+          ¿No se guarda? Descargar directo (sin elegir carpeta)
+        </Button>
       </DialogContent>
     </Dialog>
   );
