@@ -975,7 +975,9 @@ const ContractDetail = () => {
                 contractId={contract.id}
                 contractName={contract.name}
                 canEdit={isAdmin}
-                seed={buildBCSeed({ contract, version: displayVersion as any, address, ufValue })}
+                // `contract` no se recarga al guardar superficies en la ficha: se usa la
+                // superficie editada (estado local) para que el BC no quede desfasado.
+                seed={buildBCSeed({ contract: { ...contract, superficie_edificada_local: superficieEdificada ?? contract.superficie_edificada_local }, version: displayVersion as any, address, ufValue })}
               />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               <Button

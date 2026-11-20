@@ -303,6 +303,11 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
   });
 
   // ── Supuestos: UF base + crecimiento anual por año del proyecto ────────────
+  // Fecha y años de la fila de UF: la plantilla traía 25-09-2025 / 2025..2030
+  // fijos, que quedaban desfasados respecto de la UF base inyectada.
+  const ufDate = new Date();
+  sup.getCell("B1").value = ufDate;
+  ["B", "C", "D", "E", "F", "G"].forEach((col, i) => { sup.getCell(`${col}2`).value = ufDate.getFullYear() + i; });
   sup.getCell("B3").value = inputs.ufBase || 0;
   const ufCols = ["C", "D", "E", "F", "G"]; // años 2..6
   ufCols.forEach((col, i) => {
@@ -317,8 +322,22 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
   // ── Resumen business case ───────────────────────────────────────────────────
   const cols = ["N", "O", "P", "Q", "R"]; // años 1..5
 
-  // Ventas (MM CLP / mes) por año
-  inputs.ventaMes.slice(0, 5).forEach((v, i) => { res.getCell(`${cols[i]}10`).value = v || 0; });
+  // ── Ventas / ingresos: inyectamos los de la app ───────────────────────────
+  // La app valoriza cada año calendario según el "año de vida" del local (la
+  // tasa mensual de maduración cambia a mitad de año si el local no abre el 1
+  // de enero), aplica el factor del escenario (opt ×1.10 / cons ×0.85) y usa
+  // los meses reales de operación de CADA año. La plantilla en cambio asumía
+  // ventaMes × 12 por año calendario (y año 5 = año 4 × 1.05), así que los
+  // ingresos —y todo lo que cuelga de ellos— no coincidían con la pantalla.
+  // Se escriben los ingresos del año en CLP (fila 9) y, como referencia, la
+  // venta mensual promedio efectiva (fila 10 → "Venta / mes" de la fila 9 del
+  // Resumen). r.ingresosTramos[i] trae los meses de operación de ese año.
+  cols.forEach((c, i) => {
+    const mesesOper = (r.ingresosTramos[i + 1] || []).reduce((a, t) => a + t.meses, 0);
+    const ingresoMM = r.ingresos[i + 1] ?? 0;
+    res.getCell(`${c}10`).value = mesesOper > 0 ? +(ingresoMM / mesesOper).toFixed(4) : 0;
+    res.getCell(`${c}9`).value = Math.round(ingresoMM * 1e6);
+  });
 
   // Márgenes (sin propagar: la planilla ya copia N14 a O..R)
   res.getCell("N14").value = (inputs.margenDir || 0) / 100;
@@ -338,6 +357,9 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
   // 2..5 son dotación × costo × 12 reajustado por la variación de UF del año
   // anterior (Supuestos fila 4), sin acumular año contra año (mismo modelo que
   // computeBC en model.ts). costoPersonaMM viene en MM CLP/año → /12 = mensual.
+  // A17 (meses de personal del año 1) = B21+1 en la plantilla, sin tope; la app
+  // lo limita a 12 (mesesPersonal). Se escribe el valor de la app.
+  res.getCell("A17").value = r.mesesPersonal;
   const costoPersonaMensual = (inputs.costoPersonaMM || 0) / 12;
   res.getCell("B17").value = +(inputs.personalY1 || 0).toFixed(2);
   res.getCell("D17").value = +costoPersonaMensual.toFixed(4);
@@ -349,15 +371,44 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
     } as ExcelJS.CellFormulaValue;
   });
 
-  // ── Canon y gasto común del año 1 ───────────────────────────────────────────
+  // ── Canon y gasto común, años 1..5: inyectamos los valores de la app ───────
   // Siguen el calendario de RENTA (inicio + gracia), que puede ser distinto al
-  // de apertura. La plantilla los colgaba de B21/A17 (meses de operación y de
-  // personal), lo que los desalineaba con la app cuando ambas fechas difieren.
-  res.getCell("E22").value = {
-    formula: `-((Datos!$E$17*Supuestos!C3)/1000000)*${r.mesesY1}`,
-  } as ExcelJS.CellFormulaValue;
-  res.getCell("E23").value = {
-    formula: `-((Datos!$E$18*Supuestos!C$3)*${r.mesesY1})/1000000`,
+  // de apertura, y respetan los tramos de arriendo escalonado del contrato
+  // (resolveCanonTiers) y la UF promedio de cada año. Las fórmulas de la
+  // plantilla (filas 22/23) usaban la UF de otro año, meses propios (B21/A17)
+  // y escalones fijos (+1.05 / +1.1 UF) que no dependen del contrato.
+  // Ya vienen en MM CLP y negativos (r.*[0] = año 0 = 0).
+  // La plantilla no tiene fila de Fondo de Promoción (la app lo suma a los
+  // GAVs): se agrupa con Gasto Común para que GAVs/EBITDA cuadren con la app.
+  const hayFondoProm = r.fondoPromocion.some((x) => Math.abs(x) > 0);
+  if (hayFondoProm) res.getCell("C23").value = "Gasto común + Fondo Promoción";
+  (["E", "F", "G", "H", "I"] as const).forEach((col, i) => {
+    res.getCell(`${col}22`).value = +(r.canonArr[i + 1] ?? 0).toFixed(4);
+    res.getCell(`${col}23`).value = +((r.gastoComun[i + 1] ?? 0) + (r.fondoPromocion[i + 1] ?? 0)).toFixed(4);
+  });
+
+  // Gastos Generales: la plantilla usaba -0.8 MM/mes fijo; la app lo calcula
+  // como % de ingresos (gralPct).
+  const gralPct = (inputs.gralPct || 0) / 100;
+  (["E", "F", "G", "H", "I"] as const).forEach((col) => {
+    res.getCell(`${col}19`).value = { formula: `-ABS(${col}$10)*${gralPct}` } as ExcelJS.CellFormulaValue;
+  });
+
+  // Garantía: la plantilla siempre suma 1 mes de canon al capex (Datos!E28 =
+  // E17). En la app solo existe en las categorías con la línea "gar" (Nuevo /
+  // Relocación) y puede tener override. Se expresa en UF para que Capex (D36 =
+  // E28 × UF base) calce con r.inv.
+  const garRow = r.inv.rows.find((x) => x.id === "gar");
+  datos.getCell("E28").value = garRow ? +((garRow.monto * 1e6) / (inputs.ufBase || 1)).toFixed(4) : 0;
+
+  // Inventario (capital de trabajo): la plantilla traía 100 MM fijos en N22.
+  res.getCell("N22").value = Math.round(r.inv.kt * 1e6);
+
+  // VAN: la app deja el flujo del año 0 sin descontar (t = 0) y descuenta el
+  // año n a (1+r)^n. NPV() de Excel descuenta el primer valor un período; se
+  // suma D37 aparte.
+  datos.getCell("J11").value = {
+    formula: "'Resumen business case'!D37+NPV(E30,'Resumen business case'!E37:I37)",
   } as ExcelJS.CellFormulaValue;
 
   // ── Años calendario (fila 8) ─────────────────────────────────────────────

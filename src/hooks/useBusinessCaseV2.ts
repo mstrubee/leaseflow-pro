@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { BCEscalation, BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, ocupPctFromVenta } from "@/lib/businessCase/model";
 
 interface Args {
@@ -11,6 +12,7 @@ interface Args {
 
 export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const { config, loading: cfgLoading } = useBusinessCaseAdminConfig();
+  const { ufValue, loading: ufLoading } = useEconomicIndicators();
   const [inputs, setInputs] = useState<BCInputs | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,10 +45,20 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const lastSyncedEscalationAmountsRef = useRef<Record<string, number>>({});
   const { contractVersionId, rentField, rentIsUfM2, gastoComunSyncable } = seed;
 
-  // Cargar una vez (cuando la config global esté lista y el diálogo abierto)
+  // El componente queda montado aunque el diálogo esté cerrado: al cerrar se
+  // marca para recargar en la próxima apertura, de lo contrario se mostraba el
+  // estado de la apertura anterior (superficie / UF desactualizadas si el
+  // contrato cambió mientras tanto).
   useEffect(() => {
-    if (!enabled || cfgLoading || loadedRef.current) return;
+    if (!enabled) loadedRef.current = false;
+  }, [enabled]);
+
+  // Cargar en cada apertura (cuando la config global y la UF vigente estén listas)
+  useEffect(() => {
+    if (!enabled || cfgLoading || ufLoading || loadedRef.current) return;
     loadedRef.current = true;
+    // UF base: la del seed si viene; si no, la UF vigente del sistema.
+    const liveUfBase = seed.ufBase && seed.ufBase > 0 ? seed.ufBase : ufValue > 0 ? ufValue : undefined;
     (async () => {
       setLoading(true);
       try {
@@ -66,6 +78,11 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         // Los campos que vienen del contrato SIEMPRE reflejan su valor más
         // reciente al abrir el diálogo (no lo que haya quedado guardado antes
         // en el Business Case) — sincronización contrato → BC.
+        // Se guardan los valores previos para avisar si el refresco los cambió.
+        const prevLive = { superficie: merged.superficie, ufM2: merged.ufM2, ufBase: merged.ufBase };
+        // La UF base NO viene del contrato sino del valor vigente del día: sin
+        // esto un BC ya guardado quedaba con la UF del día en que se creó.
+        if (liveUfBase != null) merged.ufBase = liveUfBase;
         if (seed.superficie != null) merged.superficie = seed.superficie;
         if (seed.ufM2 != null) merged.ufM2 = seed.ufM2;
         if (seed.gastoComunUf != null && gastoComunSyncable) merged.gastoComunUf = seed.gastoComunUf;
@@ -86,6 +103,10 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         initialInputsRef.current = merged;
         historyRef.current = [];
         lastEditRef.current = null;
+        // Si ya había un BC guardado y el refresco cambió superficie / UF/m² / UF
+        // base, queda "sin guardar" para que se persista la evaluación vigente
+        // (otros módulos leen `computed` desde contract_business_cases).
+        setDirty(!!stored && (prevLive.superficie !== merged.superficie || prevLive.ufM2 !== merged.ufM2 || prevLive.ufBase !== merged.ufBase));
       } catch {
         const fallback = buildDefaultBCInputs(seed, config);
         setInputs(fallback);
@@ -97,7 +118,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, cfgLoading, contractId]);
+  }, [enabled, cfgLoading, ufLoading, contractId]);
 
   const result = useMemo(() => (inputs ? computeBC(inputs, config) : null), [inputs, config]);
 
