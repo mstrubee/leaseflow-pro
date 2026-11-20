@@ -167,6 +167,9 @@ interface PurchaseOrder {
   attachment_url?: string | null;
 }
 
+/** Estado con el que abren los listados de Requerimientos y Solicitudes de OC (los convertidos quedan en "Convertidas"). */
+const DEFAULT_OC_STATUS_FILTER = "pending";
+
 interface OCRequest {
   id: string;
   request_number: string;
@@ -374,7 +377,9 @@ const PurchaseOrdersDashboard = () => {
   const [requestFromRequired, setRequestFromRequired] = useState<RequestFromRequiredTarget | null>(null);
   const [requestingRequiredNumber, setRequestingRequiredNumber] = useState<string | null>(null);
   const [requeridasContractFilter, setRequeridasContractFilter] = useState("todos");
-  const [requeridasStatusFilter, setRequeridasStatusFilter] = useState("todos");
+  // Por defecto solo lo pendiente: lo convertido ya no requiere acción. Sigue
+  // disponible (con su trazabilidad) en la tarjeta/filtro "Convertidas".
+  const [requeridasStatusFilter, setRequeridasStatusFilter] = useState(DEFAULT_OC_STATUS_FILTER);
   const [solicitaLines, setSolicitaLines] = useState<SolicitaAutorizacionLine[]>([]);
   const [solicitaContractFilter, setSolicitaContractFilter] = useState("todos");
   const [approvingLineId, setApprovingLineId] = useState<string | null>(null);
@@ -498,7 +503,7 @@ const PurchaseOrdersDashboard = () => {
   const [amountFilter, setAmountFilter] = useState("todos");
   const [originFilter, setOriginFilter] = useState("todos");
   const [attachmentFilter, setAttachmentFilter] = useState("todos");
-  const [requestStatusFilter, setRequestStatusFilter] = useState("todos");
+  const [requestStatusFilter, setRequestStatusFilter] = useState(DEFAULT_OC_STATUS_FILTER);
 
   // Chart-based filters
   const [chartContractFilter, setChartContractFilter] = useState<string | null>(null);
@@ -1376,7 +1381,7 @@ const PurchaseOrdersDashboard = () => {
     setAmountFilter("todos");
     setOriginFilter("todos");
     setAttachmentFilter("todos");
-    setRequestStatusFilter("todos");
+    setRequestStatusFilter(DEFAULT_OC_STATUS_FILTER);
     setChartContractFilter(null);
     setChartCategoryFilter(null);
   };
@@ -1389,7 +1394,7 @@ const PurchaseOrdersDashboard = () => {
     amountFilter !== "todos" ||
     originFilter !== "todos" ||
     attachmentFilter !== "todos" ||
-    requestStatusFilter !== "todos" ||
+    requestStatusFilter !== DEFAULT_OC_STATUS_FILTER ||
     chartContractFilter ||
     chartCategoryFilter;
 
