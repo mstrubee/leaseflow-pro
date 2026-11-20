@@ -732,9 +732,9 @@ export const CentralizedOrderCreator = ({
    */
   const buildCapexLineAssignments = (
     perContract: { contractId: string; amountUf: number }[],
-  ): { lineId: string; lineName: string; amountUf: number; budgetId: string }[] => {
+  ): { lineId: string; lineName: string; amountUf: number; budgetId: string; contractId: string }[] => {
     const round4 = (v: number) => Math.round(v * 10000) / 10000;
-    const result: { lineId: string; lineName: string; amountUf: number; budgetId: string }[] = [];
+    const result: { lineId: string; lineName: string; amountUf: number; budgetId: string; contractId: string }[] = [];
     for (const c of perContract) {
       const ids = capexLineSelections[c.contractId] || [];
       const selected = (capexLinesByContract[c.contractId] || []).filter(l => ids.includes(l.id));
@@ -746,7 +746,7 @@ export const CentralizedOrderCreator = ({
       selected.forEach((l, i) => {
         const amountUf = i === selected.length - 1 ? round4(c.amountUf - assigned) : round4(split[l.id] ?? 0);
         assigned += amountUf;
-        result.push({ lineId: l.id, lineName: l.name, amountUf, budgetId: l.budget_id });
+        result.push({ lineId: l.id, lineName: l.name, amountUf, budgetId: l.budget_id, contractId: c.contractId });
       });
     }
     return result;
@@ -1088,13 +1088,36 @@ export const CentralizedOrderCreator = ({
             ? contractAllocations.map((a) => a.cebe).filter(Boolean).join(", ") || null
             : contracts.find((c) => c.id === primaryContractId)?.cebe || null,
           description: formData.description,
-          // CAPEX: las líneas reales con su reparto; OPEX: la categoría.
+          // CAPEX: las líneas reales con su reparto, cada una con su contrato y CEBE.
+          // OPEX: la categoría — una fila por contrato si es multi-contrato.
           lines: isCapexRequest
             ? buildShareLines(
-                capexAssignments.map(l => ({ lineName: l.lineName, amount: l.amountUf })),
+                capexAssignments.map(l => {
+                  const contract = contracts.find(c => c.id === l.contractId);
+                  const alloc = contractAllocations.find(a => a.contractId === l.contractId);
+                  return {
+                    lineName: l.lineName,
+                    amount: l.amountUf,
+                    contractName: contract?.name ?? alloc?.contractName ?? null,
+                    cebe: contract?.cebe ?? alloc?.cebe ?? null,
+                  };
+                }),
                 { totalAmountClp, amountsInClp: false, ufValue },
               )
-            : [{ lineName: requestLineName, amountClp: totalAmountClp }],
+            : isMultiContract
+              ? contractAllocations.map(a => ({
+                  lineName: requestLineName,
+                  // Mismo cálculo que se guarda en oc_request_contract_allocations.
+                  amountClp: formData.currency === "CLP" ? Math.round(a.amount) : Math.round(a.amount * ufValue),
+                  contractName: a.contractName,
+                  cebe: a.cebe,
+                }))
+              : [{
+                  lineName: requestLineName,
+                  amountClp: totalAmountClp,
+                  contractName: contracts.find(c => c.id === primaryContractId)?.name ?? null,
+                  cebe: contracts.find(c => c.id === primaryContractId)?.cebe ?? null,
+                }],
           totalAmountClp,
           payments: resolvedPayments,
           supplierName: formData.supplier_name,

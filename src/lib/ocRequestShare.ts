@@ -10,6 +10,10 @@ export interface OCRequestShareLine {
   /** Nombre de la línea de presupuesto o categoría OPEX a la que se asigna el monto. */
   lineName: string;
   amountClp: number;
+  /** Contrato al que pertenece la línea. Sin él, si la solicitud es de un solo contrato se usa ese. */
+  contractName?: string | null;
+  /** CEBE del contrato de la línea. Sin él, si la solicitud es de un solo contrato se usa `contractCebe`. */
+  cebe?: string | null;
 }
 
 export interface OCRequestSharePayment {
@@ -151,17 +155,31 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     },
   });
 
+  // Cada línea muestra su contrato y el CEBE de ese contrato (en una solicitud multi-contrato
+  // el encabezado solo lista todos juntos, sin decir cuál corresponde a cada línea). En una
+  // solicitud de un solo contrato, las líneas sin dato propio usan el del encabezado.
+  const singleContract = data.contractNames.length === 1;
   const itemsY = ((doc as any).lastAutoTable?.finalY || 54) + 6;
   autoTable(doc, {
     startY: itemsY,
-    head: [["Línea", "Monto"]],
-    body: data.lines.map((l) => [l.lineName, fmtClp(l.amountClp)]),
-    foot: [["Total", fmtClp(data.totalAmountClp)]],
+    head: [["Línea", "Contrato", "CEBE", "Monto"]],
+    body: data.lines.map((l) => [
+      l.lineName,
+      l.contractName || (singleContract ? data.contractNames[0] : null) || "—",
+      l.cebe || (singleContract ? data.contractCebe : null) || "—",
+      fmtClp(l.amountClp),
+    ]),
+    foot: [[{ content: "Total", colSpan: 3 }, fmtClp(data.totalAmountClp)]],
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4 },
     headStyles: { fillColor: [30, 58, 95], textColor: 255 },
     footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: "bold" },
-    columnStyles: { 1: { halign: "right" } },
+    columnStyles: {
+      0: { cellWidth: 62 },
+      1: { cellWidth: 48 },
+      2: { cellWidth: 36 },
+      3: { cellWidth: 36, halign: "right" },
+    },
   });
 
   const paymentsY = ((doc as any).lastAutoTable?.finalY || 90) + 10;
@@ -369,14 +387,16 @@ export function validatePaymentPlanTotal(resolvedAmountsClp: number[], totalClp:
  *   las que vienen en UF.
  */
 export function buildShareLines(
-  lines: { lineName: string; amount: number }[],
+  lines: { lineName: string; amount: number; contractName?: string | null; cebe?: string | null }[],
   opts: { totalAmountClp: number; amountsInClp: boolean; ufValue: number }
 ): OCRequestShareLine[] {
   if (lines.length === 1) {
-    return [{ lineName: lines[0].lineName, amountClp: Math.round(opts.totalAmountClp) }];
+    return [{ lineName: lines[0].lineName, amountClp: Math.round(opts.totalAmountClp), contractName: lines[0].contractName, cebe: lines[0].cebe }];
   }
   return lines.map((l) => ({
     lineName: l.lineName,
     amountClp: Math.round(opts.amountsInClp ? l.amount : l.amount * opts.ufValue),
+    contractName: l.contractName,
+    cebe: l.cebe,
   }));
 }

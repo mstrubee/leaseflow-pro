@@ -1,8 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
-import { buildShareLines, OCRequestShareData } from "@/lib/ocRequestShare";
+import { buildShareLines, OCRequestShareData, OCRequestShareLine } from "@/lib/ocRequestShare";
 import { extractStoragePath } from "@/lib/storageUtils";
+import { loadOCRequestLineAllocations } from "@/lib/ocRequestLines";
+import { loadContractCebes } from "@/lib/contractCebe";
 
 interface StoredOCRequest {
+  contract_id: string;
+  budget_line_id: string | null;
   request_date: string;
   line_name: string | null;
   project_name: string | null;
@@ -40,9 +44,10 @@ export async function loadOCRequestShareData(
   if (reqError) throw reqError;
   const request = reqRow as unknown as StoredOCRequest;
 
-  const [linesRes, allocationsRes, plansRes, supplierRes] = await Promise.all([
-    supabase.from("oc_budget_lines").select("budget_line_id, amount_uf").eq("oc_request_id", requestId),
-    supabase.from("oc_request_contract_allocations").select("contracts(name)").eq("oc_request_id", requestId),
+  const [lineAssignments, allocationsRes, plansRes, supplierRes] = await Promise.all([
+    // Líneas CAPEX con su contrato (1 línea: budget_line_id; 2+: oc_budget_lines).
+    loadOCRequestLineAllocations({ id: requestId, budget_line_id: request.budget_line_id, amount_uf: request.amount_uf }),
+    supabase.from("oc_request_contract_allocations").select("contract_id, amount_uf, amount_clp").eq("oc_request_id", requestId),
     supabase
       .from("oc_payment_plans")
       .select("description, amount_uf, amount_clp, due_date")
@@ -56,27 +61,50 @@ export async function loadOCRequestShareData(
   const effectiveUf = request.uf_value_at_entry || opts.ufValue;
   const totalAmountClp = request.amount_clp || Math.round((request.amount_uf ?? 0) * effectiveUf);
 
-  // oc_budget_lines solo tiene filas de líneas CAPEX; una solicitud OPEX no
-  // tiene ninguna (la tabla referencia budget_lines). Sin filas, la única
-  // línea es la guardada en la propia solicitud.
-  const lineRows = linesRes.data || [];
-  const lineNames = new Map<string, string>();
-  if (lineRows.length > 0) {
-    const { data: namesData } = await supabase
-      .from("budget_lines")
-      .select("id, name")
-      .in("id", lineRows.map((l) => l.budget_line_id));
-    (namesData || []).forEach((l) => lineNames.set(l.id, l.name));
-  }
-  const lines = buildShareLines(
-    lineRows.length > 0
-      ? lineRows.map((l) => ({ lineName: lineNames.get(l.budget_line_id) || "Línea", amount: l.amount_uf }))
-      : [{ lineName: request.line_name || "Línea", amount: 0 }],
-    { totalAmountClp, amountsInClp: false, ufValue: effectiveUf }
-  );
+  // Contrato y CEBE de cada línea: la tabla de ítems del PDF los muestra por línea.
+  const allocationRows = allocationsRes.data || [];
+  const contractIds = [...new Set([
+    request.contract_id,
+    ...allocationRows.map((a) => a.contract_id),
+    ...lineAssignments.map((l) => l.contractId),
+  ].filter(Boolean))];
+  const [contractsRes, cebes] = await Promise.all([
+    supabase.from("contracts").select("id, name").in("id", contractIds),
+    loadContractCebes(contractIds),
+  ]);
+  const contractNames = new Map((contractsRes.data || []).map((c) => [c.id, c.name]));
+  const nameOf = (id: string) => contractNames.get(id) ?? null;
+  const cebeOf = (id: string) => cebes.get(id) ?? null;
 
-  const allocationNames = ((allocationsRes.data || []) as unknown as { contracts: { name: string } | null }[])
-    .map((a) => a.contracts?.name || "Sin nombre");
+  // Una solicitud OPEX no tiene líneas CAPEX (oc_budget_lines referencia budget_lines).
+  // Sin líneas, la "línea" es la categoría guardada en la propia solicitud: una fila por
+  // contrato si es multi-contrato (con el monto de cada uno), o una sola si no.
+  let lines: OCRequestShareLine[];
+  if (lineAssignments.length > 0) {
+    lines = buildShareLines(
+      lineAssignments.map((l) => ({ lineName: l.lineName, amount: l.amountUf, contractName: nameOf(l.contractId), cebe: cebeOf(l.contractId) })),
+      { totalAmountClp, amountsInClp: false, ufValue: effectiveUf }
+    );
+  } else if (allocationRows.length > 0) {
+    lines = allocationRows.map((a) => ({
+      lineName: request.line_name || "Línea",
+      amountClp: Math.round(a.amount_clp ?? (a.amount_uf ?? 0) * effectiveUf),
+      contractName: nameOf(a.contract_id),
+      cebe: cebeOf(a.contract_id),
+    }));
+  } else {
+    lines = [{
+      lineName: request.line_name || "Línea",
+      amountClp: totalAmountClp,
+      contractName: request.project_name || nameOf(request.contract_id),
+      cebe: cebeOf(request.contract_id),
+    }];
+  }
+
+  const allocationNames = allocationRows.map((a) => nameOf(a.contract_id) || "Sin nombre");
+  const headerCebe = allocationRows.length > 0
+    ? [...new Set(allocationRows.map((a) => cebeOf(a.contract_id)).filter((c): c is string => !!c))].join(", ") || null
+    : opts.contractCebe ?? cebeOf(request.contract_id);
 
   // Cotización adjunta a la solicitud. oc_requests.quotation_url guarda una
   // referencia a Supabase Storage (solicitudes creadas desde "+ Solicitud OC") o
@@ -90,7 +118,7 @@ export async function loadOCRequestShareData(
     requestDate: request.request_date,
     currency: "CLP",
     contractNames: allocationNames.length > 0 ? allocationNames : [request.project_name].filter((n): n is string => !!n),
-    contractCebe: opts.contractCebe ?? null,
+    contractCebe: headerCebe,
     description: request.description || "",
     lines,
     totalAmountClp,
