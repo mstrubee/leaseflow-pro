@@ -228,6 +228,10 @@ interface SaveFileHandle {
     write: (data: Blob) => Promise<void>;
     close: () => Promise<void>;
   }>;
+  /** Para verificar lo escrito (existe en Chromium). */
+  getFile?: () => Promise<{ size: number }>;
+  /** Borra el archivo (Chromium reciente); se usa solo para no dejar uno vacío si la escritura falla. */
+  remove?: () => Promise<void>;
 }
 
 export type SaveTarget =
@@ -269,7 +273,13 @@ export async function pickSaveLocation(filename: string): Promise<SaveTarget> {
   }
 }
 
-export type OCRequestPdfDownloadResult = "saved" | "downloaded" | "cancelled";
+/**
+ * - saved: guardado en la ubicación elegida (y verificado).
+ * - downloaded: descarga normal del navegador (sin selector de carpeta disponible).
+ * - fallback: se eligió una ubicación pero no se pudo escribir ahí; se descargó por la vía normal.
+ * - cancelled: el usuario cerró el selector.
+ */
+export type OCRequestPdfDownloadResult = "saved" | "downloaded" | "fallback" | "cancelled";
 
 /**
  * Descarga el archivo ya generado (el PDF de la solicitud o, si lleva la cotización,
@@ -294,11 +304,26 @@ export async function downloadOCRequestPdf(
   const saveTarget = target ?? (await pickSaveLocation(filename));
   if (saveTarget.status === "cancelled") return "cancelled";
 
+  let fellBack = false;
   if (saveTarget.status === "ready") {
-    const writable = await saveTarget.handle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return "saved";
+    const { handle } = saveTarget;
+    try {
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      // Verifica que quedó escrito completo: el navegador, un antivirus o una política
+      // pueden cerrar el flujo sin error y dejar el archivo vacío, truncado o eliminado.
+      const saved = handle.getFile ? await handle.getFile() : null;
+      if (saved && saved.size !== blob.size) {
+        throw new Error(`El archivo guardado pesa ${saved.size} bytes y debía pesar ${blob.size}`);
+      }
+      return "saved";
+    } catch (error) {
+      console.warn("No se pudo escribir en la ubicación elegida; se usa la descarga del navegador.", error);
+      // Mejor esfuerzo: no dejar un archivo vacío/parcial en la carpeta elegida.
+      try { await handle.remove?.(); } catch { /* sin permiso o no soportado: se ignora */ }
+      fellBack = true;
+    }
   }
 
   const url = URL.createObjectURL(blob);
@@ -312,7 +337,7 @@ export async function downloadOCRequestPdf(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 1000);
-  return "downloaded";
+  return fellBack ? "fallback" : "downloaded";
 }
 
 /**

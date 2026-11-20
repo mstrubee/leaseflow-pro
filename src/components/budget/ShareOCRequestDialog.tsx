@@ -7,7 +7,7 @@ import { Mail, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { fileToBase64 } from "@/lib/fileBase64";
-import { buildOCRequestPdf, ocRequestPdfFileName, downloadOCRequestPdf, pickSaveLocation, OCRequestShareData } from "@/lib/ocRequestShare";
+import { buildOCRequestPdf, ocRequestPdfFileName, downloadOCRequestPdf, pickSaveLocation, type OCRequestShareData, type SaveTarget } from "@/lib/ocRequestShare";
 import { fetchQuotationFile } from "@/lib/ocRequestQuotation";
 import { buildOCRequestZip, ocRequestZipFileName, type QuotationFile } from "@/lib/ocRequestZip";
 
@@ -158,6 +158,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
   const handleDownload = async () => {
     if (!data) return;
     setDownloading(true);
+    let target: SaveTarget | null = null;
     try {
       const quotationFile = quotation.status === "ready" ? quotation.file : null;
       const pdfFileName = ocRequestPdfFileName(data);
@@ -166,18 +167,27 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       // Lo PRIMERO del clic: abrir el selector "Guardar como". Solo se puede mientras
       // dura el gesto del usuario (~5 s); armar el archivo antes lo dejaba fuera de ese
       // plazo y la descarga no salía. El archivo se arma después y se escribe en el destino.
-      const target = await pickSaveLocation(targetName);
+      target = await pickSaveLocation(targetName);
       if (target.status === "cancelled") return;
 
       const { blob, fileName, zipped } = await buildDownload(quotationFile);
       const result = await downloadOCRequestPdf(blob, fileName, target);
       rememberMethod("download");
       const what = zipped ? "ZIP" : "PDF";
-      toast.success(result === "saved" ? `${what} guardado` : `${what} descargado`);
+      if (result === "fallback") {
+        toast.warning(`No se pudo guardar el ${what} en la carpeta elegida; se descargó con la descarga normal del navegador (revisa tu carpeta Descargas).`);
+      } else {
+        toast.success(result === "saved" ? `${what} guardado: ${fileName}` : `${what} descargado: ${fileName}`);
+      }
       onOpenChange(false);
     } catch (err: any) {
       console.error("Error al descargar la Solicitud de OC:", err);
-      toast.error("No se pudo generar el archivo para descargar.");
+      // El selector ya creó un archivo vacío en la carpeta elegida: mejor esfuerzo por quitarlo.
+      if (target?.status === "ready") {
+        try { await target.handle.remove?.(); } catch { /* sin permiso o no soportado */ }
+      }
+      // Con el detalle del error: antes el mensaje genérico no permitía saber qué falló.
+      toast.error(`No se pudo generar el archivo para descargar: ${err?.name ?? "Error"}${err?.message ? ` – ${err.message}` : ""}`);
     } finally {
       setDownloading(false);
     }
