@@ -31,6 +31,10 @@ interface MultipleLinesSelectorProps {
   onSelectionChange: (lines: SelectedLine[]) => void;
   formatUF: (value: number) => string;
   formatCLP?: (value: number) => string; // For OPEX display in CLP
+  /** Monto total (UF) que debe cubrir esta selección. Al marcar una línea, el
+   * monto inicial es el menor entre su disponible y lo que aún falta para llegar
+   * a `maxTotal`, para no precargar de más (ej. 99 UF disponibles para un gasto
+   * de 22 UF). Es solo el valor inicial: el usuario puede editarlo. */
   maxTotal?: number;
   year?: number; // Required for OPEX master budget
   contractId?: string; // Used for OPEX local additional
@@ -317,9 +321,13 @@ export const MultipleLinesSelector = ({
       // usable de inmediato con un monto real; el usuario la reduce si
       // corresponde. Antes quedaba en 0.00 hasta que alguien la editara a mano.
       const maxAmount = availableAmounts[line.id] || 0;
+      const remaining = maxTotal !== undefined
+        ? Math.max(0, maxTotal - selectedLines.reduce((sum, sl) => sum + sl.amount, 0))
+        : Infinity;
+      const amount = Math.round(Math.min(maxAmount, remaining) * 10000) / 10000;
       onSelectionChange([
         ...selectedLines,
-        { lineId: line.id, lineName: line.name, amount: maxAmount, maxAmount }
+        { lineId: line.id, lineName: line.name, amount, maxAmount }
       ]);
     } else {
       // Remove line
