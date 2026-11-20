@@ -11,11 +11,10 @@ import {
 } from "recharts";
 import { Card, Field, FieldConv, Kpi, NumCell, Stat } from "@/components/contracts/BusinessCaseFinanciero";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
-import type { BCInputs } from "@/lib/businessCase/model";
-import { ocupPctFromMonto } from "@/lib/businessCase/model";
+import { FORMATOS_LOCAL, OCUPACION_TARGET_MM, ocupPctFromMonto, type BCInputs, type FormatoLocal } from "@/lib/businessCase/model";
 import {
   AutoInvLine, AutoInvMethod, AutoplanetInputs, AutoplanetResult, BLOCK_LABEL, INV_CATEGORIES,
-  PnlNode, newInvLine,
+  PnlNode, applyAutoplanetFormato, newInvLine,
 } from "@/lib/autoplanet/model";
 
 type Mutate = (key: string, fn: (p: AutoplanetInputs) => AutoplanetInputs) => void;
@@ -274,6 +273,11 @@ export function AutoplanetCaseEditor({ inputs, result, readOnly: ro, update, upd
               <NumCell value={inputs.gralPct} disabled={ro} w="w-full" onChange={(v) => update("gralPct", v)} /></FieldConv>
             <FieldConv label="Tecnología %" conv={`A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "tecnologia", 1)))} MM`}>
               <NumCell value={inputs.tecPct} disabled={ro} w="w-full" onChange={(v) => update("tecPct", v)} /></FieldConv>
+            <FieldConv label="Formato de local" conv={`Precarga la Ocupación fija en $${fmtMM(OCUPACION_TARGET_MM[inputs.formato] ?? OCUPACION_TARGET_MM.Tradicional, 2)} MM/mes (editable). No cambia dotación ni inversión`}>
+              <Select value={inputs.formato ?? "Tradicional"} disabled={ro} onValueChange={(v) => mutate("formato", (p) => applyAutoplanetFormato(p, v as FormatoLocal))}>
+                <SelectTrigger className="h-7 w-full text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{FORMATOS_LOCAL.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+              </Select></FieldConv>
             <FieldConv label="Ocupación %" conv={`Fijo $${fmtMM(inputs.ocupMesMM, 2)} MM/mes (año 1), sube con la UF. % sobre venta año 1; editarlo cambia el monto · A1: $${fmtMM(Math.abs(nodeTotal(result.operacionales, "ocupacion", 1)))} MM`}>
               {/* El % es informativo (monto ÷ venta mensual del año 1) y editable: cambiarlo a mano cambia el MONTO fijo. */}
               <NumCell value={ocupPctFromMonto(inputs.ocupMesMM, result.ventaMes[0])} disabled={ro} w="w-full"
