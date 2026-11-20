@@ -349,6 +349,26 @@ export interface BCSeed {
   durContratoAnios?: number | null; inicio?: string | null; ufBase?: number;
 }
 
+const isPositive = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
+
+/**
+ * Refresca los campos que el BC deriva "en vivo" del contrato y de la UF vigente:
+ * superficie, UF/m² (canon / superficie) y UF base. Un BC ya guardado conserva
+ * estos valores congelados; sin este paso, cambiar la superficie del contrato o
+ * pasar el tiempo (UF) no se reflejaba y la evaluación financiera quedaba desfasada.
+ * Solo se pisan valores válidos (>0) del seed: si el contrato no tiene el dato,
+ * se respeta lo que ya había en el BC.
+ * Decisión: superficie y ufM2 se refrescan juntos para que el canon
+ * (superficie × ufM2) siga calzando con el canon real del contrato.
+ */
+export function applyLiveSeed(inputs: BCInputs, seed: BCSeed = {}): BCInputs {
+  const next = { ...inputs };
+  if (isPositive(seed.superficie)) next.superficie = seed.superficie;
+  if (isPositive(seed.ufM2)) next.ufM2 = seed.ufM2;
+  if (isPositive(seed.ufBase)) next.ufBase = seed.ufBase;
+  return next;
+}
+
 export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = defaultAdminConfig): BCInputs {
   const tipo = seed.tipo && admin.tiposProyecto.includes(seed.tipo) ? seed.tipo : admin.tiposProyecto[0];
   const d = admin.defaultsPorTipo[tipo] ?? { margenDir: 53, personalY1: 26, anosDepr: 3 };

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
-import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC } from "@/lib/businessCase/model";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { BCInputs, BCSeed, applyLiveSeed, buildDefaultBCInputs, computeBC } from "@/lib/businessCase/model";
 
 interface Args {
   contractId: string;
@@ -11,6 +12,7 @@ interface Args {
 
 export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const { config, loading: cfgLoading } = useBusinessCaseAdminConfig();
+  const { ufValue, loading: ufLoading } = useEconomicIndicators();
   const [inputs, setInputs] = useState<BCInputs | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,10 +37,19 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     lastEditRef.current = { key: editKey, time: now };
   }, []);
 
-  // Cargar una vez (cuando la config global esté lista y el diálogo abierto)
+  // El componente queda montado aunque el diálogo esté cerrado: al cerrar se
+  // marca para recargar en la próxima apertura, de lo contrario se mostraba el
+  // estado de la apertura anterior (superficie / UF desactualizadas).
   useEffect(() => {
-    if (!enabled || cfgLoading || loadedRef.current) return;
+    if (!enabled) loadedRef.current = false;
+  }, [enabled]);
+
+  // Cargar en cada apertura (cuando config global y UF vigente estén listas)
+  useEffect(() => {
+    if (!enabled || cfgLoading || ufLoading || loadedRef.current) return;
     loadedRef.current = true;
+    // Datos "en vivo": contrato (superficie, UF/m²) y UF vigente.
+    const liveSeed: BCSeed = { ...seed, ufBase: seed.ufBase ?? (ufValue > 0 ? ufValue : undefined) };
     (async () => {
       setLoading(true);
       try {
@@ -49,28 +60,34 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
           .maybeSingle();
         const stored = data?.inputs as unknown as Partial<BCInputs> | null;
         // Detectar modelo nuevo (tiene 'categoria' / 'ufRates'); si no, usar defaults+seed
-        let merged: BCInputs;
+        let base: BCInputs;
         if (stored && (stored as BCInputs).categoria !== undefined && Array.isArray((stored as BCInputs).ufRates)) {
-          merged = { ...buildDefaultBCInputs(seed, config), ...(stored as BCInputs) };
+          base = { ...buildDefaultBCInputs(liveSeed, config), ...(stored as BCInputs) };
         } else {
-          merged = buildDefaultBCInputs(seed, config);
+          base = buildDefaultBCInputs(liveSeed, config);
         }
+        // Lo guardado se pisa con los datos vigentes del contrato y de la UF.
+        const merged = applyLiveSeed(base, liveSeed);
         setInputs(merged);
-        initialInputsRef.current = merged;
+        initialInputsRef.current = base;
         historyRef.current = [];
         lastEditRef.current = null;
+        // Si el refresco cambió algo respecto de lo guardado, queda "sin guardar"
+        // para que el usuario persista la evaluación actualizada.
+        setDirty(JSON.stringify(merged) !== JSON.stringify(base));
       } catch {
-        const fallback = buildDefaultBCInputs(seed, config);
+        const fallback = applyLiveSeed(buildDefaultBCInputs(liveSeed, config), liveSeed);
         setInputs(fallback);
         initialInputsRef.current = fallback;
         historyRef.current = [];
         lastEditRef.current = null;
+        setDirty(false);
       } finally {
         setLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, cfgLoading, contractId]);
+  }, [enabled, cfgLoading, ufLoading, contractId]);
 
   const result = useMemo(() => (inputs ? computeBC(inputs, config) : null), [inputs, config]);
 

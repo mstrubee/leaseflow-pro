@@ -913,7 +913,9 @@ const ContractDetail = () => {
                 seed={(() => {
                   const empresa = contract.contract_companies?.[0]?.companies?.name ?? "";
                   const tipo = /agro/i.test(empresa) ? "Agroplanet" : /auto/i.test(empresa) ? "Autoplanet" : undefined;
-                  const superficie = contract.superficie_edificada_local ?? null;
+                  // Usa la superficie editada en la ficha (estado local) si existe,
+                  // ya que `contract` no se recarga al guardar superficies.
+                  const superficie = superficieEdificada ?? contract.superficie_edificada_local ?? null;
                   const canonUf = displayVersion?.initial_rent || displayVersion?.regime_rent || null;
                   const ufM2 = superficie && canonUf ? +(canonUf / superficie).toFixed(4) : null;
                   return {
