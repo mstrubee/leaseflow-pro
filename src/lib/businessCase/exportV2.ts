@@ -239,8 +239,51 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   // ── Resumen business case ───────────────────────────────────────────────────
   const cols = ["N", "O", "P", "Q", "R"]; // años 1..5
 
-  // Ventas (MM CLP / mes) por año
-  inputs.ventaMes.slice(0, 5).forEach((v, i) => { res.getCell(`${cols[i]}10`).value = v || 0; });
+  // Ventas (MM CLP / mes) por año, con el factor del escenario (opt ×1.10 /
+  // cons ×0.85) igual que computeBC; la planilla original no lo aplicaba.
+  const sf = inputs.scenario === "opt" ? 1.1 : inputs.scenario === "cons" ? 0.85 : 1.0;
+  inputs.ventaMes.slice(0, 5).forEach((v, i) => { res.getCell(`${cols[i]}10`).value = (v || 0) * sf; });
+  // R9 (año 5) en la plantilla era =Q9*1.05 e ignoraba R10: se alinea a ventas/mes × 12.
+  res.getCell("R9").value = { formula: "+(R10*1000000*12)" } as ExcelJS.CellFormulaValue;
+
+  // Meses del año 1 (Datos!B21): la plantilla usa (12 - mes inicio) - 1 y no
+  // considera la gracia; la app usa mesesY1 (inicio + gracia hasta fin de año).
+  datos.getCell("B21").value = r.mesesY1;
+  datos.getCell("E21").value = { formula: "EDATE(E19,E20)" } as ExcelJS.CellFormulaValue; // inicio pago canon
+
+  // Año calendario del año 1 = año en que parte el canon (inicio + gracia).
+  // Las cabeceras de la plantilla traían 2025..2030 fijos.
+  const dtCanon = isoToDate(inputs.inicio);
+  dtCanon.setMonth(dtCanon.getMonth() + (inputs.graciaMeses || 0));
+  const y1 = dtCanon.getFullYear();
+  ["D", "E", "F", "G", "H", "I"].forEach((c, i) => { res.getCell(`${c}8`).value = y1 - 1 + i; });
+  ["M", "N", "O", "P", "Q", "R"].forEach((c, i) => {
+    [8, 12, 19, 26, 34].forEach((row) => { res.getCell(`${c}${row}`).value = y1 - 1 + i; });
+  });
+
+  // Garantía: la plantilla siempre suma 1 mes de canon al capex (Datos!E28 = E17).
+  // En la app solo existe en las categorías que tienen la línea "gar" (Nuevo /
+  // Relocación) y puede tener override. Se expresa en UF para que Capex (D36 =
+  // E28 × UF base) calce con r.inv.
+  const garRow = r.inv.rows.find((x) => x.id === "gar");
+  datos.getCell("E28").value = garRow ? +((garRow.monto * 1e6) / (inputs.ufBase || 1)).toFixed(4) : 0;
+
+  // Inventario (capital de trabajo): la plantilla traía 100 MM fijos en N22.
+  res.getCell("N22").value = Math.round(r.inv.kt * 1e6);
+
+  // Gastos Generales: la plantilla usaba -0.8 MM/mes fijo; la app lo calcula como
+  // % de ingresos (gralPct).
+  const gralPct = (inputs.gralPct || 0) / 100;
+  ["E", "F", "G", "H", "I"].forEach((col) => {
+    res.getCell(`${col}19`).value = { formula: `-ABS(${col}$10)*${gralPct}` } as ExcelJS.CellFormulaValue;
+  });
+
+  // VAN: la app descuenta el flujo del año 0 sin descuento (t = 0) y el año n a
+  // (1+r)^n. NPV() de Excel descuenta el primer valor un período; se corrige
+  // sumando D37 aparte.
+  datos.getCell("J11").value = {
+    formula: "'Resumen business case'!D37+NPV(E30,'Resumen business case'!E37:I37)",
+  } as ExcelJS.CellFormulaValue;
 
   // Márgenes (sin propagar: la planilla ya copia N14 a O..R)
   res.getCell("N14").value = (inputs.margenDir || 0) / 100;
