@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,27 @@ import { Mail, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { fileToBase64 } from "@/lib/fileBase64";
-import { buildOCRequestPdf, ocRequestPdfFileName, downloadOCRequestPdf, OCRequestShareData } from "@/lib/ocRequestShare";
+import { buildOCRequestPdf, ocRequestPdfFileName, downloadOCRequestPdf, pickSaveLocation, OCRequestShareData } from "@/lib/ocRequestShare";
 import { fetchQuotationFile } from "@/lib/ocRequestQuotation";
-import { buildOCRequestZip, ocRequestZipFileName } from "@/lib/ocRequestZip";
+import { buildOCRequestZip, ocRequestZipFileName, type QuotationFile } from "@/lib/ocRequestZip";
+
+/** Tope de espera para bajar la cotización: pasado esto se ofrece solo el PDF (y se avisa). */
+const QUOTATION_TIMEOUT_MS = 25_000;
+
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
+  new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(null); },
+    );
+  });
+
+type QuotationState =
+  | { status: "none" }
+  | { status: "loading" }
+  | { status: "ready"; file: QuotationFile }
+  | { status: "failed" };
 
 const LAST_METHOD_KEY = "oc_request_share_last_method";
 type ShareMethod = "email" | "download";
@@ -65,6 +83,34 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
   const [downloading, setDownloading] = useState(false);
   const [lastMethod] = useState<ShareMethod>(getLastMethod);
   const [migoChoice, setMigoChoice] = useState<MigoChoice>(null);
+  const [quotation, setQuotation] = useState<QuotationState>({ status: "none" });
+
+  // La cotización se baja AL ABRIR el diálogo, no al hacer clic en Descargar: así,
+  // al hacer clic, ya está lista y el selector "Guardar como" se abre dentro del
+  // gesto del usuario (ver downloadOCRequestPdf). Bajarla al hacer clic tardaba más
+  // que la ventana que permite abrir el selector y la descarga no salía.
+  const quotationRef = data?.quotation ?? null;
+  const quotationKey = quotationRef ? `${quotationRef.storagePath ?? ""}|${quotationRef.driveUrl ?? ""}` : "";
+  useEffect(() => {
+    if (!open || !quotationRef) {
+      setQuotation({ status: "none" });
+      return;
+    }
+    let cancelled = false;
+    setQuotation({ status: "loading" });
+    withTimeout(fetchQuotationFile(quotationRef), QUOTATION_TIMEOUT_MS).then((file) => {
+      if (cancelled) return;
+      if (file) {
+        setQuotation({ status: "ready", file });
+      } else {
+        setQuotation({ status: "failed" });
+        toast.warning("No se pudo obtener la cotización adjunta; se descargará solo la Solicitud de OC.");
+      }
+    });
+    return () => { cancelled = true; };
+    // quotationKey identifica la cotización; quotationRef cambia de identidad en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, quotationKey]);
 
   const handleClose = (isOpen: boolean) => {
     if (sending || downloading) return;
@@ -96,20 +142,15 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
   };
 
   /**
-   * Lo que se descarga: si la solicitud viene de un Requerimiento con cotización
-   * adjunta, un ZIP con la Solicitud (PDF) + la cotización; si no hay cotización,
-   * o no se pudo obtener el archivo, solo el PDF (y se avisa).
+   * Lo que se descarga: si la solicitud trae cotización y se pudo obtener, un ZIP con
+   * la Solicitud (PDF) + la cotización; si no, solo el PDF.
    */
-  const buildDownload = async (): Promise<{ blob: Blob; fileName: string; zipped: boolean }> => {
+  const buildDownload = async (quotationFile: QuotationFile | null): Promise<{ blob: Blob; fileName: string; zipped: boolean }> => {
     const pdfBlob = await buildBlob();
     const pdfFileName = ocRequestPdfFileName(data!);
-    if (data!.quotation) {
-      const quotationFile = await fetchQuotationFile(data!.quotation);
-      if (quotationFile) {
-        const zip = await buildOCRequestZip({ blob: pdfBlob, fileName: pdfFileName }, quotationFile);
-        return { blob: zip, fileName: ocRequestZipFileName(pdfFileName), zipped: true };
-      }
-      toast.warning("No se pudo obtener la cotización adjunta; se descarga solo la Solicitud de OC.");
+    if (quotationFile) {
+      const zip = await buildOCRequestZip({ blob: pdfBlob, fileName: pdfFileName }, quotationFile);
+      return { blob: zip, fileName: ocRequestZipFileName(pdfFileName), zipped: true };
     }
     return { blob: pdfBlob, fileName: pdfFileName, zipped: false };
   };
@@ -118,9 +159,18 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
     if (!data) return;
     setDownloading(true);
     try {
-      const { blob, fileName, zipped } = await buildDownload();
-      const result = await downloadOCRequestPdf(blob, fileName);
-      if (result === "cancelled") return;
+      const quotationFile = quotation.status === "ready" ? quotation.file : null;
+      const pdfFileName = ocRequestPdfFileName(data);
+      const targetName = quotationFile ? ocRequestZipFileName(pdfFileName) : pdfFileName;
+
+      // Lo PRIMERO del clic: abrir el selector "Guardar como". Solo se puede mientras
+      // dura el gesto del usuario (~5 s); armar el archivo antes lo dejaba fuera de ese
+      // plazo y la descarga no salía. El archivo se arma después y se escribe en el destino.
+      const target = await pickSaveLocation(targetName);
+      if (target.status === "cancelled") return;
+
+      const { blob, fileName, zipped } = await buildDownload(quotationFile);
+      const result = await downloadOCRequestPdf(blob, fileName, target);
       rememberMethod("download");
       const what = zipped ? "ZIP" : "PDF";
       toast.success(result === "saved" ? `${what} guardado` : `${what} descargado`);
@@ -169,7 +219,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
       // en vez de dejar al usuario sin nada.
       toast.error("No se pudo enviar el correo. Se descargará el PDF para enviarlo manualmente.");
       try {
-        const { blob, fileName } = await buildDownload();
+        const { blob, fileName } = await buildDownload(quotation.status === "ready" ? quotation.file : null);
         await downloadOCRequestPdf(blob, fileName);
       } catch (downloadErr) {
         console.error("Además falló la descarga de respaldo:", downloadErr);
@@ -180,7 +230,11 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
   };
 
   const busy = sending || downloading;
+  const preparingQuotation = quotation.status === "loading";
   const actionsDisabled = busy || (requireMigoChoice && migoChoice === null);
+  // Descargar espera a que termine de bajar la cotización (enviar por correo no la usa).
+  const downloadDisabled = actionsDisabled || preparingQuotation;
+  const willZip = !!data?.quotation && quotation.status !== "failed";
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -202,7 +256,7 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
           />
           <p className="text-xs text-muted-foreground">
             Se envía con el PDF adjunto. Si el envío no está disponible, se descarga en su lugar.
-            {data?.quotation && " La descarga viene en un ZIP con la Solicitud de OC y la cotización adjunta."}
+            {willZip && " La descarga viene en un ZIP con la Solicitud de OC y la cotización adjunta."}
           </p>
         </div>
 
@@ -241,11 +295,11 @@ export function ShareOCRequestDialog({ open, onOpenChange, data, requireMigoChoi
           <Button
             variant={lastMethod === "download" ? "default" : "outline"}
             onClick={handleDownload}
-            disabled={actionsDisabled}
+            disabled={downloadDisabled}
             className="w-full sm:w-auto"
           >
-            {downloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
-            {data?.quotation ? "Descargar ZIP" : "Descargar PDF"}
+            {downloading || preparingQuotation ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
+            {preparingQuotation ? "Preparando cotización…" : willZip ? "Descargar ZIP" : "Descargar PDF"}
           </Button>
           <Button
             variant={lastMethod === "email" ? "default" : "outline"}

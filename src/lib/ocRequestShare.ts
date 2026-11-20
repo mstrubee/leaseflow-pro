@@ -230,7 +230,7 @@ interface SaveFileHandle {
   }>;
 }
 
-type SaveTarget =
+export type SaveTarget =
   | { status: "ready"; handle: SaveFileHandle }
   | { status: "unsupported" }
   | { status: "cancelled" };
@@ -245,7 +245,7 @@ const canPickSaveLocation = () =>
  * "downloads"` para que el selector abra en la carpeta Descargas por
  * defecto, como se pidió explícitamente para este flujo.
  */
-async function pickSaveLocation(filename: string): Promise<SaveTarget> {
+export async function pickSaveLocation(filename: string): Promise<SaveTarget> {
   if (!canPickSaveLocation()) return { status: "unsupported" };
   try {
     const handle = await (window as typeof window & {
@@ -279,8 +279,19 @@ export type OCRequestPdfDownloadResult = "saved" | "downloaded" | "cancelled";
  * descarga normal del navegador — limitación real de esas plataformas, no
  * algo que se pueda evitar desde la web.
  */
-export async function downloadOCRequestPdf(blob: Blob, filename: string): Promise<OCRequestPdfDownloadResult> {
-  const saveTarget = await pickSaveLocation(filename);
+export async function downloadOCRequestPdf(
+  blob: Blob,
+  filename: string,
+  /**
+   * Destino ya elegido con pickSaveLocation. showSaveFilePicker solo se puede abrir
+   * mientras dura el clic del usuario (~5 s): si antes de descargar hay trabajo lento
+   * (bajar la cotización, armar el ZIP), el selector falla con "Must be handling a user
+   * gesture" y la descarga no sale. Quien tenga trabajo lento debe elegir el destino
+   * PRIMERO, dentro del clic, y pasarlo aquí cuando el archivo esté listo.
+   */
+  target?: SaveTarget,
+): Promise<OCRequestPdfDownloadResult> {
+  const saveTarget = target ?? (await pickSaveLocation(filename));
   if (saveTarget.status === "cancelled") return "cancelled";
 
   if (saveTarget.status === "ready") {
