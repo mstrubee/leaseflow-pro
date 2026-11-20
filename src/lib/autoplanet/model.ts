@@ -11,7 +11,7 @@
 // Cifras en MM CLP. Horizonte: año 0 (pre-apertura) + 5 años (índices 0..5).
 // ============================================================
 import {
-  BCInputs, BCSeed, buildDefaultBCInputs, calcIRR, calcNPV, computeBC, defaultAdminConfig,
+  BCInputs, BCSeed, buildDefaultBCInputs, calcIRR, calcNPV, computeBC, defaultAdminConfig, depreciationSchedule,
 } from "@/lib/businessCase/model";
 import type { AdminConfig } from "@/lib/businessCase/model";
 
@@ -449,15 +449,18 @@ export function computeAutoplanet(inputs: AutoplanetInputs): AutoplanetResult {
   const gavs = sumArrays(zeros(), operacionales.map((n) => n.total));
   const ebitda = margenCtrib.map((x, i) => round(x + gavs[i], 2));
 
-  const depr = round(fisica / (inputs.deprAnos || 1), 2);
-  const depreciacion = [0, -depr, -depr, -depr, -depr, -depr];
+  // Depreciación por año: fisica/deprAnos durante deprAnos años, 0 después (misma
+  // función que el Business Case de contratos). Antes se depreciaba el mismo monto
+  // los 5 años aunque deprAnos fuera menor, sobrestimando EBIT, flujo, TIR y VAN.
+  const deprSched = depreciationSchedule(fisica, inputs.deprAnos || 1, YEARS - 1);
+  const depreciacion = deprSched.map((d) => (d === 0 ? 0 : -d));
   const ebit = ebitda.map((x, i) => round(x + depreciacion[i], 2));
   const taxRate = (inputs.taxRate || 0) / 100;
   const impuesto = ebit.map((x) => round(-x * taxRate, 2));
   const udi = ebit.map((x) => round(x * (1 - taxRate), 2));
   const ros = ebit.map((x, i) => (ing[i] ? x / ing[i] : 0));
 
-  const flujoOp = udi.map((x, i) => (i === 0 ? -invTotal : round(x + depr, 2)));
+  const flujoOp = udi.map((x, i) => (i === 0 ? -invTotal : round(x + deprSched[i], 2)));
   const payback = [flujoOp[0]];
   for (let i = 1; i < YEARS; i++) payback.push(round(payback[i - 1] + flujoOp[i], 2));
 
