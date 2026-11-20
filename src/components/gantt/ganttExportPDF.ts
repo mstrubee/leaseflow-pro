@@ -1,17 +1,49 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend } from "date-fns";
+import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday, OrgMember } from "@/hooks/useGantt";
 import { getGanttDateRange } from "@/lib/ganttDateUtils";
 import { getLogoUrls } from "@/hooks/useAppLogos";
+import { GanttExportColumnKey } from "./ganttExportColumns";
 
 interface ExportOptions {
   contractName: string;
   timelineName: string;
   hideCompleted?: boolean;
   orgMembers?: OrgMember[];
+  excludedColumns?: GanttExportColumnKey[];
 }
+
+// Completed tasks are highlighted with a green tint, a check icon and a green bar.
+const COMPLETED_GREEN: [number, number, number] = [34, 197, 94];
+const COMPLETED_GREEN_DARK: [number, number, number] = [21, 128, 61];
+const COMPLETED_ROW_TINT: [number, number, number] = [236, 253, 245];
+// Start dates moved to the next working day are shown in orange.
+const ADJUSTED_ORANGE: [number, number, number] = [180, 90, 0];
+
+const drawCheckMark = (doc: jsPDF, x: number, y: number, size: number) => {
+  doc.setDrawColor(255);
+  doc.setLineWidth(0.35);
+  doc.line(x + size * 0.25, y + size * 0.52, x + size * 0.43, y + size * 0.7);
+  doc.line(x + size * 0.43, y + size * 0.7, x + size * 0.76, y + size * 0.32);
+};
+
+// Green circle with a white check. (x, y) is the top-left corner of the icon.
+const drawCheckIcon = (doc: jsPDF, x: number, y: number, size: number) => {
+  doc.setFillColor(...COMPLETED_GREEN);
+  doc.circle(x + size / 2, y + size / 2, size / 2, "F");
+  drawCheckMark(doc, x, y, size);
+};
+
+const drawCompletedLegend = (doc: jsPDF, rightX: number, baselineY: number) => {
+  const label = "Tarea completada";
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...COMPLETED_GREEN_DARK);
+  doc.text(label, rightX, baselineY, { align: "right" });
+  drawCheckIcon(doc, rightX - doc.getTextWidth(label) - 4.5, baselineY - 3, 3.2);
+  doc.setTextColor(0);
+};
 
 const fetchImageAsDataURL = async (url: string): Promise<string | null> => {
   try {
@@ -66,13 +98,28 @@ const drawLogo = (
   }
 };
 
+const isNonWorkingDayDate = (dateStr: string, holidays: Holiday[]): boolean => {
+  const d = parseISO(dateStr);
+  if (isWeekend(d)) return true;
+  return holidays.some((h) => h.date === dateStr);
+};
+
+const getNextWorkingDayStr = (dateStr: string, holidays: Holiday[]): string => {
+  let d = addDays(parseISO(dateStr), 1);
+  while (isWeekend(d) || holidays.some((h) => h.date === format(d, "yyyy-MM-dd"))) {
+    d = addDays(d, 1);
+  }
+  return format(d, "yyyy-MM-dd");
+};
+
 export async function exportGanttToPDF(
   taskTree: GanttTask[],
   allTasks: GanttTask[],
   holidays: Holiday[],
   options: ExportOptions
 ) {
-  const { contractName, timelineName, hideCompleted = false, orgMembers = [] } = options;
+  const { contractName, timelineName, hideCompleted = false, orgMembers = [], excludedColumns = [] } = options;
+  const excluded = new Set<GanttExportColumnKey>(excludedColumns);
 
   const memberById = new Map(orgMembers.map((m) => [m.id, m]));
 
@@ -107,6 +154,28 @@ export async function exportGanttToPDF(
   const filteredTree = filterTree(taskTree);
   const flat = flattenTree(filteredTree);
   const filteredFlat = flat.map((f) => f.task);
+  const hasCompleted = flat.some((f) => f.task.status === "completed");
+
+  // Build map of tasks whose start_date falls on a non-working day → shifted to next working day
+  const effectiveDateMap = new Map<string, string>();
+  filteredFlat.forEach((task) => {
+    if (task.start_date && isNonWorkingDayDate(task.start_date, holidays)) {
+      effectiveDateMap.set(task.id, getNextWorkingDayStr(task.start_date, holidays));
+    }
+  });
+
+  // Start/end dates actually drawn for a task (shifted when the start falls on a non-working day)
+  const getEffectiveDates = (task: GanttTask) => {
+    const adjusted = effectiveDateMap.has(task.id);
+    const start = effectiveDateMap.get(task.id) ?? task.start_date;
+    const shiftDays =
+      adjusted && task.start_date && start ? differenceInDays(parseISO(start), parseISO(task.start_date)) : 0;
+    const end =
+      task.end_date && shiftDays > 0
+        ? format(addDays(parseISO(task.end_date), shiftDays), "yyyy-MM-dd")
+        : task.end_date;
+    return { start, end, adjusted };
+  };
 
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -135,20 +204,44 @@ export async function exportGanttToPDF(
     { align: "right" }
   );
   doc.setTextColor(0);
+  if (hasCompleted) drawCompletedLegend(doc, pageWidth - 10, 27);
 
-  // ===== Page 1: 4 columns + Gantt =====
+  // ===== Page 1: table columns + Gantt =====
   const chartTop = 30;
   const chartLeft = 10;
-  // Column widths (mm)
-  const COL = {
-    name: 60,
-    responsible: 35,
-    start: 20,
-    duration: 18,
-    end: 20,
+  // Column widths (mm). Excluded columns free up space for the Gantt area.
+  const NAME_COL_WIDTH = 60;
+  const chartColumns = (
+    [
+      { key: "responsible", label: "Responsable", width: 35, align: "left" },
+      { key: "start", label: "Inicio", width: 20, align: "center" },
+      { key: "duration", label: "Plazo", width: 18, align: "center" },
+      { key: "end", label: "Término", width: 20, align: "center" },
+    ] as const
+  ).filter((c) => !excluded.has(c.key));
+  const tableLeftWidth = NAME_COL_WIDTH + chartColumns.reduce((sum, c) => sum + c.width, 0);
+
+  const chartCellText = (
+    task: GanttTask,
+    key: (typeof chartColumns)[number]["key"],
+    width: number,
+    effStart: string | null,
+    effEnd: string | null
+  ): string => {
+    switch (key) {
+      case "responsible": {
+        const name = (task.responsible_member_id && memberById.get(task.responsible_member_id)?.name) || "—";
+        const maxChars = Math.floor((width - 4) / 1.4);
+        return name.length > maxChars ? name.slice(0, maxChars - 1) + "…" : name;
+      }
+      case "start":
+        return effStart ? format(parseISO(effStart), "dd/MM/yy") : "—";
+      case "duration":
+        return `${task.duration_days} ${task.duration_type === "business" ? "h" : "d"}`;
+      case "end":
+        return effEnd ? format(parseISO(effEnd), "dd/MM/yy") : "—";
+    }
   };
-  const tableLeftWidth =
-    COL.name + COL.responsible + COL.start + COL.duration + COL.end;
 
   const hasDates = filteredFlat.some((t) => t.start_date && t.end_date);
   const { minDate, maxDate } = hasDates
@@ -169,27 +262,31 @@ export async function exportGanttToPDF(
   doc.rect(chartLeft, chartTop, tableLeftWidth + (hasDates ? totalDays * dayWidth : 0), headerHeight, "F");
 
   // Header text (white)
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255);
-  let cx = chartLeft;
-  doc.text("Tarea", cx + 2, chartTop + 5.5);
-  cx += COL.name;
-  doc.text("Responsable", cx + 2, chartTop + 5.5);
-  cx += COL.responsible;
-  doc.text("Inicio", cx + COL.start / 2, chartTop + 5.5, { align: "center" });
-  cx += COL.start;
-  doc.text("Plazo", cx + COL.duration / 2, chartTop + 5.5, { align: "center" });
-  cx += COL.duration;
-  doc.text("Término", cx + COL.end / 2, chartTop + 5.5, { align: "center" });
+  const drawHeaderLabels = (top: number, nameLabel: string) => {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255);
+    let cx = chartLeft;
+    doc.text(nameLabel, cx + 2, top + 5.5);
+    cx += NAME_COL_WIDTH;
+    chartColumns.forEach((col) => {
+      if (col.align === "center") {
+        doc.text(col.label, cx + col.width / 2, top + 5.5, { align: "center" });
+      } else {
+        doc.text(col.label, cx + 2, top + 5.5);
+      }
+      cx += col.width;
+    });
+  };
+  drawHeaderLabels(chartTop, "Tarea");
 
   // Column separators
   doc.setDrawColor(255);
   doc.setLineWidth(0.2);
-  let sep = chartLeft + COL.name;
-  [COL.responsible, COL.start, COL.duration, COL.end].forEach((w, i) => {
+  let sep = chartLeft + NAME_COL_WIDTH;
+  chartColumns.forEach((col) => {
     doc.line(sep, chartTop, sep, chartTop + headerHeight);
-    sep += w;
+    sep += col.width;
   });
 
   // Month markers in Gantt header
@@ -223,24 +320,14 @@ export async function exportGanttToPDF(
   const drawRowHeader = () => {
     doc.setFillColor(59, 130, 246);
     doc.rect(chartLeft, y, tableLeftWidth + (hasDates ? totalDays * dayWidth : 0), headerHeight, "F");
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(255);
-    let cx2 = chartLeft;
-    doc.text("Tarea (cont.)", cx2 + 2, y + 5.5);
-    cx2 += COL.name;
-    doc.text("Responsable", cx2 + 2, y + 5.5);
-    cx2 += COL.responsible;
-    doc.text("Inicio", cx2 + COL.start / 2, y + 5.5, { align: "center" });
-    cx2 += COL.start;
-    doc.text("Plazo", cx2 + COL.duration / 2, y + 5.5, { align: "center" });
-    cx2 += COL.duration;
-    doc.text("Término", cx2 + COL.end / 2, y + 5.5, { align: "center" });
+    drawHeaderLabels(y, "Tarea (cont.)");
     doc.setTextColor(0);
     y += headerHeight;
   };
 
   flat.forEach(({ task, level }) => {
+    const { start: effStart, end: effEnd, adjusted: startAdjusted } = getEffectiveDates(task);
+
     if (rowsOnPage >= maxRowsPerPage) {
       doc.addPage();
       y = 12;
@@ -248,8 +335,13 @@ export async function exportGanttToPDF(
       drawRowHeader();
     }
 
-    // Row background (alternating)
-    if (rowsOnPage % 2 === 1) {
+    const isCompleted = task.status === "completed";
+
+    // Row background (green tint for completed tasks, otherwise alternating)
+    if (isCompleted) {
+      doc.setFillColor(...COMPLETED_ROW_TINT);
+      doc.rect(chartLeft, y, tableLeftWidth + (hasDates ? totalDays * dayWidth : 0), rowHeight, "F");
+    } else if (rowsOnPage % 2 === 1) {
       doc.setFillColor(248, 250, 252);
       doc.rect(chartLeft, y, tableLeftWidth + (hasDates ? totalDays * dayWidth : 0), rowHeight, "F");
     }
@@ -267,10 +359,10 @@ export async function exportGanttToPDF(
     // Cell separators
     doc.setDrawColor(220);
     doc.setLineWidth(0.1);
-    let sx = chartLeft + COL.name;
-    [COL.responsible, COL.start, COL.duration, COL.end].forEach((w) => {
+    let sx = chartLeft + NAME_COL_WIDTH;
+    chartColumns.forEach((col) => {
       doc.line(sx, y, sx, y + rowHeight);
-      sx += w;
+      sx += col.width;
     });
     if (hasDates) {
       doc.line(ganttLeft, y, ganttLeft, y + rowHeight);
@@ -279,74 +371,70 @@ export async function exportGanttToPDF(
     // Cell text
     doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(20);
+    if (isCompleted) doc.setTextColor(...COMPLETED_GREEN_DARK);
+    else doc.setTextColor(20);
 
-    // Task name with indent
+    // Task name with indent (completed tasks get a check icon before the name)
     const indent = level * 2.5;
-    const nameMaxChars = Math.floor((COL.name - 4 - indent) / 1.4);
+    const iconOffset = isCompleted ? 4 : 0;
+    if (isCompleted) drawCheckIcon(doc, chartLeft + 2 + indent, y + (rowHeight - 3) / 2, 3);
+    const nameMaxChars = Math.floor((NAME_COL_WIDTH - 4 - indent - iconOffset) / 1.4);
     const displayName =
       task.name.length > nameMaxChars
         ? task.name.slice(0, nameMaxChars - 1) + "…"
         : task.name;
     if (level === 0) doc.setFont("helvetica", "bold");
-    doc.text(displayName, chartLeft + 2 + indent, y + rowHeight - 2);
+    doc.text(displayName, chartLeft + 2 + indent + iconOffset, y + rowHeight - 2);
     doc.setFont("helvetica", "normal");
 
-    // Responsible
-    let rx = chartLeft + COL.name + 2;
-    const member = task.responsible_member_id ? memberById.get(task.responsible_member_id) : null;
-    const respName = member?.name ?? "—";
-    const respMaxChars = Math.floor((COL.responsible - 4) / 1.4);
-    const respDisplay = respName.length > respMaxChars ? respName.slice(0, respMaxChars - 1) + "…" : respName;
-    doc.text(respDisplay, rx, y + rowHeight - 2);
-
-    // Start
-    let dx = chartLeft + COL.name + COL.responsible;
-    doc.text(
-      task.start_date ? format(parseISO(task.start_date), "dd/MM/yy") : "—",
-      dx + COL.start / 2,
-      y + rowHeight - 2,
-      { align: "center" }
-    );
-    dx += COL.start;
-
-    // Duration
-    doc.text(
-      `${task.duration_days} ${task.duration_type === "business" ? "h" : "d"}`,
-      dx + COL.duration / 2,
-      y + rowHeight - 2,
-      { align: "center" }
-    );
-    dx += COL.duration;
-
-    // End
-    doc.text(
-      task.end_date ? format(parseISO(task.end_date), "dd/MM/yy") : "—",
-      dx + COL.end / 2,
-      y + rowHeight - 2,
-      { align: "center" }
-    );
+    // Remaining columns (an adjusted start date is shown in orange)
+    let dx = chartLeft + NAME_COL_WIDTH;
+    chartColumns.forEach((col) => {
+      const text = chartCellText(task, col.key, col.width, effStart, effEnd);
+      const highlight = col.key === "start" && startAdjusted;
+      if (highlight) doc.setTextColor(...ADJUSTED_ORANGE);
+      if (col.align === "center") {
+        doc.text(text, dx + col.width / 2, y + rowHeight - 2, { align: "center" });
+      } else {
+        doc.text(text, dx + 2, y + rowHeight - 2);
+      }
+      if (highlight) {
+        if (isCompleted) doc.setTextColor(...COMPLETED_GREEN_DARK);
+        else doc.setTextColor(20);
+      }
+      dx += col.width;
+    });
 
     // Bar
-    if (hasDates && task.start_date && task.end_date) {
-      const startOffset = differenceInDays(parseISO(task.start_date), minDate);
-      const dur = differenceInDays(parseISO(task.end_date), parseISO(task.start_date)) + 1;
+    if (hasDates && effStart && effEnd) {
+      const startOffset = differenceInDays(parseISO(effStart), minDate);
+      const dur = differenceInDays(parseISO(effEnd), parseISO(effStart)) + 1;
       const x = ganttLeft + startOffset * dayWidth;
       const w = Math.max(0.5, dur * dayWidth);
 
-      // Color (children inherit a lightened version of their parent's color)
+      // Color (children inherit a lightened version of their parent's color).
+      // Completed tasks are always green so they stand out from the rest.
       const hex = getEffectiveColor(task);
-      if (hex && /^#[0-9a-f]{6}$/i.test(hex)) {
+      if (isCompleted) {
+        doc.setFillColor(...COMPLETED_GREEN);
+      } else if (hex && /^#[0-9a-f]{6}$/i.test(hex)) {
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         doc.setFillColor(r, g, b);
-      } else if (task.status === "completed") doc.setFillColor(34, 197, 94);
-      else if (task.status === "in_progress") doc.setFillColor(59, 130, 246);
+      } else if (task.status === "in_progress") doc.setFillColor(59, 130, 246);
       else if (task.status === "delayed") doc.setFillColor(239, 68, 68);
       else doc.setFillColor(148, 163, 184);
 
       doc.rect(x, y + 1.2, w, rowHeight - 2.4, "F");
+
+      if (isCompleted) {
+        // Dark outline + white check inside the bar (when it is wide enough)
+        doc.setDrawColor(...COMPLETED_GREEN_DARK);
+        doc.setLineWidth(0.3);
+        doc.rect(x, y + 1.2, w, rowHeight - 2.4, "S");
+        if (w >= 4) drawCheckMark(doc, x + 0.6, y + (rowHeight - 3) / 2, 3);
+      }
     }
 
     y += rowHeight;
@@ -361,58 +449,18 @@ export async function exportGanttToPDF(
     doc.line(todayX, chartTop, todayX, y);
   }
 
-  // ===== Page 2: full table, no Gantt, larger text =====
-  doc.addPage();
-  if (logoData) drawLogo(doc, logoData, 10, 6, 40, 14);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(0);
-  doc.text("Detalle de Tareas", pageWidth / 2, 14, { align: "center" });
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100);
-  doc.text(contractName, pageWidth / 2, 20, { align: "center" });
-  doc.setTextColor(0);
-
-  const statusLabel: Record<string, string> = {
-    pending: "Pendiente",
-    in_progress: "En curso",
-    completed: "Completada",
-    delayed: "Atrasada",
-  };
-
-  const tableRows = flat.map(({ task, level }, idx) => [
-    String(idx + 1),
-    "  ".repeat(level) + task.name,
-    task.responsible_member_id
-      ? memberById.get(task.responsible_member_id)?.name ?? "—"
-      : "—",
-    task.start_date ? format(parseISO(task.start_date), "dd/MM/yyyy") : "—",
-    `${task.duration_days} ${task.duration_type === "business" ? "háb." : "días"}`,
-    task.end_date ? format(parseISO(task.end_date), "dd/MM/yyyy") : "—",
-    statusLabel[task.status] || task.status,
-    `${task.progress || 0}%`,
-  ]);
-
-  autoTable(doc, {
-    startY: 26,
-    head: [["#", "Tarea", "Responsable", "Inicio", "Plazo", "Término", "Estado", "Progreso"]],
-    body: tableRows,
-    styles: { fontSize: 11, cellPadding: 3 },
-    headStyles: { fillColor: [59, 130, 246], textColor: 255, fontSize: 11 },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: {
-      0: { cellWidth: 12, halign: "center" },
-      1: { cellWidth: 90 },
-      2: { cellWidth: 50 },
-      3: { cellWidth: 28, halign: "center" },
-      4: { cellWidth: 24, halign: "center" },
-      5: { cellWidth: 28, halign: "center" },
-      6: { cellWidth: 28, halign: "center" },
-      7: { cellWidth: 20, halign: "center" },
-    },
-    margin: { left: 10, right: 10 },
-  });
+  // Footnote for start dates shifted to the next working day (only if "Inicio" is exported)
+  if (effectiveDateMap.size > 0 && !excluded.has("start")) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...ADJUSTED_ORANGE);
+    doc.text(
+      "Inicio en naranja: ajustado al siguiente día hábil (la fecha original caía en fin de semana o feriado)",
+      chartLeft,
+      Math.min(y + 5, pageHeight - 12)
+    );
+    doc.setTextColor(0);
+  }
 
   // Footer page numbers
   const pageCount = doc.getNumberOfPages();

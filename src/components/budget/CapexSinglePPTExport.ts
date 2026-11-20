@@ -4,10 +4,14 @@ import { getLogoUrls } from "@/hooks/useAppLogos";
 import { companyKeyFromNames, logoUrlForKey } from "@/lib/companyLogo";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 
-const TITLE_RED = "B71C1C";
-const DARK = "333333";
-const MUTED = "999999";
+// Mismos colores que CapexPPTExport.ts / InformeDirectorioPPT.ts (Business
+// Case Financiero) para que todos los export de CAPEX se vean como un mismo
+// documento.
+const TITLE_RED = "C21D18";
+const DARK = "1A1A1A";
+const MUTED = "666666";
 const LINE_COLOR = "CCCCCC";
+const PAGE_BG = "F2F2F2";
 
 interface SingleContractPPTData {
   contractId: string;
@@ -143,24 +147,24 @@ export async function generateSingleContractPPT(data: SingleContractPPTData) {
   const slide2Images = imageList.slice(slide1Images.length, slide1Images.length + 4);
 
   const addHeader = (slide: PptxGenJS.Slide, subtitleText: string) => {
-    slide.background = { color: "F5F5F5" };
+    slide.background = { color: PAGE_BG };
     slide.addText("PLAN EXPANSIÓN", {
-      x: 0.5, y: 0.3, w: 7, h: 0.5,
-      fontSize: 28, fontFace: "Arial", color: TITLE_RED, bold: true,
+      x: 0.5, y: 0.2, w: 7, h: 0.3,
+      fontSize: 14, fontFace: "Arial", color: TITLE_RED, bold: true,
     });
     slide.addText(subtitleText, {
-      x: 0.5, y: 0.8, w: 7, h: 0.35,
-      fontSize: 12, fontFace: "Arial", color: DARK, bold: true,
+      x: 0.5, y: 0.5, w: 7, h: 0.35,
+      fontSize: 16, fontFace: "Arial", color: DARK, bold: true,
     });
     slide.addShape("line" as any, {
-      x: 0.5, y: 1.2, w: 9, h: 0,
-      line: { color: LINE_COLOR, width: 1.5 },
+      x: 0.5, y: 0.87, w: 9, h: 0,
+      line: { color: LINE_COLOR, width: 1 },
     });
     if (logoImg) {
       const fit = fitContain(logoImg.w, logoImg.h, 1.5, 0.8);
       slide.addImage({
         data: logoImg.base64,
-        x: 8.0 + (1.5 - fit.w) / 2, y: 0.2 + (0.8 - fit.h) / 2,
+        x: 8.0 + (1.5 - fit.w) / 2, y: 0.1 + (0.8 - fit.h) / 2,
         w: fit.w, h: fit.h,
       });
     }
@@ -170,14 +174,14 @@ export async function generateSingleContractPPT(data: SingleContractPPTData) {
   const s1 = pres.addSlide();
   const subtitle = address ? `${data.contractName} - ${address}` : data.contractName;
   addHeader(s1, subtitle);
-  addImageGrid(s1, slide1Images, 1.4);
+  addImageGrid(s1, slide1Images, 1.0);
   s1.addText("1", { x: 8.8, y: 5.1, w: 0.7, h: 0.3, fontSize: 14, fontFace: "Arial", color: MUTED, align: "right" });
 
   // ═══════════ SLIDE 2 ═══════════
   if (slide2Images.length > 0) {
     const s2 = pres.addSlide();
     addHeader(s2, `${data.contractName} (cont.)`);
-    addImageGrid(s2, slide2Images, 1.4);
+    addImageGrid(s2, slide2Images, 1.0);
     s2.addText("2", { x: 8.8, y: 5.1, w: 0.7, h: 0.3, fontSize: 14, fontFace: "Arial", color: MUTED, align: "right" });
   }
 

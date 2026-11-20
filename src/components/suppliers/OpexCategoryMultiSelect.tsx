@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,12 +6,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown, X, Loader2 } from "lucide-react";
+import { categoriesForYear } from "@/lib/opexCategories";
 
 interface OpexCategory {
   id: string;
   name: string;
   display_order: number;
   supplier_category_id: string | null;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface OpexCategoryMultiSelectProps {
@@ -27,7 +31,12 @@ export const OpexCategoryMultiSelect = ({
   supplierCategoryId,
   disabled 
 }: OpexCategoryMultiSelectProps) => {
-  const [categories, setCategories] = useState<OpexCategory[]>([]);
+  const [loadedCategories, setLoadedCategories] = useState<OpexCategory[]>([]);
+  // Solo categorías vigentes este año; las que el proveedor ya tiene asociadas se conservan para que no desaparezcan del formulario.
+  const categories = useMemo(
+    () => categoriesForYear(loadedCategories, new Date().getFullYear(), value),
+    [loadedCategories, value],
+  );
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [supplierCategoryTree, setSupplierCategoryTree] = useState<Map<string, string[]>>(new Map());
@@ -41,12 +50,12 @@ export const OpexCategoryMultiSelect = ({
     try {
       const { data, error } = await supabase
         .from("opex_categories")
-        .select("id, name, display_order, supplier_category_id")
+        .select("id, name, display_order, supplier_category_id, is_active, valid_from_year, valid_to_year")
         .eq("is_active", true)
         .order("display_order", { ascending: true });
 
       if (error) throw error;
-      setCategories(data || []);
+      setLoadedCategories(data || []);
     } catch (error) {
       console.error("Error loading OPEX categories:", error);
     } finally {

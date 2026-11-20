@@ -76,6 +76,7 @@ export function PatentsModule() {
       if (contractExists) {
         setSelectedContractId(contractIdFromUrl);
         // Clear the URL param after selecting
+        if (window.location.pathname !== "/patents") return;
         setSearchParams({}, { replace: true });
       }
     }

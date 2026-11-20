@@ -19,6 +19,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
+import { formatCLP } from "@/lib/utils";
+import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
+import { OCRequestShareData, buildShareLines, reconcileShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
+import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
+import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
 interface Contract {
   id: string;
   name: string;
@@ -29,6 +36,9 @@ interface Contract {
 interface OpexCategory {
   id: string;
   name: string;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface OpexMasterLine {
@@ -62,10 +72,181 @@ interface ContractAllocation {
   maintenanceFormIds: string[];
 }
 
-interface PaymentPlanItem {
-  description: string;
-  amount: string;
-  due_date: string;
+export interface CapexBudgetLine {
+  id: string;
+  name: string;
+  amount_uf: number;
+  budget_id: string;
+  parent_id: string | null;
+  display_order: number | null;
+  /** budget_lines.status: solo "autorizado" admite imputar OC / solicitudes. */
+  status: string | null;
+  depth: number;
+  hasChildren: boolean;
+}
+
+/**
+ * Líneas CAPEX que se pueden mostrar en un selector para imputar una OC o una
+ * Solicitud de OC. Regla de negocio: el CAPEX siempre se asigna a una línea
+ * AUTORIZADA del contrato; las no autorizadas (no_autorizado, solicita_autorizar)
+ * no se pueden elegir. Mismo criterio que MultipleLinesSelector.
+ *
+ * - Hojas: solo las autorizadas y con monto > 0.
+ * - Madres (agrupadores): solo si alguna descendiente se muestra.
+ * - `keepIds`: hojas que se mantienen visibles aunque ya no estén autorizadas.
+ *   Solo para pantallas de EDICIÓN, para que el usuario pueda ver y quitar una
+ *   línea que ya tenía la OC; nunca para crear.
+ */
+export function selectableCapexLines<T extends { id: string; parent_id: string | null; status?: string | null; amount_uf: number; hasChildren: boolean }>(
+  lines: T[],
+  keepIds: readonly string[] = [],
+): T[] {
+  const keep = new Set(keepIds);
+  const byId = new Map(lines.map(l => [l.id, l]));
+  const visible = new Set<string>();
+  lines.forEach(l => {
+    if (l.hasChildren) return;
+    const selectable = l.status === "autorizado" && l.amount_uf > 0;
+    if (!selectable && !keep.has(l.id)) return;
+    // Marca la hoja y sus ancestros (se detiene al topar con uno ya marcado).
+    let current: T | undefined = l;
+    while (current && !visible.has(current.id)) {
+      visible.add(current.id);
+      current = current.parent_id ? byId.get(current.parent_id) : undefined;
+    }
+  });
+  return lines.filter(l => visible.has(l.id));
+}
+
+// Flatten budget lines into a hierarchical list (parents first, children
+// indented) — same ordering used by the per-contract budget module picker.
+export function buildHierarchicalCapexLines(lines: Omit<CapexBudgetLine, "depth" | "hasChildren">[]): CapexBudgetLine[] {
+  const byId = new Map(lines.map(l => [l.id, l]));
+  const childrenOf = new Map<string | null, typeof lines>();
+  lines.forEach(l => {
+    const key = l.parent_id && byId.has(l.parent_id) ? l.parent_id : null;
+    const arr = childrenOf.get(key) ?? [];
+    arr.push(l);
+    childrenOf.set(key, arr);
+  });
+  const result: CapexBudgetLine[] = [];
+  const walk = (parentKey: string | null, depth: number) => {
+    const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    items.forEach(item => {
+      const hasChildren = (childrenOf.get(item.id) ?? []).length > 0;
+      result.push({ ...item, depth, hasChildren });
+      walk(item.id, depth + 1);
+    });
+  };
+  walk(null, 0);
+  return result;
+}
+
+// Total UF already consumed per budget line by existing (non-deleted) OCs.
+// Counts the split amounts in purchase_order_budget_lines and, for legacy OCs
+// that only have the single budget_line_id column, the full order amount.
+// excludeOrderIds: the OC being edited, so it doesn't count against itself.
+export async function loadCapexLineUsage(lineIds: string[], excludeOrderIds: string[] = []): Promise<Record<string, number>> {
+  const usage: Record<string, number> = {};
+  if (lineIds.length === 0) return usage;
+  const excluded = new Set(excludeOrderIds);
+  try {
+    const { data: assoc } = await supabase
+      .from("purchase_order_budget_lines")
+      .select("purchase_order_id, budget_line_id, amount_uf")
+      .in("budget_line_id", lineIds);
+    const assocRows = assoc || [];
+    const assocOrderIds = Array.from(new Set(assocRows.map(a => a.purchase_order_id)));
+
+    // Only count association rows whose OC still exists (not soft-deleted)
+    const aliveIds = new Set<string>();
+    if (assocOrderIds.length > 0) {
+      const { data: alive } = await supabase
+        .from("purchase_orders")
+        .select("id")
+        .in("id", assocOrderIds)
+        .is("deleted_at", null);
+      (alive || []).forEach(o => aliveIds.add(o.id));
+    }
+    assocRows.forEach(a => {
+      if (excluded.has(a.purchase_order_id) || !aliveIds.has(a.purchase_order_id)) return;
+      usage[a.budget_line_id] = (usage[a.budget_line_id] || 0) + (a.amount_uf || 0);
+    });
+
+    const assocOrderIdSet = new Set(assocOrderIds);
+    const { data: legacy } = await supabase
+      .from("purchase_orders")
+      .select("id, budget_line_id, amount_uf")
+      .in("budget_line_id", lineIds)
+      .is("deleted_at", null);
+    (legacy || []).forEach(o => {
+      if (excluded.has(o.id) || assocOrderIdSet.has(o.id) || !o.budget_line_id) return;
+      usage[o.budget_line_id] = (usage[o.budget_line_id] || 0) + (o.amount_uf || 0);
+    });
+  } catch (error) {
+    console.error("Error loading CAPEX line usage:", error);
+  }
+  return usage;
+}
+
+// Reparte un monto total (UF) entre las líneas de presupuesto seleccionadas en
+// una OC multi-línea, en proporción al peso de cada línea (quien llama pasa el
+// disponible de cada línea como `amount_uf`) — no en partes iguales. Reparto
+// parejo hacía que una línea chica (ej. disponible en 1,76 UF) recibiera la
+// misma porción que una línea grande (ej. 68 UF), dejándola con "disponible
+// por línea" negativo. El llamador debe validar antes que totalUf no supere
+// la suma de los pesos — así ninguna línea recibe más de su propio disponible.
+// Si la suma de los pesos es 0, cae a partes iguales.
+function splitAmountProportionally(totalUf: number, lines: { id: string; amount_uf: number }[]): Record<string, number> {
+  const split: Record<string, number> = {};
+  if (lines.length === 0) return split;
+  const sum = lines.reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+  if (sum > 0) {
+    lines.forEach(l => { split[l.id] = totalUf * ((l.amount_uf || 0) / sum); });
+  } else {
+    const equalShare = totalUf / lines.length;
+    lines.forEach(l => { split[l.id] = equalShare; });
+  }
+  return split;
+}
+
+// Filter hierarchical lines by a typed search term. A line stays visible if
+// its name matches, or an ancestor matches (children of a matched parent),
+// or a descendant matches (parents kept for hierarchy context).
+export function filterCapexLines<T extends { id: string; name: string; parent_id: string | null }>(lines: T[], search: string): T[] {
+  const term = search.trim().toLowerCase();
+  if (!term) return lines;
+  const byId = new Map(lines.map(l => [l.id, l]));
+  const matches = new Set(lines.filter(l => l.name.toLowerCase().includes(term)).map(l => l.id));
+  const keep = new Set<string>();
+  lines.forEach(l => {
+    // Visible if this line or any ancestor matches
+    let cur: T | undefined = l;
+    while (cur) {
+      if (matches.has(cur.id)) { keep.add(l.id); break; }
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+    }
+  });
+  // Keep ancestors of every visible line so indentation still makes sense
+  Array.from(keep).forEach(id => {
+    let cur = byId.get(id);
+    while (cur?.parent_id) {
+      cur = byId.get(cur.parent_id);
+      if (cur) keep.add(cur.id);
+    }
+  });
+  return lines.filter(l => keep.has(l.id));
+}
+
+// Presupuesto/cotización adjuntado -- mismo criterio de previsualización que
+// usa OCRequestDialog.tsx (CAPEX) para que la experiencia sea consistente
+// entre ambos flujos de creación de Solicitud de OC.
+type QuotePreviewKind = "pdf" | "image" | "none";
+function quotePreviewKindOf(fileName: string): QuotePreviewKind {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf("."));
+  if (ext === ".pdf") return "pdf";
+  if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image";
+  return "none";
 }
 
 interface CentralizedOrderCreatorProps {
@@ -88,10 +269,19 @@ export const CentralizedOrderCreator = ({
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [activeTab, setActiveTab] = useState("basic");
+  // Al crear una Solicitud de OC ("request"), el flujo empieza por elegir
+  // contrato/categoría y adjuntar el presupuesto -- igual que el diálogo de
+  // CAPEX (OCRequestDialog.tsx). El modo "order" (Orden de Compra directa)
+  // mantiene su propio orden de siempre (Datos → Contratos → Pagos).
+  const [activeTab, setActiveTab] = useState(mode === "request" ? "contracts" : "basic");
   const [loading, setLoading] = useState(false);
+  const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
+  const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  // Categorías que la OC puede usar según su fecha de OC (las fusionadas o retiradas dejan de aparecer desde su año).
+  const categoriesForFormDate = () =>
+    categoriesForYear(opexCategories, yearFromDate(formData.order_date, year), [selectedCategoryId]);
   const [opexMasterLines, setOpexMasterLines] = useState<OpexMasterLine[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   
@@ -101,7 +291,7 @@ export const CentralizedOrderCreator = ({
   const [isMultiContract, setIsMultiContract] = useState(false);
   const [singleContractId, setSingleContractId] = useState("");
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
-  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanRow[]>([]);
   
   // Maintenance form assignment
   const [assignToForm, setAssignToForm] = useState(false);
@@ -110,8 +300,17 @@ export const CentralizedOrderCreator = ({
   const [formsSortAsc, setFormsSortAsc] = useState(false);
   const [viewingForm, setViewingForm] = useState<MaintenanceFormOption | null>(null);
   
+  // CAPEX budget lines per contract (regla: una OC de CAPEX debe imputarse a
+  // al menos una línea del presupuesto CAPEX del local — se permite más de una)
+  const [capexLinesByContract, setCapexLinesByContract] = useState<Record<string, CapexBudgetLine[]>>({});
+  const [capexBudgetIdByContract, setCapexBudgetIdByContract] = useState<Record<string, string | null>>({});
+  const [capexLineSelections, setCapexLineSelections] = useState<Record<string, string[]>>({});
+  const [capexLineUsage, setCapexLineUsage] = useState<Record<string, number>>({});
+  const [capexLineSearch, setCapexLineSearch] = useState<Record<string, string>>({});
+
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
+  const [quotationPreviewUrl, setQuotationPreviewUrl] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [duplicateOCWarning, setDuplicateOCWarning] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
@@ -154,6 +353,142 @@ export const CentralizedOrderCreator = ({
       loadInitialData();
     }
   }, [open, year]);
+
+  // Libera el blob URL de previsualización del presupuesto al desmontar.
+  useEffect(() => {
+    return () => {
+      if (quotationPreviewUrl) URL.revokeObjectURL(quotationPreviewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotationPreviewUrl]);
+
+  const loadCapexLinesForContract = useCallback(async (contractId: string) => {
+    if (!contractId || capexLinesByContract[contractId] !== undefined) return;
+    try {
+      const { data: budgetData } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .eq("budget_type", "capex");
+      const budgetIds = (budgetData || []).map(b => b.id);
+      let lines: CapexBudgetLine[] = [];
+      if (budgetIds.length > 0) {
+        const { data: linesData } = await supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, budget_id, parent_id, display_order, status")
+          .in("budget_id", budgetIds)
+          .is("deleted_at", null);
+        lines = buildHierarchicalCapexLines(linesData || []);
+      }
+      setCapexBudgetIdByContract(prev => ({ ...prev, [contractId]: budgetIds[0] || null }));
+      setCapexLinesByContract(prev => ({ ...prev, [contractId]: lines }));
+      if (lines.length > 0) {
+        const usage = await loadCapexLineUsage(lines.map(l => l.id));
+        setCapexLineUsage(prev => ({ ...prev, ...usage }));
+      }
+    } catch (error) {
+      console.error("Error loading CAPEX budget lines:", error);
+    }
+  }, [year, capexLinesByContract]);
+
+  // Load CAPEX lines for every contract involved when budget type is CAPEX
+  useEffect(() => {
+    if (budgetType !== "capex") return;
+    const ids = isMultiContract
+      ? contractAllocations.map(a => a.contractId).filter(Boolean)
+      : (singleContractId ? [singleContractId] : []);
+    ids.forEach(id => loadCapexLinesForContract(id));
+  }, [budgetType, isMultiContract, singleContractId, contractAllocations, loadCapexLinesForContract]);
+
+  const toggleCapexLine = (contractId: string, line: CapexBudgetLine) => {
+    const contractLines = capexLinesByContract[contractId] || [];
+    // Cascade: selecting a parent selects its descendants (same behavior as budget module)
+    const descendants: string[] = [];
+    const collect = (id: string) => {
+      contractLines.forEach(l => {
+        if (l.parent_id === id) {
+          descendants.push(l.id);
+          collect(l.id);
+        }
+      });
+    };
+    collect(line.id);
+    const affected = [line.id, ...descendants];
+    setCapexLineSelections(prev => {
+      const current = prev[contractId] || [];
+      const willCheck = !current.includes(line.id);
+      const next = willCheck
+        ? Array.from(new Set([...current, ...affected]))
+        : current.filter(id => !affected.includes(id));
+      return { ...prev, [contractId]: next };
+    });
+  };
+
+  const renderCapexLinePicker = (contractId: string) => {
+    const lines = capexLinesByContract[contractId];
+    const selected = capexLineSelections[contractId] || [];
+    if (lines === undefined) {
+      return <p className="text-xs text-muted-foreground p-2">Cargando líneas CAPEX...</p>;
+    }
+    if (lines.length === 0) {
+      return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas de presupuesto CAPEX para el año {year}.</p>;
+    }
+    const search = capexLineSearch[contractId] || "";
+    // Solo líneas AUTORIZADAS son seleccionables (ver selectableCapexLines). Las
+    // madre son agrupadores sin monto y solo aparecen si tienen una hija autorizada.
+    const authorizedLines = selectableCapexLines(lines);
+    if (authorizedLines.length === 0) {
+      return <p className="text-xs text-amber-600 p-2">Este contrato no tiene líneas CAPEX autorizadas para el año {year}.</p>;
+    }
+    const visibleLines = filterCapexLines(authorizedLines, search);
+    return (
+      <div className="space-y-1">
+        <Input
+          value={search}
+          onChange={(e) => setCapexLineSearch(prev => ({ ...prev, [contractId]: e.target.value }))}
+          placeholder="Buscar línea..."
+          className="h-8 text-sm"
+        />
+        <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1">
+          {visibleLines.length === 0 ? (
+            <p className="text-xs text-muted-foreground p-2">Sin resultados para "{search}".</p>
+          ) : visibleLines.map(line => {
+            if (line.hasChildren) {
+              return (
+                <div
+                  key={line.id}
+                  className="flex items-center gap-2 p-1.5 rounded select-none text-sm font-medium text-muted-foreground"
+                  style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+                >
+                  <span className="flex-1 truncate">{line.name}</span>
+                </div>
+              );
+            }
+            const isSelected = selected.includes(line.id);
+            const available = line.amount_uf - (capexLineUsage[line.id] || 0);
+            return (
+              <div
+                key={line.id}
+                role="checkbox"
+                aria-checked={isSelected}
+                tabIndex={0}
+                onClick={() => toggleCapexLine(contractId, line)}
+                className={`flex items-center gap-2 p-1.5 rounded cursor-pointer hover:bg-accent select-none text-sm ${isSelected ? "bg-accent" : ""}`}
+                style={{ paddingLeft: `${line.depth * 16 + 6}px` }}
+              >
+                <input type="checkbox" checked={isSelected} readOnly tabIndex={-1} className="h-4 w-4 pointer-events-none" />
+                <span className="flex-1 truncate">{line.name}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  (Disp: {formatCLP(available * ufValue)})
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
   
   const loadInitialData = async () => {
     setLoadingData(true);
@@ -203,7 +538,7 @@ export const CentralizedOrderCreator = ({
       // Load OPEX categories
       const { data: categoriesData } = await supabase
         .from("opex_categories")
-        .select("id, name")
+        .select("id, name, is_active, valid_from_year, valid_to_year")
         .eq("is_active", true)
         .order("display_order");
       setOpexCategories(categoriesData || []);
@@ -260,7 +595,11 @@ export const CentralizedOrderCreator = ({
   
   // Parse entered amount
   const enteredAmount = parseFloat(formData.amount) || 0;
-  
+  // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
+  // supplier_id (ver SupplierSelect.handleSavePublicEntity) -- exigir solo
+  // supplier_id bloqueaba avanzar para ese caso legítimo.
+  const hasSupplier = !!formData.supplier_id || !!formData.supplier_name?.trim();
+
   // Converted amount display
   const convertedAmount = useMemo(() => {
     if (formData.currency === "CLP") {
@@ -306,35 +645,24 @@ export const CentralizedOrderCreator = ({
     setContractAllocations(prev => prev.filter((_, i) => i !== index));
   };
   
-  // Handle adding payment plan item
-  const handleAddPaymentItem = () => {
-    setPaymentPlan(prev => [...prev, { description: "", amount: "", due_date: "" }]);
-  };
-  
-  // Handle updating payment item
-  const handleUpdatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) => {
-    setPaymentPlan(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  };
-  
-  // Handle removing payment item
-  const handleRemovePaymentItem = (index: number) => {
-    setPaymentPlan(prev => prev.filter((_, i) => i !== index));
-  };
-  
   // Handle quotation file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setQuotationFile(file);
+      setQuotationPreviewUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
     }
   };
-  
+
   const handleRemoveFile = () => {
     setQuotationFile(null);
+    setQuotationPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -348,7 +676,9 @@ export const CentralizedOrderCreator = ({
     try {
       const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
       const sanitizedName = quotationFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const filePath = `quotations/${timestamp}_${sanitizedName}`;
+      // Date.now() como en repositoryBackup.ts: solo la fecha hacía chocar el nombre al
+      // volver a crear una solicitud con la misma cotización el mismo día.
+      const filePath = `quotations/${timestamp}_${Date.now()}_${sanitizedName}`;
       
       const { path, error } = await uploadFileToStorage(filePath, quotationFile);
       
@@ -364,7 +694,7 @@ export const CentralizedOrderCreator = ({
   };
   
   // Generate request/order number
-  const generateNumber = async () => {
+  const generateNumber = async (capexLineNames: string[] = []) => {
     const today = new Date();
     const datePrefix = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
     
@@ -377,12 +707,49 @@ export const CentralizedOrderCreator = ({
       .like(numberField, `${datePrefix}%`);
     
     const correlative = (count || 0) + 1;
-    const categoryName = opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX";
-    
+    // CAPEX no tiene categoría OPEX: el número lleva el nombre de la(s) línea(s)
+    // imputada(s), igual que en OCRequestDialog. Antes caía en "OPEX" por defecto.
+    const categoryName = budgetType === "capex" && capexLineNames.length > 0
+      ? capexLineNames
+          .map(name => name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, "").trim().replace(/\s+/g, "_"))
+          .join("+")
+          .substring(0, 60)
+      : opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX";
+
     return {
       number: `${datePrefix}_${correlative}_${categoryName}_${formData.project_name || "Centralizado"}`,
       correlative
     };
+  };
+
+  /**
+   * Imputación de un CAPEX a sus líneas: por cada contrato, su monto (UF) se
+   * reparte entre las líneas elegidas en proporción a su disponible (misma regla
+   * que la OC directa). El resto del redondeo va a la última línea del contrato
+   * para que la suma cuadre exacto con el monto — la edición de la solicitud
+   * valida esa suma. No existe "CAPEX centralizado": toda solicitud CAPEX queda
+   * ligada a líneas autorizadas.
+   */
+  const buildCapexLineAssignments = (
+    perContract: { contractId: string; amountUf: number }[],
+  ): { lineId: string; lineName: string; amountUf: number; budgetId: string; contractId: string }[] => {
+    const round4 = (v: number) => Math.round(v * 10000) / 10000;
+    const result: { lineId: string; lineName: string; amountUf: number; budgetId: string; contractId: string }[] = [];
+    for (const c of perContract) {
+      const ids = capexLineSelections[c.contractId] || [];
+      const selected = (capexLinesByContract[c.contractId] || []).filter(l => ids.includes(l.id));
+      const split = splitAmountProportionally(
+        c.amountUf,
+        selected.map(l => ({ id: l.id, amount_uf: Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)) })),
+      );
+      let assigned = 0;
+      selected.forEach((l, i) => {
+        const amountUf = i === selected.length - 1 ? round4(c.amountUf - assigned) : round4(split[l.id] ?? 0);
+        assigned += amountUf;
+        result.push({ lineId: l.id, lineName: l.name, amountUf, budgetId: l.budget_id, contractId: c.contractId });
+      });
+    }
+    return result;
   };
   
   // Handle form submission
@@ -410,7 +777,20 @@ export const CentralizedOrderCreator = ({
       toast({ title: "Error", description: "Ingrese un monto válido", variant: "destructive" });
       return;
     }
-    
+
+    if (mode === "request" && paymentPlan.length === 0) {
+      toast({ title: "Error", description: "Debe agregar al menos un pago al plan de pagos", variant: "destructive" });
+      return;
+    }
+
+    // Igual que en OCRequestDialog.tsx (CAPEX): no se permite crear una
+    // Solicitud de OC sin adjuntar el presupuesto/cotización.
+    if (mode === "request" && !quotationFile) {
+      toast({ title: "Falta adjuntar presupuesto", description: "Debe adjuntar el presupuesto/cotización antes de crear la solicitud", variant: "destructive" });
+      setActiveTab("quote");
+      return;
+    }
+
     if (budgetType === "opex" && !selectedCategoryId) {
       toast({ title: "Error", description: "Seleccione una categoría OPEX", variant: "destructive" });
       return;
@@ -427,12 +807,59 @@ export const CentralizedOrderCreator = ({
     }
     
     if (isMultiContract && Math.abs(totalAllocated - enteredAmount) > 0.01) {
-      toast({ 
-        title: "Error", 
-        description: `El monto total asignado (${totalAllocated.toLocaleString("es-CL")}) debe ser igual al monto ingresado (${enteredAmount.toLocaleString("es-CL")})`, 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: `El monto total asignado (${totalAllocated.toLocaleString("es-CL")}) debe ser igual al monto ingresado (${enteredAmount.toLocaleString("es-CL")})`,
+        variant: "destructive"
       });
       return;
+    }
+
+    // Proveedor obligatorio siempre en una Solicitud de OC (antes solo se
+    // exigía para CAPEX; una solicitud sin proveedor identificado no sirve
+    // para nada, sea CAPEX u OPEX). En "order" se mantiene el criterio
+    // anterior (solo CAPEX) para no cambiar ese flujo sin que se haya pedido.
+    if (mode === "request" || budgetType === "capex") {
+      // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
+      // supplier_id (ver SupplierSelect.handleSavePublicEntity) -- exigir solo
+      // supplier_id bloqueaba la creación para ese caso legítimo.
+      if (!formData.supplier_id && !formData.supplier_name?.trim()) {
+        toast({ title: "Falta el proveedor", description: "Debe seleccionar un proveedor para crear la solicitud.", variant: "destructive" });
+        return;
+      }
+    }
+
+    // Reglas para CAPEX: al menos una línea del presupuesto CAPEX de cada
+    // local imputado. Antes solo se exigía al convertir en OC ("order"); una
+    // Solicitud de OC de CAPEX sin línea asignada quedaba sin destino de
+    // presupuesto — ahora se exige también al crear la solicitud.
+    if (budgetType === "capex") {
+      const contractsToCheck = isMultiContract
+        ? contractAllocations.map(a => ({ id: a.contractId, name: a.contractName }))
+        : [{ id: singleContractId, name: contracts.find(c => c.id === singleContractId)?.name || "" }];
+      for (const c of contractsToCheck) {
+        const selectedIds = capexLineSelections[c.id] || [];
+        if (selectedIds.length === 0) {
+          toast({
+            title: "Faltan líneas de presupuesto",
+            description: `Debe seleccionar al menos una línea del presupuesto CAPEX${c.name ? ` de ${c.name}` : ""}.`,
+            variant: "destructive"
+          });
+          return;
+        }
+        // Defensa: el CAPEX solo se imputa a líneas AUTORIZADAS. El selector ya no
+        // ofrece otras, pero una línea pudo des-autorizarse mientras el diálogo
+        // estaba abierto o quedar en una selección previa.
+        const allowedIds = new Set(selectableCapexLines(capexLinesByContract[c.id] || []).map(l => l.id));
+        if (selectedIds.some(id => !allowedIds.has(id))) {
+          toast({
+            title: "Línea no autorizada",
+            description: `Solo se pueden usar líneas CAPEX autorizadas${c.name ? ` (${c.name})` : ""}. Revise la selección.`,
+            variant: "destructive"
+          });
+          return;
+        }
+      }
     }
     
     setLoading(true);
@@ -462,26 +889,94 @@ export const CentralizedOrderCreator = ({
       const masterLine = opexMasterLines.find(m => m.category_id === selectedCategoryId);
       
       const primaryContractId = isMultiContract ? contractAllocations[0]?.contractId : singleContractId;
-      
+
+      // CAPEX (solicitud u OC): el monto de cada contrato se imputa a las líneas
+      // autorizadas elegidas. El disponible por línea es real: nunca se puede
+      // asignar a una línea más de lo que le queda disponible (autorizado - ya
+      // consumido). Se valida ANTES de crear nada — si el monto ingresado supera
+      // el disponible conjunto de las líneas elegidas, se bloquea.
+      let capexAssignments: ReturnType<typeof buildCapexLineAssignments> = [];
+      if (budgetType === "capex") {
+        const contractsToValidate = isMultiContract
+          ? contractAllocations.map(a => ({
+              contractId: a.contractId,
+              contractName: a.contractName,
+              amountUf: formData.currency === "CLP"
+                ? Math.round((a.amount / ufValue) * 10000) / 10000
+                : Math.round(a.amount * 10000) / 10000,
+            }))
+          : [{
+              contractId: primaryContractId,
+              contractName: contracts.find(c => c.id === primaryContractId)?.name || "",
+              amountUf: totalAmountUf,
+            }];
+
+        for (const c of contractsToValidate) {
+          const lineIds = capexLineSelections[c.contractId || ""] || [];
+          const selectedLines = (capexLinesByContract[c.contractId || ""] || []).filter(l => lineIds.includes(l.id));
+          const availableSum = selectedLines.reduce(
+            (sum, l) => sum + Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)),
+            0
+          );
+          if (c.amountUf > availableSum + 0.01) {
+            throw new Error(
+              `El monto a asignar${c.contractName ? ` en ${c.contractName}` : ""} (UF ${c.amountUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}) supera el disponible de las líneas seleccionadas (UF ${availableSum.toLocaleString("es-CL", { minimumFractionDigits: 2 })}). Seleccione más líneas o reduzca el monto.`
+            );
+          }
+        }
+
+        capexAssignments = buildCapexLineAssignments(
+          contractsToValidate.map(c => ({ contractId: c.contractId || "", amountUf: c.amountUf })),
+        );
+      }
+
       if (mode === "request") {
+        // El plan de pagos debe sumar EXACTO el total, no solo no excederlo —
+        // antes nada lo garantizaba y un plan incompleto dejaba un pago sin
+        // registrar. Se resuelve una sola vez y se reutiliza para el insert
+        // y para el PDF que se comparte, en vez de recalcularlo dos veces.
+        // Cada pago es monto o %, y el último es el saldo (ver lib/paymentPlan.ts);
+        // en pesos también, para que el plan cuadre exacto pese al redondeo en UF.
+        const resolvedPlan = resolvePaymentPlan(paymentPlan, enteredAmount, paymentDecimals(formData.currency));
+        const planClp = paymentsToClp(resolvedPlan, formData.currency, ufValue, totalAmountClp);
+        const resolvedPayments = paymentPlan
+          .map((p, idx) => ({ description: p.description || `Pago ${idx + 1}`, amountClp: planClp[idx] ?? 0, dueDate: p.due_date || null }))
+          .filter((p) => p.amountClp > 0);
+        const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), totalAmountClp);
+        if (planError) {
+          throw new Error(planError);
+        }
+
         // Create OC Request
-        const { number, correlative } = await generateNumber();
-        
+        const { number, correlative } = await generateNumber(capexAssignments.map(l => l.lineName));
+
         // Upload quotation file if present
         let quotationData: { url: string; fileName: string } | null = null;
         if (quotationFile) {
           quotationData = await uploadQuotationFile();
         }
-        
+
+        // Cómo se guarda la imputación (mismo modelo que OCRequestDialog y
+        // lib/ocRequestLines.ts):
+        //  · CAPEX con 1 línea  → budget_line_id apunta a la línea.
+        //  · CAPEX con 2+ líneas → budget_line_id null y cada línea en oc_budget_lines.
+        //  · OPEX               → opex_master_id (la categoría); sin budget_id.
+        // No existe "CAPEX centralizado": antes una solicitud CAPEX se guardaba
+        // sin presupuesto ni líneas y se veía como OPEX.
+        const isCapexRequest = budgetType === "capex";
+        const requestLineName = isCapexRequest
+          ? capexAssignments.map(l => l.lineName).join(" + ")
+          : opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX Centralizado";
+
         const requestPayload: any = {
           contract_id: primaryContractId,
-          budget_id: null,
-          budget_line_id: null,
+          budget_id: isCapexRequest ? (capexBudgetIdByContract[primaryContractId] || null) : null,
+          budget_line_id: isCapexRequest && capexAssignments.length === 1 ? capexAssignments[0].lineId : null,
           opex_master_id: masterLine?.id || null,
           request_number: number,
           correlative_of_day: correlative,
           request_date: new Date().toISOString().split('T')[0],
-          line_name: opexCategories.find(c => c.id === selectedCategoryId)?.name || "OPEX Centralizado",
+          line_name: requestLineName,
           project_name: formData.project_name || "Centralizado",
           description: formData.description,
           amount_uf: totalAmountUf,
@@ -505,7 +1000,20 @@ export const CentralizedOrderCreator = ({
           .single();
         
         if (requestError) throw requestError;
-        
+
+        // CAPEX con varias líneas: cada una vive en oc_budget_lines con su monto.
+        // Con una sola, basta budget_line_id (no debe haber filas en la tabla puente).
+        if (isCapexRequest && capexAssignments.length > 1 && requestData) {
+          const { error: linesError } = await supabase.from("oc_budget_lines").insert(
+            capexAssignments.map(l => ({
+              oc_request_id: requestData.id,
+              budget_line_id: l.lineId,
+              amount_uf: l.amountUf,
+            }))
+          );
+          if (linesError) throw linesError;
+        }
+
         // Create contract allocations if multi-contract
         if (isMultiContract && requestData) {
           const allocations = contractAllocations.map(a => {
@@ -534,24 +1042,16 @@ export const CentralizedOrderCreator = ({
         }
         
         // Create payment plan
-        if (paymentPlan.length > 0) {
-          const planItems = paymentPlan.map((p, idx) => {
-            const pAmount = parseFloat(p.amount) || 0;
-            let pUf: number;
-            if (formData.currency === "CLP") {
-              pUf = ufValue > 0 ? pAmount / ufValue : 0;
-            } else {
-              pUf = pAmount;
-            }
-            return {
-              oc_request_id: requestData.id,
-              payment_number: idx + 1,
-              description: p.description || `Pago ${idx + 1}`,
-              amount_uf: Math.round(pUf * 10000) / 10000,
-              due_date: p.due_date || null,
-              status: "pending"
-            };
-          });
+        if (resolvedPayments.length > 0) {
+          const planItems = resolvedPayments.map((p, idx) => ({
+            oc_request_id: requestData.id,
+            payment_number: idx + 1,
+            description: p.description,
+            amount_uf: ufValue > 0 ? Math.round((p.amountClp / ufValue) * 10000) / 10000 : 0,
+            amount_clp: Math.round(p.amountClp),
+            due_date: p.dueDate,
+            status: "pending"
+          }));
           await supabase.from("oc_payment_plans").insert(planItems);
         } else {
           // Create single payment
@@ -560,15 +1060,84 @@ export const CentralizedOrderCreator = ({
             payment_number: 1,
             description: "Pago único",
             amount_uf: totalAmountUf,
+            amount_clp: totalAmountClp,
             due_date: null,
             status: "pending"
           });
         }
-        
-        toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+
+        toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
+
+        let supplierRut: string | null = null;
+        if (formData.supplier_id) {
+          const { data: supplierData } = await supabase
+            .from("suppliers")
+            .select("rut")
+            .eq("id", formData.supplier_id)
+            .single();
+          supplierRut = supplierData?.rut || null;
+        }
+
+        setShareData({
+          requestDate: new Date().toISOString().split("T")[0],
+          currency: formData.currency as "UF" | "CLP",
+          contractNames: isMultiContract
+            ? contractAllocations.map((a) => a.contractName)
+            : [contracts.find((c) => c.id === primaryContractId)?.name || ""].filter(Boolean),
+          contractCebe: isMultiContract
+            ? contractAllocations.map((a) => a.cebe).filter(Boolean).join(", ") || null
+            : contracts.find((c) => c.id === primaryContractId)?.cebe || null,
+          description: formData.description,
+          // CAPEX: las líneas reales con su reparto, cada una con su contrato y CEBE.
+          // OPEX: la categoría — una fila por contrato si es multi-contrato.
+          lines: isCapexRequest
+            ? buildShareLines(
+                capexAssignments.map(l => {
+                  const contract = contracts.find(c => c.id === l.contractId);
+                  const alloc = contractAllocations.find(a => a.contractId === l.contractId);
+                  return {
+                    lineName: l.lineName,
+                    amount: l.amountUf,
+                    contractName: contract?.name ?? alloc?.contractName ?? null,
+                    cebe: contract?.cebe ?? alloc?.cebe ?? null,
+                  };
+                }),
+                { totalAmountClp, amountsInClp: false, ufValue },
+              )
+            : isMultiContract
+              ? reconcileShareLines(
+                  contractAllocations.map(a => ({
+                    lineName: requestLineName,
+                    // Mismo cálculo que se guarda en oc_request_contract_allocations.
+                    amountClp: formData.currency === "CLP" ? Math.round(a.amount) : Math.round(a.amount * ufValue),
+                    contractName: a.contractName,
+                    cebe: a.cebe,
+                  })),
+                  totalAmountClp
+                )
+              : [{
+                  lineName: requestLineName,
+                  amountClp: totalAmountClp,
+                  contractName: contracts.find(c => c.id === primaryContractId)?.name ?? null,
+                  cebe: contracts.find(c => c.id === primaryContractId)?.cebe ?? null,
+                }],
+          totalAmountClp,
+          payments: resolvedPayments,
+          supplierName: formData.supplier_name,
+          // Cotización adjunta: sin esto el diálogo de compartir ofrecía solo el
+          // PDF y nunca el ZIP con la cotización.
+          quotation: quotationData
+            ? { fileName: quotationData.fileName, storagePath: quotationData.url, driveUrl: null }
+            : null,
+          supplierRut,
+          sequenceNumber: requestData?.sequence_number,
+          requestId: requestData?.id,
+          verificationCode: (requestData as any)?.verification_code,
+        });
+        setShareRequestId(requestData?.id);
       } else {
         // Create Purchase Order directly
-        const { number } = await generateNumber();
+        const { number } = await generateNumber(capexAssignments.map(l => l.lineName));
         const orderNumber = formData.order_number || number;
         
         // For multi-contract OCs, upload file directly to each contract's Drive folder
@@ -614,12 +1183,14 @@ export const CentralizedOrderCreator = ({
               continue;
             }
             
+            const allocCapexLineIds = budgetType === "capex" ? (capexLineSelections[alloc.contractId] || []) : [];
+
             const { data: poData, error: poError } = await supabase
               .from("purchase_orders")
               .insert({
                 contract_id: alloc.contractId,
-                budget_id: null,
-                budget_line_id: null,
+                budget_id: budgetType === "capex" ? (capexBudgetIdByContract[alloc.contractId] || null) : null,
+                budget_line_id: allocCapexLineIds[0] || null,
                 opex_master_id: masterLine?.id || null,
                 opex_category_id: selectedCategoryId || null,
                 order_number: orderNumber,
@@ -651,6 +1222,24 @@ export const CentralizedOrderCreator = ({
                 amount_uf: allocUf,
                 amount_clp: allocClp
               });
+
+              // Save CAPEX budget line associations (amount split proportionally
+              // to each line's own DISPONIBLE — not its full authorized amount,
+              // and not evenly — so ninguna línea queda con disponible negativo)
+              if (allocCapexLineIds.length > 0) {
+                const allocSelectedLines = (capexLinesByContract[alloc.contractId] || [])
+                  .filter(l => allocCapexLineIds.includes(l.id))
+                  .map(l => ({ id: l.id, amount_uf: Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)) }));
+                const allocSplit = splitAmountProportionally(allocUf, allocSelectedLines);
+                await supabase.from("purchase_order_budget_lines").insert(
+                  allocCapexLineIds.map(lineId => ({
+                    purchase_order_id: poData.id,
+                    budget_line_id: lineId,
+                    amount_uf: allocSplit[lineId] ?? (allocUf / allocCapexLineIds.length),
+                  }))
+                );
+                await syncBudgetLineOcStatus({ addedLineIds: allocCapexLineIds });
+              }
               
               // Sync maintenance forms with supplier and OC info
               if (alloc.maintenanceFormIds.length > 0) {
@@ -674,10 +1263,12 @@ export const CentralizedOrderCreator = ({
             await backupOCFileToRepository(primaryContractId, quotationFile, orderNumber);
           }
           
+          const singleCapexLineIds = budgetType === "capex" ? (capexLineSelections[primaryContractId] || []) : [];
+
           const orderPayload: any = {
             contract_id: primaryContractId,
-            budget_id: null,
-            budget_line_id: null,
+            budget_id: budgetType === "capex" ? (capexBudgetIdByContract[primaryContractId] || null) : null,
+            budget_line_id: singleCapexLineIds[0] || null,
             opex_master_id: masterLine?.id || null,
             opex_category_id: selectedCategoryId || null,
             order_number: orderNumber,
@@ -704,7 +1295,25 @@ export const CentralizedOrderCreator = ({
             .single();
           
           if (orderError) throw orderError;
-          
+
+          // Save CAPEX budget line associations (amount split proportionally
+          // to each line's own DISPONIBLE — not its full authorized amount,
+          // and not evenly — so ninguna línea queda con disponible negativo)
+          if (singlePoData && singleCapexLineIds.length > 0) {
+            const singleSelectedLines = (capexLinesByContract[primaryContractId] || [])
+              .filter(l => singleCapexLineIds.includes(l.id))
+              .map(l => ({ id: l.id, amount_uf: Math.max(0, l.amount_uf - (capexLineUsage[l.id] || 0)) }));
+            const singleSplit = splitAmountProportionally(totalAmountUf, singleSelectedLines);
+            await supabase.from("purchase_order_budget_lines").insert(
+              singleCapexLineIds.map(lineId => ({
+                purchase_order_id: singlePoData.id,
+                budget_line_id: lineId,
+                amount_uf: singleSplit[lineId] ?? (totalAmountUf / singleCapexLineIds.length),
+              }))
+            );
+            await syncBudgetLineOcStatus({ addedLineIds: singleCapexLineIds });
+          }
+
           // Sync maintenance forms with supplier and OC info
           if (singlePoData && assignToForm && singleFormIds.length > 0) {
             await (supabase.from("maintenance_forms" as any) as any)
@@ -733,7 +1342,7 @@ export const CentralizedOrderCreator = ({
   
   // Reset and close
   const handleClose = () => {
-    setActiveTab("basic");
+    setActiveTab(mode === "request" ? "contracts" : "basic");
     setBudgetType("opex");
     setSelectedCategoryId("");
     setIsMultiContract(false);
@@ -744,8 +1353,17 @@ export const CentralizedOrderCreator = ({
     setSingleFormIds([]);
     setContractForms({});
     setQuotationFile(null);
+    setQuotationPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     setDuplicateOCWarning(false);
     setCheckingDuplicate(false);
+    setCapexLinesByContract({});
+    setCapexBudgetIdByContract({});
+    setCapexLineSelections({});
+    setCapexLineUsage({});
+    setCapexLineSearch({});
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -781,11 +1399,23 @@ export const CentralizedOrderCreator = ({
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <TabsList className="grid grid-cols-3 shrink-0">
-              <TabsTrigger value="basic">Datos</TabsTrigger>
-              <TabsTrigger value="contracts">Contratos</TabsTrigger>
-              <TabsTrigger value="payments">Pagos</TabsTrigger>
-            </TabsList>
+            {mode === "request" ? (
+              // Mismo orden que OCRequestDialog.tsx (CAPEX): elegir
+              // contrato/categoría primero, adjuntar presupuesto (obligatorio)
+              // segundo, y recién después los datos y el plan de pagos.
+              <TabsList className="grid grid-cols-4 shrink-0">
+                <TabsTrigger value="contracts">{budgetType === "opex" ? "Categoría y Contrato" : "Líneas de Presupuesto"}</TabsTrigger>
+                <TabsTrigger value="quote">Adjuntar Presupuesto</TabsTrigger>
+                <TabsTrigger value="basic" disabled={!quotationFile}>Datos Básicos</TabsTrigger>
+                <TabsTrigger value="payments" disabled={!hasSupplier || !(enteredAmount > 0)}>Plan de Pagos</TabsTrigger>
+              </TabsList>
+            ) : (
+              <TabsList className="grid grid-cols-3 shrink-0">
+                <TabsTrigger value="basic">Datos</TabsTrigger>
+                <TabsTrigger value="contracts">Contratos</TabsTrigger>
+                <TabsTrigger value="payments">Pagos</TabsTrigger>
+              </TabsList>
+            )}
             
             <div className="flex-1 min-h-0 overflow-y-auto">
               <TabsContent value="basic" className="mt-4 space-y-4">
@@ -822,41 +1452,47 @@ export const CentralizedOrderCreator = ({
                   </div>
                 )}
 
-                {/* Budget Type: CAPEX / OPEX */}
-                <div className="space-y-2">
-                  <Label>Tipo de Presupuesto *</Label>
-                  <SearchableSelect
-                    value={budgetType}
-                    onValueChange={(v) => {
-                      setBudgetType(v as "capex" | "opex");
-                      if (v === "capex") setSelectedCategoryId("");
-                    }}
-                    options={[
-                      { value: "capex", label: "CAPEX" },
-                      { value: "opex", label: "OPEX" },
-                    ]}
-                    placeholder="Tipo"
-                  />
-                </div>
+                {/* Budget Type: CAPEX / OPEX -- en modo "request" esto se elige
+                    primero, en la pestaña "Categoría y Contrato" / "Líneas de
+                    Presupuesto" (ver más abajo). */}
+                {mode === "order" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Tipo de Presupuesto *</Label>
+                      <SearchableSelect
+                        value={budgetType}
+                        onValueChange={(v) => {
+                          setBudgetType(v as "capex" | "opex");
+                          if (v === "capex") setSelectedCategoryId("");
+                        }}
+                        options={[
+                          { value: "capex", label: "CAPEX" },
+                          { value: "opex", label: "OPEX" },
+                        ]}
+                        placeholder="Tipo"
+                      />
+                    </div>
 
-                {/* Category Selection (only for OPEX) */}
-                {budgetType === "opex" && (
-                  <div className="space-y-2">
-                    <Label>Categoría OPEX *</Label>
-                    <SearchableSelect
-                      value={selectedCategoryId}
-                      onValueChange={setSelectedCategoryId}
-                      options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
-                      placeholder="Seleccionar categoría"
-                    />
-                    {selectedCategoryId && (
-                      <p className="text-xs text-muted-foreground">
-                        Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
-                      </p>
+                    {/* Category Selection (only for OPEX) */}
+                    {budgetType === "opex" && (
+                      <div className="space-y-2">
+                        <Label>Categoría OPEX *</Label>
+                        <SearchableSelect
+                          value={selectedCategoryId}
+                          onValueChange={setSelectedCategoryId}
+                          options={categoriesForFormDate().map(cat => ({ value: cat.id, label: cat.name }))}
+                          placeholder="Seleccionar categoría"
+                        />
+                        {selectedCategoryId && (
+                          <p className="text-xs text-muted-foreground">
+                            Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
-                
+
                 {/* Amount and Currency */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -903,13 +1539,14 @@ export const CentralizedOrderCreator = ({
                 
                 {/* Supplier */}
                 <div className="space-y-2">
-                  <Label>Proveedor</Label>
+                  <Label>Proveedor{(mode === "request" || budgetType === "capex") ? " *" : ""}</Label>
                   <SupplierSelect
                     value={formData.supplier_id}
-                    onChange={(id, name) => setFormData(prev => ({ 
-                      ...prev, 
-                      supplier_id: id, 
-                      supplier_name: name 
+                    supplierName={formData.supplier_name}
+                    onChange={(id, name) => setFormData(prev => ({
+                      ...prev,
+                      supplier_id: id,
+                      supplier_name: name
                     }))}
                   />
                 </div>
@@ -925,46 +1562,158 @@ export const CentralizedOrderCreator = ({
                   />
                 </div>
                 
-                {/* Quotation File Upload */}
-                <div className="space-y-2">
-                  <Label>Cotización (archivo)</Label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                  />
-                  {!quotationFile ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingFile}
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Subir cotización
-                    </Button>
-                  ) : (
-                    <div className="flex items-center gap-2 p-2 border rounded bg-muted/50">
-                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="text-sm flex-1 truncate">{quotationFile.name}</span>
+                {/* Quotation File Upload -- en modo "request" esto es su propia
+                    pestaña ("Adjuntar Presupuesto"), obligatoria y con
+                    previsualización (ver más abajo). */}
+                {mode === "order" && (
+                  <div className="space-y-2">
+                    <Label>Cotización (archivo)</Label>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    />
+                    {!quotationFile ? (
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={handleRemoveFile}
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingFile}
                       >
-                        <X className="h-4 w-4" />
+                        <Upload className="h-4 w-4 mr-2" />
+                        Subir cotización
                       </Button>
+                    ) : (
+                      <div className="flex items-center gap-2 p-2 border rounded bg-muted/50">
+                        <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                        <span className="text-sm flex-1 truncate">{quotationFile.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 flex-shrink-0"
+                          onClick={handleRemoveFile}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {mode === "request" && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
+                    <Button
+                      onClick={() => setActiveTab("payments")}
+                      disabled={!hasSupplier || !(enteredAmount > 0)}
+                      className="flex-1"
+                    >
+                      Continuar a Plan de Pagos
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              {mode === "request" && (
+                <TabsContent value="quote" className="mt-4 space-y-4">
+                  {!quotationFile ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="centralized-oc-quote-file">Presupuesto / Cotización *</Label>
+                      <input
+                        id="centralized-oc-quote-file"
+                        ref={fileInputRef}
+                        type="file"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Subir presupuesto
+                      </Button>
+                      <p className="text-[11px] text-muted-foreground">PDF, JPEG, PNG, Excel o Word.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {quotePreviewKindOf(quotationFile.name) === "pdf" && quotationPreviewUrl && (
+                        <iframe src={quotationPreviewUrl} title="Previsualización del presupuesto" className="w-full h-[24rem] rounded-md border" />
+                      )}
+                      {quotePreviewKindOf(quotationFile.name) === "image" && quotationPreviewUrl && (
+                        <img
+                          src={quotationPreviewUrl}
+                          alt="Previsualización del presupuesto"
+                          className="w-full h-[24rem] rounded-md border object-contain bg-muted/30"
+                        />
+                      )}
+                      {quotePreviewKindOf(quotationFile.name) === "none" && (
+                        <div className="w-full h-[24rem] rounded-md border flex flex-col items-center justify-center gap-2 bg-muted/30 text-muted-foreground">
+                          <FileText className="h-10 w-10" />
+                          <span className="text-xs">Sin previsualización disponible para este tipo de archivo</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground truncate">{quotationFile.name}</p>
+                        <Button variant="outline" size="sm" onClick={handleRemoveFile}>
+                          Reemplazar archivo
+                        </Button>
+                      </div>
                     </div>
                   )}
-                </div>
-              </TabsContent>
-              
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setActiveTab("contracts")}>Atrás</Button>
+                    <Button onClick={() => setActiveTab("basic")} disabled={!quotationFile} className="flex-1">
+                      Continuar a Datos Básicos
+                    </Button>
+                  </div>
+                </TabsContent>
+              )}
+
               <TabsContent value="contracts" className="mt-4 space-y-4">
+                {mode === "request" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Tipo de Presupuesto *</Label>
+                      <SearchableSelect
+                        value={budgetType}
+                        onValueChange={(v) => {
+                          setBudgetType(v as "capex" | "opex");
+                          if (v === "capex") setSelectedCategoryId("");
+                        }}
+                        options={[
+                          { value: "capex", label: "CAPEX" },
+                          { value: "opex", label: "OPEX" },
+                        ]}
+                        placeholder="Tipo"
+                      />
+                    </div>
+                    {budgetType === "opex" && (
+                      <div className="space-y-2">
+                        <Label>Categoría OPEX *</Label>
+                        <SearchableSelect
+                          value={selectedCategoryId}
+                          onValueChange={setSelectedCategoryId}
+                          options={categoriesForFormDate().map(cat => ({ value: cat.id, label: cat.name }))}
+                          placeholder="Seleccionar categoría"
+                        />
+                        {selectedCategoryId && (
+                          <p className="text-xs text-muted-foreground">
+                            Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
                 {/* Multi-contract toggle */}
                 <div className="flex items-center space-x-2">
                   <Checkbox
@@ -1002,6 +1751,19 @@ export const CentralizedOrderCreator = ({
                       )}
                     </div>
                     
+                    {/* CAPEX budget lines for single contract (obligatorio: al menos una) */}
+                    {singleContractId && budgetType === "capex" && (
+                      <div className="space-y-2">
+                        <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
+                        {renderCapexLinePicker(singleContractId)}
+                        {(capexLineSelections[singleContractId] || []).length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {(capexLineSelections[singleContractId] || []).length} línea(s) seleccionada(s)
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Form assignment for single contract (OPEX only) */}
                     {singleContractId && budgetType === "opex" && (
                       <div className="space-y-2 border rounded-md p-3 bg-muted/30">
@@ -1101,6 +1863,7 @@ export const CentralizedOrderCreator = ({
                               <TableHead>Contrato</TableHead>
                               <TableHead>CEBE</TableHead>
                               <TableHead>Monto ({formData.currency})</TableHead>
+                              {budgetType === "capex" && <TableHead>Líneas CAPEX *</TableHead>}
                               {budgetType === "opex" && <TableHead>Form</TableHead>}
                               <TableHead className="w-10"></TableHead>
                             </TableRow>
@@ -1130,6 +1893,22 @@ export const CentralizedOrderCreator = ({
                                       step="1"
                                     />
                                   </TableCell>
+                                  {budgetType === "capex" && (
+                                  <TableCell className="min-w-[220px]">
+                                    {alloc.contractId ? (
+                                      <div className="space-y-1">
+                                        {renderCapexLinePicker(alloc.contractId)}
+                                        {(capexLineSelections[alloc.contractId] || []).length > 0 && (
+                                          <p className="text-[11px] text-muted-foreground">
+                                            {(capexLineSelections[alloc.contractId] || []).length} línea(s) seleccionada(s)
+                                          </p>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">Seleccione contrato</span>
+                                    )}
+                                  </TableCell>
+                                  )}
                                   {budgetType === "opex" && (
                                   <TableCell>
                                     {forms.length > 0 ? (
@@ -1198,71 +1977,26 @@ export const CentralizedOrderCreator = ({
                     )}
                   </div>
                 )}
-              </TabsContent>
-              
-              <TabsContent value="payments" className="mt-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Plan de Pagos (opcional)</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={handleAddPaymentItem}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Agregar Pago
+
+                {mode === "request" && (
+                  <Button onClick={() => setActiveTab("quote")} className="w-full">
+                    Continuar a Adjuntar Presupuesto
                   </Button>
-                </div>
-                
-                {paymentPlan.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    Sin plan de pagos definido (se creará pago único automáticamente)
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Descripción</TableHead>
-                        <TableHead>Monto ({formData.currency})</TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead className="w-10"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paymentPlan.map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>
-                            <Input
-                              value={item.description}
-                              onChange={(e) => handleUpdatePaymentItem(idx, "description", e.target.value)}
-                              placeholder={`Pago ${idx + 1}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              value={item.amount}
-                              onChange={(e) => handleUpdatePaymentItem(idx, "amount", e.target.value)}
-                              min="0"
-                              step="1"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="date"
-                              value={item.due_date}
-                              onChange={(e) => handleUpdatePaymentItem(idx, "due_date", e.target.value)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleRemovePaymentItem(idx)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                )}
+              </TabsContent>
+
+              <TabsContent value="payments" className="mt-4 space-y-4">
+                <PaymentPlanEditor
+                  title={`Plan de Pagos${mode === "request" ? " *" : " (opcional)"}`}
+                  items={paymentPlan}
+                  onChange={setPaymentPlan}
+                  total={enteredAmount}
+                  currency={formData.currency}
+                  ufValue={ufValue > 0 ? ufValue : undefined}
+                  newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+                />
+                {paymentPlan.length === 0 && mode !== "request" && (
+                  <p className="text-xs text-muted-foreground">Sin plan de pagos definido (se creará pago único automáticamente).</p>
                 )}
               </TabsContent>
             </div>
@@ -1273,7 +2007,17 @@ export const CentralizedOrderCreator = ({
           <Button variant="outline" onClick={handleClose} disabled={loading}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || loadingData}>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading || loadingData || (mode === "request" && (paymentPlan.length === 0 || !quotationFile))}
+            title={
+              mode === "request" && !quotationFile
+                ? "Adjunta el presupuesto antes de crear la solicitud"
+                : mode === "request" && paymentPlan.length === 0
+                ? "Agrega al menos un pago al plan de pagos"
+                : undefined
+            }
+          >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {mode === "request" ? "Crear Solicitud" : "Crear OC"}
           </Button>
@@ -1325,6 +2069,13 @@ export const CentralizedOrderCreator = ({
         )}
       </DialogContent>
     </Dialog>
+
+    <ShareOCRequestDialog
+      open={!!shareData}
+      onOpenChange={(o) => { if (!o) setShareData(null); }}
+      data={shareData}
+      requestId={shareRequestId}
+    />
     </>
   );
 };
