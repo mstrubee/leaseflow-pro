@@ -121,7 +121,7 @@ function InfoTablePreview({ inputs, result }: { inputs: BCInputs; result: BCResu
 
 function PnlTablePreview({ inputs, result }: { inputs: BCInputs; result: BCResult }) {
   const rows = buildPnlRows(inputs, result);
-  const startYear = inputs.inicio ? new Date(inputs.inicio).getFullYear() : new Date().getFullYear();
+  const startYear = result.anoRenta || new Date().getFullYear();
   return (
     <table className="text-[11px] border-collapse w-full">
       <thead>

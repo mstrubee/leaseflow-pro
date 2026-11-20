@@ -55,6 +55,7 @@ export interface FullTermYear {
 }
 
 export interface FullTermProjection {
+  anoRenta: number; // año calendario del "Año 1" (inicio + gracia); 0 si no hay fecha de inicio
   totalYears: number;
   years: FullTermYear[]; // 1..totalYears (sin año 0)
   totalCapex: number;
@@ -261,5 +262,5 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
     });
   }
 
-  return { totalYears, years, totalCapex, fisica, tir, van, paybackAnio };
+  return { anoRenta, totalYears, years, totalCapex, fisica, tir, van, paybackAnio };
 }

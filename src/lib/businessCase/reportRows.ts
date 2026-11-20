@@ -45,6 +45,7 @@ export function buildResumenEjecutivoRows(inputs: BCInputs, result: BCResult): I
     { label: "Tipo", unit: "", value: inputs.tipo || "-" },
     { label: "Superficie Local", unit: "mt2", value: nf(inputs.superficie) },
     { label: "Valor x mt2", unit: "mt2", value: nf(inputs.ufM2, 2) },
+    { label: "Valor UF base", unit: "$ Clp", value: `$${nf(inputs.ufBase, 2)}` },
     { label: "Contrato Arriendo", unit: "Años", value: nf(inputs.durContratoAnios) },
     { label: "Canon", unit: "UF", value: nf(result.canonUF, 1), highlight: true },
     { label: "Gasto comun x mt2", unit: "mt2", value: nf(inputs.gastoComunUf, 2) },

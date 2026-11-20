@@ -206,6 +206,11 @@ export interface BCResult {
   mesesOperacion: number; // meses de OPERACIÓN del año 1 (desde la apertura) → ingresos
   mesesPersonal: number; // meses de PERSONAL del año 1 (= operación + 1, se contrata antes)
   anoApertura: number; // año calendario de apertura al público = "Año 1" real (primer año que efectivamente se vende)
+  // Año calendario de la columna "Año 1" del modelo (= año en que parte el pago
+  // de canon: inicio + gracia). Es el calendario sobre el que computeBC indexa
+  // los años 1..5, así que es el que corresponde para rotular columnas en
+  // PDF / Excel / PPT. Puede diferir de anoApertura si el local abre en otro año.
+  anoRenta: number;
   ufStarts: number[]; // 5
   ufAvgs: number[]; // 5 (promedio geométrico)
   inv: { rows: BCInvRow[]; total: number; fisica: number; kt: number };
@@ -609,7 +614,7 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const ebitdaMargin5 = ingresos[5] ? ebitda[5] / ingresos[5] : 0;
 
   return {
-    canonUF, garantiaUF, mesesY1, mesesArr, mesesOperacion, mesesPersonal, anoApertura,
+    canonUF, garantiaUF, mesesY1, mesesArr, mesesOperacion, mesesPersonal, anoApertura, anoRenta,
     ufStarts: starts, ufAvgs: avgs,
     inv: { rows: invRows, total, fisica, kt },
     ingresos, ingresosTramos, scenarioFactor: sf, costoVentas, otrosCostos, costosVar, margenCtrib,

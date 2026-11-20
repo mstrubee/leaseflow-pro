@@ -158,7 +158,7 @@ export async function buildInformeDirectorioPptx(
       [
         { text: "Año", options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 5.5, fontFace: "Arial", align: "left" } },
         ...[1, 2, 3, 4, 5].map((n, i) => ({
-          text: `${n}\n${new Date(c.inputs.inicio || Date.now()).getFullYear() + i}`,
+          text: `${n}\n${(c.result.anoRenta || new Date().getFullYear()) + i}`,
           options: { bold: true, color: WHITE, fill: { color: MAROON }, fontSize: 5.5, fontFace: "Arial", align: "center" as const },
         })),
       ],

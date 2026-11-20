@@ -155,7 +155,9 @@ export async function exportBusinessCasePDF(inputs: BCInputs, r: BCResult) {
 
   // Tabla derecha: P&L completo
   const pnlRows = buildPnlRows(inputs, r);
-  const startYear = new Date(inputs.inicio ? `${inputs.inicio}T00:00:00` : Date.now()).getFullYear();
+  // Año calendario de la columna "Año 1" = año de inicio de renta (inicio + gracia),
+  // el mismo que usan las hojas del Excel (ver anoRenta en computeBC).
+  const startYear = r.anoRenta || new Date().getFullYear();
   autoTable(doc, {
     startY: 0.95,
     margin: { left: 4.85, right: 0.4, top: 0.1, bottom: 0.1 },
@@ -413,21 +415,23 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
 
   // ── Años calendario (fila 8) ─────────────────────────────────────────────
   // La plantilla trae años fijos (2025-2030). Los reemplazamos por los años
-  // reales, contados desde el primer año en que efectivamente se vende (año
-  // de apertura al público, mismo cálculo que "mesesOperacion" en model.ts).
-  // La columna "Año 0" (pre-apertura, sin ventas) se deja en blanco: no hay un
-  // año de venta real que mostrar ahí.
-  const anoApertura = r.anoApertura || new Date(inputs.inicio || new Date().toISOString().slice(0, 10) + "T00:00:00").getFullYear();
+  // reales de cada columna: "Año 1" = año en que parte el pago de canon
+  // (inicio + gracia, r.anoRenta), el mismo calendario sobre el que computeBC
+  // indexa los años 1..5. Antes se rotulaba con el año de APERTURA, que no
+  // coincide con la columna cuando el local abre en un año distinto al del
+  // inicio de renta (esa columna quedaba con el año equivocado).
+  // La columna "Año 0" (pre-apertura, sin ventas) se deja en blanco.
+  const anoRenta = r.anoRenta || new Date(inputs.inicio || new Date().toISOString().slice(0, 10) + "T00:00:00").getFullYear();
   res.getCell("D8").value = null;
   res.getCell("M8").value = null;
-  (["E", "F", "G", "H", "I"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoApertura + i; });
-  (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoApertura + i; });
+  (["E", "F", "G", "H", "I"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoRenta + i; });
+  (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}8`).value = anoRenta + i; });
 
   // Fila 34 es el mismo encabezado "Año" que la fila 8, para el bloque de
   // "Análisis Financiero" (depreciación, fila 35 y siguientes) — la plantilla
   // también la trae fija en 2025-2030 y nunca se actualizaba.
   res.getCell("M34").value = null;
-  (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}34`).value = anoApertura + i; });
+  (["N", "O", "P", "Q", "R"] as const).forEach((col, i) => { res.getCell(`${col}34`).value = anoRenta + i; });
 
   // ── Limpieza ────────────────────────────────────────────────────────────────
   // La plantilla arrastra anotaciones sueltas "Corregido" (columnas J y S) que

@@ -93,14 +93,18 @@ export function addNegocioCompletoSheet(wb: ExcelJS.Workbook, inputs: BCInputs, 
   for (let y = 1; y <= totalYears; y++) ws.getCell(rowAno, firstYearCol + y - 1).value = y;
   for (let c = 1; c <= lastYearCol; c++) ws.getCell(rowAno, c).font = { bold: true };
   r++;
-  const anoApertura = new Date(inputs.inicio ? `${inputs.inicio}T00:00:00` : Date.now()).getFullYear();
+  // Año 1 = año en que parte el pago de canon (inicio + gracia) — mismo
+  // calendario que computeBC y que las hojas "Resumen business case" / PDF, para
+  // que un mismo año se rotule igual en todos los documentos. Antes se usaba el
+  // año de `inicio` a secas, que se corre un año cuando la gracia cruza fin de año.
+  const anoCalBase = full.anoRenta || new Date(inputs.inicio ? `${inputs.inicio}T00:00:00` : Date.now()).getFullYear();
   const rowAnoCal = r; setLabel(rowAnoCal, "Año calendario");
-  for (let y = 1; y <= totalYears; y++) ws.getCell(rowAnoCal, firstYearCol + y - 1).value = anoApertura + y - 1;
+  for (let y = 1; y <= totalYears; y++) ws.getCell(rowAnoCal, firstYearCol + y - 1).value = anoCalBase + y - 1;
   r += 2;
 
   // ── Nota ────────────────────────────────────────────────────────────────
   ws.getCell(r, 1).value =
-    "Filas resaltadas = supuestos editables. \"Venta mensual\" (años 1-5) y \"Canon UF/m²\" reflejan la maduración de ventas y el escalonamiento de renta cargados en la app al momento de exportar — no se recalculan solas si se editan ahí; el resto de la hoja sí es 100% fórmula.";
+    "Filas resaltadas = supuestos editables. Años 1-5 coinciden con el Business Case de la app y con la hoja \"Resumen business case\" (mismo modelo, mismas cifras). \"Venta mensual base\" (años 1-5) y \"Canon UF/m²\" reflejan la maduración de ventas y el escalonamiento de renta cargados en la app al momento de exportar — no se recalculan solas si se editan ahí; el resto de la hoja sí es 100% fórmula. La TIR/VAN de abajo cubren todo el contrato; la TIR/VAN oficial del Business Case es a 5 años (se muestra como referencia).";
   ws.getCell(r, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
   ws.mergeCells(r, 1, r, lastYearCol);
   ws.getRow(r).height = 26;
@@ -140,21 +144,39 @@ export function addNegocioCompletoSheet(wb: ExcelJS.Workbook, inputs: BCInputs, 
     else setFormula(r, c, `${colLetter(c - 1)}${r}`, "0.0%");
   }
   r++;
-  const rowVentaMes = r; setLabel(r, "Venta mensual (MM/mes)");
+  // Años 1-5: venta mensual promedio ANTES del factor de escenario (la
+  // proyección ya trae el factor aplicado en los ingresos; si se escribiera
+  // tal cual, el escenario optimista/conservador se multiplicaría dos veces).
+  // Años 6+: se muestra la venta mensual equivalente (derivada de Ventas anuales,
+  // ver más abajo) — no es un supuesto editable.
+  const rowVentaMes = r; setLabel(r, "Venta mensual base (MM/mes, antes de escenario)");
+  const rowMesesVenta = r + 1;
+  const rowEscenario = r + 2;
+  const rowVentas = r + 3;
   for (let y = 1; y <= totalYears; y++) {
     const c = firstYearCol + y - 1;
-    if (y <= 5) setInput(r, c, full.years[y - 1].ventaMensualPromedio, "#,##0.0");
-    else setFormula(r, c, `${colLetter(c - 1)}${r}*(1+${colLetter(c)}${rowCrecVenta})`, "#,##0.0");
+    if (y <= 5) {
+      const fy = full.years[y - 1];
+      setInput(r, c, fy.mesesOperacion > 0 && sf > 0 ? fy.ingresos / fy.mesesOperacion / sf : 0, "#,##0.0");
+    } else {
+      const cl = colLetter(c);
+      setFormula(r, c, `IFERROR(${cl}${rowVentas}/(${cl}${rowMesesVenta}*$${y0}$${rowEscenario}),0)`, "#,##0.0");
+    }
   }
   r++;
-  const rowMesesVenta = r; setLabel(r, "Meses de venta");
+  setLabel(r, "Meses de venta");
   for (let y = 1; y <= totalYears; y++) setInput(r, firstYearCol + y - 1, full.years[y - 1].mesesOperacion, "0.0");
   r++;
-  const rowEscenario = r; setLabel(r, "Factor de escenario"); setInput(r, YEAR0_COL, sf, "0.00"); r++;
-  const rowVentas = r; setLabel(r, "Ventas anuales (MM CLP)"); ws.getRow(r).font = { bold: true };
+  setLabel(r, "Factor de escenario"); setInput(r, YEAR0_COL, sf, "0.00"); r++;
+  // Años 1-5: venta mensual × meses × escenario. Años 6+: año anterior ×
+  // (1 + crecimiento) — igual que computeFullTermProjection (que crece sobre
+  // los ingresos del año anterior, no sobre la venta mensual).
+  setLabel(r, "Ventas anuales (MM CLP)"); ws.getRow(r).font = { bold: true };
   for (let y = 1; y <= totalYears; y++) {
     const c = firstYearCol + y - 1;
-    setFormula(r, c, `${colLetter(c)}${rowVentaMes}*${colLetter(c)}${rowMesesVenta}*$${y0}$${rowEscenario}`, "#,##0");
+    const cl = colLetter(c);
+    if (y <= 5) setFormula(r, c, `${cl}${rowVentaMes}*${cl}${rowMesesVenta}*$${y0}$${rowEscenario}`, "#,##0");
+    else setFormula(r, c, `${colLetter(c - 1)}${r}*(1+${cl}${rowCrecVenta})`, "#,##0");
   }
   r += 2;
 
@@ -294,7 +316,14 @@ export function addNegocioCompletoSheet(wb: ExcelJS.Workbook, inputs: BCInputs, 
   sectionHeader(r, `KPIs — ${totalYears} años`); r++;
   setLabel(r, "TIR"); setFormula(r, YEAR0_COL, `IRR(${y0}${rowFlujo}:${colLetter(lastYearCol)}${rowFlujo})`, "0.0%"); r++;
   setLabel(r, "VAN (MM CLP)"); setFormula(r, YEAR0_COL, `${y0}${rowFlujo}+NPV($${y0}$${rowWacc},${colLetter(firstYearCol)}${rowFlujo}:${colLetter(lastYearCol)}${rowFlujo})`, "#,##0"); r++;
-  setLabel(r, "Inversión total (MM CLP)"); setFormula(r, YEAR0_COL, `-${y0}${rowFlujo}`, "#,##0");
+  setLabel(r, "Inversión total (MM CLP)"); setFormula(r, YEAR0_COL, `-${y0}${rowFlujo}`, "#,##0"); r++;
+  // Referencia: TIR/VAN oficiales del Business Case (a 5 años) de la hoja
+  // "Datos" — para que se vea de un vistazo cómo se relacionan ambas lecturas
+  // del mismo negocio (los 5 primeros años son idénticos).
+  if (wb.getWorksheet("Datos")) {
+    setLabel(r, "TIR a 5 años (oficial, hoja Datos)"); setFormula(r, YEAR0_COL, "Datos!J10", "0.0%"); r++;
+    setLabel(r, "VAN a 5 años (oficial, hoja Datos)"); setFormula(r, YEAR0_COL, "Datos!J11", "#,##0");
+  }
 
   ws.eachRow((row) => { row.eachCell((cell) => { cell.border = { bottom: { style: "hair", color: { argb: "FFEEEEEE" } } }; }); });
 }
