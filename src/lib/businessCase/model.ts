@@ -259,11 +259,19 @@ export function calcNPV(cfs: number[], rate: number): number {
   return cfs.reduce((a, cf, t) => a + cf / Math.pow(1 + rate, t), 0);
 }
 
+// Rango de TIR considerado razonable: > -99% y < 10.000%. Fuera de él (o si el método no converge)
+// la TIR se considera no calculable y calcIRR devuelve null (la UI muestra "N/A").
+const IRR_MIN = -0.99;
+const IRR_MAX = 100;
+
 export function calcIRR(cfs: number[], guess = 0.3): number | null {
   const hasPos = cfs.some((f) => f > 0);
   const hasNeg = cfs.some((f) => f < 0);
   if (!hasPos || !hasNeg) return null;
+
+  // 1) Newton-Raphson (igual que antes): solo se acepta si converge y cae dentro del rango razonable.
   let r = guess;
+  let converged = false;
   for (let iter = 0; iter < 300; iter++) {
     let npv = 0, d = 0;
     cfs.forEach((cf, t) => {
@@ -274,9 +282,25 @@ export function calcIRR(cfs: number[], guess = 0.3): number | null {
     if (Math.abs(d) < 1e-12) break;
     const delta = npv / d;
     r -= delta;
-    if (Math.abs(delta) < 1e-8) break;
+    if (Math.abs(delta) < 1e-8) { converged = true; break; }
   }
-  return Number.isFinite(r) ? r : null;
+  if (converged && Number.isFinite(r) && r > IRR_MIN && r < IRR_MAX) return r;
+
+  // 2) Respaldo: bisección sobre [IRR_MIN, IRR_MAX]. Solo hay raíz garantizada si el VAN cambia de signo
+  // en los extremos; si no (p. ej. flujos que nunca recuperan la inversión), no hay TIR calculable.
+  let lo = IRR_MIN, hi = IRR_MAX;
+  let npvLo = calcNPV(cfs, lo);
+  const npvHi = calcNPV(cfs, hi);
+  if (!Number.isFinite(npvLo) || !Number.isFinite(npvHi) || npvLo * npvHi > 0) return null;
+  for (let iter = 0; iter < 200 && hi - lo > 1e-12; iter++) {
+    const mid = (lo + hi) / 2;
+    const npvMid = calcNPV(cfs, mid);
+    if (npvMid === 0) return mid;
+    if (npvLo * npvMid < 0) hi = mid;
+    else { lo = mid; npvLo = npvMid; }
+  }
+  const root = (lo + hi) / 2;
+  return Number.isFinite(root) ? root : null;
 }
 
 function calcUF(base: number, rates: number[]): { starts: number[]; avgs: number[] } {
