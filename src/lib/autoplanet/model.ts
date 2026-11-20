@@ -260,6 +260,15 @@ export function mergeAutoplanetInputs(stored: Partial<AutoplanetInputs> | null |
   return merged;
 }
 
+/**
+ * Cambiar el formato de local (Tradicional / Express) precarga SOLO el monto fijo de Ocupación (objetivo del
+ * formato: 1,5 / 1,2 MM/mes). A diferencia del Business Case de contratos, no toca dotación ni inventario: este
+ * negocio parte sin cifras heredadas y esas las define el usuario. El monto sigue editable después (vía el %).
+ */
+export function applyAutoplanetFormato(inputs: AutoplanetInputs, formato: FormatoLocal): AutoplanetInputs {
+  return { ...inputs, formato, ocupMesMM: OCUPACION_TARGET_MM[formato] };
+}
+
 /** Venta mensual del año 1 (MM CLP/mes) = suma de (unidades/día × días de operación × valor unitario) de las líneas de ingreso. */
 function ventaMesY1Of(inputs: Pick<AutoplanetInputs, "ingresoLines" | "diasOperacionMes">): number {
   return inputs.ingresoLines.reduce(
