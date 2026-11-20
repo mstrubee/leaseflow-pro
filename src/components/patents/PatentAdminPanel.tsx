@@ -104,6 +104,7 @@ export function PatentAdminPanel({
   const [editingEmitter, setEditingEmitter] = useState<PatentEmitter & { section_id?: string } | null>(null);
   const [editingStatus, setEditingStatus] = useState<PatentStatus | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'item' | 'section' | 'emitter' | 'status'; id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   
   // Statuses state
   const [statuses, setStatuses] = useState<PatentStatus[]>([]);
@@ -486,21 +487,26 @@ export function PatentAdminPanel({
   };
 
   const handleDeleteItem = async (id: string) => {
-    const { error } = await supabase
-      .from("patent_checklist_items")
-      .update({ is_active: false })
-      .eq("id", id);
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("patent_checklist_items")
+        .update({ is_active: false })
+        .eq("id", id);
 
-    if (error) {
-      toast.error("Error al eliminar ítem");
-      return;
+      if (error) {
+        toast.error("Error al eliminar ítem");
+        return;
+      }
+
+      // Update local state immediately
+      setLocalItems(prev => prev.filter(i => i.id !== id));
+      toast.success("Ítem eliminado");
+      onDataChange();
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(null);
     }
-
-    // Update local state immediately
-    setLocalItems(prev => prev.filter(i => i.id !== id));
-    toast.success("Ítem eliminado");
-    setDeleteConfirm(null);
-    onDataChange();
   };
 
   // --- ITEM EMITTERS ---
@@ -616,21 +622,26 @@ export function PatentAdminPanel({
       return;
     }
 
-    const { error } = await supabase
-      .from("patent_checklist_sections")
-      .delete()
-      .eq("id", id);
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("patent_checklist_sections")
+        .delete()
+        .eq("id", id);
 
-    if (error) {
-      toast.error("Error al eliminar sección");
-      return;
+      if (error) {
+        toast.error("Error al eliminar sección");
+        return;
+      }
+
+      // Update local state immediately
+      setLocalSections(prev => prev.filter(s => s.id !== id));
+      toast.success("Sección eliminada");
+      onDataChange();
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(null);
     }
-
-    // Update local state immediately
-    setLocalSections(prev => prev.filter(s => s.id !== id));
-    toast.success("Sección eliminada");
-    setDeleteConfirm(null);
-    onDataChange();
   };
 
   // --- EMITTERS ---
@@ -687,21 +698,26 @@ export function PatentAdminPanel({
   };
 
   const handleDeleteEmitter = async (id: string) => {
-    const { error } = await supabase
-      .from("patent_emitters")
-      .update({ is_active: false })
-      .eq("id", id);
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("patent_emitters")
+        .update({ is_active: false })
+        .eq("id", id);
 
-    if (error) {
-      toast.error("Error al eliminar emisor");
-      return;
+      if (error) {
+        toast.error("Error al eliminar emisor");
+        return;
+      }
+
+      // Update local state immediately
+      setLocalEmitters(prev => prev.filter(e => e.id !== id));
+      toast.success("Emisor eliminado");
+      onDataChange();
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(null);
     }
-
-    // Update local state immediately
-    setLocalEmitters(prev => prev.filter(e => e.id !== id));
-    toast.success("Emisor eliminado");
-    setDeleteConfirm(null);
-    onDataChange();
   };
 
   // --- STATUSES ---
@@ -770,21 +786,26 @@ export function PatentAdminPanel({
   };
 
   const handleDeleteStatus = async (id: string) => {
-    const { error } = await supabase
-      .from("patent_statuses")
-      .update({ is_active: false })
-      .eq("id", id);
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("patent_statuses")
+        .update({ is_active: false })
+        .eq("id", id);
 
-    if (error) {
-      toast.error("Error al eliminar estado");
-      return;
+      if (error) {
+        toast.error("Error al eliminar estado");
+        return;
+      }
+
+      // Update local state immediately
+      setStatuses(prev => prev.filter(s => s.id !== id));
+      toast.success("Estado eliminado");
+      onDataChange();
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(null);
     }
-
-    // Update local state immediately
-    setStatuses(prev => prev.filter(s => s.id !== id));
-    toast.success("Estado eliminado");
-    setDeleteConfirm(null);
-    onDataChange();
   };
 
   // Get section-specific emitters or global emitters
@@ -1587,7 +1608,7 @@ export function PatentAdminPanel({
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => { if (!o && !deleting) setDeleteConfirm(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -1601,17 +1622,21 @@ export function PatentAdminPanel({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
+              disabled={deleting}
+              onClick={(e) => {
+                // preventDefault: Radix cierra el diálogo al hacer clic, lo que
+                // ocultaría el estado "Eliminando…". El handler lo cierra él mismo.
+                e.preventDefault();
                 if (deleteConfirm?.type === 'item') handleDeleteItem(deleteConfirm.id);
                 else if (deleteConfirm?.type === 'section') handleDeleteSection(deleteConfirm.id);
                 else if (deleteConfirm?.type === 'emitter') handleDeleteEmitter(deleteConfirm.id);
                 else if (deleteConfirm?.type === 'status') handleDeleteStatus(deleteConfirm.id);
               }}
             >
-              Eliminar
+              {deleting ? "Eliminando…" : "Eliminar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

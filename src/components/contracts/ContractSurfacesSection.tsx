@@ -101,7 +101,8 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
 
   const handleSaveEditing = async () => {
     try {
-      await supabase.from("contracts").update(surfaces).eq("id", contractId);
+      const { error } = await supabase.from("contracts").update(surfaces).eq("id", contractId);
+      if (error) throw error;
       toast({ title: "Guardado", description: "Superficies actualizadas correctamente" });
       setIsEditing(false);
       setOriginalSurfaces(null);

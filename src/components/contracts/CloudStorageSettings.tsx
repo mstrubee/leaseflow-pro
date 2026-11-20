@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 interface CloudConnection {
   id: string;
@@ -107,10 +108,11 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
         window.open(data.url, "_self");
       }
     } catch (err: any) {
+      const message = await getFunctionErrorMessage(err, "No se pudo iniciar la autorización OAuth");
       toast({
         variant: "destructive",
         title: "Error",
-        description: err.message || "No se pudo iniciar la autorización OAuth",
+        description: message,
       });
     } finally {
       setStartingOAuth(false);
@@ -183,10 +185,11 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
     } catch (error: any) {
       console.error("Sync error:", error);
       setLastSyncResult({ success: false, count: 0 });
+      const message = await getFunctionErrorMessage(error, "No se pudo sincronizar con Google Drive");
       toast({
         variant: "destructive",
         title: "Error de sincronización",
-        description: error.message || "No se pudo sincronizar con Google Drive",
+        description: message,
       });
     } finally {
       setSyncing(false);

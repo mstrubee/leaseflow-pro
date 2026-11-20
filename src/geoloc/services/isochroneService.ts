@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
 import type { IsoMode } from "@/geoloc/types/isochrones";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 export interface IsochroneRequest {
   mode: IsoMode;
@@ -16,7 +17,10 @@ export async function fetchIsochrone(
     "isochrone",
     { body: req },
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    const message = await getFunctionErrorMessage(error, "No se pudo calcular la isócrona.");
+    throw new Error(message);
+  }
   let parsed: FeatureCollection | null = null;
   if (typeof data === "string") {
     try {
