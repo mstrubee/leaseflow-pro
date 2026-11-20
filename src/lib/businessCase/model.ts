@@ -362,6 +362,26 @@ export function averageCanonUfM2(
   return coveredMonths > 0 ? weightedSum / coveredMonths : inputs.ufM2 || 0;
 }
 
+/**
+ * Depreciación lineal del CAPEX físico por año (montos positivos, índice 0 = año 0 = 0).
+ * Se deprecia fisica / deprAnos por año DURANTE deprAnos años y 0 después (si
+ * deprAnos no es entero, el último año es proporcional: 2,5 años → 1, 1 y 0,5).
+ * Antes se depreciaba el mismo monto todos los años del horizonte aunque
+ * deprAnos fuera menor (ej. 3 años en un horizonte de 5), lo que seguía
+ * generando escudo tributario y sobrestimaba EBIT/flujo/TIR/VAN de los años
+ * posteriores. Única fuente de verdad: la usan computeBC y fullTermProjection.
+ */
+export function depreciationSchedule(fisica: number, deprAnos: number, years: number): number[] {
+  const n = deprAnos > 0 ? deprAnos : 1;
+  const annual = fisica / n;
+  const out = [0];
+  for (let i = 1; i <= years; i++) {
+    const frac = Math.max(0, Math.min(1, n - (i - 1)));
+    out.push(round(annual * frac, 2));
+  }
+  return out;
+}
+
 // ---------- cálculo principal (réplica de recalcAll del HTML) ----------
 export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminConfig): BCResult {
   const superficie = inputs.superficie || 0;
@@ -587,8 +607,9 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const ocupacion = ingresos.map((x) => round(-Math.abs(x) * ocupPct, 2));
 
   // CAPEX depreciable = inversión física (excluye inventario y garantía), se lee desde Inversión
-  const depr = round(fisica / (inputs.deprAnos || 1), 2);
-  const depreciacion = [0, -depr, -depr, -depr, -depr, -depr];
+  // Depreciación por año: fisica/deprAnos durante deprAnos años, 0 después.
+  const deprSched = depreciationSchedule(fisica, inputs.deprAnos || 1, 5);
+  const depreciacion = deprSched.map((d) => (d === 0 ? 0 : -d));
 
   const gavs = [0, 1, 2, 3, 4, 5].map((i) =>
     round(
@@ -604,7 +625,7 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   const ros = ebit.map((x, i) => (ingresos[i] ? x / ingresos[i] : 0));
 
   const capex = [-totalCapex, 0, 0, 0, 0, 0];
-  const flujoOp = udi.map((x, i) => (i === 0 ? -totalCapex : round(x + depr, 2)));
+  const flujoOp = udi.map((x, i) => (i === 0 ? -totalCapex : round(x + deprSched[i], 2)));
   const payback = [flujoOp[0]];
   for (let i = 1; i < 6; i++) payback.push(round(payback[i - 1] + flujoOp[i], 2));
 

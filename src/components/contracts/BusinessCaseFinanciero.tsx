@@ -25,7 +25,7 @@ import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta,
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 import {
   computeEscalationYearTargets, buildSuggestedTiers, buildAdjustedTiers, simulateEscalationProposal,
-  modelYearBounds, modelYearForMonth, EBITDA_TARGET_PCT, ARRIENDO_CAP_PCT, ESCALATION_STEP,
+  modelYearBounds, modelYearForMonth, EBITDA_TARGET_PCT, ARRIENDO_CAP_PCT, ESCALATION_STEP, ESCALATION_ARROW_STEP,
   type EscalationPreviewYear,
 } from "@/lib/businessCase/escalationSolver";
 import { computeFullTermProjection, type FullTermProjection } from "@/lib/businessCase/fullTermProjection";
@@ -61,7 +61,7 @@ export function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { v
 }
 
 // Variante del NumCell con flechas +/- para el monto de escalonamiento —
-// avanza de a ESCALATION_STEP (0,05 UF) por click, sin tener que tipear.
+// avanza de a ESCALATION_ARROW_STEP (0,1 UF) por click, sin tener que tipear.
 function StepperNumCell({ value, onChange, disabled, decimals = 2 }: { value: number; onChange: (v: number) => void; disabled?: boolean; decimals?: number }) {
   return (
     <div className="inline-flex items-center gap-0.5">
@@ -70,12 +70,12 @@ function StepperNumCell({ value, onChange, disabled, decimals = 2 }: { value: nu
         className="h-7 w-20 text-xs text-right px-1" />
       <div className="flex flex-col">
         <button type="button" disabled={disabled} tabIndex={-1}
-          onClick={() => onChange(Math.round((value + ESCALATION_STEP) * 100) / 100)}
+          onClick={() => onChange(Math.round((value + ESCALATION_ARROW_STEP) * 100) / 100)}
           className="h-3.5 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
           <ChevronUp className="h-2.5 w-2.5" />
         </button>
         <button type="button" disabled={disabled} tabIndex={-1}
-          onClick={() => onChange(Math.max(0, Math.round((value - ESCALATION_STEP) * 100) / 100))}
+          onClick={() => onChange(Math.max(0, Math.round((value - ESCALATION_ARROW_STEP) * 100) / 100))}
           className="h-3.5 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
           <ChevronDown className="h-2.5 w-2.5" />
         </button>

@@ -296,12 +296,15 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
   const deprAnos = inputs.deprAnos || 1;
   // OJO: ExcelJS antepone el "=" al escribir { formula }. Si el string ya lo
   // trae, la celda queda con "==" y Excel no puede evaluarla.
-  const deprFormula = `-((Datos!E23+Datos!E24+Datos!E26+Datos!E27)/1000000)/${deprAnos}`;
-  // N35 lleva el cálculo; O35..R35 encadenan al año anterior (igual que la
-  // planilla de referencia), así queda un solo punto de edición.
-  res.getCell("N35").value = { formula: deprFormula } as ExcelJS.CellFormulaValue;
-  ([["O", "N"], ["P", "O"], ["Q", "P"], ["R", "Q"]] as const).forEach(([col, prev]) => {
-    res.getCell(`${col}35`).value = { formula: `${prev}35` } as ExcelJS.CellFormulaValue;
+  const deprFisicaMM = "((Datos!E23+Datos!E24+Datos!E26+Datos!E27)/1000000)";
+  // Un año por columna (N..R = años 1..5): fisica/deprAnos solo durante deprAnos
+  // años y 0 después — igual que depreciationSchedule de la app. Antes N35 era
+  // un monto fijo que O35..R35 repetían (depreciaba los 5 años aunque deprAnos < 5).
+  // MAX(0,MIN(1,deprAnos-(k-1))) = fracción del año k que aún se deprecia.
+  (["N", "O", "P", "Q", "R"] as const).forEach((col, k) => {
+    res.getCell(`${col}35`).value = {
+      formula: `-${deprFisicaMM}/${deprAnos}*MAX(0,MIN(1,${deprAnos}-${k}))`,
+    } as ExcelJS.CellFormulaValue;
   });
 
   // ── Supuestos: UF base + crecimiento anual por año del proyecto ────────────

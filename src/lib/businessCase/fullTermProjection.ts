@@ -6,7 +6,7 @@
 // model.ts) — es una extensión de las mismas fórmulas a N años, en un
 // archivo aparte para no arriesgar el motor de 5 años ya validado.
 // ============================================================
-import { calcIRR, calcNPV, resolveCanonTiers, type AdminConfig, type BCInputs } from "./model";
+import { calcIRR, calcNPV, depreciationSchedule, resolveCanonTiers, type AdminConfig, type BCInputs } from "./model";
 
 export const FULL_TERM_MAX_YEARS = 40;
 
@@ -212,8 +212,10 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
   const tecnologia = ingresos.map((x) => round(-Math.abs(x) * tecPct, 2));
   const ocupacion = ingresos.map((x) => round(-Math.abs(x) * ocupPct, 2));
 
-  const depr = round(fisica / (inputs.deprAnos || 1), 2);
-  const depreciacion = [0, ...Array(totalYears).fill(-depr)];
+  // Mismo calendario de depreciación que computeBC (depreciationSchedule): solo
+  // durante deprAnos años, no durante todo el contrato.
+  const deprSched = depreciationSchedule(fisica, inputs.deprAnos || 1, totalYears);
+  const depreciacion = deprSched.map((d) => (d === 0 ? 0 : -d));
 
   const gavs = ingresos.map((_, i) =>
     round(personal[i] + publicidad[i] + gastosGral[i] + tecnologia[i] + ocupacion[i] + canonArr[i] + fondoPromocion[i] + gastoComun[i], 2),
@@ -224,7 +226,7 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
   const impuesto = ebit.map((x) => round(-x * taxRate, 2));
   const udi = ebit.map((x) => round(x * (1 - taxRate), 2));
 
-  const flujoOp = udi.map((x, i) => (i === 0 ? -totalCapex : round(x + depr, 2)));
+  const flujoOp = udi.map((x, i) => (i === 0 ? -totalCapex : round(x + deprSched[i], 2)));
   const payback = [flujoOp[0]];
   for (let i = 1; i <= totalYears; i++) payback.push(round(payback[i - 1] + flujoOp[i], 2));
 

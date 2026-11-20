@@ -284,7 +284,9 @@ export function addNegocioCompletoSheet(wb: ExcelJS.Workbook, inputs: BCInputs, 
   }
   r++;
   const rowDeprec = r; setLabel(r, "Depreciación");
-  for (let y = 1; y <= totalYears; y++) setFormula(r, firstYearCol + y - 1, `-$${y0}$${rowFisica}/$${y0}$${rowDeprAnos}`, "#,##0");
+  // Solo durante "Años de depreciación": MAX(0,MIN(1,años-(y-1))) = fracción del año y
+  // que aún se deprecia (1 mientras dura, proporcional el último, 0 después).
+  for (let y = 1; y <= totalYears; y++) setFormula(r, firstYearCol + y - 1, `-$${y0}$${rowFisica}/$${y0}$${rowDeprAnos}*MAX(0,MIN(1,$${y0}$${rowDeprAnos}-${y - 1}))`, "#,##0");
   r++;
   const rowEbit = r; setLabel(r, "EBIT"); ws.getRow(r).font = { bold: true };
   for (let y = 1; y <= totalYears; y++) { const c = colLetter(firstYearCol + y - 1); setFormula(r, firstYearCol + y - 1, `${c}${rowEbitda}+${c}${rowDeprec}`, "#,##0"); }
