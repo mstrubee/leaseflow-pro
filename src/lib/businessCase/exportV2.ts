@@ -76,6 +76,40 @@ export function exportBusinessCasePDF(inputs: BCInputs, r: BCResult) {
     tableWidth: W - 340 - 40,
   });
 
+  // Datos del contrato y UF usados en el cálculo (superficie, canon, UF base y
+  // proyección): así el PDF deja a la vista con qué valores se evaluó el caso.
+  // @ts-expect-error lastAutoTable injected by plugin
+  const yContract = (doc.lastAutoTable?.finalY ?? 200) + 20;
+  const fmtUF = (v: number, dec = 2) => fmtMM(v, dec);
+  autoTable(doc, {
+    startY: yContract,
+    head: [["Datos del contrato", "Valor", "Datos del contrato", "Valor"]],
+    body: [
+      ["Superficie (m²)", fmtUF(inputs.superficie || 0), "Canon mensual (UF)", fmtUF(r.canonUF)],
+      ["Valor UF / m²", fmtUF(inputs.ufM2 || 0, 4), "Gasto común (UF/mes)", fmtUF(inputs.gastoComunUf || 0)],
+      ["Duración contrato (años)", String(inputs.durContratoAnios || 0), "Gracia (meses)", String(inputs.graciaMeses || 0)],
+      ["Valor UF base (CLP)", `$${fmtMM(inputs.ufBase || 0, 2)}`, "Garantía (UF)", fmtUF(r.garantiaUF)],
+    ],
+    theme: "grid",
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [100, 116, 139] },
+  });
+  // @ts-expect-error lastAutoTable injected by plugin
+  const yUf = (doc.lastAutoTable?.finalY ?? 200) + 12;
+  autoTable(doc, {
+    startY: yUf,
+    head: [["UF proyectada (CLP)", ...YEAR_LABELS.slice(1)]],
+    body: [
+      ["UF inicio de año", ...r.ufStarts.map((v) => fmtMM(v, 2))],
+      ["UF promedio del año", ...r.ufAvgs.map((v) => fmtMM(v, 2))],
+      ["Variación anual", ...inputs.ufRates.slice(0, 5).map((v) => `${fmtMM(v, 1)}%`)],
+    ],
+    theme: "grid",
+    styles: { fontSize: 8, halign: "right" },
+    columnStyles: { 0: { halign: "left", fontStyle: "bold" } },
+    headStyles: { fillColor: [100, 116, 139], halign: "right" },
+  });
+
   // @ts-expect-error lastAutoTable injected by plugin
   const y = (doc.lastAutoTable?.finalY ?? 200) + 20;
   autoTable(doc, {
@@ -187,6 +221,13 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   });
 
   // ── Supuestos: UF base + crecimiento anual por año del proyecto ────────────
+  // Fecha y años de la fila de UF: la plantilla traía 25-09-2025 / 2025..2030
+  // fijos, que quedaban desfasados respecto de la UF base inyectada.
+  const ufDate = new Date();
+  sup.getCell("B1").value = ufDate;
+  ["B", "C", "D", "E", "F", "G"].forEach((col, i) => {
+    sup.getCell(`${col}2`).value = ufDate.getFullYear() + i;
+  });
   sup.getCell("B3").value = inputs.ufBase || 0;
   const ufCols = ["C", "D", "E", "F", "G"]; // años 2..6
   ufCols.forEach((col, i) => {
@@ -220,6 +261,17 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult) {
   const persYearCols = ["E", "F", "G", "H", "I"];
   persYearCols.forEach((col, i) => {
     res.getCell(`${col}17`).value = +(r.personal[i + 1] ?? 0).toFixed(4); // ya es negativo
+  });
+
+  // ── Canon y Gasto Común: inyectamos los valores calculados por la app ───────
+  // Las fórmulas de la plantilla (filas 22/23) usan la UF de otro año, meses
+  // propios (Datos!B21) y escalones fijos (+1.05 / +1.1 UF) que no dependen del
+  // contrato. Se reemplazan por result.canonArr / result.gastoComun (superficie ×
+  // UF/m² × meses × UF promedio del año), ya en MM CLP y negativos, para que el
+  // Excel coincida con la pantalla y el PDF. r.*[0] = año 0 (= 0).
+  persYearCols.forEach((col, i) => {
+    res.getCell(`${col}22`).value = +(r.canonArr[i + 1] ?? 0).toFixed(4);
+    res.getCell(`${col}23`).value = +(r.gastoComun[i + 1] ?? 0).toFixed(4);
   });
 
   // Forzar recálculo de todas las fórmulas al abrir el archivo
