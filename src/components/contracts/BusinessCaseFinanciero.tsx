@@ -61,7 +61,7 @@ export function NumCell({ value, onChange, disabled, w = "w-20", decimals }: { v
 }
 
 // Variante del NumCell con flechas +/- para el monto de escalonamiento —
-// avanza de a ESCALATION_ARROW_STEP (0,1 UF) por click, sin tener que tipear.
+// avanza de a ESCALATION_ARROW_STEP (0,01 UF) por click, sin tener que tipear.
 function StepperNumCell({ value, onChange, disabled, decimals = 2 }: { value: number; onChange: (v: number) => void; disabled?: boolean; decimals?: number }) {
   return (
     <div className="inline-flex items-center gap-0.5">

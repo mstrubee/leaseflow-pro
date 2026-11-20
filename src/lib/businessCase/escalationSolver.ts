@@ -13,7 +13,7 @@ export const ESCALATION_STEP = 0.05;
 // Paso de las flechas ▲▼ del monto de cada tramo en "Escalonamiento de renta"
 // (BusinessCaseFinanciero). Separado de ESCALATION_STEP, que es la grilla a la
 // que el optimizador redondea sus propuestas.
-export const ESCALATION_ARROW_STEP = 0.1;
+export const ESCALATION_ARROW_STEP = 0.01;
 
 function roundToStep(v: number, step = ESCALATION_STEP): number {
   return Math.round(v / step) * step;
