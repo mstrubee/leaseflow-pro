@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
-import { BCEscalation, BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, ocupPctFromVenta } from "@/lib/businessCase/model";
+import { BCEscalation, BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, OCUPACION_TARGET_MM, syncOcupFields } from "@/lib/businessCase/model";
 
 interface Args {
   contractId: string;
@@ -75,6 +75,9 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         } else {
           merged = buildDefaultBCInputs(seed, config);
         }
+        // Ocupación: monto fijo en MM/mes + % informativo consistente. Un caso
+        // guardado antes de este modelo (solo trae el %) se resuelve acá.
+        Object.assign(merged, syncOcupFields(merged));
         // Los campos que vienen del contrato SIEMPRE reflejan su valor más
         // reciente al abrir el diálogo (no lo que haya quedado guardado antes
         // en el Business Case) — sincronización contrato → BC.
@@ -126,7 +129,14 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     setInputs((p) => {
       if (!p) return p;
       pushHistory(p, String(key));
-      return { ...p, [key]: value };
+      let next = { ...p, [key]: value } as BCInputs;
+      // El % de ocupación es informativo, pero editable: cambiarlo a mano cambia
+      // el MONTO fijo que despliega (% × Venta Año 1). Sin Venta Año 1 no hay
+      // cómo convertirlo y se conserva el monto.
+      if (key === "ocupPct" && (p.ventaMes[0] ?? 0) > 0) {
+        next = { ...next, ocupMesMM: Math.round(((Number(value) || 0) / 100) * p.ventaMes[0] * 1e4) / 1e4 };
+      }
+      return syncOcupFields(next);
     });
     setDirty(true);
   }, [pushHistory]);
@@ -137,7 +147,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       pushHistory(p, `${String(key)}.${idx}`);
       const a = [...((p[key] as unknown as number[]) || [])];
       a[idx] = value;
-      return { ...p, [key]: a } as BCInputs;
+      return syncOcupFields({ ...p, [key]: a } as BCInputs);
     });
     setDirty(true);
   }, [pushHistory]);
@@ -163,30 +173,28 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         const rate = (p.ventaGrowthPct[i + 1] ?? 0) / 100;
         ventas[i] = Math.ceil(ventas[i + 1] / (1 + rate));
       }
-      // Ocupación % se calibra sobre la Venta Año 1 (puede haber cambiado
-      // directa o indirectamente por la propagación de arriba) para que el
-      // costo de ocupación objetivo (ver OCUPACION_TARGET_MM) se mantenga.
-      // Sigue siendo editable a mano después.
-      return { ...p, ventaMes: ventas, ocupPct: ocupPctFromVenta(p.formato, ventas[0]) };
+      // La ocupación es un monto fijo (ver OCUPACION_TARGET_MM): al cambiar la Venta
+      // Año 1 solo se recalcula el % informativo, el monto no se mueve.
+      return syncOcupFields({ ...p, ventaMes: ventas });
     });
     setDirty(true);
   }, [pushHistory]);
 
-  // Cambiar de formato precarga dotación, inventario y Ocupación % (calibrado
-  // sobre la Venta Año 1 vigente) en una sola operación. Todos quedan
-  // editables a mano después (son inputs normales).
+  // Cambiar de formato precarga dotación, inventario y el monto fijo de
+  // Ocupación (OCUPACION_TARGET_MM) en una sola operación; el % se recalcula solo
+  // sobre la Venta Año 1 vigente. Todo queda editable a mano después.
   const setFormato = useCallback((formato: FormatoLocal) => {
     setInputs((p) => {
       if (!p) return p;
       pushHistory(p, "formato");
       const preset = FORMATO_PRESETS[formato];
-      return {
+      return syncOcupFields({
         ...p,
         formato,
         personalY1: preset.personalY1,
         invOverrides: { ...p.invOverrides, inv: preset.inventarioMM },
-        ocupPct: ocupPctFromVenta(formato, p.ventaMes[0]),
-      };
+        ocupMesMM: OCUPACION_TARGET_MM[formato],
+      });
     });
     setDirty(true);
   }, [pushHistory]);

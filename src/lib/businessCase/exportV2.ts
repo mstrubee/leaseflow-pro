@@ -351,7 +351,12 @@ export async function exportBusinessCaseExcel(inputs: BCInputs, r: BCResult, con
   cols.forEach((c) => { res.getCell(`${c}15`).value = -((inputs.otrosCostosDir || 0) / 100); });
   cols.forEach((c) => { res.getCell(`${c}16`).value = -((inputs.costosVar || 0) / 100); });
   cols.forEach((c) => { res.getCell(`${c}30`).value = -((inputs.tecPct || 0) / 100); }); // Tecnología %
-  cols.forEach((c) => { res.getCell(`${c}31`).value = -((inputs.ocupPct || 0) / 100); }); // Ocupación %
+  // Ocupación: monto fijo (no % de ventas) → se inyectan los valores de la app en E21..I21
+  // y la fila 31 queda como el % efectivo informativo (ocupación ÷ ingresos del año).
+  (["E", "F", "G", "H", "I"] as const).forEach((col, i) => {
+    res.getCell(`${col}21`).value = +(r.ocupacion[i + 1] ?? 0).toFixed(4);
+    res.getCell(`${cols[i]}31`).value = r.ingresos[i + 1] ? +(r.ocupacion[i + 1] / r.ingresos[i + 1]).toFixed(6) : 0;
+  });
   cols.forEach((c) => { res.getCell(`${c}38`).value = (inputs.taxRate || 0) / 100; });    // Impuesto %
 
   // ── Personal ────────────────────────────────────────────────────────────────

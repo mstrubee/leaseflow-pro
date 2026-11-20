@@ -111,12 +111,14 @@ export const FORMATO_PRESETS: Record<FormatoLocal, { personalY1: number; inventa
   Express: { personalY1: 6.5, inventarioMM: 60 },
 };
 
-// ---------- Ocupación: costo objetivo (MM CLP/mes) ----------
-// El input sigue siendo un %, pero ese % se calibra para que, sobre la Venta
-// Año 1 (MM/mes), el costo de ocupación resultante sea el objetivo por
-// formato. Se recalcula cada vez que cambian la Venta Año 1 o el formato
-// (ver setFormato/updateVentaConCrecimiento en useBusinessCaseV2); el input
-// queda editable a mano después, igual que personalY1 con el preset de formato.
+// ---------- Ocupación: monto FIJO en MM CLP/mes ----------
+// El costo de ocupación (sin canon) es un monto fijo por mes de operación
+// (BCInputs.ocupMesMM, objetivo por formato): NO crece con las ventas. Año 1 =
+// ocupMesMM × meses de operación; desde el año 2 se reajusta cada año por la
+// inflación (la misma UF promedio que ya usa el canon, relativa al año 1).
+// El "%" que se ve en pantalla es solo informativo: monto ÷ Venta Año 1
+// (MM/mes) — se recalcula solo cuando cambian ventas o formato; editarlo a mano
+// cambia el monto (ver useBusinessCaseV2). Un formato nuevo precarga el objetivo.
 export const OCUPACION_TARGET_MM: Record<FormatoLocal, number> = {
   Tradicional: 1.5,
   Express: 1.2,
@@ -184,7 +186,8 @@ export interface BCInputs {
   personalCrec: number; // %
   gralPct: number;
   tecPct: number;
-  ocupPct: number;
+  ocupPct: number; // INFORMATIVO: ocupMesMM ÷ Venta Año 1 (%). Lo mantiene sincronizado el hook; el cálculo usa ocupMesMM.
+  ocupMesMM: number; // Ocupación fija, MM CLP/mes de operación en el año 1 (se reajusta por UF desde el año 2)
 
   // Depreciación (la base depreciable se lee desde la Inversión física)
   capexDepreciable: number; // DEPRECADO: ya no se usa (se calcula desde inv.fisica)
@@ -322,6 +325,36 @@ function round(v: number, d = 2): number {
 export function ocupPctFromVenta(formato: FormatoLocal, ventaMesY1: number): number {
   if (!ventaMesY1 || ventaMesY1 <= 0) return 0;
   return round((OCUPACION_TARGET_MM[formato] / ventaMesY1) * 100, 2);
+}
+
+/** % informativo de ocupación: monto fijo (MM/mes) sobre la Venta Año 1 (MM/mes). */
+export function ocupPctFromMonto(montoMesMM: number, ventaMesY1: number): number {
+  if (!ventaMesY1 || ventaMesY1 <= 0) return 0;
+  return round((montoMesMM / ventaMesY1) * 100, 2);
+}
+
+/**
+ * Monto fijo de ocupación (MM CLP/mes, año 1) de un Business Case. Si el caso ya
+ * lo trae (ocupMesMM), se usa tal cual. Los casos guardados ANTES de este modelo
+ * no lo tienen y solo traen el %: si ese % es el que se calibraba solo (igual a
+ * objetivo ÷ Venta Año 1) se vuelve al objetivo exacto del formato (1,5 / 1,2);
+ * si alguien lo editó a mano, se respeta (% × Venta Año 1). Única fuente de
+ * verdad: la usan computeBC, fullTermProjection, los exports y el hook.
+ */
+export function resolveOcupMesMM(inputs: Pick<BCInputs, "ocupMesMM" | "ocupPct" | "formato" | "ventaMes">): number {
+  const stored = inputs.ocupMesMM;
+  if (typeof stored === "number" && Number.isFinite(stored) && stored >= 0) return stored;
+  const formato: FormatoLocal = inputs.formato && inputs.formato in OCUPACION_TARGET_MM ? inputs.formato : "Tradicional";
+  const venta0 = inputs.ventaMes?.[0] ?? 0;
+  const pct = inputs.ocupPct ?? 0;
+  if (Math.abs(pct - ocupPctFromVenta(formato, venta0)) < 0.0051) return OCUPACION_TARGET_MM[formato];
+  return round((pct / 100) * venta0, 4);
+}
+
+/** Deja ocupMesMM resuelto y el % informativo consistente con la Venta Año 1 vigente. */
+export function syncOcupFields<T extends Pick<BCInputs, "ocupMesMM" | "ocupPct" | "formato" | "ventaMes">>(inputs: T): T {
+  const ocupMesMM = resolveOcupMesMM(inputs);
+  return { ...inputs, ocupMesMM, ocupPct: ocupPctFromMonto(ocupMesMM, inputs.ventaMes?.[0] ?? 0) };
 }
 
 // ---------- tramos de canon (escalonamiento) ----------
@@ -624,11 +657,16 @@ export function computeBC(inputs: BCInputs, admin: AdminConfig = defaultAdminCon
   }
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
-  const ocupPct = (inputs.ocupPct || 0) / 100;
   const publicidad = [0, 0, 0, 0, 0, 0];
   const gastosGral = ingresos.map((x) => round(-Math.abs(x) * gralPct, 2));
   const tecnologia = ingresos.map((x) => round(-Math.abs(x) * tecPct, 2));
-  const ocupacion = ingresos.map((x) => round(-Math.abs(x) * ocupPct, 2));
+  // Ocupación: monto FIJO por mes de operación (no depende de las ventas) y, desde
+  // el año 2, reajustado por inflación = UF promedio del año / UF promedio del año 1
+  // (misma UF que el canon). Año 1 = ocupMesMM × meses de operación.
+  const ocupMesMM = resolveOcupMesMM(inputs);
+  const ocupacion = [0, 1, 2, 3, 4, 5].map((i) =>
+    i === 0 ? 0 : round(-ocupMesMM * mesesOperArr[i] * (avgs[0] ? avgs[i - 1] / avgs[0] : 1), 2),
+  );
 
   // CAPEX depreciable = inversión física (excluye inventario y garantía), se lee desde Inversión
   // Depreciación por año: fisica/deprAnos durante deprAnos años, 0 después.
@@ -737,7 +775,8 @@ export function buildDefaultBCInputs(seed: BCSeed = {}, admin: AdminConfig = def
     personalCrec: 3.4,
     gralPct: 1.03,
     tecPct: 1.8,
-    ocupPct: ocupPctFromVenta("Tradicional", 60), // 60 = ventaMes[0] de abajo
+    ocupPct: ocupPctFromMonto(OCUPACION_TARGET_MM.Tradicional, 60), // informativo; 60 = ventaMes[0] de abajo
+    ocupMesMM: OCUPACION_TARGET_MM.Tradicional,
     capexDepreciable: 155,
     deprAnos: d.anosDepr,
     invOverrides: {},

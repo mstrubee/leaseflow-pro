@@ -6,7 +6,7 @@
 // model.ts) — es una extensión de las mismas fórmulas a N años, en un
 // archivo aparte para no arriesgar el motor de 5 años ya validado.
 // ============================================================
-import { calcIRR, calcNPV, depreciationSchedule, resolveCanonTiers, type AdminConfig, type BCInputs } from "./model";
+import { calcIRR, calcNPV, depreciationSchedule, resolveCanonTiers, resolveOcupMesMM, type AdminConfig, type BCInputs } from "./model";
 
 export const FULL_TERM_MAX_YEARS = 40;
 
@@ -206,11 +206,15 @@ export function computeFullTermProjection(inputs: BCInputs, admin: AdminConfig):
   }
   const gralPct = (inputs.gralPct || 0) / 100;
   const tecPct = (inputs.tecPct || 0) / 100;
-  const ocupPct = (inputs.ocupPct || 0) / 100;
   const publicidad = ingresos.map(() => 0);
   const gastosGral = ingresos.map((x) => round(-Math.abs(x) * gralPct, 2));
   const tecnologia = ingresos.map((x) => round(-Math.abs(x) * tecPct, 2));
-  const ocupacion = ingresos.map((x) => round(-Math.abs(x) * ocupPct, 2));
+  // Mismo criterio que computeBC: monto fijo por mes de operación, reajustado
+  // por la UF promedio del año relativa al año 1 (no crece con las ventas).
+  const ocupMesMM = resolveOcupMesMM(inputs);
+  const ocupacion = ingresos.map((_, i) =>
+    i === 0 ? 0 : round(-ocupMesMM * mesesOperArr[i] * (avgs[0] ? avgs[i - 1] / avgs[0] : 1), 2),
+  );
 
   // Mismo calendario de depreciación que computeBC (depreciationSchedule): solo
   // durante deprAnos años, no durante todo el contrato.

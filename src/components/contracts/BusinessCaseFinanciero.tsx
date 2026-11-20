@@ -21,7 +21,7 @@ import {
 } from "recharts";
 import { useBusinessCaseV2 } from "@/hooks/useBusinessCaseV2";
 import type { BCSeed, BCInputs, BCEscalation, FormatoLocal } from "@/lib/businessCase/model";
-import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, ocupPctFromVenta, averageCanonUfM2 } from "@/lib/businessCase/model";
+import { FORMATOS_LOCAL, FORMATO_PRESETS, OCUPACION_TARGET_MM, averageCanonUfM2 } from "@/lib/businessCase/model";
 import { fmtMM, fmtPct } from "@/lib/businessCase/format";
 import {
   computeEscalationYearTargets, buildSuggestedTiers, buildAdjustedTiers, simulateEscalationProposal,
@@ -181,9 +181,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
       // Curva de maduración de Geochile (columna "Crec." de su panel) — NO
       // toca ufRates, que es la UF real/inflación, un supuesto aparte.
       update("ventaGrowthPct", projection.growthRates);
-      // Recalibrar Ocupación % sobre la nueva Venta Año 1 (mismo criterio que
-      // updateVentaConCrecimiento/setFormato — sigue editable a mano después).
-      update("ocupPct", ocupPctFromVenta(inputs.formato, projection.ventaMes[0]));
+      // (Ocupación es un monto fijo: el % informativo se recalcula solo en el hook.)
       // La proyección de Geochile Compass trae su propio ajuste "Express"
       // (independiente del "Formato de local" de este Business Case) — si no
       // coinciden, las ventas importadas están calibradas para el formato
@@ -285,7 +283,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                   </Field>
                   <FieldConv
                     label="Formato de local"
-                    conv={`Precarga ${FORMATO_PRESETS[inputs.formato].personalY1} trabajadores, $${FORMATO_PRESETS[inputs.formato].inventarioMM} MM de inventario y Ocupación calibrada a $${OCUPACION_TARGET_MM[inputs.formato]} MM/mes (editables)`}
+                    conv={`Precarga ${FORMATO_PRESETS[inputs.formato].personalY1} trabajadores, $${FORMATO_PRESETS[inputs.formato].inventarioMM} MM de inventario y Ocupación fija en $${OCUPACION_TARGET_MM[inputs.formato]} MM/mes (sube con la UF; editable)`}
                   >
                     <Select value={inputs.formato} disabled={ro} onValueChange={(v) => setFormato(v as FormatoLocal)}>
                       <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
@@ -794,7 +792,7 @@ export function BusinessCaseFinanciero({ open, onOpenChange, contractId, contrac
                           <NumCell value={inputs.gralPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("gralPct", v)} /></FieldConv>
                         <FieldConv label="Tecnología %" conv={`Prom: $${fmtMM(promedioMensual(result.tecnologia))} MM/mes`}>
                           <NumCell value={inputs.tecPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("tecPct", v)} /></FieldConv>
-                        <FieldConv label="Ocupación %" conv={`Prom: $${fmtMM(promedioMensual(result.ocupacion))} MM/mes`}>
+                        <FieldConv label="Ocupación %" conv={`Fijo $${fmtMM(inputs.ocupMesMM, 2)} MM/mes (año 1), sube con la UF. % sobre venta año 1; editarlo cambia el monto. Prom: $${fmtMM(promedioMensual(result.ocupacion))} MM/mes`}>
                           <NumCell value={inputs.ocupPct} disabled={ro} w="w-20" step="0.01" onChange={(v) => update("ocupPct", v)} /></FieldConv>
                       </>
                     );

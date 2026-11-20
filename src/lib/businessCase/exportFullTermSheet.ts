@@ -18,7 +18,7 @@
 // ============================================================
 import ExcelJS from "exceljs";
 import { computeFullTermProjection } from "./fullTermProjection";
-import type { AdminConfig, BCInputs } from "./model";
+import { resolveOcupMesMM, type AdminConfig, type BCInputs } from "./model";
 
 const SECTION_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
 const INPUT_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFBE4EA" } };
@@ -217,7 +217,9 @@ export function addNegocioCompletoSheet(wb: ExcelJS.Workbook, inputs: BCInputs, 
   const rowCostosVar = r; setLabel(r, "Costos variables %"); setInput(r, YEAR0_COL, (inputs.costosVar || 0) / 100, "0.00%"); r++;
   const rowGralPct = r; setLabel(r, "Gastos generales %"); setInput(r, YEAR0_COL, (inputs.gralPct || 0) / 100, "0.00%"); r++;
   const rowTecPct = r; setLabel(r, "Tecnología %"); setInput(r, YEAR0_COL, (inputs.tecPct || 0) / 100, "0.00%"); r++;
-  const rowOcupPct = r; setLabel(r, "Ocupación %"); setInput(r, YEAR0_COL, (inputs.ocupPct || 0) / 100, "0.00%"); r += 2;
+  // Ocupación = monto FIJO por mes de operación (no % de ventas), reajustado por la
+  // UF promedio del año relativa al año 1 — igual que computeBC / fullTermProjection.
+  const rowOcupMes = r; setLabel(r, "Ocupación año 1 (MM/mes, fijo)"); setInput(r, YEAR0_COL, resolveOcupMesMM(inputs), "0.00"); r += 2;
 
   // ── Supuestos: personal ─────────────────────────────────────────────────
   sectionHeader(r, "Supuestos — Personal"); r++;
@@ -266,7 +268,7 @@ export function addNegocioCompletoSheet(wb: ExcelJS.Workbook, inputs: BCInputs, 
   for (let y = 1; y <= totalYears; y++) { const c = colLetter(firstYearCol + y - 1); setFormula(r, firstYearCol + y - 1, `-ABS(${c}${rowVentas})*$${y0}$${rowTecPct}`, "#,##0"); }
   r++;
   const rowOcupacion = r; setLabel(r, "Ocupación (sin canon)");
-  for (let y = 1; y <= totalYears; y++) { const c = colLetter(firstYearCol + y - 1); setFormula(r, firstYearCol + y - 1, `-ABS(${c}${rowVentas})*$${y0}$${rowOcupPct}`, "#,##0"); }
+  for (let y = 1; y <= totalYears; y++) { const c = colLetter(firstYearCol + y - 1); setFormula(r, firstYearCol + y - 1, `-$${y0}$${rowOcupMes}*${c}${rowMesesVenta}*${c}${rowUfProm}/$${colLetter(firstYearCol)}$${rowUfProm}`, "#,##0"); }
   r++;
   const rowEbitda = r; setLabel(r, "EBITDA"); ws.getRow(r).font = { bold: true };
   for (let y = 1; y <= totalYears; y++) {
