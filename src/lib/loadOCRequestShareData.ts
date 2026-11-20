@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { buildShareLines, OCRequestShareData, OCRequestShareLine } from "@/lib/ocRequestShare";
+import { buildShareLines, reconcileShareLines, OCRequestShareData, OCRequestShareLine } from "@/lib/ocRequestShare";
 import { extractStoragePath } from "@/lib/storageUtils";
 import { loadOCRequestLineAllocations } from "@/lib/ocRequestLines";
 import { loadContractCebes } from "@/lib/contractCebe";
@@ -86,12 +86,15 @@ export async function loadOCRequestShareData(
       { totalAmountClp, amountsInClp: false, ufValue: effectiveUf }
     );
   } else if (allocationRows.length > 0) {
-    lines = allocationRows.map((a) => ({
-      lineName: request.line_name || "Línea",
-      amountClp: Math.round(a.amount_clp ?? (a.amount_uf ?? 0) * effectiveUf),
-      contractName: nameOf(a.contract_id),
-      cebe: cebeOf(a.contract_id),
-    }));
+    lines = reconcileShareLines(
+      allocationRows.map((a) => ({
+        lineName: request.line_name || "Línea",
+        amountClp: Math.round(a.amount_clp ?? (a.amount_uf ?? 0) * effectiveUf),
+        contractName: nameOf(a.contract_id),
+        cebe: cebeOf(a.contract_id),
+      })),
+      totalAmountClp
+    );
   } else {
     lines = [{
       lineName: request.line_name || "Línea",

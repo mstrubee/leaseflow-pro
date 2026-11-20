@@ -21,7 +21,7 @@ import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepo
 import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { formatCLP } from "@/lib/utils";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
-import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { OCRequestShareData, buildShareLines, reconcileShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
@@ -1105,13 +1105,16 @@ export const CentralizedOrderCreator = ({
                 { totalAmountClp, amountsInClp: false, ufValue },
               )
             : isMultiContract
-              ? contractAllocations.map(a => ({
-                  lineName: requestLineName,
-                  // Mismo cálculo que se guarda en oc_request_contract_allocations.
-                  amountClp: formData.currency === "CLP" ? Math.round(a.amount) : Math.round(a.amount * ufValue),
-                  contractName: a.contractName,
-                  cebe: a.cebe,
-                }))
+              ? reconcileShareLines(
+                  contractAllocations.map(a => ({
+                    lineName: requestLineName,
+                    // Mismo cálculo que se guarda en oc_request_contract_allocations.
+                    amountClp: formData.currency === "CLP" ? Math.round(a.amount) : Math.round(a.amount * ufValue),
+                    contractName: a.contractName,
+                    cebe: a.cebe,
+                  })),
+                  totalAmountClp
+                )
               : [{
                   lineName: requestLineName,
                   amountClp: totalAmountClp,

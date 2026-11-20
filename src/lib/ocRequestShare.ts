@@ -393,10 +393,29 @@ export function buildShareLines(
   if (lines.length === 1) {
     return [{ lineName: lines[0].lineName, amountClp: Math.round(opts.totalAmountClp), contractName: lines[0].contractName, cebe: lines[0].cebe }];
   }
-  return lines.map((l) => ({
-    lineName: l.lineName,
-    amountClp: Math.round(opts.amountsInClp ? l.amount : l.amount * opts.ufValue),
-    contractName: l.contractName,
-    cebe: l.cebe,
-  }));
+  return reconcileShareLines(
+    lines.map((l) => ({
+      lineName: l.lineName,
+      amountClp: Math.round(opts.amountsInClp ? l.amount : l.amount * opts.ufValue),
+      contractName: l.contractName,
+      cebe: l.cebe,
+    })),
+    opts.totalAmountClp
+  );
+}
+
+/**
+ * Hace que las filas del PDF sumen EXACTAMENTE el total. Cada fila se redondea a pesos por
+ * separado (viene en UF o repartida entre contratos), así que la suma puede quedar a
+ * unos pesos del total ($5.295.493 filas vs $5.295.494 total). Igual que en el plan de
+ * pagos (lib/paymentPlan.ts), la última fila absorbe la diferencia.
+ * Solo corrige diferencias de redondeo (hasta 1 peso por fila): una diferencia mayor
+ * indicaría montos mal repartidos y no se debe tapar.
+ */
+export function reconcileShareLines(lines: OCRequestShareLine[], totalClp: number): OCRequestShareLine[] {
+  if (lines.length < 2) return lines;
+  const diff = Math.round(totalClp) - lines.reduce((sum, l) => sum + l.amountClp, 0);
+  if (diff === 0 || Math.abs(diff) > lines.length) return lines;
+  const last = lines.length - 1;
+  return lines.map((l, i) => (i === last ? { ...l, amountClp: l.amountClp + diff } : l));
 }
