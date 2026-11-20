@@ -201,7 +201,7 @@ export const ConvertOCRequestDialog = ({
     try {
       const timestamp = new Date().toISOString().split("T")[0].replace(/-/g, "");
       const sanitizedName = sanitizeFileName(ocFile.name);
-      const filePath = `oc-documents/${timestamp}_${sanitizedName}`;
+      const filePath = `oc-documents/${timestamp}_${Date.now()}_${sanitizedName}`;
 
       const { path, error } = await uploadFileToStorage(filePath, ocFile);
 

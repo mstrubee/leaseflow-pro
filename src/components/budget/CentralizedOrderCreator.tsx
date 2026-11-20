@@ -676,7 +676,9 @@ export const CentralizedOrderCreator = ({
     try {
       const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
       const sanitizedName = quotationFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const filePath = `quotations/${timestamp}_${sanitizedName}`;
+      // Date.now() como en repositoryBackup.ts: solo la fecha hacía chocar el nombre al
+      // volver a crear una solicitud con la misma cotización el mismo día.
+      const filePath = `quotations/${timestamp}_${Date.now()}_${sanitizedName}`;
       
       const { path, error } = await uploadFileToStorage(filePath, quotationFile);
       
