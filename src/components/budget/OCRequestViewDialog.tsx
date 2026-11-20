@@ -30,6 +30,7 @@ import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData } from "@/lib/ocRequestShare";
 import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
+import { loadOCRequestLineAllocations, replaceOCRequestLines } from "@/lib/ocRequestLines";
 
 interface OCRequest {
   id: string;
@@ -86,6 +87,16 @@ interface EditableAllocation {
   contract_name: string;
   amount_uf: number;
   isNew?: boolean;
+}
+
+interface ContractLineEdit {
+  contractId: string;
+  contractName: string;
+  /** Presupuesto CAPEX del contrato para el año de la solicitud (null si no tiene). */
+  budgetId: string | null;
+  /** UF de la solicitud que corresponden a este contrato. */
+  amountUf: number;
+  lines: EditableLine[];
 }
 
 interface FormAssignment {
@@ -199,6 +210,11 @@ export const OCRequestViewDialog = ({
   const [isEditingLines, setIsEditingLines] = useState(false);
   const [editableLines, setEditableLines] = useState<EditableLine[]>([]);
   const [savingLines, setSavingLines] = useState(false);
+  // Edición de líneas POR CONTRATO: se usa en solicitudes multi-contrato y en las
+  // que quedaron sin presupuesto (budget_id null, ver handleStartEditLines). Cada
+  // contrato tiene su propio presupuesto CAPEX y su monto a imputar.
+  const [contractLineEdits, setContractLineEdits] = useState<ContractLineEdit[]>([]);
+  const [loadingContractBudgets, setLoadingContractBudgets] = useState(false);
 
   // OPEX category assignment edit state (solo admin). Una solicitud OPEX se
   // imputa a UNA categoría del presupuesto maestro (oc_requests.opex_master_id).
@@ -490,8 +506,15 @@ export const OCRequestViewDialog = ({
   // sea simple (budget_line_id directo) o múltiple (oc_budget_lines), con su
   // monto actual. MultipleLinesSelector corrige maxAmount apenas calcula el
   // disponible real (excluyendo el consumo de esta misma solicitud).
-  const handleStartEditLines = () => {
+  const handleStartEditLines = async () => {
     if (!request) return;
+    // Multi-contrato, o solicitud sin presupuesto (creada antes de que CAPEX
+    // guardara su imputación): las líneas salen del presupuesto CAPEX de CADA
+    // contrato, no de uno solo.
+    if (contractAllocations.length > 0 || !request.budget_id) {
+      await startEditContractLines();
+      return;
+    }
     if (budgetLines.length > 0) {
       setEditableLines(budgetLines.map(l => ({
         lineId: l.budget_line_id,
@@ -512,13 +535,112 @@ export const OCRequestViewDialog = ({
     setIsEditingLines(true);
   };
 
+  const startEditContractLines = async () => {
+    if (!request) return;
+    setIsEditingLines(true);
+    setLoadingContractBudgets(true);
+    try {
+      const targets = contractAllocations.length > 0
+        ? contractAllocations.map(a => ({ contractId: a.contract_id, contractName: a.contract_name, amountUf: a.amount_uf }))
+        : [{ contractId: request.contract_id, contractName: request.project_name, amountUf: request.amount_uf }];
+
+      const year = request.year ?? new Date(request.request_date).getFullYear();
+      const [{ data: budgets, error: budgetsError }, current] = await Promise.all([
+        supabase
+          .from("contract_budgets")
+          .select("id, contract_id")
+          .in("contract_id", targets.map(t => t.contractId))
+          .eq("year", year)
+          .eq("budget_type", "capex"),
+        loadOCRequestLineAllocations(request),
+      ]);
+      if (budgetsError) throw budgetsError;
+
+      const budgetByContract = new Map<string, string>();
+      (budgets || []).forEach(b => { if (!budgetByContract.has(b.contract_id)) budgetByContract.set(b.contract_id, b.id); });
+
+      setContractLineEdits(targets.map(t => ({
+        ...t,
+        budgetId: budgetByContract.get(t.contractId) ?? null,
+        lines: current
+          .filter(l => l.contractId === t.contractId)
+          .map(l => ({ lineId: l.lineId, lineName: l.lineName, amount: l.amountUf, maxAmount: l.amountUf })),
+      })));
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message || "No se pudieron cargar los presupuestos CAPEX" });
+      setIsEditingLines(false);
+    } finally {
+      setLoadingContractBudgets(false);
+    }
+  };
+
+  const handleSaveContractLines = async () => {
+    if (!request) return;
+    const tolerance = 0.01;
+
+    for (const c of contractLineEdits) {
+      const valid = c.lines.filter(l => l.lineId && l.amount > 0);
+      if (!c.budgetId) {
+        toast({ variant: "destructive", title: "Sin presupuesto CAPEX", description: `${c.contractName} no tiene presupuesto CAPEX para el año de la solicitud.` });
+        return;
+      }
+      if (valid.length === 0) {
+        toast({ variant: "destructive", title: "Faltan líneas", description: `Asigne al menos una línea de presupuesto en ${c.contractName}.` });
+        return;
+      }
+      const assigned = valid.reduce((sum, l) => sum + l.amount, 0);
+      if (Math.abs(assigned - c.amountUf) > tolerance) {
+        toast({
+          variant: "destructive",
+          title: "Error de distribución",
+          description: `${c.contractName}: el total asignado (${formatUF(assigned)}) no coincide con el monto de este contrato (${formatUF(c.amountUf)}).`,
+        });
+        return;
+      }
+    }
+
+    setSavingLines(true);
+    try {
+      const allLines = contractLineEdits.flatMap(c =>
+        c.lines.filter(l => l.lineId && l.amount > 0).map(l => ({ lineId: l.lineId, lineName: l.lineName, amountUf: l.amount })),
+      );
+      // Mismo modelo que al crear: 1 línea → budget_line_id; 2+ → oc_budget_lines.
+      await replaceOCRequestLines(request.id, allLines);
+
+      // La solicitud queda CAPEX: presupuesto del contrato principal y sin
+      // categoría OPEX (una solicitud no puede ser las dos cosas).
+      const primaryBudgetId =
+        contractLineEdits.find(c => c.contractId === request.contract_id)?.budgetId ?? contractLineEdits[0]?.budgetId ?? null;
+      const { error: classifyError } = await supabase
+        .from("oc_requests")
+        .update({ budget_id: primaryBudgetId, opex_master_id: null })
+        .eq("id", request.id);
+      if (classifyError) throw classifyError;
+
+      toast({ title: "Asignación de líneas actualizada" });
+      setIsEditingLines(false);
+      setContractLineEdits([]);
+      loadRequest();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSavingLines(false);
+    }
+  };
+
   const handleCancelEditLines = () => {
     setIsEditingLines(false);
     setEditableLines([]);
+    setContractLineEdits([]);
   };
 
   const handleSaveLines = async () => {
     if (!request) return;
+    if (contractLineEdits.length > 0) {
+      await handleSaveContractLines();
+      return;
+    }
 
     const validLines = editableLines.filter(l => l.lineId && l.amount > 0);
     if (validLines.length === 0) {
@@ -1447,8 +1569,8 @@ export const OCRequestViewDialog = ({
                     variant="outline"
                     size="sm"
                     onClick={handleStartEditLines}
-                    disabled={!request.budget_id}
-                    title={!request.budget_id ? "Esta solicitud no está asociada a un presupuesto CAPEX" : undefined}
+                    disabled={isOpexRequest}
+                    title={isOpexRequest ? "Esta solicitud es OPEX: se imputa a una categoría, no a líneas CAPEX" : undefined}
                     className="gap-1"
                   >
                     <Pencil className="h-3 w-3" />
@@ -1516,6 +1638,46 @@ export const OCRequestViewDialog = ({
                     {request.status === "converted" && " También se actualiza la OC creada desde esta solicitud."}
                   </p>
                 </div>
+              ) : isEditingLines && (loadingContractBudgets || contractLineEdits.length > 0) ? (
+                loadingContractBudgets ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-xs text-muted-foreground">
+                      Seleccione las líneas CAPEX autorizadas de cada contrato. En cada uno, el total asignado debe
+                      ser igual al monto de ese contrato.
+                    </p>
+                    {contractLineEdits.map((c) => (
+                      <div key={c.contractId} className="space-y-2 border rounded-md p-3">
+                        <div className="flex items-center justify-between gap-2 text-sm font-medium">
+                          <span className="truncate">{c.contractName}</span>
+                          <span className="text-xs font-normal text-muted-foreground whitespace-nowrap">
+                            A imputar: {formatCLP(ufToClp(c.amountUf, request, ufValue))} ({formatUF(c.amountUf)})
+                          </span>
+                        </div>
+                        {c.budgetId ? (
+                          <MultipleLinesSelector
+                            budgetId={c.budgetId}
+                            selectedLines={c.lines}
+                            onSelectionChange={(lines) =>
+                              setContractLineEdits(prev => prev.map(p => p.contractId === c.contractId ? { ...p, lines } : p))
+                            }
+                            formatUF={formatUF}
+                            formatCLP={formatCLP}
+                            ufValue={ufValue}
+                            excludeRequestId={request.id}
+                          />
+                        ) : (
+                          <p className="text-xs text-amber-600">
+                            Este contrato no tiene presupuesto CAPEX para el año de la solicitud.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )
               ) : isEditingLines ? (
                 request.budget_id ? (
                   <MultipleLinesSelector

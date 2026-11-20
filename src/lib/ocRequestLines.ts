@@ -120,3 +120,105 @@ export async function syncOCRequestLinesFromPurchaseOrder(
   }
   return requests.length;
 }
+
+/** Una línea CAPEX de una solicitud, con el contrato al que pertenece su presupuesto. */
+export interface OCRequestLineAllocation {
+  lineId: string;
+  lineName: string;
+  /** UF imputadas a la línea en la solicitud. */
+  amountUf: number;
+  budgetId: string;
+  contractId: string;
+}
+
+/**
+ * Líneas CAPEX con las que quedó imputada una solicitud, según el modelo de
+ * arriba: filas de `oc_budget_lines` (2+ líneas) o `oc_requests.budget_line_id`
+ * (1 línea, con el monto total de la solicitud). Cada línea trae su contrato
+ * (el de su presupuesto), necesario en solicitudes multi-contrato para saber
+ * qué líneas corresponden a cada OC. Devuelve [] si es OPEX o no tiene líneas.
+ */
+export async function loadOCRequestLineAllocations(request: {
+  id: string;
+  budget_line_id?: string | null;
+  amount_uf?: number | null;
+}): Promise<OCRequestLineAllocation[]> {
+  const { data: bridgeRows, error } = await supabase
+    .from("oc_budget_lines")
+    .select("budget_line_id, amount_uf")
+    .eq("oc_request_id", request.id);
+  if (error) throw error;
+
+  const assigned: { lineId: string; amountUf: number }[] = (bridgeRows || []).length > 0
+    ? (bridgeRows || []).map((r) => ({ lineId: r.budget_line_id, amountUf: r.amount_uf ?? 0 }))
+    : request.budget_line_id
+      ? [{ lineId: request.budget_line_id, amountUf: request.amount_uf ?? 0 }]
+      : [];
+  if (assigned.length === 0) return [];
+
+  const { data: lineRows, error: linesError } = await supabase
+    .from("budget_lines")
+    .select("id, name, budget_id, contract_budgets(contract_id)")
+    .in("id", assigned.map((a) => a.lineId));
+  if (linesError) throw linesError;
+
+  const byId = new Map(
+    ((lineRows || []) as unknown as { id: string; name: string; budget_id: string; contract_budgets: { contract_id: string } | null }[])
+      .map((l) => [l.id, l]),
+  );
+
+  return assigned.flatMap((a) => {
+    const line = byId.get(a.lineId);
+    // Una línea eliminada o sin presupuesto no se puede imputar a ninguna OC.
+    if (!line || !line.contract_budgets) return [];
+    return [{
+      lineId: a.lineId,
+      lineName: line.name,
+      amountUf: a.amountUf,
+      budgetId: line.budget_id,
+      contractId: line.contract_budgets.contract_id,
+    }];
+  });
+}
+
+/**
+ * Reparte `targetUf` entre las líneas en proporción a lo que cada una tenía en
+ * la solicitud (partes iguales si todas están en 0). El resto del redondeo va a
+ * la última para que la suma dé exactamente `targetUf`.
+ */
+export function scaleLineAmounts(lines: { amountUf: number }[], targetUf: number): number[] {
+  if (lines.length === 0) return [];
+  const round4 = (v: number) => Math.round(v * 10000) / 10000;
+  const weightSum = lines.reduce((s, l) => s + (l.amountUf || 0), 0);
+  const amounts: number[] = [];
+  let assigned = 0;
+  lines.forEach((l, i) => {
+    const share = i === lines.length - 1
+      ? round4(targetUf - assigned)
+      : round4(weightSum > 0 ? targetUf * ((l.amountUf || 0) / weightSum) : targetUf / lines.length);
+    assigned += share;
+    amounts.push(share);
+  });
+  return amounts;
+}
+
+/**
+ * Inserta en `purchase_order_budget_lines` las líneas de una OC creada desde una
+ * solicitud, con los montos ya repartidos (ver scaleLineAmounts). Lanza si
+ * falla: una OC CAPEX sin sus líneas no descuenta del presupuesto.
+ */
+export async function insertPurchaseOrderLines(
+  purchaseOrderId: string,
+  lines: { lineId: string }[],
+  amountsUf: number[],
+): Promise<void> {
+  if (lines.length === 0) return;
+  const { error } = await supabase.from("purchase_order_budget_lines").insert(
+    lines.map((l, i) => ({
+      purchase_order_id: purchaseOrderId,
+      budget_line_id: l.lineId,
+      amount_uf: amountsUf[i] ?? 0,
+    })),
+  );
+  if (error) throw error;
+}

@@ -47,6 +47,8 @@ import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
 import { OPEX_CATEGORY_REQUIRED_MESSAGE, categoriesForYear, isOpexCategoryRequired, yearFromDate } from "@/lib/opexCategories";
+import { insertPurchaseOrderLines, loadOCRequestLineAllocations, scaleLineAmounts } from "@/lib/ocRequestLines";
+import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 
 interface ContractAllocation {
   contract_id: string;
@@ -71,6 +73,7 @@ interface OCRequest {
   status: string;
   contract_id: string;
   budget_id?: string | null;
+  budget_line_id?: string | null;
   opex_master_id?: string | null;
   year: number;
   quotation_url?: string | null;
@@ -255,6 +258,12 @@ export const ConvertOCRequestDialog = ({
         attachmentUrl = request.quotation_url || null;
       }
 
+      // Líneas CAPEX con las que se imputó la solicitud. La OC debe heredarlas
+      // (budget_line_id + purchase_order_budget_lines), si no queda sin líneas y
+      // no descuenta del presupuesto. En multi-contrato cada OC toma solo las
+      // líneas de SU contrato (el presupuesto de cada línea dice a cuál pertenece).
+      const requestLines = await loadOCRequestLineAllocations(request);
+
       if (isMultiContract && request.allocations) {
         // Multi-contract: Create a PO for each allocation
         for (const alloc of request.allocations) {
@@ -267,11 +276,20 @@ export const ConvertOCRequestDialog = ({
             continue;
           }
           
+          const allocLines = requestLines.filter(l => l.contractId === alloc.contract_id);
+          const allocLineAmounts = scaleLineAmounts(allocLines, allocAmountUf);
+
           const { data: ocData, error: ocError } = await supabase
             .from("purchase_orders")
             .insert({
               contract_id: alloc.contract_id,
-              budget_id: request.budget_id,
+              // Con líneas: el presupuesto de ESTE contrato (request.budget_id es el
+              // del contrato principal). Sin líneas en la solicitud: como antes.
+              budget_id: allocLines[0]?.budgetId ?? (requestLines.length === 0 ? request.budget_id : null),
+              ...(allocLines.length > 0 && {
+                budget_line_id: allocLines[0].lineId,
+                budget_classification: "CAPEX" as const,
+              }),
               opex_master_id: request.opex_master_id,
               opex_category_id: selectedCategoryId || request.opex_category_id,
               order_number: orderNumber,
@@ -299,6 +317,8 @@ export const ConvertOCRequestDialog = ({
             amount_uf: allocAmountUf,
             amount_clp: allocAmountClp,
           });
+
+          await insertPurchaseOrderLines(ocData.id, allocLines, allocLineAmounts);
         }
       } else {
         // Single contract: Create one PO
@@ -310,9 +330,15 @@ export const ConvertOCRequestDialog = ({
           throw new Error("El monto de la solicitud no puede ser cero o vacío");
         }
         
-        const { error: ocError } = await supabase.from("purchase_orders").insert({
+        const singleLineAmounts = scaleLineAmounts(requestLines, singleAmountUf);
+
+        const { data: singleOcData, error: ocError } = await supabase.from("purchase_orders").insert({
           contract_id: request.contract_id,
-          budget_id: request.budget_id,
+          budget_id: requestLines[0]?.budgetId ?? request.budget_id,
+          ...(requestLines.length > 0 && {
+            budget_line_id: requestLines[0].lineId,
+            budget_classification: "CAPEX" as const,
+          }),
           opex_master_id: request.opex_master_id,
           opex_category_id: selectedCategoryId || request.opex_category_id,
           order_number: orderNumber,
@@ -326,9 +352,21 @@ export const ConvertOCRequestDialog = ({
           year: request.year,
           status: "abierta",
           attachment_url: attachmentUrl,
-        });
+        }).select("id").single();
 
         if (ocError) throw ocError;
+
+        await insertPurchaseOrderLines(singleOcData.id, requestLines, singleLineAmounts);
+      }
+
+      // Las líneas pasan a "Con OC". La OC ya está creada: si esto falla no se
+      // debe abortar la conversión (dejaría la OC creada y la solicitud pendiente).
+      if (requestLines.length > 0) {
+        try {
+          await syncBudgetLineOcStatus({ addedLineIds: requestLines.map(l => l.lineId) });
+        } catch (syncError) {
+          console.warn("No se pudo actualizar el estado de las líneas a 'Con OC':", syncError);
+        }
       }
 
       // For existing quotation URLs that weren't uploaded fresh, backup to repository

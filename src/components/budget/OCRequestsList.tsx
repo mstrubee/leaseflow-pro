@@ -26,6 +26,8 @@ import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
 import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 import { validateFile } from "@/lib/fileValidation";
 import { uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
+import { insertPurchaseOrderLines, loadOCRequestLineAllocations, scaleLineAmounts } from "@/lib/ocRequestLines";
+import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 
 interface OCRequest {
   id: string;
@@ -293,10 +295,22 @@ export const OCRequestsList = ({
         });
       }
 
+      // Líneas CAPEX de la solicitud que pertenecen a ESTE contrato: la OC las
+      // hereda (budget_line_id + purchase_order_budget_lines), si no queda sin
+      // líneas y no descuenta del presupuesto. `amount_uf` de la solicitud ya es
+      // el monto de este contrato (ver loadRequests), por eso se reparte entero.
+      const contractLines = (await loadOCRequestLineAllocations(selectedRequest))
+        .filter((l) => l.contractId === contractId);
+      const contractLineAmounts = scaleLineAmounts(contractLines, selectedRequest.amount_uf);
+
       // Create the actual purchase order using the budget_id from the request
       const { data: ocData, error: ocError } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
-        budget_id: selectedRequest.budget_id || budgetId, // Use request's budget_id first
+        budget_id: contractLines[0]?.budgetId ?? (selectedRequest.budget_id || budgetId), // Use request's budget_id first
+        ...(contractLines.length > 0 && {
+          budget_line_id: contractLines[0].lineId,
+          budget_classification: "CAPEX" as const,
+        }),
         order_number: convertForm.order_number,
         supplier_name: convertForm.supplier_name || selectedRequest.supplier_name,
         description: selectedRequest.description,
@@ -310,6 +324,15 @@ export const OCRequestsList = ({
       }).select("id").single();
 
       if (ocError) throw ocError;
+
+      await insertPurchaseOrderLines(ocData.id, contractLines, contractLineAmounts);
+      if (contractLines.length > 0) {
+        try {
+          await syncBudgetLineOcStatus({ addedLineIds: contractLines.map((l) => l.lineId) });
+        } catch (syncError) {
+          console.warn("No se pudo actualizar el estado de las líneas a 'Con OC':", syncError);
+        }
+      }
 
       // Update the request status to converted
       const { error: updateError } = await supabase

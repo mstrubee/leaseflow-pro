@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { filterCapexLines } from "@/components/budget/CentralizedOrderCreator";
+import { filterCapexLines, selectableCapexLines } from "@/components/budget/CentralizedOrderCreator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -674,6 +674,12 @@ export const PurchaseOrdersModule = ({
         }
         if (newOrder.budget_line_ids.length === 0) {
           toast({ variant: "destructive", title: "Faltan líneas de presupuesto", description: "Debe seleccionar al menos una línea del presupuesto CAPEX para crear la OC." });
+          return;
+        }
+        // El CAPEX solo se imputa a líneas AUTORIZADAS (el selector ya no ofrece otras).
+        const authorizedIds = new Set(selectableCapexLines(getHierarchicalLinesForBudgetType("capex")).map(l => l.id));
+        if (newOrder.budget_line_ids.some(id => !authorizedIds.has(id))) {
+          toast({ variant: "destructive", title: "Línea no autorizada", description: "Solo se pueden usar líneas CAPEX autorizadas. Revise la selección." });
           return;
         }
       }
@@ -1447,10 +1453,10 @@ export const PurchaseOrdersModule = ({
                   className="h-8 text-sm"
                 />
                 <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
-                  {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
+                  {selectableCapexLines(getHierarchicalLinesForBudgetType("capex")).length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    filterCapexLines(getHierarchicalLinesForBudgetType("capex"), createLineSearch)
+                    filterCapexLines(selectableCapexLines(getHierarchicalLinesForBudgetType("capex")), createLineSearch)
                       .filter((line) => {
                         // Las líneas madre son solo agrupadores: se muestran pero
                         // no reciben asignaciones. Las hijas con monto $0 se ocultan.
@@ -1849,10 +1855,10 @@ export const PurchaseOrdersModule = ({
                   className="h-8 text-sm"
                 />
                 <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
-                  {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
+                  {selectableCapexLines(getHierarchicalLinesForBudgetType("capex"), editFormData.budget_line_ids).length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    filterCapexLines(getHierarchicalLinesForBudgetType("capex"), editLineSearch)
+                    filterCapexLines(selectableCapexLines(getHierarchicalLinesForBudgetType("capex"), editFormData.budget_line_ids), editLineSearch)
                       .filter((line) => {
                         // Las líneas madre son solo agrupadores: se muestran pero
                         // no reciben asignaciones. Las hijas con monto $0 se ocultan.

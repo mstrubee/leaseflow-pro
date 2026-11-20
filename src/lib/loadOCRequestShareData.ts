@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { buildShareLines, OCRequestShareData } from "@/lib/ocRequestShare";
+import { extractStoragePath } from "@/lib/storageUtils";
 
 interface StoredOCRequest {
   request_date: string;
@@ -14,6 +15,8 @@ interface StoredOCRequest {
   sequence_number: number | null;
   migo_choice: "con" | "sin" | null;
   verification_code: string | null;
+  quotation_url: string | null;
+  quotation_file_name: string | null;
 }
 
 /**
@@ -75,6 +78,14 @@ export async function loadOCRequestShareData(
   const allocationNames = ((allocationsRes.data || []) as unknown as { contracts: { name: string } | null }[])
     .map((a) => a.contracts?.name || "Sin nombre");
 
+  // Cotización adjunta a la solicitud. oc_requests.quotation_url guarda una
+  // referencia a Supabase Storage (solicitudes creadas desde "+ Solicitud OC") o
+  // la URL de Drive (solicitudes creadas desde un Requerimiento / línea CAPEX).
+  // Sin esto el diálogo de compartir recibía `quotation` vacío y, tras "Guardar
+  // Cambios", ofrecía solo el PDF en vez del ZIP con la cotización.
+  const quotationUrl = request.quotation_url;
+  const quotationIsStorage = !!quotationUrl && !!extractStoragePath(quotationUrl);
+
   return {
     requestDate: request.request_date,
     currency: "CLP",
@@ -95,5 +106,12 @@ export async function loadOCRequestShareData(
     migoChoice: request.migo_choice,
     requestId,
     verificationCode: request.verification_code,
+    quotation: quotationUrl
+      ? {
+          fileName: request.quotation_file_name,
+          storagePath: quotationIsStorage ? quotationUrl : null,
+          driveUrl: quotationIsStorage ? null : quotationUrl,
+        }
+      : null,
   };
 }
