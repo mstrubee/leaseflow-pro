@@ -59,6 +59,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
+import { getFunctionErrorMessage } from "@/lib/edgeFunctionError";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StorageSettings {
@@ -194,7 +195,8 @@ export function UnifiedCloudStorage({ defaultCollapsed = false }: UnifiedCloudSt
       toast.success("Conexión exitosa", { description: `Conectado a ${PROVIDERS.find((p) => p.id === providerId)?.name}${providerId === "google_drive" ? authMethod : ""}` });
     } catch (error: any) {
       setConnectionStatus((prev) => ({ ...prev, [providerId]: false }));
-      toast.error("Error de conexión", { description: error.message || "No se pudo conectar con el proveedor" });
+      const message = await getFunctionErrorMessage(error, "No se pudo conectar con el proveedor");
+      toast.error("Error de conexión", { description: message });
     } finally {
       setTesting(null);
     }
@@ -236,7 +238,8 @@ export function UnifiedCloudStorage({ defaultCollapsed = false }: UnifiedCloudSt
       await loadCredentials();
       await checkOAuthStatus();
     } catch (error: any) {
-      toast.error("Error al guardar credenciales", { description: error.message });
+      const message = await getFunctionErrorMessage(error, "No se pudieron actualizar las credenciales.");
+      toast.error("Error al guardar credenciales", { description: message });
     } finally {
       setSavingCredentials(false);
     }
@@ -262,7 +265,8 @@ export function UnifiedCloudStorage({ defaultCollapsed = false }: UnifiedCloudSt
         setTimeout(() => { clearInterval(pollInterval); setConnectingOAuth(false); }, 300000);
       }
     } catch (error: any) {
-      toast.error("Error al iniciar OAuth", { description: error.message });
+      const message = await getFunctionErrorMessage(error, "No se pudo iniciar la autorización con Google.");
+      toast.error("Error al iniciar OAuth", { description: message });
       setConnectingOAuth(false);
     }
   };
@@ -376,7 +380,8 @@ export function UnifiedCloudStorage({ defaultCollapsed = false }: UnifiedCloudSt
     } catch (error: any) {
       console.error("Sync error:", error);
       setLastSyncResult({ success: false, count: 0 });
-      shadToast({ variant: "destructive", title: "Error de sincronización", description: error.message || "No se pudo sincronizar" });
+      const message = await getFunctionErrorMessage(error, "No se pudo sincronizar");
+      shadToast({ variant: "destructive", title: "Error de sincronización", description: message });
     } finally {
       setSyncing(false);
     }

@@ -44,11 +44,12 @@ interface CurrentVersion {
 
   notice_type: "meses" | "fecha" | "rangos" | string;
   notice_value: string;
-  notice_bilaterality?: "unilateral_gp" | "bilateral" | string | null;
+  notice_bilaterality?: "unilateral_gp" | "unilateral_arrendador" | "bilateral" | string | null;
 
   // Canon escalonado
   rent_escalations?: Array<{ month_number: number; amount: number }>;
   grace_months?: number | null;
+  grace_ggcc_applies?: boolean | null;
 
   // Garantía
   guarantee_multiplier?: number | null;
@@ -124,6 +125,7 @@ export const RenegotiationDialog = ({
   const [durationMonths, setDurationMonths] = useState(currentVersion.duration_months?.toString() || "");
 
   const [graceMonths, setGraceMonths] = useState(currentVersion.grace_months?.toString() || "");
+  const [graceGgccApplies, setGraceGgccApplies] = useState(currentVersion.grace_ggcc_applies ?? true);
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState(
     currentVersion.guarantee_multiplier?.toString() || ""
   );
@@ -132,8 +134,10 @@ export const RenegotiationDialog = ({
   const [noticeValue, setNoticeValue] = useState(() =>
     initialNoticeType === "meses" ? parseMonths(currentVersion.notice_value || "") : currentVersion.notice_value || ""
   );
-  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">(
-    (currentVersion.notice_bilaterality as any) === "bilateral" ? "bilateral" : "unilateral_gp"
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "unilateral_arrendador" | "bilateral">(
+    currentVersion.notice_bilaterality === "bilateral" || currentVersion.notice_bilaterality === "unilateral_arrendador"
+      ? currentVersion.notice_bilaterality
+      : "unilateral_gp"
   );
 
   const [noticeRanges, setNoticeRanges] = useState<NoticeRange[]>(currentVersion.notice_ranges || []);
@@ -302,6 +306,7 @@ export const RenegotiationDialog = ({
           duration_months: parseInt(durationMonths),
 
           grace_months: graceMonths ? parseInt(graceMonths) : null,
+          grace_ggcc_applies: graceGgccApplies,
           guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
 
           has_periodic_adjustments: hasPeriodicAdjustments,
@@ -547,6 +552,18 @@ export const RenegotiationDialog = ({
                   onChange={(e) => setGraceMonths(e.target.value)}
                   min={0}
                 />
+                {parseInt(graceMonths) > 0 && (
+                  <div className="flex items-center space-x-2 pt-1">
+                    <Checkbox
+                      id="graceGgccApplies"
+                      checked={graceGgccApplies}
+                      onCheckedChange={(checked) => setGraceGgccApplies(checked as boolean)}
+                    />
+                    <label htmlFor="graceGgccApplies" className="text-xs text-muted-foreground cursor-pointer">
+                      Gastos comunes se pagan durante la gracia (si aplica)
+                    </label>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -604,6 +621,7 @@ export const RenegotiationDialog = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unilateral_gp">Unilateral GP</SelectItem>
+                    <SelectItem value="unilateral_arrendador" className="text-destructive">Unilateral Arrendador</SelectItem>
                     <SelectItem value="bilateral">Bilateral</SelectItem>
                   </SelectContent>
                 </Select>

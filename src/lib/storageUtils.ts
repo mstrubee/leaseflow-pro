@@ -5,7 +5,7 @@ const SIGNED_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
 // Private buckets whose stored values (storage:// paths or legacy public URLs)
 // must be converted to short-lived signed URLs before they can be fetched/displayed.
-const PRIVATE_BUCKETS = ["repository-files", "ot-files"] as const;
+const PRIVATE_BUCKETS = ["repository-files", "ot-files", "expense-receipts"] as const;
 
 /**
  * Resolve any stored file reference to a usable URL.
@@ -71,16 +71,41 @@ export async function uploadFileToStorage(
   filePath: string,
   file: File
 ): Promise<{ path: string; error: Error | null }> {
-  const { error } = await supabase.storage
+  let finalPath = filePath;
+  let { error } = await supabase.storage
     .from(BUCKET_NAME)
-    .upload(filePath, file);
+    .upload(finalPath, file);
+
+  // "The resource already exists": ya hay un archivo con ese nombre (típico al volver a
+  // crear una solicitud con la misma cotización el mismo día: borrar el registro no borra
+  // el archivo). Nunca se sobrescribe — otro registro podría seguir apuntando a él —:
+  // se reintenta una vez con un nombre único.
+  if (error && isDuplicateObjectError(error)) {
+    finalPath = withUniqueSuffix(filePath);
+    ({ error } = await supabase.storage.from(BUCKET_NAME).upload(finalPath, file));
+  }
 
   if (error) {
     return { path: "", error };
   }
 
   // Return the storage path prefixed with bucket identifier for later retrieval
-  return { path: `storage://${BUCKET_NAME}/${filePath}`, error: null };
+  return { path: `storage://${BUCKET_NAME}/${finalPath}`, error: null };
+}
+
+function isDuplicateObjectError(error: unknown): boolean {
+  const e = error as { statusCode?: string | number; message?: string } | null;
+  return String(e?.statusCode) === "409" || /already exists/i.test(e?.message ?? "");
+}
+
+/** "dir/20261120_cot.pdf" -> "dir/20261120_cot_lq3k9x2.pdf" (antes de la extensión). */
+function withUniqueSuffix(filePath: string): string {
+  const suffix = `_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const slash = filePath.lastIndexOf("/");
+  const dot = filePath.lastIndexOf(".");
+  return dot > slash + 1
+    ? `${filePath.slice(0, dot)}${suffix}${filePath.slice(dot)}`
+    : `${filePath}${suffix}`;
 }
 
 /**

@@ -45,6 +45,10 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
+import { extractOrderNumberFromPdf } from "@/lib/pdfOrderNumber";
+import { OPEX_CATEGORY_REQUIRED_MESSAGE, categoriesForYear, isOpexCategoryRequired, yearFromDate } from "@/lib/opexCategories";
+import { insertPurchaseOrderLines, loadOCRequestLineAllocations, scaleLineAmounts } from "@/lib/ocRequestLines";
+import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 
 interface ContractAllocation {
   contract_id: string;
@@ -69,6 +73,7 @@ interface OCRequest {
   status: string;
   contract_id: string;
   budget_id?: string | null;
+  budget_line_id?: string | null;
   opex_master_id?: string | null;
   year: number;
   quotation_url?: string | null;
@@ -80,6 +85,9 @@ interface OCRequest {
 interface OpexCategory {
   id: string;
   name: string;
+  is_active: boolean | null;
+  valid_from_year: number | null;
+  valid_to_year: number | null;
 }
 
 interface ConvertOCRequestDialogProps {
@@ -109,6 +117,12 @@ export const ConvertOCRequestDialog = ({
   const [supplierName, setSupplierName] = useState<string | null>(null);
   const [ocFile, setOcFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  // Mientras se lee el numero desde el contenido del PDF, para no dejar el
+  // campo "Numero de OC" mudo sin explicar por que todavia esta vacio.
+  const [readingNumberFromFile, setReadingNumberFromFile] = useState(false);
+  // Si el usuario ya habia escrito un numero a mano y el PDF trae uno
+  // distinto, no se pisa en silencio: se avisa y decide el.
+  const [numberMismatchWarning, setNumberMismatchWarning] = useState<string | null>(null);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
@@ -126,7 +140,7 @@ export const ConvertOCRequestDialog = ({
   const loadCategories = async () => {
     const { data } = await supabase
       .from("opex_categories")
-      .select("id, name")
+      .select("id, name, is_active, valid_from_year, valid_to_year")
       .eq("is_active", true)
       .order("display_order");
     setOpexCategories(data || []);
@@ -134,22 +148,47 @@ export const ConvertOCRequestDialog = ({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const validation = validateFile(file);
-      if (!validation.isValid) {
-        toast({
-          variant: "destructive",
-          title: "Archivo no válido",
-          description: validation.error,
+    if (!file) return;
+
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Archivo no válido",
+        description: validation.error,
+      });
+      return;
+    }
+    setOcFile(file);
+    setNumberMismatchWarning(null);
+
+    // Se lee el número real impreso en el PDF ("Nº Orden: xxxx") para
+    // precargar el campo y evitar que el usuario lo digite a mano (fuente
+    // de errores de tipeo). Si el archivo no es un PDF (ocFile también
+    // acepta imágenes) o no tiene capa de texto, extractOrderNumberFromPdf
+    // devuelve null y el campo sigue editable como antes.
+    if (file.type === "application/pdf") {
+      setReadingNumberFromFile(true);
+      void extractOrderNumberFromPdf(file).then((extracted) => {
+        setReadingNumberFromFile(false);
+        if (!extracted) return;
+        setOrderNumber((current) => {
+          if (!current.trim()) return extracted;
+          if (current.trim() !== extracted) {
+            setNumberMismatchWarning(
+              `El PDF dice OC ${extracted}, pero el campo tiene ${current.trim()}. Revisa cuál es el correcto.`
+            );
+          }
+          return current;
         });
-        return;
-      }
-      setOcFile(file);
+      });
     }
   };
 
   const handleRemoveFile = () => {
     setOcFile(null);
+    setNumberMismatchWarning(null);
+    setReadingNumberFromFile(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -162,7 +201,7 @@ export const ConvertOCRequestDialog = ({
     try {
       const timestamp = new Date().toISOString().split("T")[0].replace(/-/g, "");
       const sanitizedName = sanitizeFileName(ocFile.name);
-      const filePath = `oc-documents/${timestamp}_${sanitizedName}`;
+      const filePath = `oc-documents/${timestamp}_${Date.now()}_${sanitizedName}`;
 
       const { path, error } = await uploadFileToStorage(filePath, ocFile);
 
@@ -185,6 +224,13 @@ export const ConvertOCRequestDialog = ({
         title: "Error",
         description: "Ingrese el número de OC",
       });
+      return;
+    }
+
+    // Desde 2027 una OC de OPEX no se crea sin categoría (la base también lo exige).
+    const isOpexRequest = !!(request.opex_master_id || request.opex_category_id || selectedCategoryId);
+    if (isOpexRequest && !(selectedCategoryId || request.opex_category_id) && isOpexCategoryRequired(null)) {
+      toast({ variant: "destructive", title: "Falta la categoría OPEX", description: OPEX_CATEGORY_REQUIRED_MESSAGE });
       return;
     }
 
@@ -212,6 +258,12 @@ export const ConvertOCRequestDialog = ({
         attachmentUrl = request.quotation_url || null;
       }
 
+      // Líneas CAPEX con las que se imputó la solicitud. La OC debe heredarlas
+      // (budget_line_id + purchase_order_budget_lines), si no queda sin líneas y
+      // no descuenta del presupuesto. En multi-contrato cada OC toma solo las
+      // líneas de SU contrato (el presupuesto de cada línea dice a cuál pertenece).
+      const requestLines = await loadOCRequestLineAllocations(request);
+
       if (isMultiContract && request.allocations) {
         // Multi-contract: Create a PO for each allocation
         for (const alloc of request.allocations) {
@@ -224,11 +276,20 @@ export const ConvertOCRequestDialog = ({
             continue;
           }
           
+          const allocLines = requestLines.filter(l => l.contractId === alloc.contract_id);
+          const allocLineAmounts = scaleLineAmounts(allocLines, allocAmountUf);
+
           const { data: ocData, error: ocError } = await supabase
             .from("purchase_orders")
             .insert({
               contract_id: alloc.contract_id,
-              budget_id: request.budget_id,
+              // Con líneas: el presupuesto de ESTE contrato (request.budget_id es el
+              // del contrato principal). Sin líneas en la solicitud: como antes.
+              budget_id: allocLines[0]?.budgetId ?? (requestLines.length === 0 ? request.budget_id : null),
+              ...(allocLines.length > 0 && {
+                budget_line_id: allocLines[0].lineId,
+                budget_classification: "CAPEX" as const,
+              }),
               opex_master_id: request.opex_master_id,
               opex_category_id: selectedCategoryId || request.opex_category_id,
               order_number: orderNumber,
@@ -256,6 +317,8 @@ export const ConvertOCRequestDialog = ({
             amount_uf: allocAmountUf,
             amount_clp: allocAmountClp,
           });
+
+          await insertPurchaseOrderLines(ocData.id, allocLines, allocLineAmounts);
         }
       } else {
         // Single contract: Create one PO
@@ -267,9 +330,15 @@ export const ConvertOCRequestDialog = ({
           throw new Error("El monto de la solicitud no puede ser cero o vacío");
         }
         
-        const { error: ocError } = await supabase.from("purchase_orders").insert({
+        const singleLineAmounts = scaleLineAmounts(requestLines, singleAmountUf);
+
+        const { data: singleOcData, error: ocError } = await supabase.from("purchase_orders").insert({
           contract_id: request.contract_id,
-          budget_id: request.budget_id,
+          budget_id: requestLines[0]?.budgetId ?? request.budget_id,
+          ...(requestLines.length > 0 && {
+            budget_line_id: requestLines[0].lineId,
+            budget_classification: "CAPEX" as const,
+          }),
           opex_master_id: request.opex_master_id,
           opex_category_id: selectedCategoryId || request.opex_category_id,
           order_number: orderNumber,
@@ -283,9 +352,21 @@ export const ConvertOCRequestDialog = ({
           year: request.year,
           status: "abierta",
           attachment_url: attachmentUrl,
-        });
+        }).select("id").single();
 
         if (ocError) throw ocError;
+
+        await insertPurchaseOrderLines(singleOcData.id, requestLines, singleLineAmounts);
+      }
+
+      // Las líneas pasan a "Con OC". La OC ya está creada: si esto falla no se
+      // debe abortar la conversión (dejaría la OC creada y la solicitud pendiente).
+      if (requestLines.length > 0) {
+        try {
+          await syncBudgetLineOcStatus({ addedLineIds: requestLines.map(l => l.lineId) });
+        } catch (syncError) {
+          console.warn("No se pudo actualizar el estado de las líneas a 'Con OC':", syncError);
+        }
       }
 
       // For existing quotation URLs that weren't uploaded fresh, backup to repository
@@ -432,54 +513,9 @@ export const ConvertOCRequestDialog = ({
 
           {/* Form */}
           <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="order_number">
-                Número de OC <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="order_number"
-                value={orderNumber}
-                onChange={(e) => setOrderNumber(e.target.value)}
-                placeholder="Ingrese el número de orden de compra"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Proveedor</Label>
-              <SupplierSelect
-                value={supplierId || request.supplier_id}
-                onChange={(id, name) => {
-                  setSupplierId(id);
-                  setSupplierName(name);
-                }}
-              />
-              {request.supplier_name && !supplierId && (
-                <p className="text-xs text-muted-foreground">
-                  Proveedor actual: {request.supplier_name}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label>Categoría OPEX</Label>
-              <Select
-                value={selectedCategoryId || "none"}
-                onValueChange={(v) => setSelectedCategoryId(v === "none" ? null : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin categoría</SelectItem>
-                  {opexCategories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
+            {/* Se sube primero el PDF de la OC: el número real va impreso en
+                el documento ("Nº Orden: xxxx") y se lee automáticamente para
+                precargar el campo de abajo, evitando errores de tipeo. */}
             <div className="space-y-2">
               <Label>Archivo OC (PDF)</Label>
               {ocFile ? (
@@ -509,7 +545,9 @@ export const ConvertOCRequestDialog = ({
                   <p className="text-sm text-muted-foreground">
                     Click para subir el archivo de la OC
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">PDF</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    PDF — el número de OC se completa solo si viene en el documento
+                  </p>
                 </div>
               )}
               <input
@@ -532,6 +570,65 @@ export const ConvertOCRequestDialog = ({
                   </span>
                 </div>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="order_number">
+                Número de OC <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="order_number"
+                value={orderNumber}
+                onChange={(e) => {
+                  setOrderNumber(e.target.value);
+                  setNumberMismatchWarning(null);
+                }}
+                placeholder="Se completa solo al subir el PDF, o ingrésalo a mano"
+              />
+              {readingNumberFromFile && (
+                <p className="text-xs text-muted-foreground">Leyendo el número desde el PDF…</p>
+              )}
+              {numberMismatchWarning && (
+                <p className="text-xs text-destructive">{numberMismatchWarning}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Proveedor</Label>
+              <SupplierSelect
+                value={supplierId || request.supplier_id}
+                supplierName={supplierName || request.supplier_name}
+                onChange={(id, name) => {
+                  setSupplierId(id);
+                  setSupplierName(name);
+                }}
+              />
+              {request.supplier_name && !supplierId && (
+                <p className="text-xs text-muted-foreground">
+                  Proveedor actual: {request.supplier_name}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categoría OPEX</Label>
+              <Select
+                value={selectedCategoryId || "none"}
+                onValueChange={(v) => setSelectedCategoryId(v === "none" ? null : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {!isOpexCategoryRequired(null) && <SelectItem value="none">Sin categoría</SelectItem>}
+                  {/* La OC se crea con la fecha de hoy: solo categorías vigentes este año (más la ya elegida). */}
+                  {categoriesForYear(opexCategories, yearFromDate(null), [selectedCategoryId, request?.opex_category_id]).map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>

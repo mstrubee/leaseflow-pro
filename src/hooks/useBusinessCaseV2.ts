@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBusinessCaseAdminConfig } from "@/hooks/useBusinessCaseAdminConfig";
-import { BCInputs, BCSeed, buildDefaultBCInputs, computeBC } from "@/lib/businessCase/model";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { BCEscalation, BCInputs, BCSeed, buildDefaultBCInputs, computeBC, FORMATO_PRESETS, FormatoLocal, OCUPACION_TARGET_MM, syncOcupFields } from "@/lib/businessCase/model";
 
 interface Args {
   contractId: string;
@@ -11,6 +12,7 @@ interface Args {
 
 export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
   const { config, loading: cfgLoading } = useBusinessCaseAdminConfig();
+  const { ufValue, loading: ufLoading } = useEconomicIndicators();
   const [inputs, setInputs] = useState<BCInputs | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,11 +36,29 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     }
     lastEditRef.current = { key: editKey, time: now };
   }, []);
+  // Últimos valores de los campos que vienen del contrato, para detectar
+  // ediciones reales del usuario (vs. el simple re-render) y no reescribir el
+  // contrato con el mismo valor que ya tenía.
+  const lastSyncedRef = useRef<{ superficie?: number | null; ufM2?: number | null; gastoComunUf?: number | null; durContratoAnios?: number | null; inicio?: string | null; graciaMeses?: number | null } | null>(null);
+  // Últimos montos de escalonamiento sincronizados con rent_escalations, por
+  // id de tramo — para no reescribir un tramo cuyo monto no cambió.
+  const lastSyncedEscalationAmountsRef = useRef<Record<string, number>>({});
+  const { contractVersionId, rentField, rentIsUfM2, gastoComunSyncable } = seed;
 
-  // Cargar una vez (cuando la config global esté lista y el diálogo abierto)
+  // El componente queda montado aunque el diálogo esté cerrado: al cerrar se
+  // marca para recargar en la próxima apertura, de lo contrario se mostraba el
+  // estado de la apertura anterior (superficie / UF desactualizadas si el
+  // contrato cambió mientras tanto).
   useEffect(() => {
-    if (!enabled || cfgLoading || loadedRef.current) return;
+    if (!enabled) loadedRef.current = false;
+  }, [enabled]);
+
+  // Cargar en cada apertura (cuando la config global y la UF vigente estén listas)
+  useEffect(() => {
+    if (!enabled || cfgLoading || ufLoading || loadedRef.current) return;
     loadedRef.current = true;
+    // UF base: la del seed si viene; si no, la UF vigente del sistema.
+    const liveUfBase = seed.ufBase && seed.ufBase > 0 ? seed.ufBase : ufValue > 0 ? ufValue : undefined;
     (async () => {
       setLoading(true);
       try {
@@ -55,10 +75,41 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         } else {
           merged = buildDefaultBCInputs(seed, config);
         }
+        // Ocupación: monto fijo en MM/mes + % informativo consistente. Un caso
+        // guardado antes de este modelo (solo trae el %) se resuelve acá.
+        Object.assign(merged, syncOcupFields(merged));
+        // Los campos que vienen del contrato SIEMPRE reflejan su valor más
+        // reciente al abrir el diálogo (no lo que haya quedado guardado antes
+        // en el Business Case) — sincronización contrato → BC.
+        // Se guardan los valores previos para avisar si el refresco los cambió.
+        const prevLive = { superficie: merged.superficie, ufM2: merged.ufM2, ufBase: merged.ufBase };
+        // La UF base NO viene del contrato sino del valor vigente del día: sin
+        // esto un BC ya guardado quedaba con la UF del día en que se creó.
+        if (liveUfBase != null) merged.ufBase = liveUfBase;
+        if (seed.superficie != null) merged.superficie = seed.superficie;
+        if (seed.ufM2 != null) merged.ufM2 = seed.ufM2;
+        if (seed.gastoComunUf != null && gastoComunSyncable) merged.gastoComunUf = seed.gastoComunUf;
+        if (seed.durContratoAnios != null) merged.durContratoAnios = seed.durContratoAnios;
+        if (seed.inicio) merged.inicio = seed.inicio;
+        if (seed.graciaMeses != null) merged.graciaMeses = seed.graciaMeses;
+        merged.escalations = seed.escalations ?? [];
+        merged.regimeRentIsUfM2 = seed.regimeRentIsUfM2 ?? false;
+        merged.fondoPromocionPct = seed.fondoPromocionPct ?? 0;
+        lastSyncedRef.current = {
+          superficie: merged.superficie, ufM2: merged.ufM2, gastoComunUf: merged.gastoComunUf,
+          durContratoAnios: merged.durContratoAnios, inicio: merged.inicio, graciaMeses: merged.graciaMeses,
+        };
+        lastSyncedEscalationAmountsRef.current = Object.fromEntries(
+          merged.escalations.filter((e) => e.id).map((e) => [e.id as string, e.amount]),
+        );
         setInputs(merged);
         initialInputsRef.current = merged;
         historyRef.current = [];
         lastEditRef.current = null;
+        // Si ya había un BC guardado y el refresco cambió superficie / UF/m² / UF
+        // base, queda "sin guardar" para que se persista la evaluación vigente
+        // (otros módulos leen `computed` desde contract_business_cases).
+        setDirty(!!stored && (prevLive.superficie !== merged.superficie || prevLive.ufM2 !== merged.ufM2 || prevLive.ufBase !== merged.ufBase));
       } catch {
         const fallback = buildDefaultBCInputs(seed, config);
         setInputs(fallback);
@@ -70,7 +121,7 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, cfgLoading, contractId]);
+  }, [enabled, cfgLoading, ufLoading, contractId]);
 
   const result = useMemo(() => (inputs ? computeBC(inputs, config) : null), [inputs, config]);
 
@@ -78,7 +129,14 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     setInputs((p) => {
       if (!p) return p;
       pushHistory(p, String(key));
-      return { ...p, [key]: value };
+      let next = { ...p, [key]: value } as BCInputs;
+      // El % de ocupación es informativo, pero editable: cambiarlo a mano cambia
+      // el MONTO fijo que despliega (% × Venta Año 1). Sin Venta Año 1 no hay
+      // cómo convertirlo y se conserva el monto.
+      if (key === "ocupPct" && (p.ventaMes[0] ?? 0) > 0) {
+        next = { ...next, ocupMesMM: Math.round(((Number(value) || 0) / 100) * p.ventaMes[0] * 1e4) / 1e4 };
+      }
+      return syncOcupFields(next);
     });
     setDirty(true);
   }, [pushHistory]);
@@ -89,7 +147,82 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
       pushHistory(p, `${String(key)}.${idx}`);
       const a = [...((p[key] as unknown as number[]) || [])];
       a[idx] = value;
-      return { ...p, [key]: a } as BCInputs;
+      return syncOcupFields({ ...p, [key]: a } as BCInputs);
+    });
+    setDirty(true);
+  }, [pushHistory]);
+
+  // Editar la venta de un año recalcula los demás años hacia adelante y hacia
+  // atrás usando el Crecimiento Ventas % ya ingresado (ventaGrowthPct[i] =
+  // variación de ese año respecto al anterior, misma columna que
+  // ventaMes[i]). NO usa ufRates — esa es la UF real (inflación), una
+  // curva de negocio distinta a la de maduración de ventas del local.
+  const updateVentaConCrecimiento = useCallback((idx: number, value: number) => {
+    setInputs((p) => {
+      if (!p) return p;
+      pushHistory(p, `ventaMes.${idx}`);
+      const ventas = [...p.ventaMes];
+      ventas[idx] = value;
+      // Los años propagados se redondean hacia arriba (sin decimales); el año
+      // editado a mano conserva el valor exacto que se tipeó.
+      for (let i = idx + 1; i < ventas.length; i++) {
+        const rate = (p.ventaGrowthPct[i] ?? 0) / 100;
+        ventas[i] = Math.ceil(ventas[i - 1] * (1 + rate));
+      }
+      for (let i = idx - 1; i >= 0; i--) {
+        const rate = (p.ventaGrowthPct[i + 1] ?? 0) / 100;
+        ventas[i] = Math.ceil(ventas[i + 1] / (1 + rate));
+      }
+      // La ocupación es un monto fijo (ver OCUPACION_TARGET_MM): al cambiar la Venta
+      // Año 1 solo se recalcula el % informativo, el monto no se mueve.
+      return syncOcupFields({ ...p, ventaMes: ventas });
+    });
+    setDirty(true);
+  }, [pushHistory]);
+
+  // Cambiar de formato precarga dotación, inventario y el monto fijo de
+  // Ocupación (OCUPACION_TARGET_MM) en una sola operación; el % se recalcula solo
+  // sobre la Venta Año 1 vigente. Todo queda editable a mano después.
+  const setFormato = useCallback((formato: FormatoLocal) => {
+    setInputs((p) => {
+      if (!p) return p;
+      pushHistory(p, "formato");
+      const preset = FORMATO_PRESETS[formato];
+      return syncOcupFields({
+        ...p,
+        formato,
+        personalY1: preset.personalY1,
+        invOverrides: { ...p.invOverrides, inv: preset.inventarioMM },
+        ocupMesMM: OCUPACION_TARGET_MM[formato],
+      });
+    });
+    setDirty(true);
+  }, [pushHistory]);
+
+  // Edita solo el MONTO de un tramo de escalonamiento (nunca el mes/plazo,
+  // que sigue siendo de solo lectura acá). Recalcula el modelo al toque
+  // (inputs.escalations alimenta resolveCanonTiers) y el monto se
+  // sincroniza de vuelta a rent_escalations en el autoguardado, igual que
+  // ufM2 sincroniza el tramo base.
+  const updateEscalationAmount = useCallback((idx: number, amount: number) => {
+    setInputs((p) => {
+      if (!p) return p;
+      pushHistory(p, `escalation.${idx}`);
+      const escalations = p.escalations.map((e, i) => (i === idx ? { ...e, amount } : e));
+      return { ...p, escalations };
+    });
+    setDirty(true);
+  }, [pushHistory]);
+
+  // Reemplaza TODOS los tramos de escalonamiento de una vez (botón "Optimizar
+  // renta") en un solo paso de undo — a diferencia de updateEscalationAmount,
+  // que edita un tramo a la vez. Los tramos nuevos (sin id) se insertan en
+  // rent_escalations recién al guardar (ver save()).
+  const applyEscalationTiers = useCallback((tiers: BCEscalation[]) => {
+    setInputs((p) => {
+      if (!p) return p;
+      pushHistory(p, "escalations-bulk");
+      return { ...p, escalations: tiers };
     });
     setDirty(true);
   }, [pushHistory]);
@@ -116,8 +249,8 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     setDirty(initialInputsRef.current ? JSON.stringify(prev) !== JSON.stringify(initialInputsRef.current) : true);
   }, []);
 
-  // Guardado manual — se dispara solo desde el botón "Guardar", nunca
-  // automáticamente.
+  // Guardado manual — se dispara solo desde el botón "Guardar" (o "Guardar y
+  // cerrar" al cerrar con cambios pendientes), nunca automáticamente.
   const save = useCallback(async () => {
     if (!inputs || !result) return;
     setSaving(true);
@@ -132,12 +265,99 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
         } as never,
         { onConflict: "contract_id" },
       );
-      initialInputsRef.current = inputs;
+
+      // "Venta Est." del listado de contratos = rango (min/max) de las ventas
+      // mensuales ingresadas. contracts.venta_estimada[_max] se guarda en
+      // pesos crudos (ver ContractsTable.tsx: ventaMin/ufValue sin dividir
+      // por 1e6 antes), mientras que inputs.ventaMes está en MM CLP/mes.
+      if (inputs.ventaMes.length > 0) {
+        await supabase.from("contracts").update({
+          venta_estimada: Math.min(...inputs.ventaMes) * 1_000_000,
+          venta_estimada_max: Math.max(...inputs.ventaMes) * 1_000_000,
+        } as never).eq("id", contractId);
+      }
+
+      // Sincronización bidireccional BC → Contrato: superficie, canon
+      // (respetando si el contrato usa UF/m² o monto total), gasto común
+      // (solo si la metodología del contrato es "uf_m2"), gracia y duración/inicio.
+      const last = lastSyncedRef.current;
+      if (last) {
+        const contractPatch: Record<string, unknown> = {};
+        if (inputs.superficie !== last.superficie) contractPatch.superficie_edificada_local = inputs.superficie;
+        if (Object.keys(contractPatch).length) {
+          await supabase.from("contracts").update(contractPatch as never).eq("id", contractId);
+        }
+
+        if (contractVersionId) {
+          const versionPatch: Record<string, unknown> = {};
+          if (inputs.durContratoAnios !== last.durContratoAnios) versionPatch.duration_months = Math.round((inputs.durContratoAnios || 0) * 12);
+          if (inputs.inicio && inputs.inicio !== last.inicio) versionPatch.effective_date = inputs.inicio;
+          if (inputs.graciaMeses !== last.graciaMeses) versionPatch.grace_months = inputs.graciaMeses;
+          // gastos_comunes_uf_m2 es el campo real del contrato ("Gasto Común
+          // UF/m²" del formulario) — no gastos_comunes_fixed_admin_uf, que es
+          // un monto fijo adicional de administración, un concepto distinto.
+          if (gastoComunSyncable && inputs.gastoComunUf !== last.gastoComunUf) versionPatch.gastos_comunes_uf_m2 = inputs.gastoComunUf;
+          if (rentField && inputs.ufM2 !== last.ufM2) {
+            versionPatch[rentField] = rentIsUfM2 ? inputs.ufM2 : +((inputs.ufM2 || 0) * (inputs.superficie || 0)).toFixed(2);
+          }
+          if (Object.keys(versionPatch).length) {
+            await supabase.from("contract_versions").update(versionPatch as never).eq("id", contractVersionId);
+          }
+        }
+
+        lastSyncedRef.current = {
+          superficie: inputs.superficie, ufM2: inputs.ufM2, gastoComunUf: inputs.gastoComunUf,
+          durContratoAnios: inputs.durContratoAnios, inicio: inputs.inicio, graciaMeses: inputs.graciaMeses,
+        };
+      }
+
+      // Montos de escalonamiento editados acá → de vuelta a rent_escalations
+      // (solo el monto; mes/plazo no es editable a mano desde el Business Case).
+      const lastEsc = lastSyncedEscalationAmountsRef.current;
+      const changedEsc = inputs.escalations.filter((e) => e.id && e.amount !== lastEsc[e.id]);
+      if (changedEsc.length > 0) {
+        await Promise.all(
+          changedEsc.map((e) => supabase.from("rent_escalations").update({ amount: e.amount } as never).eq("id", e.id as string)),
+        );
+        lastSyncedEscalationAmountsRef.current = {
+          ...lastEsc,
+          ...Object.fromEntries(changedEsc.map((e) => [e.id as string, e.amount])),
+        };
+      }
+
+      // Tramos NUEVOS (sin id) — los crea "Optimizar renta" al armar un
+      // escalonado desde cero. Se insertan recién acá, nunca antes, para no
+      // tocar el contrato con una sugerencia que el usuario todavía no aplicó
+      // ni guardó.
+      let finalEscalations = inputs.escalations;
+      const newEsc = inputs.escalations.filter((e) => !e.id);
+      if (newEsc.length > 0 && contractVersionId) {
+        const { data: inserted, error: insertError } = await supabase
+          .from("rent_escalations")
+          .insert(newEsc.map((e) => ({
+            version_id: contractVersionId,
+            month_number: e.monthNumber,
+            amount: e.amount,
+            is_uf_m2: e.isUfM2,
+          })) as never)
+          .select("id, month_number, amount, is_uf_m2");
+        if (!insertError && inserted) {
+          const byMonth = new Map((inserted as { id: string; month_number: number; amount: number; is_uf_m2: boolean }[]).map((r) => [r.month_number, r.id]));
+          finalEscalations = inputs.escalations.map((e) => (e.id ? e : { ...e, id: byMonth.get(e.monthNumber) ?? e.id }));
+          setInputs((p) => (p ? { ...p, escalations: finalEscalations } : p));
+          lastSyncedEscalationAmountsRef.current = {
+            ...lastSyncedEscalationAmountsRef.current,
+            ...Object.fromEntries(finalEscalations.filter((e) => e.id).map((e) => [e.id as string, e.amount])),
+          };
+        }
+      }
+
+      initialInputsRef.current = { ...inputs, escalations: finalEscalations };
       setDirty(false);
     } finally {
       setSaving(false);
     }
-  }, [inputs, result, contractId]);
+  }, [inputs, result, contractId, contractVersionId, rentField, rentIsUfM2, gastoComunSyncable]);
 
   return {
     config,
@@ -148,6 +368,10 @@ export function useBusinessCaseV2({ contractId, seed, enabled }: Args) {
     dirty,
     update,
     updateArr,
+    updateVentaConCrecimiento,
+    updateEscalationAmount,
+    applyEscalationTiers,
+    setFormato,
     setInvOverride,
     undo,
     save,
