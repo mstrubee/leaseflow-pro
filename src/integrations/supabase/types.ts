@@ -1408,6 +1408,7 @@ export type Database = {
           closed_by: string | null
           contract_id: string | null
           created_at: string
+          frozen_amount_clp: number | null
           frozen_amount_uf: number | null
           frozen_at: string | null
           frozen_by: string | null
@@ -1424,6 +1425,7 @@ export type Database = {
           closed_by?: string | null
           contract_id?: string | null
           created_at?: string
+          frozen_amount_clp?: number | null
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
@@ -1440,6 +1442,7 @@ export type Database = {
           closed_by?: string | null
           contract_id?: string | null
           created_at?: string
+          frozen_amount_clp?: number | null
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
@@ -1502,6 +1505,47 @@ export type Database = {
             foreignKeyName: "contract_business_cases_contract_id_fkey"
             columns: ["contract_id"]
             isOneToOne: true
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_co_orders: {
+        Row: {
+          amount_clp: number | null
+          co_number: string
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          amount_clp?: number | null
+          co_number: string
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          amount_clp?: number | null
+          co_number?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_co_orders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
             referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
@@ -4930,6 +4974,7 @@ export type Database = {
           amount_uf: number | null
           budget_id: string | null
           budget_line_id: string | null
+          co_order_numbers: string | null
           contract_id: string
           correlative_of_day: number
           created_at: string
@@ -4962,6 +5007,7 @@ export type Database = {
           amount_uf?: number | null
           budget_id?: string | null
           budget_line_id?: string | null
+          co_order_numbers?: string | null
           contract_id: string
           correlative_of_day?: number
           created_at?: string
@@ -4994,6 +5040,7 @@ export type Database = {
           amount_uf?: number | null
           budget_id?: string | null
           budget_line_id?: string | null
+          co_order_numbers?: string | null
           contract_id?: string
           correlative_of_day?: number
           created_at?: string

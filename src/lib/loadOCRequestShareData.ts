@@ -19,6 +19,7 @@ interface StoredOCRequest {
   sequence_number: number | null;
   migo_choice: "con" | "sin" | null;
   verification_code: string | null;
+  co_order_numbers: string | null;
   quotation_url: string | null;
   quotation_file_name: string | null;
 }
@@ -122,6 +123,7 @@ export async function loadOCRequestShareData(
     currency: "CLP",
     contractNames: allocationNames.length > 0 ? allocationNames : [request.project_name].filter((n): n is string => !!n),
     contractCebe: headerCebe,
+    coOrderNumbers: request.co_order_numbers ?? null,
     description: request.description || "",
     lines,
     totalAmountClp,

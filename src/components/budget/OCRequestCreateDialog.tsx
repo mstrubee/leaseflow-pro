@@ -14,6 +14,8 @@ import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
+import { useContractCoOrders } from "@/hooks/useContractCoOrders";
+import { formatCoNumbers } from "@/lib/coOrders";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import type { OCRequestQuotationRef } from "@/lib/ocRequestQuotation";
@@ -86,6 +88,9 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
   onCreated,
 }, ref) {
   const { toast } = useToast();
+  // Órdenes CO del contrato: se incluyen en las solicitudes de CAPEX
+  const { orders: coOrders } = useContractCoOrders(contractId);
+  const coNumbersLabel = formatCoNumbers(coOrders);
   // New request dialog state
   const [showNewRequestDialog, setShowNewRequestDialog] = useState(false);
   const [newRequestTab, setNewRequestTab] = useState("basic");
@@ -373,6 +378,10 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         created_by: user?.id,
         quotation_url: prefillFile.url,
         quotation_file_name: prefillFile.name,
+        // Solo CAPEX lleva la(s) Orden(es) CO; solo se envía si existen
+        ...(budgetType === "capex" && !isOpexMaster && coNumbersLabel
+          ? { co_order_numbers: coNumbersLabel }
+          : {}),
       }).select().single();
 
       if (error) throw error;
@@ -464,6 +473,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         currency: inputCurrency as "UF" | "CLP",
         contractNames: [contractName || ""].filter(Boolean),
         contractCebe,
+        coOrderNumbers: budgetType === "capex" && !isOpexMaster ? coNumbersLabel : null,
         description: newRequestForm.description,
         lines: buildShareLines(validLines, {
           totalAmountClp,
@@ -596,6 +606,14 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
                     </Button>
                   </div>
                 </div>
+
+                {/* Orden(es) CO del proyecto (solo CAPEX) */}
+                {budgetType === "capex" && coNumbersLabel && (
+                  <div className="space-y-1">
+                    <Label>ORDEN CO</Label>
+                    <Input value={coNumbersLabel} readOnly disabled />
+                  </div>
+                )}
 
                 {/* Description */}
                 <div className="space-y-2">

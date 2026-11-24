@@ -40,6 +40,8 @@ export interface OCRequestShareData {
   supplierRut?: string | null;
   /** CEBE del contrato (campo personalizado), mostrado debajo del nombre del contrato. */
   contractCebe?: string | null;
+  /** Órdenes CO del proyecto ("CO-1, CO-2"); solo solicitudes CAPEX. */
+  coOrderNumbers?: string | null;
   requestedBy?: string | null;
   /** Correlativo global, independiente de dónde se creó la solicitud (oc_requests.sequence_number). */
   sequenceNumber?: number | null;
@@ -118,6 +120,7 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
         .join("\n"),
     ],
   ];
+  if (data.coOrderNumbers) headerRows.push(["ORDEN CO", data.coOrderNumbers]);
   if (data.supplierName) {
     headerRows.push([
       "PROVEEDOR",
