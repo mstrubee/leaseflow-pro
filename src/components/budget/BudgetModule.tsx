@@ -22,6 +22,8 @@ import { QuotationsManager } from "./QuotationsManager";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useContractCoOrders } from "@/hooks/useContractCoOrders";
+import { formatCoNumbers, getEffectiveFrozen } from "@/lib/coOrders";
 
 interface Budget {
   id: string;
@@ -400,6 +402,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
   const { isAdmin } = useAuth();
+  // Órdenes CO del contrato: su suma es el Monto Congelado del CAPEX
+  const { orders: coOrders } = useContractCoOrders(contractId);
   const [focusNewLineId, setFocusNewLineId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -938,12 +942,14 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
   // ---- Congelar monto (aprobado por directorio) ----
   const handleOpenFreeze = () => {
+    if (!isAdmin) return; // solo ADMIN puede congelar/editar el monto
     const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
     setFreezeValue(grandTotalUf.toFixed(2));
     setShowFreezeDialog(true);
   };
 
   const handleConfirmFreeze = async () => {
+    if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     const val = parseFloat(freezeValue.replace(",", "."));
@@ -985,6 +991,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const handleUnfreeze = async () => {
+    if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
     if (!window.confirm("¿Descongelar el monto aprobado por directorio? Dejará de mostrarse como referencia.")) return;
@@ -1546,7 +1553,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const authorizedTotal = calculateAuthorizedTotal(lines, templatePricesMap, ufValue);
   const unauthorizedTotal = calculateUnauthorizedTotal(lines, templatePricesMap, ufValue);
   const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
-  const frozenUf = currentBudget?.frozen_amount_uf ?? null;
+  // Monto congelado efectivo: la suma de las Órdenes CO reemplaza al monto
+  // congelado manual (solo CAPEX). Sin CO con monto, rige el manual del admin.
+  const { amountUf: frozenUf, source: frozenSource } = getEffectiveFrozen(
+    coOrders,
+    currentBudget?.frozen_amount_uf ?? null,
+    budgetType === "capex",
+  );
+  const frozenFromCo = frozenSource === "co";
+  const coNumbersLabel = budgetType === "capex" ? formatCoNumbers(coOrders) : null;
   const budgetAmount = currentBudget?.amount_uf || 0;
   const isClosed = currentBudget?.is_closed || false;
   const unauthorizedCount = getUnauthorizedLines(lines).length;
@@ -1627,9 +1642,14 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                       <Snowflake className={`h-4 w-4 ${exceeded ? "text-destructive" : "text-blue-600"}`} />
                       <div>
                         <p className="text-sm font-semibold">
-                          Aprobado por Directorio (referencial): UF {formatUF(frozenUf)}
+                          {frozenFromCo ? "Monto Congelado (Órdenes CO)" : "Aprobado por Directorio (referencial)"}: UF {formatUF(frozenUf)}
                           <span className="text-muted-foreground font-normal"> · {formatCLP(convertUFToPesos(frozenUf))}</span>
                         </p>
+                        {frozenFromCo && coNumbersLabel && (
+                          <p className="text-xs text-muted-foreground">
+                            {coNumbersLabel} · se edita en Editar contrato
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           Total actual: UF {formatUF(grandTotalUf)} ·{" "}
                           {exceeded ? (
@@ -1640,7 +1660,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </p>
                       </div>
                     </div>
-                    {!isClosed && !forceReadOnly && (
+                    {isAdmin && !frozenFromCo && !isClosed && !forceReadOnly && (
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2">
                           <Snowflake className="h-4 w-4" /> Editar monto
@@ -1654,7 +1674,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 );
               })()
             ) : (
-              !isClosed && !forceReadOnly && (
+              isAdmin && !isClosed && !forceReadOnly && (
                 <div className="flex justify-end">
                   <Button variant="outline" size="sm" onClick={handleOpenFreeze} className="gap-2"
                     title="Congelar el total actual como monto aprobado por directorio (referencial)">
@@ -2393,6 +2413,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         contractId={contractId}
         contractName={contractName}
         contractCebe={contractCebe}
+        budgetType={budgetType}
+        coOrderNumbers={coNumbersLabel}
         budgetId={currentBudget?.id || ""}
         budgetLineId={ocRequestLineId}
         lineName={ocRequestLineName}

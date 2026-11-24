@@ -46,13 +46,24 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AddressLatLngFields } from "@/components/contracts/AddressLatLngFields";
+import { ContractCoOrdersSection } from "@/components/contracts/ContractCoOrdersSection";
+import { fetchCoOrders, saveCoOrders } from "@/hooks/useContractCoOrders";
+import { useAuth } from "@/hooks/useAuth";
+import { CoOrderDraft, toDrafts, validateDrafts } from "@/lib/coOrders";
 
 const EditContract = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isAdmin, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Órdenes CO (solo el admin las puede editar)
+  const [coDrafts, setCoDrafts] = useState<CoOrderDraft[]>([]);
+  const [coOriginalIds, setCoOriginalIds] = useState<string[]>([]);
+  // Solo se guardan si cargaron bien, para no borrar CO existentes por un error de lectura
+  const [coLoaded, setCoLoaded] = useState(false);
   const [showMissingFieldsDialog, setShowMissingFieldsDialog] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
@@ -215,6 +226,17 @@ const EditContract = () => {
       if (error) throw error;
 
       setName(data.name);
+
+      // Load CO orders (un fallo aquí no debe impedir editar el contrato)
+      try {
+        const coOrders = await fetchCoOrders(id!);
+        setCoDrafts(toDrafts(coOrders));
+        setCoOriginalIds(coOrders.map((o) => o.id));
+        setCoLoaded(true);
+      } catch (coError) {
+        console.error("Error loading CO orders:", coError);
+        setCoLoaded(false);
+      }
       
       // Load company associations
       const { data: companyData } = await supabase
@@ -411,6 +433,14 @@ const EditContract = () => {
       }
     }
     
+    if (isAdmin && coLoaded) {
+      const coError = validateDrafts(coDrafts);
+      if (coError) {
+        toast({ variant: "destructive", title: "Orden CO inválida", description: coError });
+        return;
+      }
+    }
+
     setSaving(true);
 
     try {
@@ -808,6 +838,11 @@ const EditContract = () => {
       // Save custom field values
       await saveCustomFieldValues(id!);
 
+      // Save CO orders (solo admin; la RLS también lo exige)
+      if (isAdmin && coLoaded) {
+        await saveCoOrders(id!, coDrafts, coOriginalIds, user?.id ?? null);
+      }
+
       setHasUnsavedChanges(false);
 
       toast({
@@ -949,6 +984,13 @@ const EditContract = () => {
                   onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
                 />
               </div>
+              {coLoaded && (
+                <ContractCoOrdersSection
+                  drafts={coDrafts}
+                  onChange={(next) => { setCoDrafts(next); setHasUnsavedChanges(true); }}
+                  canEdit={isAdmin}
+                />
+              )}
               <CustomFieldsManager
                 contractId={id}
                 values={customFieldValues}

@@ -1134,6 +1134,47 @@ export type Database = {
           },
         ]
       }
+      contract_co_orders: {
+        Row: {
+          amount_uf: number | null
+          co_number: string
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          amount_uf?: number | null
+          co_number: string
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          amount_uf?: number | null
+          co_number?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_co_orders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_companies: {
         Row: {
           company_id: string
@@ -3936,6 +3977,7 @@ export type Database = {
           amount_uf: number | null
           budget_id: string | null
           budget_line_id: string | null
+          co_order_numbers: string | null
           contract_id: string
           correlative_of_day: number
           created_at: string
@@ -3964,6 +4006,7 @@ export type Database = {
           amount_uf?: number | null
           budget_id?: string | null
           budget_line_id?: string | null
+          co_order_numbers?: string | null
           contract_id: string
           correlative_of_day?: number
           created_at?: string
@@ -3992,6 +4035,7 @@ export type Database = {
           amount_uf?: number | null
           budget_id?: string | null
           budget_line_id?: string | null
+          co_order_numbers?: string | null
           contract_id?: string
           correlative_of_day?: number
           created_at?: string

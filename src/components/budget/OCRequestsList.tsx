@@ -19,6 +19,8 @@ import { OCRequestViewDialog } from "./OCRequestViewDialog";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
+import { useContractCoOrders } from "@/hooks/useContractCoOrders";
+import { formatCoNumbers } from "@/lib/coOrders";
 
 interface OCRequest {
   id: string;
@@ -39,6 +41,7 @@ interface OCRequest {
   budget_type?: string; // Derived from fields or contract_budgets
   quotation_url?: string | null;
   quotation_file_name?: string | null;
+  co_order_numbers?: string | null;
   // Multi-contract allocation info
   is_multi_contract?: boolean;
   allocated_amount_uf?: number;
@@ -126,6 +129,9 @@ export const OCRequestsList = ({
   const importFileRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
+  // Órdenes CO del contrato: se incluyen en las solicitudes de CAPEX
+  const { orders: coOrders } = useContractCoOrders(contractId);
+  const coNumbersLabel = formatCoNumbers(coOrders);
 
   useEffect(() => {
     loadRequests();
@@ -568,7 +574,11 @@ export const OCRequestsList = ({
         supplier_name: newRequestForm.supplier_name,
         year: year,
         status: "pending",
-        created_by: user?.id
+        created_by: user?.id,
+        // Solo CAPEX lleva la(s) Orden(es) CO; solo se envía si existen
+        ...(budgetType === "capex" && !isOpexMaster && coNumbersLabel
+          ? { co_order_numbers: coNumbersLabel }
+          : {})
       }).select().single();
 
       if (error) throw error;
@@ -1098,6 +1108,14 @@ export const OCRequestsList = ({
                     </Button>
                   </div>
                 </div>
+
+                {/* Orden(es) CO del proyecto (solo CAPEX) */}
+                {budgetType === "capex" && coNumbersLabel && (
+                  <div className="space-y-1">
+                    <Label>ORDEN CO</Label>
+                    <Input value={coNumbersLabel} readOnly disabled />
+                  </div>
+                )}
 
                 {/* Description */}
                 <div className="space-y-2">

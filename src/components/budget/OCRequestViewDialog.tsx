@@ -34,6 +34,8 @@ interface OCRequest {
   quotation_url?: string | null;
   quotation_file_name?: string | null;
   uf_value_at_entry?: number;
+  /** Órdenes CO del proyecto al crear la solicitud (solo CAPEX). */
+  co_order_numbers?: string | null;
 }
 
 interface BudgetLineAssignment {
@@ -793,6 +795,12 @@ export const OCRequestViewDialog = ({
                   <p className="text-xs text-muted-foreground">Proyecto</p>
                   <p className="font-medium truncate">{request.project_name}</p>
                 </div>
+                {request.co_order_numbers && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">ORDEN CO</p>
+                    <p className="font-medium truncate" title={request.co_order_numbers}>{request.co_order_numbers}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs text-muted-foreground">Línea(s)</p>
                   <p className="font-medium truncate">{request.line_name}</p>

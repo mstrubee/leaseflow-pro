@@ -33,6 +33,10 @@ interface OCRequestDialogProps {
   contractId: string;
   contractName: string;
   contractCebe?: string | null;
+  /** CAPEX incluye las Órdenes CO del proyecto en la solicitud; OPEX no. */
+  budgetType?: "capex" | "opex";
+  /** Números de Orden CO del contrato ("CO-1, CO-2"), ya formateados. */
+  coOrderNumbers?: string | null;
   budgetId: string;
   budgetLineId: string;
   lineName: string;
@@ -50,6 +54,8 @@ export const OCRequestDialog = ({
   contractId,
   contractName,
   contractCebe,
+  budgetType,
+  coOrderNumbers,
   budgetId,
   budgetLineId,
   lineName,
@@ -133,6 +139,9 @@ export const OCRequestDialog = ({
     return { number: requestNumber, correlative };
   };
 
+  // Solo las solicitudes CAPEX llevan la(s) Orden(es) CO del proyecto
+  const requestCoNumbers = budgetType === "capex" ? coOrderNumbers || null : null;
+
   const handleCreate = async () => {
     // Amount is always entered in basic tab
     const amount = parseFloat(form.amount) || 0;
@@ -202,7 +211,9 @@ export const OCRequestDialog = ({
         supplier_name: form.supplier_name,
         year: year,
         status: "pending",
-        created_by: user?.id
+        created_by: user?.id,
+        // Solo se envía si hay CO, así no cambia nada para proyectos sin Orden CO
+        ...(requestCoNumbers ? { co_order_numbers: requestCoNumbers } : {})
       }).select().single();
 
       if (error) throw error;
@@ -348,6 +359,14 @@ export const OCRequestDialog = ({
                     </a>
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {/* Orden(es) CO del proyecto (solo CAPEX, definidas por el admin en Editar contrato) */}
+            {requestCoNumbers && (
+              <div className="space-y-1">
+                <Label>ORDEN CO</Label>
+                <Input value={requestCoNumbers} readOnly disabled />
               </div>
             )}
 
