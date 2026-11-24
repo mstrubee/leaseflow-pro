@@ -989,6 +989,7 @@ const EditContract = () => {
                   drafts={coDrafts}
                   onChange={(next) => { setCoDrafts(next); setHasUnsavedChanges(true); }}
                   canEdit={isAdmin}
+                  ufValue={ufValue}
                 />
               )}
               <CustomFieldsManager

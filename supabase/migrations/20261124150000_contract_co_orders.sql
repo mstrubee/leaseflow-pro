@@ -1,10 +1,12 @@
 -- Órdenes CO por contrato/proyecto.
 --
 -- Reglas de negocio:
---  * Un contrato puede tener varias Órdenes CO (número + monto en UF).
+--  * Un contrato puede tener varias Órdenes CO (número + monto en PESOS / CLP).
 --  * La suma de los montos CO es el "Monto Congelado" (aprobado por directorio)
 --    del CAPEX del proyecto y reemplaza al valor guardado en
---    contract_budgets.frozen_amount_uf mientras exista al menos un monto CO > 0.
+--    contract_budgets.frozen_amount_clp mientras exista al menos un monto CO > 0.
+--  * El monto congelado se maneja en PESOS. La UF es solo un dato informativo:
+--    frozen_amount_uf se mantiene (compatibilidad con Lovable) como equivalente.
 --    (El reemplazo se calcula al leer; el valor anterior NO se borra, así que si
 --    se eliminan las CO el monto congelado manual vuelve a regir.)
 --  * El número de CO se copia ("snapshot") a cada Solicitud de OC CAPEX en
@@ -17,7 +19,10 @@
 
 -- 0) Las columnas frozen_* existen en producción (Lovable) pero ninguna migración
 --    del repo las crea. Se declaran aquí para que la DB nueva las tenga.
+--    frozen_amount_clp es la fuente de verdad (pesos); frozen_amount_uf es el
+--    equivalente informativo / valor histórico anterior.
 ALTER TABLE public.contract_budgets
+  ADD COLUMN IF NOT EXISTS frozen_amount_clp numeric CHECK (frozen_amount_clp IS NULL OR frozen_amount_clp >= 0),
   ADD COLUMN IF NOT EXISTS frozen_amount_uf numeric,
   ADD COLUMN IF NOT EXISTS frozen_at timestamptz,
   ADD COLUMN IF NOT EXISTS frozen_by uuid;
@@ -27,8 +32,8 @@ CREATE TABLE IF NOT EXISTS public.contract_co_orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   contract_id uuid NOT NULL REFERENCES public.contracts(id) ON DELETE CASCADE,
   co_number text NOT NULL CHECK (length(btrim(co_number)) > 0),
-  -- UF, igual que frozen_amount_uf. NULL = CO sin monto todavía.
-  amount_uf numeric CHECK (amount_uf IS NULL OR amount_uf >= 0),
+  -- Pesos (CLP). NULL = CO sin monto todavía.
+  amount_clp numeric CHECK (amount_clp IS NULL OR amount_clp >= 0),
   sort_order integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -81,6 +86,7 @@ AS $$
 BEGIN
   IF auth.uid() IS NOT NULL
      AND (NEW.frozen_amount_uf IS DISTINCT FROM OLD.frozen_amount_uf
+          OR NEW.frozen_amount_clp IS DISTINCT FROM OLD.frozen_amount_clp
           OR NEW.frozen_at IS DISTINCT FROM OLD.frozen_at
           OR NEW.frozen_by IS DISTINCT FROM OLD.frozen_by)
      AND NOT public.has_role(auth.uid(), 'admin'::app_role) THEN

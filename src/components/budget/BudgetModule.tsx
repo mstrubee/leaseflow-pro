@@ -34,6 +34,8 @@ interface Budget {
   is_closed: boolean;
   closed_at: string | null;
   // Monto aprobado por directorio (referencial). Si está, se muestra junto al total.
+  // El monto congelado se maneja en PESOS; la UF es solo un dato informativo.
+  frozen_amount_clp?: number | null;
   frozen_amount_uf?: number | null;
   frozen_at?: string | null;
   frozen_by?: string | null;
@@ -944,7 +946,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const handleOpenFreeze = () => {
     if (!isAdmin) return; // solo ADMIN puede congelar/editar el monto
     const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
-    setFreezeValue(grandTotalUf.toFixed(2));
+    setFreezeValue(String(Math.round(convertUFToPesos(grandTotalUf))));
     setShowFreezeDialog(true);
   };
 
@@ -952,35 +954,34 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     if (!isAdmin) return;
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
-    const val = parseFloat(freezeValue.replace(",", "."));
+    const val = Math.round(parseFloat(freezeValue.replace(",", ".")));
     if (!Number.isFinite(val) || val < 0) {
-      toast({ variant: "destructive", title: "Monto inválido", description: "Ingresa un monto en UF válido." });
+      toast({ variant: "destructive", title: "Monto inválido", description: "Ingresa un monto en pesos válido." });
       return;
     }
     setFreezing(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      let { error } = await supabase
+      // Fuente de verdad: pesos. La UF se guarda solo como equivalente informativo.
+      const { error } = await supabase
         .from("contract_budgets")
-        .update({ frozen_amount_uf: val, frozen_at: new Date().toISOString(), frozen_by: user?.id || null } as any)
+        .update({
+          frozen_amount_clp: val,
+          frozen_amount_uf: ufValue > 0 ? Math.round((val / ufValue) * 10000) / 10000 : null,
+          frozen_at: new Date().toISOString(),
+          frozen_by: user?.id || null,
+        } as any)
         .eq("id", budget.id);
-      // Reintento: tal vez solo exista frozen_amount_uf (no frozen_at/frozen_by)
-      if (error && /frozen_at|frozen_by|column|schema cache/i.test(error.message)) {
-        ({ error } = await supabase
-          .from("contract_budgets")
-          .update({ frozen_amount_uf: val } as any)
-          .eq("id", budget.id));
-      }
       if (error) {
-        if (/frozen_amount_uf|column|schema cache/i.test(error.message)) {
+        if (/frozen_amount|column|schema cache/i.test(error.message)) {
           throw new Error(
             "Falta aplicar una migración en la base de datos para esta función " +
-            "(columna frozen_amount_uf en contract_budgets). Avísale al administrador.",
+            "(columna frozen_amount_clp en contract_budgets). Avísale al administrador.",
           );
         }
         throw error;
       }
-      toast({ title: "Monto aprobado congelado", description: `Aprobado por directorio: UF ${formatUF(val)}` });
+      toast({ title: "Monto aprobado congelado", description: `Aprobado por directorio: ${formatCLP(val)}` });
       setShowFreezeDialog(false);
       loadBudgets();
     } catch (error: any) {
@@ -996,16 +997,10 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     if (!budget) return;
     if (!window.confirm("¿Descongelar el monto aprobado por directorio? Dejará de mostrarse como referencia.")) return;
     try {
-      let { error } = await supabase
+      const { error } = await supabase
         .from("contract_budgets")
-        .update({ frozen_amount_uf: null, frozen_at: null, frozen_by: null } as any)
+        .update({ frozen_amount_clp: null, frozen_amount_uf: null, frozen_at: null, frozen_by: null } as any)
         .eq("id", budget.id);
-      if (error && /frozen_at|frozen_by|column|schema cache/i.test(error.message)) {
-        ({ error } = await supabase
-          .from("contract_budgets")
-          .update({ frozen_amount_uf: null } as any)
-          .eq("id", budget.id));
-      }
       if (error) throw error;
       toast({ title: "Monto descongelado" });
       loadBudgets();
@@ -1555,9 +1550,13 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const grandTotalUf = calculateGrandTotal(lines, templatePricesMap, ufValue);
   // Monto congelado efectivo: la suma de las Órdenes CO reemplaza al monto
   // congelado manual (solo CAPEX). Sin CO con monto, rige el manual del admin.
-  const { amountUf: frozenUf, source: frozenSource } = getEffectiveFrozen(
+  // Valores congelados antes de pasar a pesos solo tienen UF: se convierten al valor UF actual.
+  const manualFrozenClp =
+    currentBudget?.frozen_amount_clp ??
+    (currentBudget?.frozen_amount_uf != null ? Math.round(convertUFToPesos(currentBudget.frozen_amount_uf)) : null);
+  const { amountClp: frozenClp, source: frozenSource } = getEffectiveFrozen(
     coOrders,
-    currentBudget?.frozen_amount_uf ?? null,
+    manualFrozenClp,
     budgetType === "capex",
   );
   const frozenFromCo = frozenSource === "co";
@@ -1632,18 +1631,19 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             </div>
 
             {/* Monto aprobado por directorio (congelado / referencial) */}
-            {frozenUf != null ? (
+            {frozenClp != null ? (
               (() => {
-                const diff = grandTotalUf - frozenUf;
-                const exceeded = diff > 0.01;
+                const grandTotalClp = convertUFToPesos(grandTotalUf);
+                const diff = grandTotalClp - frozenClp;
+                const exceeded = diff > 1;
                 return (
                   <div className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 ${exceeded ? "border-destructive/40 bg-destructive/5" : "border-blue-300 bg-blue-50 dark:bg-blue-950/20"}`}>
                     <div className="flex items-center gap-2">
                       <Snowflake className={`h-4 w-4 ${exceeded ? "text-destructive" : "text-blue-600"}`} />
                       <div>
                         <p className="text-sm font-semibold">
-                          {frozenFromCo ? "Monto Congelado (Órdenes CO)" : "Aprobado por Directorio (referencial)"}: UF {formatUF(frozenUf)}
-                          <span className="text-muted-foreground font-normal"> · {formatCLP(convertUFToPesos(frozenUf))}</span>
+                          {frozenFromCo ? "Monto Congelado (Órdenes CO)" : "Aprobado por Directorio (referencial)"}: {formatCLP(frozenClp)}
+                          {ufValue > 0 && <span className="text-muted-foreground font-normal"> · {formatUF(frozenClp / ufValue)}</span>}
                         </p>
                         {frozenFromCo && coNumbersLabel && (
                           <p className="text-xs text-muted-foreground">
@@ -1651,11 +1651,11 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">
-                          Total actual: UF {formatUF(grandTotalUf)} ·{" "}
+                          Total actual: {formatCLP(grandTotalClp)} ·{" "}
                           {exceeded ? (
-                            <span className="text-destructive font-medium">Excede en UF {formatUF(diff)}</span>
+                            <span className="text-destructive font-medium">Excede en {formatCLP(diff)}</span>
                           ) : (
-                            <span className="text-green-600 font-medium">Margen UF {formatUF(-diff)}</span>
+                            <span className="text-green-600 font-medium">Margen {formatCLP(-diff)}</span>
                           )}
                         </p>
                       </div>
@@ -1895,18 +1895,23 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 </DialogHeader>
                 <div className="space-y-3 py-2">
                   <div className="text-sm text-muted-foreground">
-                    Total calculado actual: <strong>UF {formatUF(grandTotalUf)}</strong> · {formatCLP(convertUFToPesos(grandTotalUf))}
+                    Total calculado actual: <strong>{formatCLP(convertUFToPesos(grandTotalUf))}</strong> · {formatUF(grandTotalUf)}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="freeze-amount">Monto aprobado (UF)</Label>
+                    <Label htmlFor="freeze-amount">Monto aprobado ($)</Label>
                     <Input
                       id="freeze-amount"
                       type="number"
-                      step="0.01"
+                      step="1"
                       min="0"
                       value={freezeValue}
                       onChange={(e) => setFreezeValue(e.target.value)}
                     />
+                    {ufValue > 0 && parseFloat(freezeValue) > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Equivalente informativo: {formatUF(parseFloat(freezeValue) / ufValue)}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Precargado con el total actual; puedes ajustarlo al monto exacto que aprobó directorio.
                     </p>

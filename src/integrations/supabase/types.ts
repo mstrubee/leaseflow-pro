@@ -1045,6 +1045,7 @@ export type Database = {
           closed_by: string | null
           contract_id: string
           created_at: string
+          frozen_amount_clp: number | null
           frozen_amount_uf: number | null
           frozen_at: string | null
           frozen_by: string | null
@@ -1060,6 +1061,7 @@ export type Database = {
           closed_by?: string | null
           contract_id: string
           created_at?: string
+          frozen_amount_clp?: number | null
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
@@ -1075,6 +1077,7 @@ export type Database = {
           closed_by?: string | null
           contract_id?: string
           created_at?: string
+          frozen_amount_clp?: number | null
           frozen_amount_uf?: number | null
           frozen_at?: string | null
           frozen_by?: string | null
@@ -1136,7 +1139,7 @@ export type Database = {
       }
       contract_co_orders: {
         Row: {
-          amount_uf: number | null
+          amount_clp: number | null
           co_number: string
           contract_id: string
           created_at: string
@@ -1146,7 +1149,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          amount_uf?: number | null
+          amount_clp?: number | null
           co_number: string
           contract_id: string
           created_at?: string
@@ -1156,7 +1159,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          amount_uf?: number | null
+          amount_clp?: number | null
           co_number?: string
           contract_id?: string
           created_at?: string

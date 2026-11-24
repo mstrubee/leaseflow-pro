@@ -5,12 +5,15 @@ import { Plus, Trash2 } from "lucide-react";
 import { CoOrderDraft, newDraft, parseCoAmount, sumCoAmounts } from "@/lib/coOrders";
 
 interface ContractCoOrdersSectionProps {
+  /** Valor UF del día, solo para mostrar el equivalente informativo. */
+  ufValue?: number;
   drafts: CoOrderDraft[];
   onChange: (drafts: CoOrderDraft[]) => void;
   /** Solo el ADMIN puede editar; el resto ve la información en solo lectura. */
   canEdit: boolean;
 }
 
+const formatClp = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
 const formatUf = (n: number) =>
   n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -18,13 +21,13 @@ const formatUf = (n: number) =>
  * Órdenes CO del contrato (una por línea). La suma de los montos es el
  * "Monto Congelado" del CAPEX y reemplaza al congelado manual.
  */
-export const ContractCoOrdersSection = ({ drafts, onChange, canEdit }: ContractCoOrdersSectionProps) => {
+export const ContractCoOrdersSection = ({ drafts, onChange, canEdit, ufValue = 0 }: ContractCoOrdersSectionProps) => {
   const update = (key: string, patch: Partial<CoOrderDraft>) =>
     onChange(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
 
   const remove = (key: string) => onChange(drafts.filter((d) => d.key !== key));
 
-  const total = sumCoAmounts(drafts.map((d) => ({ amount_uf: parseCoAmount(d.amount) })));
+  const total = sumCoAmounts(drafts.map((d) => ({ amount_clp: parseCoAmount(d.amount) })));
 
   return (
     <div className="space-y-3 rounded-lg border p-4">
@@ -70,15 +73,15 @@ export const ContractCoOrdersSection = ({ drafts, onChange, canEdit }: ContractC
                 />
               </div>
               <div className="col-span-5 space-y-1">
-                {idx === 0 && <Label className="text-xs">Monto (UF)</Label>}
+                {idx === 0 && <Label className="text-xs">Monto ($)</Label>}
                 <Input
                   type="number"
                   inputMode="decimal"
                   min="0"
-                  step="0.01"
+                  step="1"
                   value={d.amount}
                   onChange={(e) => update(d.key, { amount: e.target.value })}
-                  placeholder="0.00"
+                  placeholder="0"
                   disabled={!canEdit}
                 />
               </div>
@@ -100,7 +103,14 @@ export const ContractCoOrdersSection = ({ drafts, onChange, canEdit }: ContractC
           ))}
           <div className="flex justify-between border-t pt-2 text-sm">
             <span className="text-muted-foreground">Monto Congelado (suma de CO):</span>
-            <span className="font-semibold">{total > 0 ? `UF ${formatUf(total)}` : "—"}</span>
+            <span className="font-semibold">
+              {total > 0 ? formatClp(total) : "—"}
+              {total > 0 && ufValue > 0 && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ≈ UF {formatUf(total / ufValue)}
+                </span>
+              )}
+            </span>
           </div>
         </div>
       )}

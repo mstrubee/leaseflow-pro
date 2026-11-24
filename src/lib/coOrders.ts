@@ -2,7 +2,7 @@
  * Órdenes CO de un contrato/proyecto.
  *
  * Decisión de negocio (ver CLAUDE.md → decisiones):
- *  - Un contrato puede tener varias Órdenes CO (número + monto en UF).
+ *  - Un contrato puede tener varias Órdenes CO (número + monto en PESOS).
  *  - La suma de los montos CO es el "Monto Congelado" del CAPEX y REEMPLAZA al
  *    monto congelado manual mientras exista al menos un monto CO > 0.
  *  - Si no hay CO, o ninguna tiene monto, rige el monto congelado que puso el admin.
@@ -12,7 +12,7 @@
 export interface CoOrder {
   id: string;
   co_number: string;
-  amount_uf: number | null;
+  amount_clp: number | null;
 }
 
 /** Fila editable en el formulario (monto como texto para poder tipear). */
@@ -25,24 +25,22 @@ export interface CoOrderDraft {
   amount: string;
 }
 
-const round4 = (n: number) => Math.round(n * 10000) / 10000;
-
-/** Acepta "1.234,5" y "1234.5". Devuelve null si está vacío o no es válido. */
+/** Acepta "1.234.567" (miles con punto) y "1234567.5". Devuelve null si está vacío o no es válido. */
 export const parseCoAmount = (raw: string | number | null | undefined): number | null => {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  const normalized = trimmed.includes(",")
+  const normalized = trimmed.includes(",") || /^\d{1,3}(\.\d{3})+$/.test(trimmed)
     ? trimmed.replace(/\./g, "").replace(",", ".")
     : trimmed;
   const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
 };
 
-/** Suma de los montos CO válidos (> 0), en UF. */
-export const sumCoAmounts = (orders: Pick<CoOrder, "amount_uf">[]): number =>
-  round4(orders.reduce((acc, o) => acc + (o.amount_uf && o.amount_uf > 0 ? o.amount_uf : 0), 0));
+/** Suma de los montos CO válidos (> 0), en pesos. */
+export const sumCoAmounts = (orders: Pick<CoOrder, "amount_clp">[]): number =>
+  Math.round(orders.reduce((acc, o) => acc + (o.amount_clp && o.amount_clp > 0 ? o.amount_clp : 0), 0));
 
 export type FrozenSource = "co" | "manual" | null;
 
@@ -51,18 +49,18 @@ export type FrozenSource = "co" | "manual" | null;
  * `isCapex = false` (OPEX) nunca usa las CO.
  */
 export const getEffectiveFrozen = (
-  orders: Pick<CoOrder, "amount_uf">[],
-  manualFrozenUf: number | null | undefined,
+  orders: Pick<CoOrder, "amount_clp">[],
+  manualFrozenClp: number | null | undefined,
   isCapex = true,
-): { amountUf: number | null; source: FrozenSource } => {
+): { amountClp: number | null; source: FrozenSource } => {
   if (isCapex) {
     const coTotal = sumCoAmounts(orders);
-    if (coTotal > 0) return { amountUf: coTotal, source: "co" };
+    if (coTotal > 0) return { amountClp: coTotal, source: "co" };
   }
-  if (manualFrozenUf !== null && manualFrozenUf !== undefined) {
-    return { amountUf: manualFrozenUf, source: "manual" };
+  if (manualFrozenClp !== null && manualFrozenClp !== undefined) {
+    return { amountClp: manualFrozenClp, source: "manual" };
   }
-  return { amountUf: null, source: null };
+  return { amountClp: null, source: null };
 };
 
 /** "CO-123, CO-456" o null si no hay números. Se guarda en oc_requests.co_order_numbers. */
@@ -76,7 +74,7 @@ export const toDrafts = (orders: CoOrder[]): CoOrderDraft[] =>
     key: o.id,
     id: o.id,
     co_number: o.co_number,
-    amount: o.amount_uf === null || o.amount_uf === undefined ? "" : String(o.amount_uf),
+    amount: o.amount_clp === null || o.amount_clp === undefined ? "" : String(o.amount_clp),
   }));
 
 export const newDraft = (): CoOrderDraft => ({
