@@ -18,7 +18,7 @@ import { useContractCoOrders } from "@/hooks/useContractCoOrders";
 import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
 import { CebeDistributionEditor } from "./CebeDistributionEditor";
 import { saveDistribution, syncPaymentSublines, allocationsToRows, type StoredAllocation } from "@/lib/cebeDistributionStore";
-import type { DistRow } from "@/lib/cebeDistribution";
+import { toShareRows, type DistRow } from "@/lib/cebeDistribution";
 import { formatCoNumbers } from "@/lib/coOrders";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
@@ -527,6 +527,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         contractNames: [contractName || ""].filter(Boolean),
         contractCebe,
         coOrderNumbers: budgetType === "capex" && !isOpexMaster ? coNumbersLabel : null,
+        cebeDistribution: cebeMixed ? toShareRows(dist.rows, (id) => cebes.find((c) => c.id === id)?.label ?? "CEBE", totalAmountClp) : null,
         description: newRequestForm.description,
         lines: buildShareLines(validLines, {
           totalAmountClp,

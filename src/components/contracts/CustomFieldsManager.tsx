@@ -61,7 +61,9 @@ export function CustomFieldsManager({
         .order("display_order", { ascending: true });
 
       if (error) throw error;
-      setFields(data || []);
+      // El CEBE ya no se carga como campo personalizado: vive en "CEBE por empresa" (sección propia
+      // en Información General). El campo antiguo y sus datos no se tocan aquí.
+      setFields((data || []).filter((f) => f.field_name.trim().toLowerCase() !== "cebe"));
     } catch (error) {
       console.error("Error loading custom fields:", error);
     } finally {

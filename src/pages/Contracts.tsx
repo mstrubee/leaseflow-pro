@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef, memo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { loadAllContractCebes } from "@/lib/contractCebe";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -382,35 +383,36 @@ const Contracts = () => {
   };
 
   const loadCustomFields = async () => {
-    // Load CEBE and Codigo custom fields
-    const { data: fields } = await supabase
-      .from("contract_custom_fields")
-      .select("id, field_name")
-      .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
-      .eq("is_active", true);
-
-    if (!fields || fields.length === 0) return;
-
-    const fieldIds = fields.map(f => f.id);
-    const fieldNameMap = new Map<string, string>();
-    fields.forEach(f => fieldNameMap.set(f.id, f.field_name.toLowerCase()));
-
-    const { data: allValues } = await supabase
-      .from("contract_custom_field_values")
-      .select("contract_id, field_id, field_value")
-      .in("field_id", fieldIds);
+    // CEBE: siempre desde "CEBE por empresa" (varios separados por coma; el buscador encuentra cualquiera).
+    // Código: sigue siendo un campo personalizado.
+    const [cebeByContract, { data: fields }] = await Promise.all([
+      loadAllContractCebes().catch((error) => {
+        console.error("Error cargando CEBE por empresa:", error);
+        return new Map<string, string>();
+      }),
+      supabase
+        .from("contract_custom_fields")
+        .select("id, field_name")
+        .in("field_name", ["codigo", "Codigo", "Código"])
+        .eq("is_active", true),
+    ]);
 
     const result: Record<string, { cebe?: string; codigo?: string }> = {};
-    (allValues || []).forEach(v => {
-      if (!v.field_value) return;
-      const fieldName = fieldNameMap.get(v.field_id);
-      if (!result[v.contract_id]) result[v.contract_id] = {};
-      if (fieldName === "cebe") {
-        result[v.contract_id].cebe = v.field_value;
-      } else if (fieldName === "codigo" || fieldName === "código") {
-        result[v.contract_id].codigo = v.field_value;
-      }
+    cebeByContract.forEach((cebe, contractId) => {
+      result[contractId] = { cebe };
     });
+
+    if (fields && fields.length > 0) {
+      const { data: allValues } = await supabase
+        .from("contract_custom_field_values")
+        .select("contract_id, field_id, field_value")
+        .in("field_id", fields.map(f => f.id));
+      (allValues || []).forEach(v => {
+        if (!v.field_value) return;
+        if (!result[v.contract_id]) result[v.contract_id] = {};
+        result[v.contract_id].codigo = v.field_value;
+      });
+    }
 
     setCustomFieldsByContract(result);
   };

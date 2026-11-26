@@ -40,6 +40,8 @@ export interface OCRequestShareData {
   supplierRut?: string | null;
   /** CEBE del contrato (campo personalizado), mostrado debajo del nombre del contrato. */
   contractCebe?: string | null;
+  /** Local mixto (2+ CEBE): reparto del gasto por CEBE. Si viene, el PDF agrega la tabla de distribución. */
+  cebeDistribution?: { label: string; percent: number; amountClp: number }[] | null;
   /** Órdenes CO del proyecto ("CO-1, CO-2"); solo solicitudes CAPEX. */
   coOrderNumbers?: string | null;
   requestedBy?: string | null;
@@ -184,6 +186,35 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
       3: { cellWidth: 36, halign: "right" },
     },
   });
+
+  // Local mixto: distribución del gasto entre sus CEBE (cada uno con su % y monto).
+  if (data.cebeDistribution && data.cebeDistribution.length >= 2) {
+    const lastTable = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable;
+    const distY = (lastTable?.finalY || 90) + 10;
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Distribución por CEBE", 14, distY);
+    doc.setFont("helvetica", "normal");
+    autoTable(doc, {
+      startY: distY + 4,
+      head: [["CEBE", "% Distribución", "Monto"]],
+      body: data.cebeDistribution.map((d) => [
+        d.label,
+        `${d.percent.toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`,
+        fmtClp(d.amountClp),
+      ]),
+      foot: [[
+        "Total",
+        `${data.cebeDistribution.reduce((a, d) => a + d.percent, 0).toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`,
+        fmtClp(data.cebeDistribution.reduce((a, d) => a + d.amountClp, 0)),
+      ]],
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 4 },
+      headStyles: { fillColor: [230, 230, 230], textColor: 0 },
+      footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: "bold" },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } },
+    });
+  }
 
   const paymentsY = ((doc as any).lastAutoTable?.finalY || 90) + 10;
   const payments = data.payments.length > 0

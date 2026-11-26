@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
+import { applyCebeCodesToContract, parseCebeCodes } from '@/lib/contractCebeUpload';
 import { CHILE_DEMOGRAPHICS } from '@/data/chileRegionsData';
 
 // Normaliza strings eliminando tildes, NBSP, espacios múltiples, etc.
@@ -119,7 +120,8 @@ export interface MinimalValidationResult {
 export interface MinimalUploadResult {
   success: number;
   failed: number;
-  details: { name: string; success: boolean; error?: string }[];
+  /** `warning`: la fila se procesó, pero algo (p. ej. asignar un CEBE a una empresa) requiere revisión manual. */
+  details: { name: string; success: boolean; error?: string; warning?: string }[];
 }
 
 export const parseMinimalExcelFile = async (file: File): Promise<MinimalContractRow[]> => {
@@ -238,7 +240,6 @@ export const uploadMinimalContracts = async (rows: MinimalContractRow[]): Promis
     .select('id, field_name')
     .eq('is_active', true);
   
-  const cebeField = customFields?.find(f => f.field_name === 'CEBE');
   const codigoField = customFields?.find(f => f.field_name === 'Código');
   
   for (const row of rows) {
@@ -282,14 +283,18 @@ export const uploadMinimalContracts = async (rows: MinimalContractRow[]): Promis
         });
       }
       
-      // Create custom field values for CEBE and Codigo
-      if (cebeField && row.cebe) {
-        await supabase.from('contract_custom_field_values').insert({
-          contract_id: contract.id,
-          field_id: cebeField.id,
-          field_value: row.cebe,
-        });
+      // CEBE: se escribe en "CEBE por empresa" (el campo personalizado antiguo ya no se usa). Va después
+      // de vincular las empresas: con una sola empresa el CEBE se asigna solo a ella.
+      let cebeWarning: string | undefined;
+      if (row.cebe) {
+        const cebeResult = await applyCebeCodesToContract(contract.id, parseCebeCodes(row.cebe));
+        if (cebeResult.warnings.length > 0) {
+          cebeWarning = cebeResult.warnings.join(' ');
+          console.warn(`[carga masiva] ${row.nombre_contrato}: ${cebeWarning}`);
+        }
       }
+
+      // Código (campo personalizado)
       
       if (codigoField && row.codigo) {
         await supabase.from('contract_custom_field_values').insert({
@@ -310,7 +315,7 @@ export const uploadMinimalContracts = async (rows: MinimalContractRow[]): Promis
       });
       
       results.success++;
-      results.details.push({ name: row.nombre_contrato, success: true });
+      results.details.push({ name: row.nombre_contrato, success: true, ...(cebeWarning ? { warning: cebeWarning } : {}) });
       
     } catch (error: any) {
       results.failed++;

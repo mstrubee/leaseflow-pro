@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebes, loadContractCebeText } from "@/lib/contractCebe";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -89,7 +90,7 @@ interface GanttContractData {
   disbursement: Disbursement | null;
   address: string | null; // calle + número, de contract_addresses
   commune: string | null;
-  cebe: string | null; // custom field "CEBE" / "Código"
+  cebe: string | null; // "CEBE por empresa" (varios separados por coma)
   /** contracts.clasificacion -- mismo campo/tabla que Contratos > En Negociación y /capex (capex_clasificacion_types). */
   clasificacion: string | null;
 }
@@ -801,23 +802,11 @@ export function GanttReportsSection() {
         });
       });
 
-      const { data: cebeFields } = await supabase
-        .from("contract_custom_fields")
-        .select("id, field_name")
-        .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
-        .eq("is_active", true);
-      const cebeField = cebeFields?.find((f: any) => f.field_name.toLowerCase() === "cebe");
-      const cebeByContract = new Map<string, string>();
-      if (cebeField) {
-        const { data: cebeVals } = await supabase
-          .from("contract_custom_field_values")
-          .select("contract_id, field_id, field_value")
-          .in("contract_id", contractIds)
-          .eq("field_id", cebeField.id);
-        (cebeVals || []).forEach((v: any) => {
-          if (v.field_value) cebeByContract.set(v.contract_id, v.field_value);
-        });
-      }
+      // CEBE: desde "CEBE por empresa" (varios separados por coma)
+      const cebeByContract = await loadContractCebes(contractIds).catch((error) => {
+        console.error("Error cargando CEBE por empresa:", error);
+        return new Map<string, string>();
+      });
 
       // 3) Timelines de Gantt (opcionales — un contrato puede no tenerlos).
       //    Solo el cronograma PRINCIPAL (category = 'general') — el de
@@ -1070,22 +1059,8 @@ export function GanttReportsSection() {
     const address = addressRow ? [addressRow.street, addressRow.number].filter(Boolean).join(" ") || null : null;
     const commune = addressRow?.commune || null;
 
-    const { data: cebeFields } = await supabase
-      .from("contract_custom_fields")
-      .select("id, field_name")
-      .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
-      .eq("is_active", true);
-    const cebeField = cebeFields?.find((f: any) => f.field_name.toLowerCase() === "cebe");
-    let cebe: string | null = null;
-    if (cebeField) {
-      const { data: cebeVal } = await supabase
-        .from("contract_custom_field_values")
-        .select("field_value")
-        .eq("contract_id", contractId)
-        .eq("field_id", cebeField.id)
-        .maybeSingle();
-      cebe = cebeVal?.field_value || null;
-    }
+    // CEBE: desde "CEBE por empresa" (varios separados por coma)
+    const cebe: string | null = await loadContractCebeText(contractId).catch(() => null);
 
     return {
       contractId,

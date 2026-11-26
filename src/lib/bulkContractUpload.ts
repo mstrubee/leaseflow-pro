@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
+import { applyCebeCodesToContract, parseCebeCodes } from '@/lib/contractCebeUpload';
 import { CHILE_DEMOGRAPHICS } from '@/data/chileRegionsData';
 import { validateExcelFile, withParseTimeout } from '@/lib/excelFileValidation';
 
@@ -48,7 +49,8 @@ export interface ValidationResult {
 export interface UploadResult {
   success: number;
   failed: number;
-  details: { name: string; success: boolean; error?: string }[];
+  /** `warning`: la fila se procesó, pero algo (p. ej. asignar un CEBE a una empresa) requiere revisión manual. */
+  details: { name: string; success: boolean; error?: string; warning?: string }[];
 }
 
 const parseDate = (dateStr: string): Date | null => {
@@ -444,13 +446,12 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
   const { data: companies } = await supabase.from('companies').select('id, name');
   const companyMap = new Map(companies?.map(c => [c.name.toLowerCase(), c.id]) || []);
   
-  // Get custom fields for CEBE and Código
+  // Campos personalizados: solo Código (el CEBE se escribe en "CEBE por empresa")
   const { data: customFields } = await supabase
     .from('contract_custom_fields')
     .select('id, field_name')
     .eq('is_active', true);
   
-  const cebeField = customFields?.find(f => f.field_name.toLowerCase() === 'cebe');
   const codigoField = customFields?.find(f => f.field_name.toLowerCase() === 'código' || f.field_name.toLowerCase() === 'codigo');
   
   for (const row of rows) {
@@ -609,29 +610,17 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
         }
       }
       
-      // Update custom field values (CEBE and Código)
-      if (row.cebe && cebeField) {
-        const { data: existingValue } = await supabase
-          .from('contract_custom_field_values')
-          .select('id')
-          .eq('contract_id', contractId)
-          .eq('field_id', cebeField.id)
-          .maybeSingle();
-        
-        if (existingValue) {
-          await supabase
-            .from('contract_custom_field_values')
-            .update({ field_value: row.cebe })
-            .eq('id', existingValue.id);
-        } else {
-          await supabase.from('contract_custom_field_values').insert({
-            contract_id: contractId,
-            field_id: cebeField.id,
-            field_value: row.cebe,
-          });
+      // CEBE: se escribe en "CEBE por empresa" (el campo personalizado antiguo ya no se usa)
+      let cebeWarning: string | undefined;
+      if (row.cebe) {
+        const cebeResult = await applyCebeCodesToContract(contractId, parseCebeCodes(row.cebe));
+        if (cebeResult.warnings.length > 0) {
+          cebeWarning = cebeResult.warnings.join(' ');
+          console.warn(`[carga masiva] ${row.nombre_contrato}: ${cebeWarning}`);
         }
       }
-      
+
+      // Código (campo personalizado)
       if (row.codigo && codigoField) {
         const { data: existingValue } = await supabase
           .from('contract_custom_field_values')
@@ -655,7 +644,7 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
       }
       
       results.success++;
-      results.details.push({ name: row.nombre_contrato, success: true });
+      results.details.push({ name: row.nombre_contrato, success: true, ...(cebeWarning ? { warning: cebeWarning } : {}) });
       
     } catch (error: any) {
       results.failed++;

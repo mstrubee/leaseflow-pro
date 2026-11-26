@@ -2,7 +2,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { buildShareLines, reconcileShareLines, OCRequestShareData, OCRequestShareLine } from "@/lib/ocRequestShare";
 import { extractStoragePath } from "@/lib/storageUtils";
 import { loadOCRequestLineAllocations } from "@/lib/ocRequestLines";
-import { loadContractCebes } from "@/lib/contractCebe";
+import { loadContractCebes, loadContractCebeEntriesFor } from "@/lib/contractCebe";
+import { loadDistribution } from "@/lib/cebeDistributionStore";
+import { isMixedLocal, toShareRows } from "@/lib/cebeDistribution";
 
 interface StoredOCRequest {
   contract_id: string;
@@ -118,11 +120,28 @@ export async function loadOCRequestShareData(
   const quotationUrl = request.quotation_url;
   const quotationIsStorage = !!quotationUrl && !!extractStoragePath(quotationUrl);
 
+  // Local mixto: distribución por CEBE de la solicitud, para mostrarla en el PDF.
+  let cebeDistribution: OCRequestShareData["cebeDistribution"] = null;
+  try {
+    const stored = await loadDistribution({ kind: "request", contractId: request.contract_id, id: requestId });
+    if (isMixedLocal(stored.length)) {
+      const entries = await loadContractCebeEntriesFor(request.contract_id);
+      cebeDistribution = toShareRows(
+        stored.map((d) => ({ cebeId: d.cebeId, amount: d.amount })),
+        (cebeId) => entries.find((e) => e.id === cebeId)?.cebe ?? "CEBE",
+        totalAmountClp,
+      );
+    }
+  } catch (distError) {
+    console.error("No se pudo leer la distribución por CEBE para el PDF:", distError);
+  }
+
   return {
     requestDate: request.request_date,
     currency: "CLP",
     contractNames: allocationNames.length > 0 ? allocationNames : [request.project_name].filter((n): n is string => !!n),
     contractCebe: headerCebe,
+    cebeDistribution,
     coOrderNumbers: request.co_order_numbers ?? null,
     description: request.description || "",
     lines,

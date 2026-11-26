@@ -222,24 +222,27 @@ export default function BulkOCImport() {
   useEffect(() => {
     async function load() {
       setLoadingRef(true);
-      // Load CEBE codes from contract_custom_field_values
-      const { data: cebeFields } = await supabase
-        .from("contract_custom_fields" as any)
-        .select("id")
-        .ilike("field_name", "%cebe%") as any;
-
-      const fieldIds: string[] = (cebeFields || []).map((f: any) => f.id);
-
+      // Códigos CEBE de todos los locales, desde "CEBE por empresa" (un local mixto aporta varios códigos,
+      // cada uno apunta al mismo contrato).
       let cebeLocations: FullLocation[] = [];
-      if (fieldIds.length > 0) {
-        const { data: cebeValues } = await supabase
-          .from("contract_custom_field_values" as any)
-          .select("contract_id, field_value, contracts(name)")
-          .in("field_id", fieldIds)
-          .not("field_value", "is", null) as any;
+      {
+        const cebeRowsAll: { contract_id: string; cebe: string; contracts: { name: string } | null }[] = [];
+        for (let from = 0; ; from += 1000) {
+          const { data: page, error: pageError } = await supabase
+            .from("contract_cebes")
+            .select("contract_id, cebe, contracts(name)")
+            .range(from, from + 999);
+          if (pageError) {
+            console.error("No se pudieron cargar los CEBE por empresa:", pageError);
+            break;
+          }
+          cebeRowsAll.push(...((page || []) as unknown as typeof cebeRowsAll));
+          if (!page || page.length < 1000) break;
+        }
 
-        const rows = ((cebeValues || []) as any[])
-          .filter((v: any) => v.contract_id && v.field_value && v.contracts?.name);
+        const rows = cebeRowsAll
+          .filter((v) => v.contract_id && v.cebe && v.contracts?.name)
+          .map((v) => ({ contract_id: v.contract_id, field_value: v.cebe, contracts: v.contracts as { name: string } }));
 
         // Query separada a propósito: si el join de empresas falla, se pierden
         // los logos pero NO la lista de locales.

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSpecialAttentionNavigation } from "@/components/special-attention/SpecialAttentionReturnButton";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebes } from "@/lib/contractCebe";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
@@ -25,37 +26,37 @@ interface SpecialContract {
   codigo?: string;
 }
 
-// Shared helper to fetch CEBE/Codigo for a set of contract IDs
+// Shared helper to fetch CEBE/Codigo for a set of contract IDs.
+// CEBE: desde "CEBE por empresa" (varios separados por coma). Código: campo personalizado.
 async function fetchCebeCodigo(contractIds: string[]): Promise<Record<string, { cebe?: string; codigo?: string }>> {
   if (contractIds.length === 0) return {};
+
+  const map: Record<string, { cebe?: string; codigo?: string }> = {};
+  const cebeByContract = await loadContractCebes(contractIds).catch((error) => {
+    console.error("Error cargando CEBE por empresa:", error);
+    return new Map<string, string>();
+  });
+  cebeByContract.forEach((cebe, contractId) => {
+    map[contractId] = { cebe };
+  });
 
   const { data: fields } = await supabase
     .from("contract_custom_fields")
     .select("id, field_name")
-    .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
+    .in("field_name", ["codigo", "Codigo", "Código"])
     .eq("is_active", true);
-
-  const cebeField = fields?.find(f => f.field_name.toLowerCase() === "cebe");
-  const codigoField = fields?.find(f =>
-    f.field_name.toLowerCase() === "codigo" || f.field_name.toLowerCase() === "código"
-  );
-  const fieldIds = [cebeField?.id, codigoField?.id].filter(Boolean) as string[];
-  if (fieldIds.length === 0) return {};
+  const codigoField = fields?.[0];
+  if (!codigoField) return map;
 
   const { data: vals } = await supabase
     .from("contract_custom_field_values")
     .select("contract_id, field_id, field_value")
     .in("contract_id", contractIds)
-    .in("field_id", fieldIds);
-
-  const map: Record<string, { cebe?: string; codigo?: string }> = {};
-  if (vals) {
-    for (const v of vals) {
-      if (!v.field_value) continue;
-      if (!map[v.contract_id]) map[v.contract_id] = {};
-      if (cebeField && v.field_id === cebeField.id) map[v.contract_id].cebe = v.field_value;
-      if (codigoField && v.field_id === codigoField.id) map[v.contract_id].codigo = v.field_value;
-    }
+    .eq("field_id", codigoField.id);
+  for (const v of vals || []) {
+    if (!v.field_value) continue;
+    if (!map[v.contract_id]) map[v.contract_id] = {};
+    map[v.contract_id].codigo = v.field_value;
   }
   return map;
 }

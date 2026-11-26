@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { loadAllContractCebes } from "@/lib/contractCebe";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,7 @@ import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
 import { CebeDistributionEditor } from "./CebeDistributionEditor";
 import { saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
+import { toShareRows } from "@/lib/cebeDistribution";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
@@ -503,39 +505,15 @@ export const CentralizedOrderCreator = ({
         .is("deleted_at", null)
         .order("name");
       
-      // Get CEBE field definition
-      const { data: cebeFieldData } = await supabase
-        .from("contract_custom_fields")
-        .select("id")
-        .ilike("field_name", "cebe")
-        .eq("is_active", true)
-        .limit(1)
-        .single();
-      
-      let contractsWithCebe: Contract[] = [];
-      
-      if (cebeFieldData && contractsData) {
-        // Get CEBE values for all contracts
-        const { data: cebeValues } = await supabase
-          .from("contract_custom_field_values")
-          .select("contract_id, field_value")
-          .eq("field_id", cebeFieldData.id);
-        
-        const cebeMap = new Map<string, string>();
-        (cebeValues || []).forEach(v => {
-          if (v.field_value) cebeMap.set(v.contract_id, v.field_value);
-        });
-        
-        contractsWithCebe = (contractsData || []).map(c => ({
-          id: c.id,
-          name: c.name,
-          cebe: cebeMap.get(c.id) || null,
-          company_names: getCompanyNames(c.contract_companies as any),
-        }));
-      } else {
-        contractsWithCebe = (contractsData || []).map(c => ({ id: c.id, name: c.name, cebe: null, company_names: getCompanyNames((c as any).contract_companies) }));
-      }
-      
+      // CEBE de cada local: desde "CEBE por empresa" (varios CEBE separados por coma)
+      const cebeMap = await loadAllContractCebes();
+      const contractsWithCebe: Contract[] = (contractsData || []).map(c => ({
+        id: c.id,
+        name: c.name,
+        cebe: cebeMap.get(c.id) || null,
+        company_names: getCompanyNames(c.contract_companies as any),
+      }));
+
       setContracts(contractsWithCebe);
       
       // Load OPEX categories
@@ -1124,6 +1102,7 @@ export const CentralizedOrderCreator = ({
           contractCebe: isMultiContract
             ? contractAllocations.map((a) => a.cebe).filter(Boolean).join(", ") || null
             : contracts.find((c) => c.id === primaryContractId)?.cebe || null,
+          cebeDistribution: cebeMixed ? toShareRows(dist.rows, (id) => cebes.find((c) => c.id === id)?.label ?? "CEBE", totalAmountClp) : null,
           description: formData.description,
           // CAPEX: las líneas reales con su reparto, cada una con su contrato y CEBE.
           // OPEX: la categoría — una fila por contrato si es multi-contrato.

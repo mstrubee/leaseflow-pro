@@ -204,3 +204,16 @@ export function buildPaymentSublines(paymentAmounts: number[], distribution: Pic
     return distribution.map((d, i) => ({ cebeId: d.cebeId, amount: amounts[i], percent: pcts[i] }));
   });
 }
+
+export interface ShareCebeRow {
+  label: string;
+  /** % del total, cuadrado a 100. */
+  percent: number;
+  amountClp: number;
+}
+
+/** Filas "CEBE | % | Monto" para el PDF de la Solicitud de OC (locales mixtos). */
+export function toShareRows(rows: Pick<DistRow, "cebeId" | "amount">[], labelOf: (cebeId: string) => string, total: number): ShareCebeRow[] {
+  const withPct = withPercents(rows.map((r) => ({ ...r, source: "manual" as RowSource })), total, 2);
+  return withPct.map((r) => ({ label: labelOf(r.cebeId), percent: r.percent, amountClp: r.amount }));
+}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebes } from "@/lib/contractCebe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,32 +138,27 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
         if (name) contractOrgMap[r.contract_id].push(name);
       });
 
-      // Get custom field IDs for CEBE and Código
+      // CEBE: desde "CEBE por empresa" (varios separados por coma). Código: campo personalizado.
+      const cebeByContract = await loadContractCebes(contractIds).catch((error) => {
+        console.error("Error cargando CEBE por empresa:", error);
+        return new Map<string, string>();
+      });
       const { data: customFields } = await supabase
         .from("contract_custom_fields")
         .select("id, field_name")
         .eq("is_active", true)
-        .or("field_name.ilike.cebe,field_name.ilike.código,field_name.ilike.codigo");
+        .or("field_name.ilike.código,field_name.ilike.codigo");
+      const codigoField = customFields?.[0];
 
-      const cebeField = customFields?.find(f => f.field_name.toLowerCase() === 'cebe');
-      const codigoField = customFields?.find(f =>
-        f.field_name.toLowerCase() === 'código' || f.field_name.toLowerCase() === 'codigo'
-      );
-
-      const fieldIds = [cebeField?.id, codigoField?.id].filter(Boolean) as string[];
-      let fieldValuesMap: Record<string, { cebe?: string; codigo?: string }> = {};
-
-      if (fieldIds.length > 0) {
+      const codigoByContract: Record<string, string> = {};
+      if (codigoField) {
         const { data: fieldValues } = await supabase
           .from("contract_custom_field_values")
-          .select("contract_id, field_id, field_value")
+          .select("contract_id, field_value")
           .in("contract_id", contractIds)
-          .in("field_id", fieldIds);
-
+          .eq("field_id", codigoField.id);
         (fieldValues || []).forEach(v => {
-          if (!fieldValuesMap[v.contract_id]) fieldValuesMap[v.contract_id] = {};
-          if (cebeField && v.field_id === cebeField.id) fieldValuesMap[v.contract_id].cebe = v.field_value || undefined;
-          if (codigoField && v.field_id === codigoField.id) fieldValuesMap[v.contract_id].codigo = v.field_value || undefined;
+          if (v.field_value) codigoByContract[v.contract_id] = v.field_value;
         });
       }
 
@@ -175,8 +171,8 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
         id: c.id,
         name: c.name,
         status: c.status,
-        codigo: fieldValuesMap[c.id]?.codigo || null,
-        cebe: fieldValuesMap[c.id]?.cebe || null,
+        codigo: codigoByContract[c.id] || null,
+        cebe: cebeByContract.get(c.id) || null,
         commune: addressMap[c.id] || null,
         gerencia: contractOrgMap[c.id] || [],
       }));

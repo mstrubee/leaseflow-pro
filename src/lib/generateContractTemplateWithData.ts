@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
+import { loadContractCebes } from '@/lib/contractCebe';
 import { CHILE_DEMOGRAPHICS } from '@/data/chileRegionsData';
 
 interface ContractData {
@@ -88,6 +89,9 @@ export const generateContractTemplateWithData = async () => {
 
   const workbook = XLSX.utils.book_new();
 
+  // CEBE: desde "CEBE por empresa" (varios separados por coma)
+  const cebeByContract = await loadContractCebes((contracts || []).map(c => c.id));
+
   // Build contract data rows
   const contractData: ContractData[] = (contracts || []).map(contract => {
     // Get current version
@@ -108,9 +112,6 @@ export const generateContractTemplateWithData = async () => {
     
     // Get custom fields (CEBE, Código)
     const customFields = contract.contract_custom_field_values || [];
-    const cebeField = customFields.find(cf => 
-      cf.contract_custom_fields?.field_name?.toLowerCase() === 'cebe'
-    );
     const codigoField = customFields.find(cf => 
       cf.contract_custom_fields?.field_name?.toLowerCase() === 'código' ||
       cf.contract_custom_fields?.field_name?.toLowerCase() === 'codigo'
@@ -119,7 +120,7 @@ export const generateContractTemplateWithData = async () => {
     return {
       empresas: companies,
       nombre_contrato: contract.name || '',
-      cebe: cebeField?.field_value || '',
+      cebe: cebeByContract.get(contract.id) || '',
       codigo: codigoField?.field_value || '',
       calle: address?.street || '',
       numero: address?.number || '',

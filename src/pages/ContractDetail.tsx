@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebeText } from "@/lib/contractCebe";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -249,6 +250,12 @@ const ContractDetail = () => {
   const [companyNames, setCompanyNames] = useState<string[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  // CEBE del local: siempre desde "CEBE por empresa" (todos, separados por coma).
+  const [cebeText, setCebeText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    loadContractCebeText(id).then(setCebeText).catch((error) => console.error("Error cargando CEBE por empresa:", error));
+  }, [id]);
   const [signingContract, setSigningContract] = useState(false);
   const [closingNotesRefresh, setClosingNotesRefresh] = useState(0);
   const [generatingOffer, setGeneratingOffer] = useState(false);
@@ -849,18 +856,19 @@ const ContractDetail = () => {
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>
-              {!isEquipoGerencia && (companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (() => {
+              {!isEquipoGerencia && (companyNames.length > 0 || !!cebeText || customFields.some(f => customFieldValues[f.id])) && (() => {
                 // Layout pedido explícitamente por Matias: dos columnas de
                 // ancho fijo (en caracteres, "ch"), cada una con sus campos
                 // en un orden específico, uno por línea. Los campos
                 // personalizados que existan pero no estén en ninguna de las
                 // dos listas se agregan al final de la columna 2 (no se
                 // ocultan, por si se crea uno nuevo desde Admin).
-                const column1FieldNames = ["CEBE", "Código"];
+                const column1FieldNames = ["Código"];
                 const column2FieldNames = ["Restricción de Uso", "Detalle Restricción"];
                 // Sin uso por ahora -- no se muestran en el header (pedido
                 // explícito), pero el campo y sus datos siguen existiendo.
-                const hiddenFieldNames = ["Horario Funcionamiento", "Atiende Público", "Tenencia", "Estado Red", "Tipología"];
+                // "CEBE" (campo antiguo) tampoco se muestra: el CEBE sale de "CEBE por empresa".
+                const hiddenFieldNames = ["CEBE", "Horario Funcionamiento", "Atiende Público", "Tenencia", "Estado Red", "Tipología"];
                 const fieldByName = new Map(customFields.map((f) => [f.field_name, f]));
                 const column1Fields = column1FieldNames.map((n) => fieldByName.get(n)).filter((f): f is CustomField => !!f);
                 const column2Fields = column2FieldNames.map((n) => fieldByName.get(n)).filter((f): f is CustomField => !!f);
@@ -884,6 +892,11 @@ const ContractDetail = () => {
                       {companyNames.length > 0 && (
                         <div>
                           <span className="font-medium">Empresa{companyNames.length > 1 ? 's' : ''}:</span> {companyNames.join(', ')}
+                        </div>
+                      )}
+                      {cebeText && (
+                        <div>
+                          <span className="font-medium">CEBE:</span> {cebeText}
                         </div>
                       )}
                       {column1Fields.map(renderField)}

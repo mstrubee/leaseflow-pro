@@ -54,7 +54,7 @@ import { ContractCoOrdersSection } from "@/components/contracts/ContractCoOrders
 import { ContractCebesSection } from "@/components/contracts/ContractCebesSection";
 import { fetchCoOrders, saveCoOrders } from "@/hooks/useContractCoOrders";
 import { fetchContractCebes, saveContractCebes, useCompanyNames } from "@/hooks/useContractCebes";
-import { CebeDraft, cebeLabel, cebeToDrafts, validateCebeDrafts } from "@/lib/contractCebes";
+import { CebeDraft, autocompleteCebeDrafts, cebeLabel, cebeToDrafts, validateCebeDrafts } from "@/lib/contractCebes";
 import { CoOrderDraft, toDrafts, validateDrafts } from "@/lib/coOrders";
 
 const EditContract = () => {
@@ -93,6 +93,11 @@ const EditContract = () => {
   // Contract basic info
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const companyNames = useCompanyNames(companyIds);
+  // Autocompletado: con una sola empresa el CEBE va a esa empresa (y hay una fila lista para escribirlo).
+  useEffect(() => {
+    if (!cebesLoaded) return;
+    setCebeDrafts((prev) => autocompleteCebeDrafts(prev, companyIds));
+  }, [cebesLoaded, companyIds]);
   const [name, setName] = useState("");
   
   // Address

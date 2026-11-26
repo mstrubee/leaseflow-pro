@@ -36,8 +36,7 @@ export const validateCebeDrafts = (drafts: CebeDraft[], companyIds: string[]): s
   const seen = new Set<string>();
   for (const d of drafts) {
     const hasCebe = d.cebe.trim().length > 0;
-    if (!hasCebe && !d.company_id) continue;
-    if (!hasCebe) return "Cada CEBE adicional debe tener un código.";
+    if (!hasCebe) continue; // fila sin código: se ignora (p. ej. la fila vacía autocompletada)
     if (!d.company_id) return `El CEBE "${d.cebe.trim()}" debe asignarse a una empresa.`;
     if (!companyIds.includes(d.company_id)) {
       return `El CEBE "${d.cebe.trim()}" está asignado a una empresa que ya no pertenece al contrato.`;
@@ -52,3 +51,16 @@ export const validateCebeDrafts = (drafts: CebeDraft[], companyIds: string[]): s
 /** Etiqueta para selectores: "H04C8P1290 · Empresa X". */
 export const cebeLabel = (cebe: string, companyName?: string | null) =>
   companyName ? `${cebe} · ${companyName}` : cebe;
+
+/**
+ * Autocompletado: con UNA sola empresa en el contrato, todo CEBE va a esa empresa (se corrige solo si
+ * se cambió la empresa) y, si aún no hay ninguno, se ofrece una fila vacía ya asignada a ella.
+ * Con 0 o con varias empresas no se asigna nada solo (cada CEBE debe elegir su empresa).
+ */
+export const autocompleteCebeDrafts = (drafts: CebeDraft[], companyIds: string[]): CebeDraft[] => {
+  if (companyIds.length !== 1) return drafts;
+  const only = companyIds[0];
+  if (drafts.length === 0) return [newCebeDraft(only)];
+  const next = drafts.map((d) => (d.company_id === only ? d : { ...d, company_id: only }));
+  return next.some((d, i) => d !== drafts[i]) ? next : drafts;
+};

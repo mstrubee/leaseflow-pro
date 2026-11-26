@@ -15,12 +15,13 @@ interface ContractCebesSectionProps {
 }
 
 /**
- * CEBE adicionales por empresa. Solo aparece cuando el contrato tiene más de una empresa
- * (o ya tiene CEBE por empresa guardados). Cada CEBE pertenece a UNA empresa.
- * El CEBE principal del contrato (campo personalizado) no se modifica aquí.
+ * CEBE por empresa: ÚNICA fuente del CEBE del contrato para todo el sistema. Cada CEBE pertenece a
+ * UNA empresa. Con una sola empresa el CEBE se asigna solo a ella (un local normal tiene un CEBE);
+ * con varias empresas, o varios CEBE, cada uno elige su empresa (local mixto).
  */
 export const ContractCebesSection = ({ companyIds, companyNames, drafts, onChange, canEdit }: ContractCebesSectionProps) => {
-  if (companyIds.length < 2 && drafts.length === 0) return null;
+  const noCompany = companyIds.length === 0;
+  const singleCompany = companyIds.length === 1;
 
   const update = (key: string, patch: Partial<CebeDraft>) =>
     onChange(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -31,17 +32,21 @@ export const ContractCebesSection = ({ companyIds, companyNames, drafts, onChang
         <div>
           <Label className="text-base">CEBE por empresa</Label>
           <p className="text-xs text-muted-foreground">
-            Este contrato tiene más de una empresa: asigna cada CEBE a la empresa que corresponda.
-            Cada Orden CO puede asignarse luego a uno de estos CEBE.
+            {noCompany
+              ? "Asigna primero una empresa al contrato para poder cargar su CEBE."
+              : singleCompany
+                ? "Código CEBE del local; se asigna solo a la empresa del contrato. Si el local es mixto, agrega un CEBE por cada uno."
+                : "Este contrato tiene más de una empresa: asigna cada CEBE a la empresa que corresponda."}
+            {" "}Cada Orden CO puede asignarse luego a uno de estos CEBE.
           </p>
         </div>
-        {canEdit && (
+        {canEdit && !noCompany && (
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="gap-1 shrink-0"
-            onClick={() => onChange([...drafts, newCebeDraft(companyIds.length === 1 ? companyIds[0] : "")])}
+            onClick={() => onChange([...drafts, newCebeDraft(singleCompany ? companyIds[0] : "")])}
           >
             <Plus className="h-3 w-3" /> Agregar CEBE
           </Button>
@@ -49,7 +54,7 @@ export const ContractCebesSection = ({ companyIds, companyNames, drafts, onChang
       </div>
 
       {drafts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Sin CEBE por empresa.</p>
+        <p className="text-sm text-muted-foreground">{noCompany ? "Sin empresa asignada." : "Sin CEBE por empresa."}</p>
       ) : (
         <div className="space-y-2">
           {drafts.map((d, idx) => {
@@ -71,7 +76,7 @@ export const ContractCebesSection = ({ companyIds, companyNames, drafts, onChang
                   <Select
                     value={d.company_id || undefined}
                     onValueChange={(v) => update(d.key, { company_id: v })}
-                    disabled={!canEdit}
+                    disabled={!canEdit || singleCompany}
                   >
                     <SelectTrigger className={orphan ? "border-destructive" : undefined}>
                       <SelectValue placeholder="Selecciona la empresa" />

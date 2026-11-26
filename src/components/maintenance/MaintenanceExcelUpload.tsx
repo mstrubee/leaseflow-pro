@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Upload, AlertTriangle, CheckCircle, Loader2, Sparkles, SkipForward, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { loadAllContractCebeEntries } from "@/lib/contractCebe";
 import { validateExcelFile } from "@/lib/excelFileValidation";
 import { ParsedMaintenanceRow, detectMaintenanceType } from "./types";
 import * as XLSX from "xlsx";
@@ -78,19 +79,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       const contractsByPrefix = new Map<string, { id: string; name: string }>();
       const contractsByDigits = new Map<string, Array<{ id: string; name: string }>>();
 
-      const { data: cebeField } = await supabase
-        .from("contract_custom_fields")
-        .select("id")
-        .ilike("field_name", "cebe")
-        .eq("is_active", true)
-        .limit(1)
-        .single();
+      // CEBE de todos los locales, desde "CEBE por empresa" (un local mixto aporta varios códigos).
+      const allCebeEntries = await loadAllContractCebeEntries();
 
-      if (cebeField && contracts) {
-        const { data: cebeValues } = await supabase
-          .from("contract_custom_field_values")
-          .select("contract_id, field_value")
-          .eq("field_id", cebeField.id);
+      if (allCebeEntries.length > 0 && contracts) {
+        const cebeValues = allCebeEntries.map(e => ({ contract_id: e.contractId, field_value: e.cebe }));
 
         const contractMap = new Map<string, string>();
         contracts.forEach(c => contractMap.set(c.id, c.name));
@@ -278,13 +271,10 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
 
         try {
           const contractsWithCebes: { id: string; name: string; cebe: string }[] = [];
-          if (cebeField) {
-            const { data: allCebeValues } = await supabase
-              .from("contract_custom_field_values")
-              .select("contract_id, field_value")
-              .eq("field_id", cebeField.id);
+          {
+            const allCebeValues = allCebeEntries.map(e => ({ contract_id: e.contractId, field_value: e.cebe }));
 
-            allCebeValues?.forEach(cv => {
+            allCebeValues.forEach(cv => {
               if (cv.field_value) {
                 const cName = contracts.find(c => c.id === cv.contract_id)?.name;
                 if (cName) {

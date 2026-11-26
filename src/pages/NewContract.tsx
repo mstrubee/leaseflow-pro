@@ -16,6 +16,9 @@ import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { DurationInput } from "@/components/contracts/DurationInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { CompanySelect } from "@/components/contracts/CompanySelect";
+import { ContractCebesSection } from "@/components/contracts/ContractCebesSection";
+import { saveContractCebes, useCompanyNames } from "@/hooks/useContractCebes";
+import { CebeDraft, autocompleteCebeDrafts, validateCebeDrafts } from "@/lib/contractCebes";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
@@ -35,6 +38,12 @@ const NewContract = () => {
 
   // Contract basic info
   const [companyIds, setCompanyIds] = useState<string[]>([]);
+  // CEBE por empresa: única fuente del CEBE del contrato. Se guarda después de crear el contrato.
+  const [cebeDrafts, setCebeDrafts] = useState<CebeDraft[]>([]);
+  const companyNames = useCompanyNames(companyIds);
+  useEffect(() => {
+    setCebeDrafts((prev) => autocompleteCebeDrafts(prev, companyIds));
+  }, [companyIds]);
   const [name, setName] = useState("");
   
   // Address (Datos de la Propiedad)
@@ -111,6 +120,13 @@ const NewContract = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const cebeError = validateCebeDrafts(cebeDrafts, companyIds);
+    if (cebeError) {
+      toast({ variant: "destructive", title: "CEBE inválido", description: cebeError });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -351,6 +367,9 @@ const NewContract = () => {
         if (docError) throw docError;
       }
 
+      // Save CEBE por empresa (después de las empresas del contrato)
+      await saveContractCebes(contract.id, cebeDrafts, []);
+
       // Save custom field values
       await saveCustomFieldValues(contract.id);
 
@@ -405,6 +424,13 @@ const NewContract = () => {
                   required
                 />
               </div>
+              <ContractCebesSection
+                companyIds={companyIds}
+                companyNames={companyNames}
+                drafts={cebeDrafts}
+                onChange={setCebeDrafts}
+                canEdit
+              />
               <CustomFieldsManager
                 values={customFieldValues}
                 onChange={updateCustomFieldValue}

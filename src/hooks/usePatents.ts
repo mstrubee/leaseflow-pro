@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { loadAllContractCebes } from "@/lib/contractCebe";
 import { 
   ContractWithPatent, 
   PatentChecklistSection, 
@@ -13,43 +14,31 @@ import {
   PatentSharedItem
 } from "@/components/patents/types";
 
-// Helper to get CEBE field value
+// Helper: CEBE desde "CEBE por empresa" (varios separados por coma); Código desde su campo personalizado.
 async function getCustomFieldMaps(): Promise<{ cebeMap: Map<string, string>; codigoMap: Map<string, string> }> {
-  // Get CEBE and Codigo field definitions
+  const cebeMap = await loadAllContractCebes().catch((error) => {
+    console.error("Error cargando CEBE por empresa:", error);
+    return new Map<string, string>();
+  });
+  const codigoMap = new Map<string, string>();
+
   const { data: customFields } = await supabase
     .from("contract_custom_fields")
     .select("id, field_name")
     .eq("is_active", true)
-    .or("field_name.ilike.cebe,field_name.ilike.código,field_name.ilike.codigo");
-  
-  const cebeMap = new Map<string, string>();
-  const codigoMap = new Map<string, string>();
-  
-  if (customFields && customFields.length > 0) {
-    const cebeField = customFields.find(f => f.field_name.toLowerCase() === 'cebe');
-    const codigoField = customFields.find(f => 
-      f.field_name.toLowerCase() === 'código' || f.field_name.toLowerCase() === 'codigo'
-    );
-    
-    const fieldIds = [cebeField?.id, codigoField?.id].filter(Boolean) as string[];
-    
-    const { data: cebeValues } = await supabase
+    .or("field_name.ilike.código,field_name.ilike.codigo");
+  const codigoField = customFields?.[0];
+
+  if (codigoField) {
+    const { data: codigoValues } = await supabase
       .from("contract_custom_field_values")
-      .select("contract_id, field_id, field_value")
-      .in("field_id", fieldIds);
-    
-    (cebeValues || []).forEach(v => {
-      if (v.field_value) {
-        if (cebeField && v.field_id === cebeField.id) {
-          cebeMap.set(v.contract_id, v.field_value);
-        }
-        if (codigoField && v.field_id === codigoField.id) {
-          codigoMap.set(v.contract_id, v.field_value);
-        }
-      }
+      .select("contract_id, field_value")
+      .eq("field_id", codigoField.id);
+    (codigoValues || []).forEach(v => {
+      if (v.field_value) codigoMap.set(v.contract_id, v.field_value);
     });
   }
-  
+
   return { cebeMap, codigoMap };
 }
 

@@ -18,6 +18,7 @@ import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
 import { CebeDistributionEditor } from "./CebeDistributionEditor";
 import { saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
+import { toShareRows } from "@/lib/cebeDistribution";
 import { PaymentPlanRow, resolvePaymentPlan as resolvePlan } from "@/lib/paymentPlan";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 
@@ -467,6 +468,7 @@ export const OCRequestDialog = ({
         contractNames: [contractName],
         contractCebe,
         coOrderNumbers: requestCoNumbers,
+        cebeDistribution: cebeMixed ? toShareRows(dist.rows, (id) => cebes.find((c) => c.id === id)?.label ?? "CEBE", amountClp) : null,
         description: form.description,
         lines: useMultipleLines
           ? selectedLines.filter((l) => l.amount > 0).map((l) => ({

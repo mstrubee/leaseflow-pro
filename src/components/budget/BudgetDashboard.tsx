@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebeText } from "@/lib/contractCebe";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -177,26 +178,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       setSuperficieEdificada(data.superficie_edificada_local || 0);
     }
     
-    // Load CEBE custom field
-    const { data: cebeFieldData } = await supabase
-      .from("contract_custom_fields")
-      .select("id")
-      .ilike("field_name", "cebe")
-      .eq("is_active", true)
-      .limit(1)
-      .single();
-    
-    if (cebeFieldData) {
-      const { data: cebeValue } = await supabase
-        .from("contract_custom_field_values")
-        .select("field_value")
-        .eq("contract_id", contractId)
-        .eq("field_id", cebeFieldData.id)
-        .single();
-      
-      if (cebeValue?.field_value) {
-        setContractCebe(cebeValue.field_value);
-      }
+    // CEBE del local: siempre desde "CEBE por empresa" (todos, separados por coma)
+    const cebeText = await loadContractCebeText(contractId);
+    if (cebeText) {
+      setContractCebe(cebeText);
     }
   };
 

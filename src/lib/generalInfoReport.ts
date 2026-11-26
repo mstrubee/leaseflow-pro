@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { format, addMonths, parseISO } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebes } from "@/lib/contractCebe";
 
 /**
  * "Información General Grupo Planet" -- reporte descargable/subible desde
@@ -254,11 +255,15 @@ export async function downloadGeneralInfoExcel(): Promise<void> {
     .in("contract_id", contractIds)
     .in("field_id", fieldIdList);
 
+  // CEBE: siempre desde "CEBE por empresa" (varios separados por coma), no desde el campo antiguo.
+  const cebeByContract = await loadContractCebes(contractIds);
+
   const valueByContractAndField = new Map<string, string>();
   (values || []).forEach((v: any) => {
     valueByContractAndField.set(`${v.contract_id}:${v.field_id}`, v.field_value ?? "");
   });
   const getValue = (contractId: string, key: FieldKey): string => {
+    if (key === "cebe") return cebeByContract.get(contractId) ?? "";
     const fieldId = fieldIds[key];
     if (!fieldId) return "";
     return valueByContractAndField.get(`${contractId}:${fieldId}`) ?? "";

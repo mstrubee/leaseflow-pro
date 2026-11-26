@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { MaintenanceForm } from "./types";
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebeText } from "@/lib/contractCebe";
 import logosHeader from "@/assets/logos-header.png";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { companyKeyFromNames, logoUrlForKey } from "@/lib/companyLogo";
@@ -40,32 +41,23 @@ async function getOTData(form: MaintenanceForm, contractCompanyMap?: Record<stri
     if (cc) empresa = cc.map(r => r.companies.name).join(", ");
   }
 
-  // Get Codigo and Cebe custom fields
+  // Código (campo personalizado) y CEBE (desde "CEBE por empresa", todos separados por coma)
   if (form.contract_id) {
+    const cebe = (await loadContractCebeText(form.contract_id).catch(() => null)) || "";
+    let codigo = "";
     const { data: fields } = await supabase
       .from("contract_custom_fields")
       .select("id, field_name")
-      .in("field_name", ["Codigo", "CEBE", "Código"]);
-
+      .in("field_name", ["Codigo", "Código"]);
     if (fields && fields.length > 0) {
-      const fieldIds = fields.map(f => f.id);
       const { data: values } = await supabase
         .from("contract_custom_field_values")
         .select("field_id, field_value")
         .eq("contract_id", form.contract_id)
-        .in("field_id", fieldIds);
-
-      const fieldMap: Record<string, string> = {};
-      (values || []).forEach(v => {
-        const field = fields.find(f => f.id === v.field_id);
-        if (field && v.field_value) fieldMap[field.field_name.toLowerCase()] = v.field_value;
-      });
-
-      const codigo = fieldMap["codigo"] || fieldMap["código"] || "";
-      const cebe = fieldMap["cebe"] || "";
-      const parts = [form.contract_name, codigo, cebe].filter(Boolean);
-      local = parts.join(" - ");
+        .in("field_id", fields.map(f => f.id));
+      codigo = (values || []).find(v => v.field_value)?.field_value || "";
     }
+    local = [form.contract_name, codigo, cebe].filter(Boolean).join(" - ");
   }
 
   // Build description

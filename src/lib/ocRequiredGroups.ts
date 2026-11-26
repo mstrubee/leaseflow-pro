@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { loadContractCebeText } from "@/lib/contractCebe";
 
 export interface OCRequiredGroupLine {
   budgetLineId: string;
@@ -155,21 +156,7 @@ export async function loadSolicitudesByQuotation(
   return result;
 }
 
-/** CEBE del contrato (campo personalizado "cebe"), usado en el PDF de la Solicitud de OC. */
+/** CEBE del contrato ("CEBE por empresa", todos separados por coma), usado en el PDF de la Solicitud de OC. */
 export async function loadContractCebe(contractId: string): Promise<string | null> {
-  const { data: field } = await supabase
-    .from("contract_custom_fields")
-    .select("id")
-    .ilike("field_name", "cebe")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-  if (!field) return null;
-  const { data: value } = await supabase
-    .from("contract_custom_field_values")
-    .select("field_value")
-    .eq("contract_id", contractId)
-    .eq("field_id", field.id)
-    .maybeSingle();
-  return value?.field_value ?? null;
+  return loadContractCebeText(contractId);
 }

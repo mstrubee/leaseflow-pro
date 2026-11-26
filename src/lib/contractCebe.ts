@@ -1,31 +1,114 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * CEBE de varios contratos de una vez. El CEBE es un campo personalizado del contrato
- * (contract_custom_fields con nombre "cebe") — misma fuente que usa CentralizedOrderCreator.
- * Devuelve solo los contratos que lo tienen cargado.
+ * Lectura del CEBE de los contratos.
+ *
+ * ÚNICA FUENTE: "CEBE por empresa" (tabla contract_cebes). El campo personalizado "CEBE"
+ * (contract_custom_fields) ya NO se lee en ninguna parte del sistema: todo módulo, listado,
+ * buscador, documento o exportable debe usar estas funciones.
+ *
+ * Un contrato puede tener varios CEBE (locales mixtos); donde hace falta un solo texto se
+ * muestran todos separados por coma ("A, B"), de modo que el buscador encuentra cualquiera.
  */
-export async function loadContractCebes(contractIds: string[]): Promise<Map<string, string>> {
-  const cebes = new Map<string, string>();
+
+export interface ContractCebeEntry {
+  id: string;
+  contractId: string;
+  companyId: string;
+  cebe: string;
+}
+
+const CHUNK = 100; // contratos por consulta (evita URLs enormes)
+const PAGE = 1000; // tope de filas por respuesta de PostgREST
+
+const toEntry = (r: { id: string; contract_id: string; company_id: string; cebe: string }): ContractCebeEntry => ({
+  id: r.id,
+  contractId: r.contract_id,
+  companyId: r.company_id,
+  cebe: r.cebe,
+});
+
+/** Texto "A, B" a partir de los CEBE (en orden). */
+export const joinCebes = (entries: Pick<ContractCebeEntry, "cebe">[]): string =>
+  entries.map((e) => e.cebe).join(", ");
+
+/** CEBE de varios contratos, en orden (sort_order, luego antigüedad). */
+export async function loadContractCebeEntries(contractIds: string[]): Promise<Map<string, ContractCebeEntry[]>> {
+  const out = new Map<string, ContractCebeEntry[]>();
   const ids = [...new Set(contractIds.filter(Boolean))];
-  if (ids.length === 0) return cebes;
+  if (ids.length === 0) return out;
 
-  const { data: field } = await supabase
-    .from("contract_custom_fields")
-    .select("id")
-    .ilike("field_name", "cebe")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-  if (!field) return cebes;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
 
-  const { data: values } = await supabase
-    .from("contract_custom_field_values")
-    .select("contract_id, field_value")
-    .eq("field_id", field.id)
-    .in("contract_id", ids);
-  (values || []).forEach((v) => {
-    if (v.field_value) cebes.set(v.contract_id, v.field_value);
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from("contract_cebes")
+        .select("id, contract_id, company_id, cebe, sort_order, created_at")
+        .in("contract_id", chunk)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ),
+  );
+  for (const res of results) {
+    if (res.error) throw res.error;
+    (res.data || []).forEach((r) => {
+      const list = out.get(r.contract_id) ?? [];
+      list.push(toEntry(r));
+      out.set(r.contract_id, list);
+    });
+  }
+  return out;
+}
+
+/** Todos los CEBE de todos los contratos (para pantallas que cruzan por código, no por contrato). */
+export async function loadAllContractCebeEntries(): Promise<ContractCebeEntry[]> {
+  const all: ContractCebeEntry[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("contract_cebes")
+      .select("id, contract_id, company_id, cebe, sort_order, created_at")
+      .order("contract_id", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    all.push(...(data || []).map(toEntry));
+    if (!data || data.length < PAGE) break;
+  }
+  return all;
+}
+
+/** contrato -> "A, B" para varios contratos. Solo trae los que tienen CEBE. */
+export async function loadContractCebes(contractIds: string[]): Promise<Map<string, string>> {
+  const entries = await loadContractCebeEntries(contractIds);
+  return new Map([...entries].map(([contractId, list]) => [contractId, joinCebes(list)]));
+}
+
+/** contrato -> "A, B" para TODOS los contratos. */
+export async function loadAllContractCebes(): Promise<Map<string, string>> {
+  const byContract = new Map<string, ContractCebeEntry[]>();
+  (await loadAllContractCebeEntries()).forEach((e) => {
+    const list = byContract.get(e.contractId) ?? [];
+    list.push(e);
+    byContract.set(e.contractId, list);
   });
-  return cebes;
+  return new Map([...byContract].map(([contractId, list]) => [contractId, joinCebes(list)]));
+}
+
+/** CEBE de un contrato como texto ("A, B"), o null si no tiene. */
+export async function loadContractCebeText(contractId: string): Promise<string | null> {
+  if (!contractId) return null;
+  const map = await loadContractCebes([contractId]);
+  return map.get(contractId) ?? null;
+}
+
+/**
+ * CEBE (cada uno con su empresa) de un contrato; lo usa el PDF de la Solicitud de OC para
+ * mostrar la distribución. Vacío si no tiene.
+ */
+export async function loadContractCebeEntriesFor(contractId: string): Promise<ContractCebeEntry[]> {
+  if (!contractId) return [];
+  return (await loadContractCebeEntries([contractId])).get(contractId) ?? [];
 }
