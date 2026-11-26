@@ -51,7 +51,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AddressLatLngFields } from "@/components/contracts/AddressLatLngFields";
 import { ContractCoOrdersSection } from "@/components/contracts/ContractCoOrdersSection";
+import { ContractCebesSection } from "@/components/contracts/ContractCebesSection";
 import { fetchCoOrders, saveCoOrders } from "@/hooks/useContractCoOrders";
+import { fetchContractCebes, saveContractCebes, useCompanyNames } from "@/hooks/useContractCebes";
+import { CebeDraft, cebeLabel, cebeToDrafts, validateCebeDrafts } from "@/lib/contractCebes";
 import { CoOrderDraft, toDrafts, validateDrafts } from "@/lib/coOrders";
 
 const EditContract = () => {
@@ -67,6 +70,12 @@ const EditContract = () => {
   const [coOriginalIds, setCoOriginalIds] = useState<string[]>([]);
   // Solo se guardan si cargaron bien, para no borrar CO existentes por un error de lectura
   const [coLoaded, setCoLoaded] = useState(false);
+
+  // CEBE por empresa (contratos con más de una empresa)
+  const [cebeDrafts, setCebeDrafts] = useState<CebeDraft[]>([]);
+  const [cebeOriginalIds, setCebeOriginalIds] = useState<string[]>([]);
+  // Solo se guardan si cargaron bien, para no borrar CEBE existentes por un error de lectura
+  const [cebesLoaded, setCebesLoaded] = useState(false);
   const [showMissingFieldsDialog, setShowMissingFieldsDialog] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
@@ -83,6 +92,7 @@ const EditContract = () => {
 
   // Contract basic info
   const [companyIds, setCompanyIds] = useState<string[]>([]);
+  const companyNames = useCompanyNames(companyIds);
   const [name, setName] = useState("");
   
   // Address
@@ -241,6 +251,17 @@ const EditContract = () => {
       if (error) throw error;
 
       setName(data.name);
+
+      // Load CEBE por empresa (un fallo aquí no debe impedir editar el contrato)
+      try {
+        const cebeRows = await fetchContractCebes(id!);
+        setCebeDrafts(cebeToDrafts(cebeRows));
+        setCebeOriginalIds(cebeRows.map((c) => c.id));
+        setCebesLoaded(true);
+      } catch (cebeError) {
+        console.error("Error loading contract CEBEs:", cebeError);
+        setCebesLoaded(false);
+      }
 
       // Load CO orders (un fallo aquí no debe impedir editar el contrato)
       try {
@@ -512,6 +533,14 @@ const EditContract = () => {
       }
     }
     
+    if (cebesLoaded) {
+      const cebeError = validateCebeDrafts(cebeDrafts, companyIds);
+      if (cebeError) {
+        toast({ variant: "destructive", title: "CEBE inválido", description: cebeError });
+        return;
+      }
+    }
+
     if (isAdmin && coLoaded) {
       const coError = validateDrafts(coDrafts);
       if (coError) {
@@ -918,9 +947,15 @@ const EditContract = () => {
       // Save custom field values
       await saveCustomFieldValues(id!);
 
+      // Save CEBE por empresa (después de las empresas; antes de las CO, que pueden apuntar a ellos)
+      let cebeIdByKey = new Map<string, string>();
+      if (cebesLoaded) {
+        cebeIdByKey = await saveContractCebes(id!, cebeDrafts, cebeOriginalIds);
+      }
+
       // Save CO orders (solo admin; la RLS también lo exige)
       if (isAdmin && coLoaded) {
-        await saveCoOrders(id!, coDrafts, coOriginalIds, user?.id ?? null);
+        await saveCoOrders(id!, coDrafts, coOriginalIds, user?.id ?? null, cebeIdByKey);
       }
 
       setHasUnsavedChanges(false);
@@ -1116,11 +1151,23 @@ const EditContract = () => {
                     onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
                   />
                 </div>
+                {cebesLoaded && (
+                  <ContractCebesSection
+                    companyIds={companyIds}
+                    companyNames={companyNames}
+                    drafts={cebeDrafts}
+                    onChange={(next) => { setCebeDrafts(next); setHasUnsavedChanges(true); }}
+                    canEdit={isAdmin || hasPermission("contracts", "edit")}
+                  />
+                )}
                 {coLoaded && (
                   <ContractCoOrdersSection
                     drafts={coDrafts}
                     onChange={(next) => { setCoDrafts(next); setHasUnsavedChanges(true); }}
                     canEdit={isAdmin}
+                    cebeOptions={cebeDrafts
+                      .filter((c) => c.cebe.trim() && c.company_id)
+                      .map((c) => ({ key: c.key, label: cebeLabel(c.cebe.trim(), companyNames[c.company_id]) }))}
                     ufValue={ufValue}
                   />
                 )}

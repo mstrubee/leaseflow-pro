@@ -5,7 +5,7 @@ import { CoOrder, CoOrderDraft, parseCoAmount } from "@/lib/coOrders";
 export const fetchCoOrders = async (contractId: string): Promise<CoOrder[]> => {
   const { data, error } = await supabase
     .from("contract_co_orders")
-    .select("id, co_number, amount_clp")
+    .select("id, co_number, amount_clp, cebe_id")
     .eq("contract_id", contractId)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
@@ -14,6 +14,7 @@ export const fetchCoOrders = async (contractId: string): Promise<CoOrder[]> => {
     id: r.id,
     co_number: r.co_number,
     amount_clp: r.amount_clp === null ? null : Number(r.amount_clp),
+    cebe_id: r.cebe_id ?? null,
   }));
 };
 
@@ -26,6 +27,8 @@ export const saveCoOrders = async (
   drafts: CoOrderDraft[],
   originalIds: string[],
   userId: string | null,
+  /** clave de borrador de CEBE → id real (los CEBE se guardan antes que las CO). */
+  cebeIdByKey: Map<string, string> = new Map(),
 ): Promise<void> => {
   const rows = drafts
     .filter((d) => d.co_number.trim().length > 0)
@@ -33,6 +36,7 @@ export const saveCoOrders = async (
       id: d.id,
       co_number: d.co_number.trim(),
       amount_clp: parseCoAmount(d.amount),
+      cebe_id: d.cebeKey ? cebeIdByKey.get(d.cebeKey) ?? null : null,
       sort_order: index,
     }));
 
@@ -50,6 +54,7 @@ export const saveCoOrders = async (
       contract_id: contractId,
       co_number: r.co_number,
       amount_clp: r.amount_clp,
+      cebe_id: r.cebe_id,
       sort_order: r.sort_order,
       created_by: userId,
     }));
@@ -61,7 +66,7 @@ export const saveCoOrders = async (
   for (const r of rows.filter((x) => x.id)) {
     const { error } = await supabase
       .from("contract_co_orders")
-      .update({ co_number: r.co_number, amount_clp: r.amount_clp, sort_order: r.sort_order })
+      .update({ co_number: r.co_number, amount_clp: r.amount_clp, cebe_id: r.cebe_id, sort_order: r.sort_order })
       .eq("id", r.id as string);
     if (error) throw error;
   }

@@ -13,6 +13,8 @@ export interface CoOrder {
   id: string;
   co_number: string;
   amount_clp: number | null;
+  /** CEBE (contract_cebes.id) al que está asignada la CO; null = sin asignar. */
+  cebe_id: string | null;
 }
 
 /** Fila editable en el formulario (monto como texto para poder tipear). */
@@ -23,6 +25,8 @@ export interface CoOrderDraft {
   id?: string;
   co_number: string;
   amount: string;
+  /** Clave del CEBE asignado (CebeDraft.key; = id si ya existe). "" = sin asignar. */
+  cebeKey: string;
 }
 
 /** Acepta "1.234.567" (miles con punto) y "1234567.5". Devuelve null si está vacío o no es válido. */
@@ -75,12 +79,14 @@ export const toDrafts = (orders: CoOrder[]): CoOrderDraft[] =>
     id: o.id,
     co_number: o.co_number,
     amount: o.amount_clp === null || o.amount_clp === undefined ? "" : String(o.amount_clp),
+    cebeKey: o.cebe_id ?? "",
   }));
 
 export const newDraft = (): CoOrderDraft => ({
   key: `new-${Math.random().toString(36).slice(2)}`,
   co_number: "",
   amount: "",
+  cebeKey: "",
 });
 
 /** Devuelve un mensaje de error o null si los borradores son guardables. */

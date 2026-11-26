@@ -1510,9 +1510,55 @@ export type Database = {
           },
         ]
       }
+      contract_cebes: {
+        Row: {
+          cebe: string
+          company_id: string
+          contract_id: string
+          created_at: string
+          id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          cebe: string
+          company_id: string
+          contract_id: string
+          created_at?: string
+          id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          cebe?: string
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_cebes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_cebes_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_co_orders: {
         Row: {
           amount_clp: number | null
+          cebe_id: string | null
           co_number: string
           contract_id: string
           created_at: string
@@ -1523,6 +1569,7 @@ export type Database = {
         }
         Insert: {
           amount_clp?: number | null
+          cebe_id?: string | null
           co_number: string
           contract_id: string
           created_at?: string
@@ -1533,6 +1580,7 @@ export type Database = {
         }
         Update: {
           amount_clp?: number | null
+          cebe_id?: string | null
           co_number?: string
           contract_id?: string
           created_at?: string
@@ -1542,6 +1590,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "contract_co_orders_cebe_id_fkey"
+            columns: ["cebe_id"]
+            isOneToOne: false
+            referencedRelation: "contract_cebes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contract_co_orders_contract_id_fkey"
             columns: ["contract_id"]
