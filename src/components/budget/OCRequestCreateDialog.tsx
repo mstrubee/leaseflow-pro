@@ -15,6 +15,10 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, buildShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { useContractCoOrders } from "@/hooks/useContractCoOrders";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { saveDistribution, syncPaymentSublines, allocationsToRows, type StoredAllocation } from "@/lib/cebeDistributionStore";
+import type { DistRow } from "@/lib/cebeDistribution";
 import { formatCoNumbers } from "@/lib/coOrders";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
@@ -44,6 +48,8 @@ export interface OCRequestPrefillDraft {
   supplierId: string | null;
   supplierName: string | null;
   paymentPlan: PaymentPlanRow[];
+  /** Distribución por CEBE del requerimiento (local mixto); se hereda a la solicitud. */
+  cebeDistribution?: StoredAllocation[];
 }
 
 type ParsedOCRequestExcel = Awaited<ReturnType<typeof parseOCRequestExcel>>;
@@ -122,6 +128,23 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
 
+  // Local mixto (2+ CEBE): el gasto se distribuye entre sus CEBE. Se detecta solo.
+  const { cebes, isMixed: cebeMixed, loading: cebesLoading } = useContractCebeSet(contractId);
+  const formTotalClp = (() => {
+    const entered = parseFloat(newRequestForm.amount) || 0;
+    const uf = ufValue > 0 ? ufValue : 38000;
+    return newRequestForm.currency === "CLP" ? Math.round(entered) : Math.round(entered * uf);
+  })();
+  const dist = useCebeDistribution(cebeMixed ? cebes.map((c) => c.id) : [], formTotalClp);
+  // Distribución heredada de un Requerimiento: se aplica cuando ya se conocen los CEBE y el monto.
+  const [pendingPrefillDist, setPendingPrefillDist] = useState<DistRow[] | null>(null);
+  useEffect(() => {
+    if (pendingPrefillDist && cebeMixed && formTotalClp > 0) {
+      dist.reset(pendingPrefillDist);
+      setPendingPrefillDist(null);
+    }
+  }, [pendingPrefillDist, cebeMixed, formTotalClp, dist.reset]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load available budgets when opening new request dialog
   const handleOpenNewRequestDialog = async () => {
     setShowNewRequestDialog(true);
@@ -134,6 +157,8 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     setPrefillFile({ url: null, name: null, storagePath: null });
     setConversionQuotationNumber(null);
     setLinesLocked(false);
+    setPendingPrefillDist(null);
+    dist.reset();
     setLoadingBudgets(true);
 
     try {
@@ -244,6 +269,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         supplier_name: prefillDraft.supplierName,
       }));
       setPaymentPlan(prefillDraft.paymentPlan);
+      setPendingPrefillDist(prefillDraft.cebeDistribution?.length ? allocationsToRows(prefillDraft.cebeDistribution) : null);
       setPrefillFile({ url: prefillDraft.fileUrl, name: prefillDraft.fileName, storagePath: prefillDraft.storagePath ?? null });
       setConversionQuotationNumber(prefillDraft.quotationNumber);
       setLinesLocked(true);
@@ -335,6 +361,17 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: planError });
         return;
       }
+    }
+
+    // Local mixto: la distribución del gasto por CEBE es obligatoria y debe sumar el total.
+    if (cebesLoading) {
+      toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están cargando los CEBE del local." });
+      return;
+    }
+    if (cebeMixed && !dist.check.valid) {
+      toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: dist.check.errors[0] });
+      setNewRequestTab("basic");
+      return;
     }
 
     const lineNames = validLines.map(l => l.lineName);
@@ -448,6 +485,22 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
             amount_clp: totalAmountClp,
             due_date: null,
             status: "pending"
+          });
+        }
+      }
+
+      // Local mixto: guarda la distribución por CEBE y las sublíneas de cada pago del plan.
+      if (requestData && cebeMixed) {
+        try {
+          const ref = { kind: "request" as const, contractId, id: requestData.id };
+          await saveDistribution(ref, dist.rows, totalAmountClp);
+          await syncPaymentSublines(ref, { ufValue: currentUfValue });
+        } catch (distError) {
+          console.error("Error al guardar la distribución por CEBE:", distError);
+          toast({
+            variant: "destructive",
+            title: "Solicitud creada sin distribución por CEBE",
+            description: "No se pudo guardar la distribución por CEBE. Ábrela y vuelve a ingresarla antes de continuar.",
           });
         }
       }
@@ -687,6 +740,16 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
                   />
                 </div>
 
+                {cebeMixed && (
+                  <CebeDistributionEditor
+                    cebes={cebes}
+                    rows={dist.rows}
+                    totalClp={formTotalClp}
+                    onEdit={dist.edit}
+                    check={dist.check}
+                  />
+                )}
+
                 {selectedBudgetId && (
                   <Button 
                     onClick={() => setNewRequestTab("lines")} 
@@ -749,6 +812,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
                   currency={newRequestForm.currency}
                   ufValue={ufValue > 0 ? ufValue : undefined}
                   newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+                  cebeBreakdown={cebeMixed ? { distribution: dist.rows, cebes, totalClp: formTotalClp } : undefined}
                 />
 
                 <div className="flex gap-2">
@@ -795,7 +859,9 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
                     parseFloat(newRequestForm.amount) <= 0 ||
                     !newRequestForm.supplier_id ||
                     paymentPlan.length === 0 ||
-                    Math.abs(totalPlanned - totalSelected) > 0.01
+                    Math.abs(totalPlanned - totalSelected) > 0.01 ||
+                    cebesLoading ||
+                    (cebeMixed && !dist.check.valid)
                   }
                 >
                   {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

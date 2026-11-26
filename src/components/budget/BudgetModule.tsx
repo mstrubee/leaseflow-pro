@@ -31,6 +31,9 @@ import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useContractCoOrders } from "@/hooks/useContractCoOrders";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { saveDistribution } from "@/lib/cebeDistributionStore";
 import { formatCoNumbers, getEffectiveFrozen } from "@/lib/coOrders";
 
 interface Budget {
@@ -638,6 +641,15 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
   const { isAdmin, hasPermission } = useAuth();
   // Órdenes CO del contrato: su suma es el Monto Congelado del CAPEX
   const { orders: coOrders } = useContractCoOrders(contractId);
+
+  // OC directa desde una línea, en un local mixto (2+ CEBE): el gasto se distribuye entre sus CEBE.
+  // (No aplica a contratos de servicio: no tienen CEBE por empresa.)
+  const { cebes: ocCebes, isMixed: ocCebeMixed, loading: ocCebesLoading } = useContractCebeSet(serviceContractId ? null : contractId);
+  const ocTotalForDistClp = (() => {
+    const entered = parseFloat(ocForm.amount) || 0;
+    return Math.round(ocForm.currency === "CLP" && ufValue > 0 ? entered : entered * ufValue);
+  })();
+  const ocDist = useCebeDistribution(ocCebeMixed ? ocCebes.map((c) => c.id) : [], ocTotalForDistClp);
 
   // Budget granular permissions — parent grant (contract_budget:edit) covers all sub-actions
   const parentBudgetEdit = isAdmin || hasPermission("contract_budget", "edit");
@@ -1819,6 +1831,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       amount: "",
       currency: "UF"
     });
+    ocDist.reset();
     setShowOCDialog(true);
     setLoadingLineAvailable(true);
     
@@ -1878,6 +1891,16 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       return;
     }
 
+    // Local mixto: la distribución del gasto por CEBE es obligatoria y debe sumar el total.
+    if (ocCebesLoading) {
+      toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están cargando los CEBE del local." });
+      return;
+    }
+    if (ocCebeMixed && !ocDist.check.valid) {
+      toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: ocDist.check.errors[0] });
+      return;
+    }
+
     setCreatingOC(true);
     try {
       let amountClp = 0;
@@ -1906,9 +1929,23 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
       } else {
         ocPayload.contract_id = contractId;
       }
-      const { error } = await supabase.from("purchase_orders").insert(ocPayload);
+      const { data: createdOc, error } = await supabase.from("purchase_orders").insert(ocPayload).select("id").single();
 
       if (error) throw error;
+
+      // Local mixto: guarda la distribución por CEBE de la OC.
+      if (createdOc && ocCebeMixed && !serviceContractId) {
+        try {
+          await saveDistribution({ kind: "order", contractId, id: createdOc.id }, ocDist.rows, Math.round(amountClp));
+        } catch (distError) {
+          console.error("Error al guardar la distribución por CEBE:", distError);
+          toast({
+            variant: "destructive",
+            title: "OC creada sin distribución por CEBE",
+            description: "No se pudo guardar la distribución por CEBE de la OC. Avísale al administrador.",
+          });
+        }
+      }
 
       toast({ title: "OC creada", description: `Orden de compra ${ocForm.order_number} creada exitosamente` });
       setShowOCDialog(false);
@@ -2916,6 +2953,15 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
                 </Select>
               </div>
             </div>
+            {ocCebeMixed && (
+              <CebeDistributionEditor
+                cebes={ocCebes}
+                rows={ocDist.rows}
+                totalClp={ocTotalForDistClp}
+                onEdit={ocDist.edit}
+                check={ocDist.check}
+              />
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowOCDialog(false)}>
@@ -2923,7 +2969,7 @@ export const BudgetModule = ({ contractId, serviceContractId, contractName = "",
             </Button>
             <Button 
               onClick={handleCreateOC} 
-              disabled={creatingOC || !ocForm.order_number || !ocForm.amount || ocLineAvailable <= 0 || loadingLineAvailable}
+              disabled={creatingOC || !ocForm.order_number || !ocForm.amount || ocLineAvailable <= 0 || loadingLineAvailable || ocCebesLoading || (ocCebeMixed && !ocDist.check.valid)}
             >
               {creatingOC && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear OC

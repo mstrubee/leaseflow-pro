@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -31,6 +31,10 @@ import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData } from "@/lib/ocRequestShare";
 import { loadOCRequestShareData } from "@/lib/loadOCRequestShareData";
 import { loadOCRequestLineAllocations, replaceOCRequestLines } from "@/lib/ocRequestLines";
+import { useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { PaymentCebeBreakdown } from "./PaymentCebeBreakdown";
+import { RequestCebeDistributionSection } from "./RequestCebeDistributionSection";
+import { loadDistribution, rescaleStoredDistribution, syncPaymentSublines, type StoredAllocation } from "@/lib/cebeDistributionStore";
 
 interface OCRequest {
   id: string;
@@ -180,6 +184,9 @@ export const OCRequestViewDialog = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [request, setRequest] = useState<OCRequest | null>(null);
+  // Local mixto (2+ CEBE): distribución del gasto por CEBE de esta solicitud.
+  const { cebes: reqCebes, isMixed: reqCebeMixed } = useContractCebeSet(request?.contract_id);
+  const [reqDist, setReqDist] = useState<StoredAllocation[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLineAssignment[]>([]);
   // Techo para "Monto Total": suma del disponible real de la(s) línea(s)
   // asignada(s) (excluyendo el consumo de esta misma solicitud). null = sin
@@ -358,6 +365,14 @@ export const OCRequestViewDialog = ({
         .order("payment_number");
       
       setPaymentPlans((plansData || []) as PaymentPlan[]);
+
+      // Distribución por CEBE (solo existe en locales mixtos)
+      try {
+        setReqDist(await loadDistribution({ kind: "request", contractId: reqData.contract_id, id: requestId }));
+      } catch (distError) {
+        console.error("No se pudo leer la distribución por CEBE:", distError);
+        setReqDist([]);
+      }
 
       // Load form assignments
       const { data: formsData } = await supabase
@@ -991,6 +1006,12 @@ export const OCRequestViewDialog = ({
         })
         .eq("id", request.id);
       if (error) throw error;
+      // Local mixto: la distribución por CEBE se re-ajusta al nuevo monto (mismas proporciones).
+      try {
+        await rescaleStoredDistribution({ kind: "request", contractId: request.contract_id, id: request.id }, Math.round(newClp));
+      } catch (distError) {
+        console.error("No se pudo re-ajustar la distribución por CEBE:", distError);
+      }
       toast({ title: "Monto actualizado" });
       setEditingTotalAmount(false);
       setEditingTotalValue("");
@@ -1041,6 +1062,9 @@ export const OCRequestViewDialog = ({
       });
 
       if (error) throw error;
+      await syncPaymentSublines({ kind: "request", contractId: request.contract_id, id: request.id }, { ufValue }).catch((e) =>
+        console.error("No se pudieron generar las sublíneas por CEBE del pago:", e),
+      );
 
       toast({ title: "Pago agregado" });
       // Si el pago se fijó en %, el siguiente también parte en % (misma metodología).
@@ -1097,6 +1121,9 @@ export const OCRequestViewDialog = ({
           .from("oc_payment_plans")
           .update({ amount_uf: Math.round(amountUf * 10000) / 10000, amount_clp: Math.round(amountClp) })
           .eq("id", editingPaymentId);
+        await syncPaymentSublines({ kind: "request", contractId: request.contract_id, id: request.id }, { ufValue }).catch((e) =>
+          console.error("No se pudieron regenerar las sublíneas por CEBE del pago:", e),
+        );
       } else {
         await supabase
           .from("oc_payment_plans")
@@ -1883,6 +1910,19 @@ export const OCRequestViewDialog = ({
             </TabsContent>
 
             <TabsContent value="payments" className="space-y-4 mt-4">
+              {reqCebeMixed && !request.is_multi_contract && (
+                <RequestCebeDistributionSection
+                  contractId={request.contract_id}
+                  requestId={request.id}
+                  totalClp={totalRequestClp}
+                  ufValue={ufValue}
+                  cebes={reqCebes}
+                  distribution={reqDist}
+                  editable={!readOnly && request.status === "pending"}
+                  onChanged={loadRequest}
+                />
+              )}
+
               {/* Summary - CLP */}
               <div className="grid grid-cols-4 gap-2 p-3 bg-muted/50 rounded-lg text-sm">
                 <div>
@@ -1933,7 +1973,8 @@ export const OCRequestViewDialog = ({
                       const canEdit = !readOnly && request.status === "pending";
 
                       return (
-                        <TableRow key={plan.id}>
+                        <Fragment key={plan.id}>
+                        <TableRow>
                           <TableCell className="font-mono">{plan.payment_number}</TableCell>
                           <TableCell
                             className={canEdit ? "cursor-pointer" : ""}
@@ -1995,6 +2036,19 @@ export const OCRequestViewDialog = ({
                             </TableCell>
                           )}
                         </TableRow>
+                        {reqCebeMixed && reqDist.length >= 2 && (
+                          <TableRow>
+                            <TableCell />
+                            <TableCell colSpan={canEdit ? 6 : 5} className="pt-0 pb-2">
+                              <PaymentCebeBreakdown
+                                amountClp={paymentClp(plan, request, ufValue)}
+                                distribution={reqDist.map((d) => ({ cebeId: d.cebeId, amount: d.amount }))}
+                                cebes={reqCebes}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </Fragment>
                       );
                     })}
                   </TableBody>

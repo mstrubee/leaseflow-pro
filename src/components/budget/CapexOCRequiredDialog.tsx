@@ -13,6 +13,9 @@ import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
 import { PaymentPlanRow, resolvePaymentPlan } from "@/lib/paymentPlan";
 
 export interface CapexLineRef {
@@ -145,6 +148,9 @@ export function CapexOCRequiredDialog({
   const [finalAdditionalLines, setFinalAdditionalLines] = useState<CapexLineRef[]>([]);
   const [saving, setSaving] = useState<"final" | "temp" | null>(null);
 
+  // Local mixto (2+ CEBE): el gasto se distribuye entre sus CEBE. Se detecta solo.
+  const { cebes, isMixed: cebeMixed, loading: cebesLoading } = useContractCebeSet(contractId);
+
   // Vuelve del modo "seleccionar en la página" con el resultado -- incluso si
   // vino vacío, cuenta como "terminó de seleccionar" (pasa al resumen).
   useEffect(() => {
@@ -183,6 +189,7 @@ export function CapexOCRequiredDialog({
     setSupplierName(null);
     setPaymentPlan([]);
     setFinalAdditionalLines([]);
+    dist.reset();
   };
 
   // El monto requerido se puede ingresar en pesos o en UF.
@@ -270,7 +277,9 @@ export function CapexOCRequiredDialog({
   // onChange(null, name)) -- exigir solo supplierId bloqueaba "Aceptar" para
   // siempre en ese caso, sin ningún mensaje visible.
   const hasSupplier = !!supplierId || !!supplierName?.trim();
-  const montoValido = montoClp > 0 && hasSupplier && paymentPlan.length > 0 && !paymentPlanError;
+  const dist = useCebeDistribution(cebeMixed ? cebes.map((c) => c.id) : [], montoClp);
+  const cebeOk = !cebesLoading && (!cebeMixed || dist.check.valid);
+  const montoValido = montoClp > 0 && hasSupplier && paymentPlan.length > 0 && !paymentPlanError && cebeOk;
 
   const targetLines = [originLine, ...finalAdditionalLines];
   const authorizedTotalUf = targetLines
@@ -287,6 +296,10 @@ export function CapexOCRequiredDialog({
 
   const handleSave = async (mode: "final" | "temp") => {
     if (!file) return;
+    if (!cebeOk) {
+      toast.error(dist.check.errors[0] ?? "Aún se están cargando los CEBE del local");
+      return;
+    }
     const statusId = mode === "final" ? ocRequeridaStatusId : cotizadoStatusId;
     if (!statusId) {
       toast.error(`No se encontró el estado "${mode === "final" ? "OC Requerida" : "Cotizado"}"`);
@@ -344,6 +357,19 @@ export function CapexOCRequiredDialog({
       if (paymentPlanError2) {
         toast.error("La cotización se asoció, pero no se pudo guardar el plan de pagos");
         return;
+      }
+
+      // Local mixto: guarda la distribución por CEBE del requerimiento y las sublíneas de cada pago.
+      if (cebeMixed) {
+        try {
+          const ref = { kind: "requirement" as const, contractId, id: quotationNumber };
+          await saveDistribution(ref, dist.rows, montoClp);
+          await syncPaymentSublines(ref, { ufValue });
+        } catch (distError) {
+          console.error("Error al guardar la distribución por CEBE:", distError);
+          toast.error("La cotización se asoció, pero no se pudo guardar la distribución por CEBE");
+          return;
+        }
       }
 
       const { error: statusError } = await (supabase as any)
@@ -497,6 +523,16 @@ export function CapexOCRequiredDialog({
                 />
               </div>
 
+              {cebeMixed && (
+                <CebeDistributionEditor
+                  cebes={cebes}
+                  rows={dist.rows}
+                  totalClp={montoClp}
+                  onEdit={dist.edit}
+                  check={dist.check}
+                />
+              )}
+
               <PaymentPlanEditor
                 items={paymentPlan}
                 onChange={setPaymentPlan}
@@ -504,6 +540,7 @@ export function CapexOCRequiredDialog({
                 currency="CLP"
                 ufValue={ufValue}
                 newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+                cebeBreakdown={cebeMixed ? { distribution: dist.rows, cebes, totalClp: montoClp } : undefined}
               />
 
               <p className="text-[11px] text-muted-foreground">
@@ -594,6 +631,8 @@ export function CapexOCRequiredDialog({
                     ? "Selecciona un proveedor"
                     : paymentPlan.length === 0
                     ? "Agrega al menos un pago al plan de pagos"
+                    : !cebeOk
+                    ? dist.check.errors[0] ?? "Cargando los CEBE del local"
                     : paymentPlanError || undefined
                 }
               >

@@ -13,6 +13,7 @@ import { EditOCRequiredDialog } from "./EditOCRequiredDialog";
 import type { OCRequestPrefillDraft } from "./OCRequestsList";
 import { loadSolicitudesByQuotation, type OCRequiredGroup, type OCRequiredGroupLine } from "@/lib/ocRequiredGroups";
 import { buildPrefillDraftFromGroup } from "@/lib/ocRequiredDraft";
+import { deleteDistribution } from "@/lib/cebeDistributionStore";
 import { OCRequiredGroupDetail } from "./OCRequiredGroupDetail";
 
 // Re-exportados para no romper a los demás archivos que ya los importan desde
@@ -153,6 +154,10 @@ export function OCRequiredList({ contractId, contractName, ufValue, formatCLP, o
         .delete()
         .eq("quotation_number", deleteTarget.quotationNumber);
       if (error) throw error;
+      // La distribución por CEBE del requerimiento no tiene FK (se ata por quotation_number): se borra aquí.
+      await deleteDistribution({ kind: "requirement", contractId: "", id: deleteTarget.quotationNumber }).catch((e) =>
+        console.error("No se pudo borrar la distribución por CEBE del requerimiento:", e),
+      );
       await supabase.from("budget_lines").update({ progress_status_id: null }).in("id", lineIds);
       toast.success("Requerimiento eliminado");
       setDeleteTarget(null);

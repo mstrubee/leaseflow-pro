@@ -25,6 +25,9 @@ import { syncOCRequestLinesFromPurchaseOrder } from "@/lib/ocRequestLines";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { softDeletePurchaseOrder } from "@/lib/purchaseOrderDelete";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { rescaleStoredDistribution, saveDistribution } from "@/lib/cebeDistributionStore";
 import {
   OPEX_CATEGORY_REQUIRED_MESSAGE,
   categoriesForYear,
@@ -212,6 +215,14 @@ export const PurchaseOrdersModule = ({
   const { toast } = useToast();
   const { openFile } = useSecureFileAccess();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
+
+  // Local mixto (2+ CEBE): el gasto de la OC se distribuye entre sus CEBE. Se detecta solo.
+  const { cebes, isMixed: cebeMixed, loading: cebesLoading } = useContractCebeSet(contractId);
+  const newOrderTotalClp = (() => {
+    const entered = parseFloat(newOrder.amount) || 0;
+    return newOrder.currency === "UF" ? (ufValue > 0 ? Math.round(convertUFToPesos(entered)) : 0) : Math.round(entered);
+  })();
+  const dist = useCebeDistribution(cebeMixed ? cebes.map((c) => c.id) : [], newOrderTotalClp);
 
   useEffect(() => {
     loadOrders();
@@ -724,6 +735,16 @@ export const PurchaseOrdersModule = ({
         }
       }
 
+      // Local mixto: la distribución del gasto por CEBE es obligatoria y debe sumar el total.
+      if (cebesLoading) {
+        toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están cargando los CEBE del local." });
+        return;
+      }
+      if (cebeMixed && !dist.check.valid) {
+        toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: dist.check.errors[0] });
+        return;
+      }
+
       // Find budget for selected type and year
       const budget = budgets.find(b => b.budget_type === newOrder.budget_type);
       const selectedLines = budgetLines.filter(l => newOrder.budget_line_ids.includes(l.id));
@@ -768,6 +789,20 @@ export const PurchaseOrdersModule = ({
         
         await supabase.from("purchase_order_budget_lines").insert(lineInserts);
         await syncBudgetLineOcStatus({ addedLineIds: newOrder.budget_line_ids });
+      }
+
+      // Local mixto: guarda la distribución por CEBE de la OC.
+      if (createdOrder && cebeMixed) {
+        try {
+          await saveDistribution({ kind: "order", contractId, id: createdOrder.id }, dist.rows, Math.round(amountCLP));
+        } catch (distError) {
+          console.error("Error al guardar la distribución por CEBE:", distError);
+          toast({
+            variant: "destructive",
+            title: "OC creada sin distribución por CEBE",
+            description: "No se pudo guardar la distribución por CEBE de la OC. Avísale al administrador.",
+          });
+        }
       }
 
       // Upload OC file to Drive if selected
@@ -824,6 +859,7 @@ export const PurchaseOrdersModule = ({
         attachment_url: "",
         attachment_name: "",
       });
+      dist.reset();
       setOcFile(null);
       setBudgetWarning(null);
       loadOrders();
@@ -1045,6 +1081,16 @@ export const PurchaseOrdersModule = ({
         .eq("id", editOrder.id);
 
       if (error) throw error;
+
+      // Local mixto: si cambió el monto de la OC, la distribución por CEBE se re-ajusta (mismas
+      // proporciones) para que siga sumando el total. No falla la edición si esto no se puede.
+      if (cebeMixed) {
+        try {
+          await rescaleStoredDistribution({ kind: "order", contractId, id: editOrder.id }, Math.round(amountCLP));
+        } catch (distError) {
+          console.error("No se pudo re-ajustar la distribución por CEBE:", distError);
+        }
+      }
       
       // Update budget line associations
       if (editFormData.budget_type === "capex") {
@@ -1714,6 +1760,15 @@ export const PurchaseOrdersModule = ({
                 </p>
               )}
             </div>
+            {cebeMixed && (
+              <CebeDistributionEditor
+                cebes={cebes}
+                rows={dist.rows}
+                totalClp={newOrderTotalClp}
+                onEdit={dist.edit}
+                check={dist.check}
+              />
+            )}
             <div className="space-y-2">
               <Label>Archivo OC (PDF)</Label>
               <div className="flex flex-col gap-2">
@@ -1789,14 +1844,16 @@ export const PurchaseOrdersModule = ({
             </div>
           </ScrollArea>
           <DialogFooter className="flex-shrink-0 pt-4 border-t">
-            <Button variant="outline" onClick={() => { setShowNewDialog(false); setBudgetWarning(null); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowNewDialog(false); setBudgetWarning(null); dist.reset(); }}>Cancelar</Button>
             <Button 
               onClick={handleCreateOrder}
               disabled={
                 !newOrder.order_number ||
                 (newOrder.budget_type === "capex" && newOrder.budget_line_ids.length === 0) ||
                 (newOrder.budget_type === "capex" && !newOrder.supplier_id) ||
-                (newOrder.budget_type === "opex" && !newOrder.opex_category_id)
+                (newOrder.budget_type === "opex" && !newOrder.opex_category_id) ||
+                cebesLoading ||
+                (cebeMixed && !dist.check.valid)
               }
             >
               Crear

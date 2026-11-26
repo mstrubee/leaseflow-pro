@@ -33,7 +33,13 @@ export const saveContractCebes = async (
 
   if (removedIds.length > 0) {
     const { error } = await supabase.from("contract_cebes").delete().in("id", removedIds);
-    if (error) throw error;
+    if (error) {
+      // 23503: el CEBE ya tiene gasto distribuido en OC / pagos (FK RESTRICT) -- no se puede borrar.
+      if (error.code === "23503") {
+        throw new Error("No se puede eliminar un CEBE que ya tiene gasto distribuido en Órdenes de Compra o Solicitudes.");
+      }
+      throw error;
+    }
   }
 
   // Actualizar primero (puede liberar un código que otra fila nueva quiere usar)

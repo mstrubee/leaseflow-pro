@@ -23,6 +23,9 @@ import { formatCLP } from "@/lib/utils";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import { OCRequestShareData, buildShareLines, reconcileShareLines, validatePaymentPlanTotal } from "@/lib/ocRequestShare";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import { syncBudgetLineOcStatus } from "@/lib/budgetLineOcStatus";
 import { categoriesForYear, yearFromDate } from "@/lib/opexCategories";
@@ -595,6 +598,13 @@ export const CentralizedOrderCreator = ({
   
   // Parse entered amount
   const enteredAmount = parseFloat(formData.amount) || 0;
+
+  // Local mixto (2+ CEBE) cuando la solicitud/OC es de UN solo contrato: el gasto se distribuye
+  // entre sus CEBE. (Con varios contratos cada uno recibe un monto propio: no aplica aquí.)
+  const { cebes, isMixed: cebeMixedRaw, loading: cebesLoading } = useContractCebeSet(!isMultiContract && singleContractId ? singleContractId : null);
+  const cebeMixed = !isMultiContract && cebeMixedRaw;
+  const distTotalClp = Math.round(formData.currency === "CLP" ? enteredAmount : enteredAmount * ufValue) || 0;
+  const dist = useCebeDistribution(cebeMixed ? cebes.map((c) => c.id) : [], distTotalClp);
   // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
   // supplier_id (ver SupplierSelect.handleSavePublicEntity) -- exigir solo
   // supplier_id bloqueaba avanzar para ese caso legítimo.
@@ -862,6 +872,17 @@ export const CentralizedOrderCreator = ({
       }
     }
     
+    // Local mixto: la distribución del gasto por CEBE es obligatoria y debe sumar el total.
+    if (!isMultiContract && singleContractId && cebesLoading) {
+      toast({ title: "Espera un momento", description: "Aún se están cargando los CEBE del local.", variant: "destructive" });
+      return;
+    }
+    if (cebeMixed && !dist.check.valid) {
+      toast({ title: "Distribución por CEBE inválida", description: dist.check.errors[0], variant: "destructive" });
+      setActiveTab("basic");
+      return;
+    }
+
     setLoading(true);
     
     try {
@@ -1064,6 +1085,22 @@ export const CentralizedOrderCreator = ({
             due_date: null,
             status: "pending"
           });
+        }
+
+        // Local mixto: guarda la distribución por CEBE y las sublíneas de cada pago del plan.
+        if (cebeMixed && requestData) {
+          try {
+            const ref = { kind: "request" as const, contractId: primaryContractId, id: requestData.id };
+            await saveDistribution(ref, dist.rows, totalAmountClp);
+            await syncPaymentSublines(ref, { ufValue });
+          } catch (distError) {
+            console.error("Error al guardar la distribución por CEBE:", distError);
+            toast({
+              title: "Solicitud creada sin distribución por CEBE",
+              description: "No se pudo guardar la distribución por CEBE. Ábrela y vuelve a ingresarla antes de continuar.",
+              variant: "destructive",
+            });
+          }
         }
 
         toast({ title: "Solicitud creada", description: "Solicitud creada exitosamente" });
@@ -1296,6 +1333,20 @@ export const CentralizedOrderCreator = ({
           
           if (orderError) throw orderError;
 
+          // Local mixto: guarda la distribución por CEBE de la OC.
+          if (cebeMixed && singlePoData) {
+            try {
+              await saveDistribution({ kind: "order", contractId: primaryContractId, id: singlePoData.id }, dist.rows, totalAmountClp);
+            } catch (distError) {
+              console.error("Error al guardar la distribución por CEBE:", distError);
+              toast({
+                title: "OC creada sin distribución por CEBE",
+                description: "No se pudo guardar la distribución por CEBE de la OC. Avísale al administrador.",
+                variant: "destructive",
+              });
+            }
+          }
+
           // Save CAPEX budget line associations (amount split proportionally
           // to each line's own DISPONIBLE — not its full authorized amount,
           // and not evenly — so ninguna línea queda con disponible negativo)
@@ -1349,6 +1400,7 @@ export const CentralizedOrderCreator = ({
     setSingleContractId("");
     setContractAllocations([]);
     setPaymentPlan([]);
+    dist.reset();
     setAssignToForm(false);
     setSingleFormIds([]);
     setContractForms({});
@@ -1551,6 +1603,16 @@ export const CentralizedOrderCreator = ({
                   />
                 </div>
                 
+                {cebeMixed && (
+                  <CebeDistributionEditor
+                    cebes={cebes}
+                    rows={dist.rows}
+                    totalClp={distTotalClp}
+                    onEdit={dist.edit}
+                    check={dist.check}
+                  />
+                )}
+
                 {/* Description */}
                 <div className="space-y-2">
                   <Label>Descripción</Label>
@@ -1609,7 +1671,7 @@ export const CentralizedOrderCreator = ({
                     <Button variant="outline" onClick={() => setActiveTab("quote")}>Atrás</Button>
                     <Button
                       onClick={() => setActiveTab("payments")}
-                      disabled={!hasSupplier || !(enteredAmount > 0)}
+                      disabled={!hasSupplier || !(enteredAmount > 0) || (cebeMixed && !dist.check.valid)}
                       className="flex-1"
                     >
                       Continuar a Plan de Pagos
@@ -1994,6 +2056,7 @@ export const CentralizedOrderCreator = ({
                   currency={formData.currency}
                   ufValue={ufValue > 0 ? ufValue : undefined}
                   newItem={(i) => ({ description: `Pago ${i + 1}`, amount: "", percent: "", due_date: "", input_mode: "amount" })}
+                  cebeBreakdown={cebeMixed ? { distribution: dist.rows, cebes, totalClp: distTotalClp } : undefined}
                 />
                 {paymentPlan.length === 0 && mode !== "request" && (
                   <p className="text-xs text-muted-foreground">Sin plan de pagos definido (se creará pago único automáticamente).</p>
@@ -2009,9 +2072,11 @@ export const CentralizedOrderCreator = ({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={loading || loadingData || (mode === "request" && (paymentPlan.length === 0 || !quotationFile))}
+            disabled={loading || loadingData || (mode === "request" && (paymentPlan.length === 0 || !quotationFile)) || (cebeMixed && !dist.check.valid)}
             title={
-              mode === "request" && !quotationFile
+              cebeMixed && !dist.check.valid
+                ? "Completa la distribución por CEBE"
+                : mode === "request" && !quotationFile
                 ? "Adjunta el presupuesto antes de crear la solicitud"
                 : mode === "request" && paymentPlan.length === 0
                 ? "Agrega al menos un pago al plan de pagos"

@@ -4672,6 +4672,74 @@ export type Database = {
           },
         ]
       }
+      oc_cebe_distributions: {
+        Row: {
+          amount_clp: number
+          cebe_id: string
+          contract_id: string
+          created_at: string
+          id: string
+          oc_request_id: string | null
+          percent: number
+          purchase_order_id: string | null
+          quotation_number: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_clp: number
+          cebe_id: string
+          contract_id: string
+          created_at?: string
+          id?: string
+          oc_request_id?: string | null
+          percent: number
+          purchase_order_id?: string | null
+          quotation_number?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_clp?: number
+          cebe_id?: string
+          contract_id?: string
+          created_at?: string
+          id?: string
+          oc_request_id?: string | null
+          percent?: number
+          purchase_order_id?: string | null
+          quotation_number?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oc_cebe_distributions_cebe_id_fkey"
+            columns: ["cebe_id"]
+            isOneToOne: false
+            referencedRelation: "contract_cebes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_cebe_distributions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_cebe_distributions_oc_request_id_fkey"
+            columns: ["oc_request_id"]
+            isOneToOne: false
+            referencedRelation: "oc_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_cebe_distributions_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oc_centro_mappings: {
         Row: {
           centro_code: string
@@ -4811,6 +4879,48 @@ export type Database = {
             columns: ["purchase_order_id"]
             isOneToOne: false
             referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      oc_payment_plan_cebes: {
+        Row: {
+          amount_clp: number
+          cebe_id: string
+          created_at: string
+          id: string
+          payment_plan_id: string
+          percent: number
+        }
+        Insert: {
+          amount_clp: number
+          cebe_id: string
+          created_at?: string
+          id?: string
+          payment_plan_id: string
+          percent: number
+        }
+        Update: {
+          amount_clp?: number
+          cebe_id?: string
+          created_at?: string
+          id?: string
+          payment_plan_id?: string
+          percent?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oc_payment_plan_cebes_cebe_id_fkey"
+            columns: ["cebe_id"]
+            isOneToOne: false
+            referencedRelation: "contract_cebes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_payment_plan_cebes_payment_plan_id_fkey"
+            columns: ["payment_plan_id"]
+            isOneToOne: false
+            referencedRelation: "oc_payment_plans"
             referencedColumns: ["id"]
           },
         ]

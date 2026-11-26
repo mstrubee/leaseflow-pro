@@ -11,6 +11,10 @@ import { toast } from "sonner";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
 import { useBudgetProgressStatuses } from "@/hooks/useBudgetProgressStatuses";
 import type { OCRequiredGroup } from "./OCRequiredList";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { allocationsToRows, loadDistribution, saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
+import type { DistRow } from "@/lib/cebeDistribution";
 
 interface CapexLeaf {
   id: string;
@@ -41,12 +45,38 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
   const [loadingLeaves, setLoadingLeaves] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Local mixto: si el requerimiento ya tiene distribución por CEBE guardada, se muestra y se
+  // puede editar (al cambiar el monto se re-ajusta sola). Los requerimientos anteriores a esta
+  // función no tienen distribución: se editan como siempre y la piden al pasar a Solicitud.
+  const { cebes, isMixed: cebeMixed } = useContractCebeSet(contractId);
+  const [hasStoredDist, setHasStoredDist] = useState(false);
+  const [pendingDist, setPendingDist] = useState<DistRow[] | null>(null);
+  const useDist = cebeMixed && hasStoredDist;
+  const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
+  const dist = useCebeDistribution(useDist ? cebes.map((c) => c.id) : [], montoClp);
+  useEffect(() => {
+    if (pendingDist && useDist) {
+      dist.reset(pendingDist);
+      setPendingDist(null);
+    }
+  }, [pendingDist, useDist, dist.reset]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!open) return;
     setMonto(String(Math.round(group.amountClp)));
     setFile(null);
     setSelectedIds(new Set(group.lines.map((l) => l.budgetLineId)));
     loadLeaves();
+    setHasStoredDist(false);
+    setPendingDist(null);
+    loadDistribution({ kind: "requirement", contractId, id: group.quotationNumber })
+      .then((stored) => {
+        if (stored.length >= 2) {
+          setHasStoredDist(true);
+          setPendingDist(allocationsToRows(stored));
+        }
+      })
+      .catch((error) => console.error("No se pudo leer la distribución por CEBE:", error));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, group.quotationNumber]);
 
@@ -84,11 +114,13 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
       return next;
     });
 
-  const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
-
   const handleSave = async () => {
     if (montoClp <= 0) {
       toast.error("Ingresa un monto válido");
+      return;
+    }
+    if (useDist && !dist.check.valid) {
+      toast.error(dist.check.errors[0]);
       return;
     }
     if (selectedIds.size === 0) {
@@ -166,6 +198,14 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
         await supabase.from("budget_lines").update({ progress_status_id: ocRequeridaStatusId }).in("id", added);
       }
 
+      // Local mixto con distribución: guarda la distribución (re-ajustada al monto) y regenera
+      // las sublíneas por CEBE del plan de pagos.
+      if (useDist) {
+        const ref = { kind: "requirement" as const, contractId, id: group.quotationNumber };
+        await saveDistribution(ref, dist.rows, montoClp);
+        await syncPaymentSublines(ref, { ufValue: group.ufValue });
+      }
+
       toast.success("Requerimiento actualizado");
       onOpenChange(false);
       onSaved();
@@ -190,6 +230,16 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
             <Label htmlFor="edit-oc-required-monto">Monto requerido ($)</Label>
             <Input id="edit-oc-required-monto" type="text" inputMode="numeric" value={monto} onChange={(e) => setMonto(e.target.value)} />
           </div>
+
+          {useDist && (
+            <CebeDistributionEditor
+              cebes={cebes}
+              rows={dist.rows}
+              totalClp={montoClp}
+              onEdit={dist.edit}
+              check={dist.check}
+            />
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="edit-oc-required-file">Archivo adjunto</Label>
@@ -232,7 +282,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || (useDist && !dist.check.valid)}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Guardar
           </Button>

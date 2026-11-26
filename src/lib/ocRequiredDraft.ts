@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { OCRequestPrefillDraft } from "@/components/budget/OCRequestCreateDialog";
 import type { OCRequiredGroup } from "@/lib/ocRequiredGroups";
+import { loadDistribution } from "@/lib/cebeDistributionStore";
 
 type OCRequiredDraftSource = Pick<
   OCRequiredGroup,
@@ -19,8 +20,18 @@ export async function buildPrefillDraftFromGroup(group: OCRequiredDraftSource): 
     .eq("quotation_number", group.quotationNumber)
     .order("payment_number");
 
+  // Distribución por CEBE del requerimiento (local mixto). Si no hay (o falla la lectura) la
+  // solicitud simplemente no hereda nada y se pedirá ingresarla.
+  let cebeDistribution: Awaited<ReturnType<typeof loadDistribution>> = [];
+  try {
+    cebeDistribution = await loadDistribution({ kind: "requirement", contractId: "", id: group.quotationNumber });
+  } catch (error) {
+    console.error("No se pudo leer la distribución por CEBE del requerimiento:", error);
+  }
+
   return {
     quotationNumber: group.quotationNumber,
+    cebeDistribution,
     lines: group.lines.map((l) => ({ lineId: l.budgetLineId, lineName: l.lineName, amountUf: l.amountUf })),
     totalAmountClp: group.amountClp,
     fileUrl: group.filePath,

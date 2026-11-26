@@ -18,6 +18,10 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { OCRequestViewDialog } from "./OCRequestViewDialog";
 import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
+import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribution";
+import { CebeDistributionEditor } from "./CebeDistributionEditor";
+import { allocationsToRows, loadDistribution, saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
+import type { DistRow } from "@/lib/cebeDistribution";
 import { ShareOCRequestDialog } from "./ShareOCRequestDialog";
 import type { OCRequestShareData } from "@/lib/ocRequestShare";
 import { OCRequestCreateDialog, OCRequestCreateDialogHandle } from "./OCRequestCreateDialog";
@@ -130,6 +134,32 @@ export const OCRequestsList = ({
   const hasLoadedOnce = useRef(false);
 
   const { toast } = useToast();
+
+  // Local mixto (2+ CEBE), solicitudes de un solo contrato: al convertir en OC se hereda la
+  // distribución por CEBE de la solicitud (o se pide, si la solicitud es anterior a esta función).
+  const convertingMulti = !!selectedRequest?.is_multi_contract;
+  const { cebes: convCebes, isMixed: convMixed, loading: convCebesLoading } = useContractCebeSet(convertingMulti ? null : contractId);
+  const useConvDist = convMixed && !convertingMulti;
+  const convTotalClp = Math.round(selectedRequest?.amount_clp ?? (selectedRequest?.amount_uf ?? 0) * ufValue);
+  const convDist = useCebeDistribution(useConvDist ? convCebes.map((c) => c.id) : [], convTotalClp);
+  const [pendingConvDist, setPendingConvDist] = useState<DistRow[] | null>(null);
+  useEffect(() => {
+    if (!showConvertDialog || !selectedRequest || selectedRequest.is_multi_contract) return;
+    setPendingConvDist(null);
+    convDist.reset();
+    loadDistribution({ kind: "request", contractId, id: selectedRequest.id })
+      .then((stored) => {
+        if (stored.length >= 2) setPendingConvDist(allocationsToRows(stored));
+      })
+      .catch((error) => console.error("No se pudo leer la distribución por CEBE de la solicitud:", error));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showConvertDialog, selectedRequest?.id]);
+  useEffect(() => {
+    if (pendingConvDist && useConvDist && convTotalClp > 0) {
+      convDist.reset(pendingConvDist);
+      setPendingConvDist(null);
+    }
+  }, [pendingConvDist, useConvDist, convTotalClp, convDist.reset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     hasLoadedOnce.current = false;
@@ -281,6 +311,15 @@ export const OCRequestsList = ({
       return;
     }
 
+    if (convCebesLoading) {
+      toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están cargando los CEBE del local." });
+      return;
+    }
+    if (useConvDist && !convDist.check.valid) {
+      toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: convDist.check.errors[0] });
+      return;
+    }
+
     setConverting(true);
     try {
       // Sube primero el PDF (Storage + carpeta de OC del contrato). Si falla, no se crea la OC.
@@ -326,6 +365,24 @@ export const OCRequestsList = ({
       if (ocError) throw ocError;
 
       await insertPurchaseOrderLines(ocData.id, contractLines, contractLineAmounts);
+
+      // Local mixto: la OC hereda (o define) la distribución por CEBE. También se deja en la
+      // solicitud (por si venía sin ella) y se regeneran las sublíneas de su plan de pagos.
+      if (useConvDist) {
+        try {
+          await saveDistribution({ kind: "order", contractId, id: ocData.id }, convDist.rows, convTotalClp);
+          const requestRef = { kind: "request" as const, contractId, id: selectedRequest.id };
+          await saveDistribution(requestRef, convDist.rows, convTotalClp);
+          await syncPaymentSublines(requestRef, { ufValue });
+        } catch (distError) {
+          console.error("Error al guardar la distribución por CEBE de la OC:", distError);
+          toast({
+            variant: "destructive",
+            title: "OC creada sin distribución por CEBE",
+            description: "No se pudo guardar la distribución por CEBE de la OC. Avísale al administrador.",
+          });
+        }
+      }
       if (contractLines.length > 0) {
         try {
           await syncBudgetLineOcStatus({ addedLineIds: contractLines.map((l) => l.lineId) });
@@ -885,11 +942,22 @@ export const OCRequestsList = ({
             </div>
           </div>
 
+          {useConvDist && (
+            <CebeDistributionEditor
+              cebes={convCebes}
+              rows={convDist.rows}
+              totalClp={convTotalClp}
+              onEdit={convDist.edit}
+              check={convDist.check}
+              disabled={converting}
+            />
+          )}
+
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => handleConvertDialogChange(false)} disabled={converting}>
               Cancelar
             </Button>
-            <Button onClick={handleConvertToOC} disabled={converting || !convertForm.order_number.trim() || !ocFile}>
+            <Button onClick={handleConvertToOC} disabled={converting || !convertForm.order_number.trim() || !ocFile || convCebesLoading || (useConvDist && !convDist.check.valid)}>
               {converting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear OC
             </Button>

@@ -10,9 +10,12 @@ import {
   appendPayment,
   formatPaymentAmount,
   paymentDecimals,
+  paymentsToClp,
   resolvePaymentPlan,
   switchPaymentMode,
 } from "@/lib/paymentPlan";
+import { PaymentCebeBreakdown } from "./PaymentCebeBreakdown";
+import type { CebeOption } from "@/hooks/useCebeDistribution";
 
 const formatPercent = (n: number) => `${n.toLocaleString("es-CL", { maximumFractionDigits: 2 })} %`;
 
@@ -28,6 +31,12 @@ interface PaymentPlanEditorProps<T extends PaymentPlanRow> {
   /** Crea un pago nuevo (cada diálogo puede tener campos extra). */
   newItem: (index: number) => T;
   title?: string;
+  /**
+   * Local mixto: si viene, cada pago muestra su desglose por CEBE (sublíneas) calculado con la
+   * distribución de la OC; el usuario no la vuelve a ingresar. `totalClp` es el total del
+   * documento en pesos (para que el último pago, que es el saldo, cuadre exacto).
+   */
+  cebeBreakdown?: { distribution: { cebeId: string; amount: number }[]; cebes: CebeOption[]; totalClp: number };
 }
 
 /**
@@ -44,8 +53,12 @@ export function PaymentPlanEditor<T extends PaymentPlanRow>({
   ufValue,
   newItem,
   title = "Plan de Pagos *",
+  cebeBreakdown,
 }: PaymentPlanEditorProps<T>) {
   const resolved = resolvePaymentPlan(items, total, paymentDecimals(currency));
+  const paymentsClp = cebeBreakdown
+    ? paymentsToClp(resolved, currency, ufValue && ufValue > 0 ? ufValue : 1, cebeBreakdown.totalClp)
+    : [];
   const symbol = currency === "UF" ? "UF" : "$";
 
   const update = (index: number, patch: Partial<T>) =>
@@ -171,6 +184,13 @@ export function PaymentPlanEditor<T extends PaymentPlanRow>({
                     aria-label={`Vencimiento del pago ${idx + 1}`}
                   />
                 </div>
+                {cebeBreakdown && (
+                  <PaymentCebeBreakdown
+                    amountClp={paymentsClp[idx] ?? 0}
+                    distribution={cebeBreakdown.distribution}
+                    cebes={cebeBreakdown.cebes}
+                  />
+                )}
               </div>
             );
           })}
