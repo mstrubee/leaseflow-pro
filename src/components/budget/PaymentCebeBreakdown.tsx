@@ -7,6 +7,8 @@ interface PaymentCebeBreakdownProps {
   /** Distribución de la OC (fuente de verdad); solo importan cebeId y amount. */
   distribution: { cebeId: string; amount: number }[];
   cebes: CebeOption[];
+  /** Desplegado por defecto (se puede plegar). */
+  defaultOpen?: boolean;
 }
 
 const clp = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
@@ -16,14 +18,14 @@ const clp = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
  * (el usuario no vuelve a ingresarla) y es lo mismo que se guarda en oc_payment_plan_cebes.
  * Plegable para mantener limpia la lista de pagos.
  */
-export const PaymentCebeBreakdown = ({ amountClp, distribution, cebes }: PaymentCebeBreakdownProps) => {
+export const PaymentCebeBreakdown = ({ amountClp, distribution, cebes, defaultOpen = true }: PaymentCebeBreakdownProps) => {
   const pay = Math.round(amountClp || 0);
   if (distribution.length < 2 || pay <= 0) return null;
   const sublines = buildPaymentSublines([pay], distribution)[0];
   const labelOf = (id: string) => cebes.find((c) => c.id === id)?.label ?? "CEBE";
 
   return (
-    <details className="mt-1 rounded-md border bg-muted/20 px-2 py-1 text-xs" data-testid="payment-cebe-breakdown">
+    <details open={defaultOpen} className="mt-1 rounded-md border bg-muted/20 px-2 py-1 text-xs" data-testid="payment-cebe-breakdown">
       <summary className="cursor-pointer select-none text-muted-foreground">Desglose por CEBE</summary>
       <table className="mt-1 w-full">
         <thead>

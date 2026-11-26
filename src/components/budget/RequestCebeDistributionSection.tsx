@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +19,11 @@ interface RequestCebeDistributionSectionProps {
   /** Solo se edita mientras la solicitud está pendiente. */
   editable: boolean;
   onChanged: () => void;
+  /**
+   * Distribución en edición (solo cuando está COMPLETA y válida), o null. Permite al padre mostrar el
+   * desglose por CEBE de cada pago en vivo, antes de guardar.
+   */
+  onDraftChange?: (draft: { cebeId: string; amount: number }[] | null) => void;
 }
 
 const clp = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
@@ -37,12 +42,22 @@ export const RequestCebeDistributionSection = ({
   distribution,
   editable,
   onChanged,
+  onDraftChange,
 }: RequestCebeDistributionSectionProps) => {
   const { toast } = useToast();
   const dist = useCebeDistribution(cebes.map((c) => c.id), totalClp);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const hasStored = distribution.length >= 2;
+  const showEditor = editing || (!hasStored && editable);
+
+  // Borrador en edición -> el padre lo usa para previsualizar los pagos.
+  useEffect(() => {
+    if (!onDraftChange) return;
+    onDraftChange(showEditor && dist.check.valid ? dist.rows.map((r) => ({ cebeId: r.cebeId, amount: r.amount })) : null);
+    return () => onDraftChange(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showEditor, dist.check.valid, dist.rows]);
   const labelOf = (id: string) => cebes.find((c) => c.id === id)?.label ?? "CEBE";
 
   const startEdit = () => {
@@ -70,7 +85,7 @@ export const RequestCebeDistributionSection = ({
     }
   };
 
-  if (editing || (!hasStored && editable)) {
+  if (showEditor) {
     return (
       <div className="space-y-2">
         {!hasStored && !editing && (

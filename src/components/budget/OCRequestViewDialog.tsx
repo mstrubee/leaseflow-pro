@@ -187,6 +187,9 @@ export const OCRequestViewDialog = ({
   // Local mixto (2+ CEBE): distribución del gasto por CEBE de esta solicitud.
   const { cebes: reqCebes, isMixed: reqCebeMixed } = useContractCebeSet(request?.contract_id);
   const [reqDist, setReqDist] = useState<StoredAllocation[]>([]);
+  // Distribución en edición y completa (aún sin guardar): se usa para previsualizar el desglose de cada pago.
+  const [draftDist, setDraftDist] = useState<{ cebeId: string; amount: number }[] | null>(null);
+  const breakdownDist = draftDist ?? reqDist.map((d) => ({ cebeId: d.cebeId, amount: d.amount }));
   const [budgetLines, setBudgetLines] = useState<BudgetLineAssignment[]>([]);
   // Techo para "Monto Total": suma del disponible real de la(s) línea(s)
   // asignada(s) (excluyendo el consumo de esta misma solicitud). null = sin
@@ -1920,6 +1923,7 @@ export const OCRequestViewDialog = ({
                   distribution={reqDist}
                   editable={!readOnly && request.status === "pending"}
                   onChanged={loadRequest}
+                  onDraftChange={setDraftDist}
                 />
               )}
 
@@ -2036,13 +2040,13 @@ export const OCRequestViewDialog = ({
                             </TableCell>
                           )}
                         </TableRow>
-                        {reqCebeMixed && reqDist.length >= 2 && (
+                        {reqCebeMixed && breakdownDist.length >= 2 && (
                           <TableRow>
                             <TableCell />
                             <TableCell colSpan={canEdit ? 6 : 5} className="pt-0 pb-2">
                               <PaymentCebeBreakdown
                                 amountClp={paymentClp(plan, request, ufValue)}
-                                distribution={reqDist.map((d) => ({ cebeId: d.cebeId, amount: d.amount }))}
+                                distribution={breakdownDist}
                                 cebes={reqCebes}
                               />
                             </TableCell>
