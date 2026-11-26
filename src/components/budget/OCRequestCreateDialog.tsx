@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { enrichShareData } from "@/lib/shareDataEnrich";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -521,7 +522,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         supplierRut = supplierData?.rut || null;
       }
 
-      setShareData({
+      setShareData(await enrichShareData({
         requestDate: new Date().toISOString().split("T")[0],
         currency: inputCurrency as "UF" | "CLP",
         contractNames: [contractName || ""].filter(Boolean),
@@ -549,7 +550,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         supplierName: newRequestForm.supplier_name,
         supplierRut,
         quotation: quotationRef,
-      });
+      }, { ufValue: currentUfValue, contractId }));
       setShareRequestId(requestData?.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });

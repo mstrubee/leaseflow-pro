@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   BudgetLine,
   buildBudgetTree,
+  calculateLineLiveAmount,
   calculateGrandTotal,
   calculateAuthorizedTotal,
   calculateUnauthorizedTotal,
@@ -17,19 +18,13 @@ const SELECT_COLS =
   "id, budget_id, parent_id, name, description, amount_uf, status, display_order, quantity, unit_type, currency, unit_price, template_line_id, supplier_id, supplier_name, category_id, calc_type, calc_source_line_id, calc_percentage, is_surcharge, surcharge_parent_line_id, surcharge_reason, merged_into_line_id, original_amount_uf, is_ghost, moved_to_line_id, moved_at, moved_by";
 
 /**
- * Load CAPEX/OPEX totals for a set of budget IDs using the *same* aggregation
- * pipeline as the "Control de Presupuesto" tree (BudgetLineTree).
- *
- * Returns a Map<budgetId, { grand, authorized, unauthorized }> in UF.
+ * Todas las líneas de los presupuestos dados (paginadas) y los precios de plantilla de las que
+ * están ligadas a una plantilla (misma forma que usa BudgetModule: por id de línea).
  */
-export async function loadBudgetTotals(
+async function loadBudgetLinesWithTemplatePrices(
   budgetIds: string[],
-  ufValue: number,
-): Promise<Map<string, BudgetTotal>> {
-  const result = new Map<string, BudgetTotal>();
-  if (!budgetIds.length) return result;
-
-  // 1) Fetch all lines for these budgets (paginated)
+): Promise<{ all: BudgetLine[]; templatePricesMap: Record<string, number> }> {
+  // Líneas (paginadas)
   const PAGE = 1000;
   let all: BudgetLine[] = [];
   let from = 0;
@@ -47,7 +42,7 @@ export async function loadBudgetTotals(
     from += PAGE;
   }
 
-  // 2) Resolve template prices (same shape BudgetModule uses: keyed by line.id)
+  // Precios de plantilla (same shape BudgetModule uses: keyed by line.id)
   const linesWithTpl = all.filter((l) => l.template_line_id);
   const templatePricesMap: Record<string, number> = {};
   if (linesWithTpl.length > 0) {
@@ -67,6 +62,25 @@ export async function loadBudgetTotals(
       templatePricesMap[l.id] = byTplId[l.template_line_id!] ?? 0;
     });
   }
+
+  return { all, templatePricesMap };
+}
+
+/**
+ * Load CAPEX/OPEX totals for a set of budget IDs using the *same* aggregation
+ * pipeline as the "Control de Presupuesto" tree (BudgetLineTree).
+ *
+ * Returns a Map<budgetId, { grand, authorized, unauthorized }> in UF.
+ */
+export async function loadBudgetTotals(
+  budgetIds: string[],
+  ufValue: number,
+): Promise<Map<string, BudgetTotal>> {
+  const result = new Map<string, BudgetTotal>();
+  if (!budgetIds.length) return result;
+
+  // 1) y 2) Líneas de estos presupuestos (paginadas) y precios de plantilla
+  const { all, templatePricesMap } = await loadBudgetLinesWithTemplatePrices(budgetIds);
 
   // 3) Internal-transfer supplier set (excluded from totals just like BudgetModule)
   const supplierIds = [
@@ -105,4 +119,41 @@ export async function loadBudgetTotals(
   });
 
   return result;
+}
+
+/**
+ * Monto de cada línea de presupuesto tal como lo muestra el "Control de Presupuesto" (monto en vivo:
+ * suma de sus hijos, precios de plantilla, recargos %), en PESOS al valor UF dado. Es el monto
+ * autorizado/asignado de la línea, no lo imputado a una solicitud.
+ *
+ * Mismos parámetros que usa BudgetModule para el monto de una línea (calculateLineLiveAmount sin
+ * exclusión de transferencias internas), para que el PDF y la pantalla coincidan.
+ */
+export async function loadBudgetLineAmountsClp(lineIds: string[], ufValue: number): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const ids = [...new Set(lineIds.filter(Boolean))];
+  if (ids.length === 0 || !(ufValue > 0)) return out;
+
+  const { data: rows, error } = await supabase.from("budget_lines").select("id, budget_id").in("id", ids);
+  if (error) throw error;
+  const budgetIds = [...new Set((rows || []).map((r) => r.budget_id).filter(Boolean) as string[])];
+  if (budgetIds.length === 0) return out;
+
+  const { all, templatePricesMap } = await loadBudgetLinesWithTemplatePrices(budgetIds);
+
+  // Árbol -> mapa id -> nodo (con hijos), igual que flattenLines en BudgetModule
+  const byId = new Map<string, BudgetLine>();
+  const walk = (nodes: BudgetLine[]) =>
+    nodes.forEach((n) => {
+      byId.set(n.id, n);
+      if (n.children?.length) walk(n.children);
+    });
+  walk(buildBudgetTree(all));
+
+  ids.forEach((id) => {
+    const node = byId.get(id);
+    if (!node) return;
+    out.set(id, Math.round(calculateLineLiveAmount(node, byId, templatePricesMap, ufValue) * ufValue));
+  });
+  return out;
 }

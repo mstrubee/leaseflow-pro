@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { enrichShareData } from "@/lib/shareDataEnrich";
 import { resolveFileUrl } from "@/lib/storageUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -462,7 +463,7 @@ export const OCRequestDialog = ({
 
       // Se ofrece compartir recién creada, con los mismos datos que se acaban
       // de guardar — así el PDF y lo que quedó en la base nunca se desalinean.
-      setShareData({
+      setShareData(await enrichShareData({
         requestDate: new Date().toISOString().split("T")[0],
         currency: form.currency as "UF" | "CLP",
         contractNames: [contractName],
@@ -472,10 +473,11 @@ export const OCRequestDialog = ({
         description: form.description,
         lines: useMultipleLines
           ? selectedLines.filter((l) => l.amount > 0).map((l) => ({
+              lineId: l.lineId,
               lineName: l.lineName,
               amountClp: Math.round(l.amount * ufValue),
             }))
-          : [{ lineName, amountClp }],
+          : [{ lineId: budgetLineId, lineName, amountClp }],
         totalAmountClp: amountClp,
         payments: resolvedPayments,
         supplierName: form.supplier_name,
@@ -483,7 +485,7 @@ export const OCRequestDialog = ({
         sequenceNumber: requestData?.sequence_number,
         requestId: requestData?.id,
         verificationCode: (requestData as any)?.verification_code,
-      });
+      }, { ufValue, contractId }));
       setShareRequestId(requestData?.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });

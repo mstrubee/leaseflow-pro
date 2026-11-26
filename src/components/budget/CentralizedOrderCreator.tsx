@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { enrichShareData } from "@/lib/shareDataEnrich";
 import { loadAllContractCebes } from "@/lib/contractCebe";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -1093,7 +1094,7 @@ export const CentralizedOrderCreator = ({
           supplierRut = supplierData?.rut || null;
         }
 
-        setShareData({
+        setShareData(await enrichShareData({
           requestDate: new Date().toISOString().split("T")[0],
           currency: formData.currency as "UF" | "CLP",
           contractNames: isMultiContract
@@ -1112,6 +1113,7 @@ export const CentralizedOrderCreator = ({
                   const contract = contracts.find(c => c.id === l.contractId);
                   const alloc = contractAllocations.find(a => a.contractId === l.contractId);
                   return {
+                    lineId: l.lineId,
                     lineName: l.lineName,
                     amount: l.amountUf,
                     contractName: contract?.name ?? alloc?.contractName ?? null,
@@ -1149,7 +1151,7 @@ export const CentralizedOrderCreator = ({
           sequenceNumber: requestData?.sequence_number,
           requestId: requestData?.id,
           verificationCode: (requestData as any)?.verification_code,
-        });
+        }, { ufValue, contractId: isMultiContract ? null : primaryContractId }));
         setShareRequestId(requestData?.id);
       } else {
         // Create Purchase Order directly

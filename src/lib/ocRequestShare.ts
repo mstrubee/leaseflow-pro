@@ -1,7 +1,8 @@
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import autoTable, { type CellDef, type RowInput } from "jspdf-autotable";
 import QRCode from "qrcode";
 import type { OCRequestQuotationRef } from "@/lib/ocRequestQuotation";
+import { percentsFor, splitAmount } from "@/lib/cebeDistribution";
 
 // ── Tipos compartidos por los 3 puntos donde se crea una Solicitud de OC
 // (OCRequestDialog, OCRequestsList, CentralizedOrderCreator en modo "request") ──
@@ -14,6 +15,13 @@ export interface OCRequestShareLine {
   contractName?: string | null;
   /** CEBE del contrato de la línea. Sin él, si la solicitud es de un solo contrato se usa `contractCebe`. */
   cebe?: string | null;
+  /** Id de la línea de presupuesto (para poder buscar su monto autorizado). */
+  lineId?: string | null;
+  /**
+   * Monto de la línea en el Control de Presupuesto (monto autorizado). Si viene, el PDF muestra
+   * este monto en la columna de la línea en vez de lo imputado a la solicitud.
+   */
+  authorizedClp?: number | null;
 }
 
 export interface OCRequestSharePayment {
@@ -40,6 +48,8 @@ export interface OCRequestShareData {
   supplierRut?: string | null;
   /** CEBE del contrato (campo personalizado), mostrado debajo del nombre del contrato. */
   contractCebe?: string | null;
+  /** CEBE de cada empresa del contrato. Si viene, la fila "CONTRATO(S)" lo identifica por empresa. */
+  cebeByCompany?: { company: string; cebes: string }[] | null;
   /** Local mixto (2+ CEBE): reparto del gasto por CEBE. Si viene, el PDF agrega la tabla de distribución. */
   cebeDistribution?: { label: string; percent: number; amountClp: number }[] | null;
   /** Órdenes CO del proyecto ("CO-1, CO-2"); solo solicitudes CAPEX. */
@@ -117,9 +127,15 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     ["MIGO", fmtMigoChoice(data.migoChoice)],
     [
       "CONTRATO(S)",
-      [data.contractNames.join(", ") || "—", data.contractCebe ? `CEBE: ${data.contractCebe}` : null]
-        .filter(Boolean)
-        .join("\n"),
+      [
+        data.contractNames.join(", ") || "—",
+        // Con varias empresas se identifica el CEBE de cada una; si no, el CEBE del local como siempre.
+        ...(data.cebeByCompany && data.cebeByCompany.length > 0
+          ? data.cebeByCompany.map((c) => `${c.company}: CEBE ${c.cebes}`)
+          : data.contractCebe
+            ? [`CEBE: ${data.contractCebe}`]
+            : []),
+      ].join("\n"),
     ],
   ];
   if (data.coOrderNumbers) headerRows.push(["ORDEN CO", data.coOrderNumbers]);
@@ -165,16 +181,19 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
   // solicitud de un solo contrato, las líneas sin dato propio usan el del encabezado.
   const singleContract = data.contractNames.length === 1;
   const itemsY = ((doc as any).lastAutoTable?.finalY || 54) + 6;
+  // La columna de monto muestra el monto AUTORIZADO de cada línea en el Control de Presupuesto (no lo
+  // imputado a la solicitud); el pie sigue siendo el total de la solicitud.
+  const useAuthorized = data.lines.some((l) => l.authorizedClp != null);
   autoTable(doc, {
     startY: itemsY,
-    head: [["Línea", "Contrato", "CEBE", "Monto"]],
+    head: [["Línea", "Contrato", "CEBE", useAuthorized ? "Monto autorizado" : "Monto"]],
     body: data.lines.map((l) => [
       l.lineName,
       l.contractName || (singleContract ? data.contractNames[0] : null) || "—",
       l.cebe || (singleContract ? data.contractCebe : null) || "—",
-      fmtClp(l.amountClp),
+      fmtClp(l.authorizedClp ?? l.amountClp),
     ]),
-    foot: [[{ content: "Total", colSpan: 3 }, fmtClp(data.totalAmountClp)]],
+    foot: [[{ content: useAuthorized ? "Total solicitud" : "Total", colSpan: 3 }, fmtClp(data.totalAmountClp)]],
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4 },
     headStyles: { fillColor: [30, 58, 95], textColor: 255 },
@@ -187,26 +206,41 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     },
   });
 
+  // Los títulos de sección ("Distribución por CEBE", "Plan de Pagos") son la PRIMERA fila de su tabla y
+  // la tabla usa pageBreak "avoid": si no cabe completa en lo que queda de la hoja, pasa entera a la
+  // siguiente. Así el título nunca queda solo al final de una hoja con su contenido en la otra.
+  const sectionTitle = (text: string, colSpan: number): CellDef => ({
+    content: text,
+    colSpan,
+    styles: {
+      fillColor: [255, 255, 255],
+      textColor: 0,
+      fontStyle: "bold",
+      fontSize: 11,
+      halign: "left",
+      lineWidth: 0,
+      cellPadding: { top: 0, right: 0, bottom: 3, left: 0 },
+    },
+  });
+  const lastFinalY = (fallback: number) =>
+    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || fallback);
+
   // Local mixto: distribución del gasto entre sus CEBE (cada uno con su % y monto).
-  if (data.cebeDistribution && data.cebeDistribution.length >= 2) {
-    const lastTable = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable;
-    const distY = (lastTable?.finalY || 90) + 10;
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Distribución por CEBE", 14, distY);
-    doc.setFont("helvetica", "normal");
+  const cebeDist = data.cebeDistribution && data.cebeDistribution.length >= 2 ? data.cebeDistribution : null;
+  if (cebeDist) {
     autoTable(doc, {
-      startY: distY + 4,
-      head: [["CEBE", "% Distribución", "Monto"]],
-      body: data.cebeDistribution.map((d) => [
+      startY: lastFinalY(90) + 10,
+      pageBreak: "avoid",
+      head: [[sectionTitle("Distribución por CEBE", 3)], ["CEBE", "% Distribución", "Monto"]],
+      body: cebeDist.map((d) => [
         d.label,
         `${d.percent.toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`,
         fmtClp(d.amountClp),
       ]),
       foot: [[
         "Total",
-        `${data.cebeDistribution.reduce((a, d) => a + d.percent, 0).toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`,
-        fmtClp(data.cebeDistribution.reduce((a, d) => a + d.amountClp, 0)),
+        `${cebeDist.reduce((a, d) => a + d.percent, 0).toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`,
+        fmtClp(cebeDist.reduce((a, d) => a + d.amountClp, 0)),
       ]],
       theme: "grid",
       styles: { fontSize: 9, cellPadding: 4 },
@@ -216,20 +250,36 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     });
   }
 
-  const paymentsY = ((doc as any).lastAutoTable?.finalY || 90) + 10;
   const payments = data.payments.length > 0
     ? data.payments
     : [{ description: "Pago único", amountClp: data.totalAmountClp, dueDate: null }];
 
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.text("Plan de Pagos", 14, paymentsY);
-  doc.setFont("helvetica", "normal");
+  // Plan de pagos. En un local mixto cada pago lleva debajo su desglose por CEBE: la distribución de la
+  // OC aplicada al monto de ese pago (el último CEBE absorbe el redondeo, así suma exacto el pago).
+  const subStyles = { fontSize: 8, textColor: [90, 90, 90] as [number, number, number], fillColor: [248, 248, 248] as [number, number, number] };
+  const paymentRows: RowInput[] = payments.flatMap((p): RowInput[] => {
+    if (!cebeDist) return [[p.description, fmtDate(p.dueDate), fmtClp(p.amountClp)]];
+    const amounts = splitAmount(p.amountClp, cebeDist.map((d) => d.amountClp));
+    const pcts = percentsFor(amounts.map((amount) => ({ amount })), p.amountClp, 2);
+    return [
+      [
+        { content: p.description, styles: { fontStyle: "bold" } },
+        fmtDate(p.dueDate),
+        { content: fmtClp(p.amountClp), styles: { fontStyle: "bold" } },
+      ],
+      ...cebeDist.map((d, i): RowInput => [
+        { content: `     ${d.label}  ·  ${pcts[i].toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`, styles: subStyles },
+        { content: "", styles: subStyles },
+        { content: fmtClp(amounts[i]), styles: { ...subStyles, halign: "right" } },
+      ]),
+    ];
+  });
 
   autoTable(doc, {
-    startY: paymentsY + 4,
-    head: [["Descripción", "Vencimiento", "Monto"]],
-    body: payments.map((p) => [p.description, fmtDate(p.dueDate), fmtClp(p.amountClp)]),
+    startY: lastFinalY(90) + 10,
+    pageBreak: "avoid",
+    head: [[sectionTitle("Plan de Pagos", 3)], ["Descripción", "Vencimiento", "Monto"]],
+    body: paymentRows,
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4 },
     headStyles: { fillColor: [230, 230, 230], textColor: 0 },
@@ -421,11 +471,11 @@ export function validatePaymentPlanTotal(resolvedAmountsClp: number[], totalClp:
  *   las que vienen en UF.
  */
 export function buildShareLines(
-  lines: { lineName: string; amount: number; contractName?: string | null; cebe?: string | null }[],
+  lines: { lineName: string; amount: number; contractName?: string | null; cebe?: string | null; lineId?: string | null }[],
   opts: { totalAmountClp: number; amountsInClp: boolean; ufValue: number }
 ): OCRequestShareLine[] {
   if (lines.length === 1) {
-    return [{ lineName: lines[0].lineName, amountClp: Math.round(opts.totalAmountClp), contractName: lines[0].contractName, cebe: lines[0].cebe }];
+    return [{ lineName: lines[0].lineName, amountClp: Math.round(opts.totalAmountClp), contractName: lines[0].contractName, cebe: lines[0].cebe, lineId: lines[0].lineId }];
   }
   return reconcileShareLines(
     lines.map((l) => ({
@@ -433,6 +483,7 @@ export function buildShareLines(
       amountClp: Math.round(opts.amountsInClp ? l.amount : l.amount * opts.ufValue),
       contractName: l.contractName,
       cebe: l.cebe,
+      lineId: l.lineId,
     })),
     opts.totalAmountClp
   );

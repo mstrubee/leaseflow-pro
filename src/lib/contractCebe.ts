@@ -112,3 +112,37 @@ export async function loadContractCebeEntriesFor(contractId: string): Promise<Co
   if (!contractId) return [];
   return (await loadContractCebeEntries([contractId])).get(contractId) ?? [];
 }
+
+export interface CebeByCompany {
+  company: string;
+  /** Códigos de esa empresa, separados por coma. */
+  cebes: string;
+}
+
+/**
+ * CEBE de un contrato agrupados por empresa, para identificar en documentos (PDF de la Solicitud de
+ * OC) cuál es el CEBE de cada empresa. Devuelve null cuando no hace falta distinguir: el contrato
+ * tiene una sola empresa y sus CEBE son de esa empresa (ahí basta "CEBE: X").
+ */
+export async function loadContractCebesByCompany(contractId: string): Promise<CebeByCompany[] | null> {
+  const entries = await loadContractCebeEntriesFor(contractId);
+  if (entries.length === 0) return null;
+
+  const { data: contractCompanies, error: ccError } = await supabase
+    .from("contract_companies")
+    .select("company_id")
+    .eq("contract_id", contractId);
+  if (ccError) throw ccError;
+
+  const companyIds = [...new Set(entries.map((e) => e.companyId))];
+  if ((contractCompanies || []).length < 2 && companyIds.length < 2) return null;
+
+  const { data: companies, error } = await supabase.from("companies").select("id, name").in("id", companyIds);
+  if (error) throw error;
+  const nameById = new Map((companies || []).map((c) => [c.id, c.name]));
+
+  return companyIds.map((companyId) => ({
+    company: nameById.get(companyId) ?? "Empresa",
+    cebes: entries.filter((e) => e.companyId === companyId).map((e) => e.cebe).join(", "),
+  }));
+}

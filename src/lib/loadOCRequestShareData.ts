@@ -4,6 +4,7 @@ import { extractStoragePath } from "@/lib/storageUtils";
 import { loadOCRequestLineAllocations } from "@/lib/ocRequestLines";
 import { loadContractCebes, loadContractCebeEntriesFor } from "@/lib/contractCebe";
 import { loadDistribution } from "@/lib/cebeDistributionStore";
+import { enrichShareData } from "@/lib/shareDataEnrich";
 import { isMixedLocal, toShareRows } from "@/lib/cebeDistribution";
 
 interface StoredOCRequest {
@@ -85,7 +86,7 @@ export async function loadOCRequestShareData(
   let lines: OCRequestShareLine[];
   if (lineAssignments.length > 0) {
     lines = buildShareLines(
-      lineAssignments.map((l) => ({ lineName: l.lineName, amount: l.amountUf, contractName: nameOf(l.contractId), cebe: cebeOf(l.contractId) })),
+      lineAssignments.map((l) => ({ lineId: l.lineId, lineName: l.lineName, amount: l.amountUf, contractName: nameOf(l.contractId), cebe: cebeOf(l.contractId) })),
       { totalAmountClp, amountsInClp: false, ufValue: effectiveUf }
     );
   } else if (allocationRows.length > 0) {
@@ -136,7 +137,7 @@ export async function loadOCRequestShareData(
     console.error("No se pudo leer la distribución por CEBE para el PDF:", distError);
   }
 
-  return {
+  const shareData: OCRequestShareData = {
     requestDate: request.request_date,
     currency: "CLP",
     contractNames: allocationNames.length > 0 ? allocationNames : [request.project_name].filter((n): n is string => !!n),
@@ -166,4 +167,10 @@ export async function loadOCRequestShareData(
         }
       : null,
   };
+
+  // Monto autorizado de cada línea (Control de Presupuesto) y CEBE por empresa.
+  return enrichShareData(shareData, {
+    ufValue: opts.ufValue,
+    contractId: allocationRows.length > 0 ? null : request.contract_id,
+  });
 }
