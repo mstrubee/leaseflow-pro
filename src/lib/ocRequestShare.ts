@@ -176,36 +176,6 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     },
   });
 
-  // Cada línea muestra su contrato y el CEBE de ese contrato (en una solicitud multi-contrato
-  // el encabezado solo lista todos juntos, sin decir cuál corresponde a cada línea). En una
-  // solicitud de un solo contrato, las líneas sin dato propio usan el del encabezado.
-  const singleContract = data.contractNames.length === 1;
-  const itemsY = ((doc as any).lastAutoTable?.finalY || 54) + 6;
-  // La columna de monto muestra el monto AUTORIZADO de cada línea en el Control de Presupuesto (no lo
-  // imputado a la solicitud); el pie sigue siendo el total de la solicitud.
-  const useAuthorized = data.lines.some((l) => l.authorizedClp != null);
-  autoTable(doc, {
-    startY: itemsY,
-    head: [["Línea", "Contrato", "CEBE", useAuthorized ? "Monto autorizado" : "Monto"]],
-    body: data.lines.map((l) => [
-      l.lineName,
-      l.contractName || (singleContract ? data.contractNames[0] : null) || "—",
-      l.cebe || (singleContract ? data.contractCebe : null) || "—",
-      fmtClp(l.authorizedClp ?? l.amountClp),
-    ]),
-    foot: [[{ content: useAuthorized ? "Total solicitud" : "Total", colSpan: 3 }, fmtClp(data.totalAmountClp)]],
-    theme: "grid",
-    styles: { fontSize: 9, cellPadding: 4 },
-    headStyles: { fillColor: [30, 58, 95], textColor: 255 },
-    footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: "bold" },
-    columnStyles: {
-      0: { cellWidth: 62 },
-      1: { cellWidth: 48 },
-      2: { cellWidth: 36 },
-      3: { cellWidth: 36, halign: "right" },
-    },
-  });
-
   // Los títulos de sección ("Distribución por CEBE", "Plan de Pagos") son la PRIMERA fila de su tabla y
   // la tabla usa pageBreak "avoid": si no cabe completa en lo que queda de la hoja, pasa entera a la
   // siguiente. Así el título nunca queda solo al final de una hoja con su contenido en la otra.
@@ -286,6 +256,37 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     columnStyles: { 2: { halign: "right" } },
   });
 
+  // ORDEN DEL DOCUMENTO: 1) información general, 2) distribución por CEBE, 3) plan de pagos y
+  // 4) detalle de líneas (línea, contrato, CEBE y monto).
+  // Cada línea muestra su contrato y el CEBE de ese contrato (en una solicitud multi-contrato
+  // el encabezado solo lista todos juntos, sin decir cuál corresponde a cada línea). En una
+  // solicitud de un solo contrato, las líneas sin dato propio usan el del encabezado.
+  const singleContract = data.contractNames.length === 1;
+  // La columna de monto muestra el monto AUTORIZADO de cada línea en el Control de Presupuesto (no lo
+  // imputado a la solicitud); el pie sigue siendo el total de la solicitud.
+  const useAuthorized = data.lines.some((l) => l.authorizedClp != null);
+  autoTable(doc, {
+    startY: lastFinalY(90) + 10,
+    head: [["Línea", "Contrato", "CEBE", useAuthorized ? "Monto autorizado" : "Monto"]],
+    body: data.lines.map((l) => [
+      l.lineName,
+      l.contractName || (singleContract ? data.contractNames[0] : null) || "—",
+      l.cebe || (singleContract ? data.contractCebe : null) || "—",
+      fmtClp(l.authorizedClp ?? l.amountClp),
+    ]),
+    foot: [[{ content: useAuthorized ? "Total solicitud" : "Total", colSpan: 3 }, fmtClp(data.totalAmountClp)]],
+    theme: "grid",
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: [30, 58, 95], textColor: 255 },
+    footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: "bold" },
+    columnStyles: {
+      0: { cellWidth: 62 },
+      1: { cellWidth: 48 },
+      2: { cellWidth: 36 },
+      3: { cellWidth: 36, halign: "right" },
+    },
+  });
+
   if (data.requestId && data.verificationCode) {
     const verifyUrl = `${window.location.origin}/verify-oc/${data.requestId}/${data.verificationCode}`;
     let qrDataUrl: string | null = null;
@@ -298,6 +299,11 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     const pageH = doc.internal.pageSize.getHeight();
     const verifyBoxH = 22;
     const verifyY = pageH - verifyBoxH - 10;
+    // El detalle de líneas (última tabla) puede llegar hasta el pie de la hoja: si no queda espacio para el
+    // recuadro de verificación, va en una hoja nueva en vez de montarse sobre la tabla.
+    if (lastFinalY(0) + 6 > verifyY) {
+      doc.addPage();
+    }
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.3);
     doc.line(14, verifyY, pageW - 14, verifyY);
