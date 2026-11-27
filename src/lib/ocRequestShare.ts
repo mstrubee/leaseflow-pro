@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import autoTable, { type CellDef, type RowInput } from "jspdf-autotable";
 import QRCode from "qrcode";
 import type { OCRequestQuotationRef } from "@/lib/ocRequestQuotation";
-import { percentsFor, splitAmount } from "@/lib/cebeDistribution";
+import { splitAmount } from "@/lib/cebeDistribution";
 
 // ── Tipos compartidos por los 3 puntos donde se crea una Solicitud de OC
 // (OCRequestDialog, OCRequestsList, CentralizedOrderCreator en modo "request") ──
@@ -51,7 +51,7 @@ export interface OCRequestShareData {
   /** CEBE de cada empresa del contrato. Si viene, la fila "CONTRATO(S)" lo identifica por empresa. */
   cebeByCompany?: { company: string; cebes: string }[] | null;
   /** Local mixto (2+ CEBE): reparto del gasto por CEBE. Si viene, el PDF agrega la tabla de distribución. */
-  cebeDistribution?: { label: string; percent: number; amountClp: number }[] | null;
+  cebeDistribution?: { cebeId?: string; label: string; percent: number; amountClp: number }[] | null;
   /** Órdenes CO del proyecto ("CO-1, CO-2"); solo solicitudes CAPEX. */
   coOrderNumbers?: string | null;
   requestedBy?: string | null;
@@ -190,6 +190,23 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
       cellPadding: { top: 0, right: 0, bottom: 3, left: 0 },
     },
   });
+  // El rótulo de cada CEBE ("Empresa / CEBE X / CO N") debe quedar SIEMPRE en una sola línea: si no cabe en
+  // el ancho de su columna, se reduce la letra de esa celda (nunca se parte en dos líneas). El ancho de la
+  // columna se fija a mano (hoja menos márgenes menos las otras columnas) porque autoTable aún no lo calcula
+  // cuando se leen las celdas.
+  const tableW = pageW - 28;
+  const keepOneLine = (colIndex: number, colWidth: number, indent = 0, minFont = 6) => (hook: { section: string; column: { index: number }; cell: { text: string[]; styles: { fontSize: number } } }) => {
+    if (hook.section !== "body" || hook.column.index !== colIndex) return;
+    const text = hook.cell.text.join(" ");
+    const available = colWidth - 8 - indent; // 8 = relleno izquierdo + derecho de la celda
+    let size = hook.cell.styles.fontSize;
+    doc.setFontSize(size);
+    while (size > minFont && doc.getTextWidth(text) > available) {
+      size -= 0.25;
+      doc.setFontSize(size);
+    }
+    hook.cell.styles.fontSize = size;
+  };
   const lastFinalY = (fallback: number) =>
     ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || fallback);
 
@@ -199,7 +216,7 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     autoTable(doc, {
       startY: lastFinalY(90) + 10,
       pageBreak: "avoid",
-      head: [[sectionTitle("Distribución por CEBE", 3)], ["CEBE", "% Distribución", "Monto"]],
+      head: [[sectionTitle("Distribución por CEBE", 3)], ["Contrato / CEBE / CO", "% Distribución", "Monto"]],
       body: cebeDist.map((d) => [
         d.label,
         `${d.percent.toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`,
@@ -214,7 +231,9 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
       styles: { fontSize: 9, cellPadding: 4 },
       headStyles: { fillColor: [230, 230, 230], textColor: 0 },
       footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: "bold" },
-      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } },
+      // "% Distribución" angosta para que "Contrato / CEBE / CO" use el resto del ancho.
+      columnStyles: { 0: { cellWidth: tableW - 62 }, 1: { halign: "right", cellWidth: 30 }, 2: { halign: "right", cellWidth: 32 } },
+      didParseCell: keepOneLine(0, tableW - 62),
     });
   }
 
@@ -228,7 +247,6 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
   const paymentRows: RowInput[] = payments.flatMap((p): RowInput[] => {
     if (!cebeDist) return [[p.description, fmtDate(p.dueDate), fmtClp(p.amountClp)]];
     const amounts = splitAmount(p.amountClp, cebeDist.map((d) => d.amountClp));
-    const pcts = percentsFor(amounts.map((amount) => ({ amount })), p.amountClp, 2);
     return [
       [
         { content: p.description, styles: { fontStyle: "bold" } },
@@ -236,7 +254,7 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
         { content: fmtClp(p.amountClp), styles: { fontStyle: "bold" } },
       ],
       ...cebeDist.map((d, i): RowInput => [
-        { content: `     ${d.label}  ·  ${pcts[i].toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`, styles: subStyles },
+        { content: `     ${d.label}`, styles: subStyles },
         { content: "", styles: subStyles },
         { content: fmtClp(amounts[i]), styles: { ...subStyles, halign: "right" } },
       ]),
@@ -251,7 +269,8 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4 },
     headStyles: { fillColor: [230, 230, 230], textColor: 0 },
-    columnStyles: { 2: { halign: "right" } },
+    columnStyles: { 0: { cellWidth: tableW - 68 }, 1: { cellWidth: 32 }, 2: { halign: "right", cellWidth: 36 } },
+    didParseCell: keepOneLine(0, tableW - 68, 6),
   });
 
   // ORDEN DEL DOCUMENTO: 1) información general, 2) distribución por CEBE, 3) plan de pagos y

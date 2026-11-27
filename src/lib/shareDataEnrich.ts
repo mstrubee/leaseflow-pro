@@ -1,12 +1,14 @@
 import type { OCRequestShareData } from "@/lib/ocRequestShare";
 import { loadBudgetLineAmountsClp } from "@/lib/budgetTotals";
 import { loadContractCebesByCompany } from "@/lib/contractCebe";
+import { loadCebeRowLabels } from "@/lib/cebeRowLabels";
 
 /**
  * Completa los datos del PDF "Solicitud de OC" con lo que sale del Control de Presupuesto y del
  * CEBE por empresa:
  *  - `authorizedClp` de cada línea: su monto autorizado en el control presupuestario (no lo imputado).
  *  - `cebeByCompany`: el CEBE de cada empresa del contrato, para la fila "CONTRATO(S)".
+ *  - rótulo de cada fila de la distribución por CEBE: "Empresa / CEBE X / CO N" (una sola línea).
  *
  * Cada parte es independiente y tolerante a fallos: si algo no se puede leer, el PDF se genera igual
  * con los datos que ya traía (nunca debe impedir descargar la solicitud).
@@ -41,6 +43,16 @@ export async function enrichShareData(
     }
   } catch (error) {
     console.error("No se pudo leer el CEBE por empresa para el PDF:", error);
+  }
+
+  try {
+    const dist = out.cebeDistribution;
+    if (dist && dist.length >= 2 && dist.some((d) => d.cebeId)) {
+      const labels = await loadCebeRowLabels(dist.map((d) => d.cebeId ?? ""));
+      out = { ...out, cebeDistribution: dist.map((d) => ({ ...d, label: (d.cebeId && labels.get(d.cebeId)) || d.label })) };
+    }
+  } catch (error) {
+    console.error("No se pudo rotular la distribución por CEBE para el PDF:", error);
   }
 
   return out;

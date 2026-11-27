@@ -206,6 +206,8 @@ export function buildPaymentSublines(paymentAmounts: number[], distribution: Pic
 }
 
 export interface ShareCebeRow {
+  /** Id del CEBE (contract_cebes.id): permite rotular la fila con Empresa / CEBE / CO al armar el PDF. */
+  cebeId?: string;
   label: string;
   /** % del total, cuadrado a 100. */
   percent: number;
@@ -215,5 +217,5 @@ export interface ShareCebeRow {
 /** Filas "CEBE | % | Monto" para el PDF de la Solicitud de OC (locales mixtos). */
 export function toShareRows(rows: Pick<DistRow, "cebeId" | "amount">[], labelOf: (cebeId: string) => string, total: number): ShareCebeRow[] {
   const withPct = withPercents(rows.map((r) => ({ ...r, source: "manual" as RowSource })), total, 2);
-  return withPct.map((r) => ({ label: labelOf(r.cebeId), percent: r.percent, amountClp: r.amount }));
+  return withPct.map((r) => ({ cebeId: r.cebeId, label: labelOf(r.cebeId), percent: r.percent, amountClp: r.amount }));
 }
