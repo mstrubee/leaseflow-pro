@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MutableRefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +24,13 @@ interface RequestCebeDistributionSectionProps {
    * desglose por CEBE de cada pago en vivo, antes de guardar.
    */
   onDraftChange?: (draft: { cebeId: string; amount: number }[] | null) => void;
+  /** Avisa al padre si hay cambios sin guardar en la distribución (para preguntar antes de cerrar). */
+  onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * El padre lee aquí la acción de guardar (null si no hay nada pendiente) para poder guardar desde el aviso
+   * de cierre. Devuelve true si se guardó.
+   */
+  saveRef?: MutableRefObject<(() => Promise<boolean>) | null>;
 }
 
 const clp = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
@@ -43,11 +50,19 @@ export const RequestCebeDistributionSection = ({
   editable,
   onChanged,
   onDraftChange,
+  onDirtyChange,
+  saveRef,
 }: RequestCebeDistributionSectionProps) => {
   const { toast } = useToast();
   const dist = useCebeDistribution(cebes.map((c) => c.id), totalClp);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // true cuando la persona cambió algún valor a mano y aún no guardó
+  const [touched, setTouched] = useState(false);
+  const editDist: typeof dist.edit = (...args) => {
+    setTouched(true);
+    dist.edit(...args);
+  };
   const hasStored = distribution.length >= 2;
   const showEditor = editing || (!hasStored && editable);
 
@@ -58,17 +73,23 @@ export const RequestCebeDistributionSection = ({
     return () => onDraftChange(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showEditor, dist.check.valid, dist.rows]);
+  useEffect(() => {
+    onDirtyChange?.(touched);
+    return () => onDirtyChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [touched]);
   const labelOf = (id: string) => cebes.find((c) => c.id === id)?.label ?? "CEBE";
 
   const startEdit = () => {
     dist.reset(hasStored ? allocationsToRows(distribution) : undefined);
+    setTouched(false);
     setEditing(true);
   };
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     if (!dist.check.valid) {
       toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: dist.check.errors[0] });
-      return;
+      return false;
     }
     setSaving(true);
     try {
@@ -77,13 +98,25 @@ export const RequestCebeDistributionSection = ({
       await syncPaymentSublines(ref, { ufValue });
       toast({ title: "Distribución por CEBE guardada" });
       setEditing(false);
+      setTouched(false);
       onChanged();
+      return true;
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: error instanceof Error ? error.message : "No se pudo guardar la distribución" });
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  // Se publica la acción de guardar solo mientras hay cambios sin guardar.
+  useEffect(() => {
+    if (!saveRef) return;
+    saveRef.current = touched ? save : null;
+    return () => {
+      saveRef.current = null;
+    };
+  });
 
   if (showEditor) {
     return (
@@ -91,14 +124,14 @@ export const RequestCebeDistributionSection = ({
         {!hasStored && !editing && (
           <p className="text-xs text-amber-700">Esta solicitud aún no tiene distribución por CEBE. Ingrésala para continuar.</p>
         )}
-        <CebeDistributionEditor cebes={cebes} rows={dist.rows} totalClp={totalClp} onEdit={dist.edit} check={dist.check} disabled={saving} />
+        <CebeDistributionEditor cebes={cebes} rows={dist.rows} totalClp={totalClp} onEdit={editDist} check={dist.check} disabled={saving} />
         <div className="flex gap-2">
           <Button size="sm" onClick={save} disabled={saving || !dist.check.valid} className="gap-1">
             {saving && <Loader2 className="h-3 w-3 animate-spin" />}
             Guardar distribución
           </Button>
           {editing && (
-            <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={saving}>
+            <Button size="sm" variant="outline" onClick={() => { setEditing(false); setTouched(false); }} disabled={saving}>
               Cancelar
             </Button>
           )}

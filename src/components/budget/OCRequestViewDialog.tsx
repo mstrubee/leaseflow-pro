@@ -34,6 +34,7 @@ import { loadOCRequestLineAllocations, replaceOCRequestLines } from "@/lib/ocReq
 import { useContractCebeSet } from "@/hooks/useCebeDistribution";
 import { PaymentCebeBreakdown } from "./PaymentCebeBreakdown";
 import { RequestCebeDistributionSection } from "./RequestCebeDistributionSection";
+import { useCloseGuard } from "@/hooks/useCloseGuard";
 import { loadDistribution, rescaleStoredDistribution, syncPaymentSublines, type StoredAllocation } from "@/lib/cebeDistributionStore";
 
 interface OCRequest {
@@ -253,6 +254,10 @@ export const OCRequestViewDialog = ({
   const [editingTotalValue, setEditingTotalValue] = useState("");
   const totalAmountInputRef = useRef<HTMLInputElement>(null);
   
+  // Distribución por CEBE: ¿hay cambios sin guardar? y cómo guardarlos (la publica la sección).
+  const [distDirty, setDistDirty] = useState(false);
+  const distSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+
   const { toast } = useToast();
 
   useEffect(() => {
@@ -470,12 +475,12 @@ export const OCRequestViewDialog = ({
     setEditableAllocations(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSaveAllocations = async () => {
+  const handleSaveAllocations = async (): Promise<boolean> => {
     if (!request) return;
 
     if (editableAllocations.length === 0) {
       toast({ variant: "destructive", title: "Error", description: "Debe asignar al menos un contrato" });
-      return;
+      return false;
     }
 
     const totalAllocated = editableAllocations.reduce((sum, a) => sum + a.amount_uf, 0);
@@ -487,10 +492,11 @@ export const OCRequestViewDialog = ({
         title: "Error de distribución", 
         description: `El total asignado (${formatCLP(totalAllocated * effectiveUf)}) no coincide con el monto total (${formatCLP(request.amount_clp || request.amount_uf * effectiveUf)})` 
       });
-      return;
+      return false;
     }
 
     setSavingAllocations(true);
+    let ok = false;
     try {
       await supabase
         .from("oc_request_contract_allocations")
@@ -515,12 +521,15 @@ export const OCRequestViewDialog = ({
       setIsEditingAllocations(false);
       loadRequest();
       onRefresh?.();
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSavingAllocations(false);
     }
+    return ok;
   };
+
 
   // Start editing the budget line assignment — precarga la asignación actual,
   // sea simple (budget_line_id directo) o múltiple (oc_budget_lines), con su
@@ -594,7 +603,7 @@ export const OCRequestViewDialog = ({
     }
   };
 
-  const handleSaveContractLines = async () => {
+  const handleSaveContractLines = async (): Promise<boolean> => {
     if (!request) return;
     const tolerance = 0.01;
 
@@ -602,11 +611,11 @@ export const OCRequestViewDialog = ({
       const valid = c.lines.filter(l => l.lineId && l.amount > 0);
       if (!c.budgetId) {
         toast({ variant: "destructive", title: "Sin presupuesto CAPEX", description: `${c.contractName} no tiene presupuesto CAPEX para el año de la solicitud.` });
-        return;
+        return false;
       }
       if (valid.length === 0) {
         toast({ variant: "destructive", title: "Faltan líneas", description: `Asigne al menos una línea de presupuesto en ${c.contractName}.` });
-        return;
+        return false;
       }
       const assigned = valid.reduce((sum, l) => sum + l.amount, 0);
       if (Math.abs(assigned - c.amountUf) > tolerance) {
@@ -615,11 +624,12 @@ export const OCRequestViewDialog = ({
           title: "Error de distribución",
           description: `${c.contractName}: el total asignado (${formatUF(assigned)}) no coincide con el monto de este contrato (${formatUF(c.amountUf)}).`,
         });
-        return;
+        return false;
       }
     }
 
     setSavingLines(true);
+    let ok = false;
     try {
       const allLines = contractLineEdits.flatMap(c =>
         c.lines.filter(l => l.lineId && l.amount > 0).map(l => ({ lineId: l.lineId, lineName: l.lineName, amountUf: l.amount })),
@@ -642,12 +652,15 @@ export const OCRequestViewDialog = ({
       setContractLineEdits([]);
       loadRequest();
       onRefresh?.();
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSavingLines(false);
     }
+    return ok;
   };
+
 
   const handleCancelEditLines = () => {
     setIsEditingLines(false);
@@ -655,17 +668,16 @@ export const OCRequestViewDialog = ({
     setContractLineEdits([]);
   };
 
-  const handleSaveLines = async () => {
+  const handleSaveLines = async (): Promise<boolean> => {
     if (!request) return;
     if (contractLineEdits.length > 0) {
-      await handleSaveContractLines();
-      return;
+      return handleSaveContractLines();
     }
 
     const validLines = editableLines.filter(l => l.lineId && l.amount > 0);
     if (validLines.length === 0) {
       toast({ variant: "destructive", title: "Error", description: "Debe asignar al menos una línea de presupuesto" });
-      return;
+      return false;
     }
 
     const totalAssigned = validLines.reduce((sum, l) => sum + l.amount, 0);
@@ -676,10 +688,11 @@ export const OCRequestViewDialog = ({
         title: "Error de distribución",
         description: `El total asignado (${formatUF(totalAssigned)}) no coincide con el monto total de la solicitud (${formatUF(request.amount_uf)})`,
       });
-      return;
+      return false;
     }
 
     setSavingLines(true);
+    let ok = false;
     try {
       // Limpiar siempre la tabla puente primero — evita dejar filas residuales
       // sin importar si el resultado final es asignación simple o múltiple.
@@ -711,12 +724,15 @@ export const OCRequestViewDialog = ({
       setIsEditingLines(false);
       loadRequest();
       onRefresh?.();
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSavingLines(false);
     }
+    return ok;
   };
+
 
   // OPEX: la imputación vive en oc_requests.opex_master_id (fila de
   // opex_master_budget = categoría del año). No usa oc_budget_lines: esa tabla
@@ -762,16 +778,16 @@ export const OCRequestViewDialog = ({
     }
   };
 
-  const handleSaveOpexLine = async () => {
+  const handleSaveOpexLine = async (): Promise<boolean> => {
     if (!request || !isAdmin) return;
     const target = opexCategories.find((c) => c.id === selectedOpexId);
     if (!target) {
       toast({ variant: "destructive", title: "Error", description: "Seleccione una categoría OPEX" });
-      return;
+      return false;
     }
     if (target.id === request.opex_master_id) {
       setIsEditingOpexLine(false);
-      return;
+      return true;
     }
 
     // El consumo del presupuesto OPEX se calcula desde la OC una vez
@@ -785,10 +801,11 @@ export const OCRequestViewDialog = ({
         title: "No se puede cambiar la línea",
         description: "La OC creada desde esta solicitud no está vinculada a ella. Cambie la categoría directamente en la OC.",
       });
-      return;
+      return false;
     }
 
     setSavingOpexLine(true);
+    let ok = false;
     try {
       const purchaseOrderId = isConverted ? request.purchase_order_id : null;
       let previousPo: { opex_master_id: string | null; opex_category_id: string | null } | null = null;
@@ -838,6 +855,7 @@ export const OCRequestViewDialog = ({
       setIsEditingOpexLine(false);
       loadRequest();
       onRefresh?.();
+      ok = true;
     } catch (error) {
       toast({
         variant: "destructive",
@@ -847,7 +865,9 @@ export const OCRequestViewDialog = ({
     } finally {
       setSavingOpexLine(false);
     }
+    return ok;
   };
+
 
   // Load available maintenance forms for the contract
   const loadAvailableForms = async () => {
@@ -945,10 +965,11 @@ export const OCRequestViewDialog = ({
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     if (!request) return;
     
     setSaving(true);
+    let ok = false;
     try {
       const { error } = await supabase
         .from("oc_requests")
@@ -977,29 +998,33 @@ export const OCRequestViewDialog = ({
           description: "Cierra y vuelve a abrir la solicitud para intentarlo de nuevo.",
         });
       }
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSaving(false);
     }
+    return ok;
   };
 
+
   // Save total amount edit (CLP -> recalculate UF)
-  const handleSaveTotalAmount = async () => {
+  const handleSaveTotalAmount = async (): Promise<boolean> => {
     if (!request) return;
     const newClp = parseFloat(editingTotalValue) || 0;
     if (newClp <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Monto inválido" });
-      return;
+      return false;
     }
     const effectiveUf = getEffectiveUf(request, ufValue);
     const newUf = newClp / effectiveUf;
 
     if (maxTotalUf !== null && newUf > maxTotalUf + 0.01) {
       setAmountLimitError({ enteredClp: Math.round(newClp), maxClp: Math.round(maxTotalUf * effectiveUf) });
-      return;
+      return false;
     }
 
+    let ok = false;
     try {
       const { error } = await supabase
         .from("oc_requests")
@@ -1020,12 +1045,15 @@ export const OCRequestViewDialog = ({
       setEditingTotalValue("");
       loadRequest();
       onRefresh?.();
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
+    return ok;
   };
 
-  const handleAddPayment = async () => {
+
+  const handleAddPayment = async (): Promise<boolean> => {
     if (!request) return;
     
     const effectiveUf = getEffectiveUf(request, ufValue);
@@ -1037,7 +1065,7 @@ export const OCRequestViewDialog = ({
       const pct = parseFloat(newPayment.amount) || 0;
       if (pct <= 0 || pct > 100) {
         toast({ variant: "destructive", title: "Error", description: "Ingrese un porcentaje válido (1-100)" });
-        return;
+        return false;
       }
       amountClp = totalRequestClp * pct / 100;
     } else {
@@ -1046,10 +1074,11 @@ export const OCRequestViewDialog = ({
 
     if (amountClp <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
-      return;
+      return false;
     }
 
     setAddingPayment(true);
+    let ok = false;
     try {
       const nextNumber = paymentPlans.length + 1;
       const amountUf = amountClp / effectiveUf;
@@ -1073,12 +1102,15 @@ export const OCRequestViewDialog = ({
       // Si el pago se fijó en %, el siguiente también parte en % (misma metodología).
       setNewPayment(prev => ({ description: "", amount: "", due_date: "", input_mode: prev.input_mode === "percent" ? "percent" : "clp" }));
       loadRequest();
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setAddingPayment(false);
     }
+    return ok;
   };
+
 
   const handleDeletePayment = async (id: string) => {
     try {
@@ -1108,15 +1140,16 @@ export const OCRequestViewDialog = ({
     setEditingPaymentValue("");
   };
 
-  const handleSaveInlineEdit = async () => {
+  const handleSaveInlineEdit = async (): Promise<boolean> => {
     if (!editingPaymentId || !editingPaymentField || !request) return;
 
+    let ok = false;
     try {
       if (editingPaymentField === "amount") {
         const amountClp = parseFloat(editingPaymentValue) || 0;
         if (amountClp <= 0) {
           toast({ variant: "destructive", title: "Error", description: "Monto inválido" });
-          return;
+          return false;
         }
         const effectiveUf = getEffectiveUf(request, ufValue);
         const amountUf = amountClp / effectiveUf;
@@ -1137,10 +1170,13 @@ export const OCRequestViewDialog = ({
       toast({ title: "Pago actualizado" });
       handleCancelInlineEdit();
       loadRequest();
+      ok = true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
+    return ok;
   };
+
 
   const handleInlineEditKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -1191,11 +1227,47 @@ export const OCRequestViewDialog = ({
   const isOpexRequest = !!request && !request.budget_id && !!request.opex_master_id;
   const canEditOpexLine = isAdmin && !readOnly && isOpexRequest;
 
+  // Al cerrar con cambios sin guardar se pregunta (guardar / seguir editando / salir sin guardar); nada se guarda solo.
+  // "Hay cambios" = datos editados en Información, o alguna sección abierta en modo edición con su botón Guardar
+  // pendiente. (Los pagos, el monto total y los FORMs se guardan con su propia acción, igual que antes.)
+  const infoEditable = !readOnly && request?.status === "pending";
+  const infoDirty =
+    !!request && infoEditable &&
+    (description !== (request.description || "") ||
+      supplierId !== (request.supplier_id ?? null) ||
+      (supplierName ?? null) !== (request.supplier_name ?? null));
+  const newPaymentDirty = !!(newPayment.amount.trim() || newPayment.description.trim() || newPayment.due_date);
+  const pendingSaves: { pending: boolean; run: () => Promise<boolean> }[] = [
+    { pending: infoDirty, run: handleSave },
+    { pending: isEditingAllocations, run: handleSaveAllocations },
+    { pending: isEditingLines, run: handleSaveLines },
+    { pending: isEditingOpexLine, run: handleSaveOpexLine },
+    { pending: editingTotalAmount, run: handleSaveTotalAmount },
+    { pending: !!editingPaymentId, run: handleSaveInlineEdit },
+    { pending: newPaymentDirty, run: handleAddPayment },
+    { pending: distDirty, run: async () => (distSaveRef.current ? distSaveRef.current() : true) },
+  ];
+  const { requestClose, guard } = useCloseGuard({
+    isDirty: open && pendingSaves.some((x) => x.pending),
+    // Al cerrar no se deja pendiente el aviso de "compartir PDF" que abre handleSave (reaparecería al reabrir).
+    onClose: () => {
+      setShareData(null);
+      onOpenChange(false);
+    },
+    onSave: async () => {
+      for (const step of pendingSaves) {
+        if (step.pending && !(await step.run())) return false;
+      }
+      return true;
+    },
+  });
+
   if (!open) return null;
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    {guard}
+    <Dialog open={open} onOpenChange={(next) => { if (next) onOpenChange(true); else requestClose(); }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -1924,6 +1996,8 @@ export const OCRequestViewDialog = ({
                   editable={!readOnly && request.status === "pending"}
                   onChanged={loadRequest}
                   onDraftChange={setDraftDist}
+                  onDirtyChange={setDistDirty}
+                  saveRef={distSaveRef}
                 />
               )}
 

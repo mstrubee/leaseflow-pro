@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { useCloseGuard } from "@/hooks/useCloseGuard";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -294,16 +295,16 @@ export function CapexOCRequiredDialog({
   const montoUf = ufValue > 0 ? montoClp / ufValue : 0;
   const sufficient = authorizedTotalUf >= montoUf - 0.01;
 
-  const handleSave = async (mode: "final" | "temp") => {
+  const handleSave = async (mode: "final" | "temp"): Promise<boolean> => {
     if (!file) return;
     if (!cebeOk) {
       toast.error(dist.check.errors[0] ?? "Aún se están cargando los CEBE del local");
-      return;
+      return false;
     }
     const statusId = mode === "final" ? ocRequeridaStatusId : cotizadoStatusId;
     if (!statusId) {
       toast.error(`No se encontró el estado "${mode === "final" ? "OC Requerida" : "Cotizado"}"`);
-      return;
+      return false;
     }
 
     setSaving(mode);
@@ -311,7 +312,7 @@ export function CapexOCRequiredDialog({
       const upload = await backupQuotationFileToRepository(contractId, file, file.name);
       if (!upload.success || !upload.driveUrl) {
         toast.error(upload.error || "No se pudo subir la cotización");
-        return;
+        return false;
       }
 
       const quotationNumber = `COT-${Date.now()}`;
@@ -335,7 +336,7 @@ export function CapexOCRequiredDialog({
       const { error: quotationsError } = await (supabase as any).from("oc_quotations").insert(quotationRows);
       if (quotationsError) {
         toast.error("La cotización se subió, pero no se pudo asociar a las líneas");
-        return;
+        return false;
       }
 
       const validPayments = paymentPlan
@@ -356,7 +357,7 @@ export function CapexOCRequiredDialog({
       const { error: paymentPlanError2 } = await (supabase as any).from("oc_payment_plans").insert(planEntries);
       if (paymentPlanError2) {
         toast.error("La cotización se asoció, pero no se pudo guardar el plan de pagos");
-        return;
+        return false;
       }
 
       // Local mixto: guarda la distribución por CEBE del requerimiento y las sublíneas de cada pago.
@@ -368,7 +369,7 @@ export function CapexOCRequiredDialog({
         } catch (distError) {
           console.error("Error al guardar la distribución por CEBE:", distError);
           toast.error("La cotización se asoció, pero no se pudo guardar la distribución por CEBE");
-          return;
+          return false;
         }
       }
 
@@ -378,7 +379,7 @@ export function CapexOCRequiredDialog({
         .in("id", targetLines.map((l) => l.id));
       if (statusError) {
         toast.error("La cotización se asoció, pero no se pudo actualizar el estado de las líneas");
-        return;
+        return false;
       }
 
       const statusLabel = mode === "final" ? "OC Requerida" : "Cotizado";
@@ -389,9 +390,11 @@ export function CapexOCRequiredDialog({
       );
       reset();
       onComplete({ mode });
+      return true;
     } catch (error: any) {
       console.error("Error al procesar OC Requerida:", error);
       toast.error("Ocurrió un error al procesar la solicitud");
+      return false;
     } finally {
       setSaving(null);
     }
@@ -399,8 +402,25 @@ export function CapexOCRequiredDialog({
 
   const dialogOpen = open && step !== "selecting";
 
+  // Nada se guarda solo: al cerrar con datos ingresados se pregunta (guardar / seguir editando / salir sin guardar).
+  // "Guardar" del aviso equivale al botón "Guardar" del resumen (estado "OC Requerida"); si todavía no se puede
+  // guardar (falta llegar al resumen o el monto no está autorizado), avisa y la ventana sigue abierta.
+  const { requestClose, guard } = useCloseGuard({
+    isDirty: dialogOpen && (step !== "upload" || !!file),
+    onClose: () => handleClose(false),
+    onSave: async () => {
+      if (step !== "summary" || !sufficient) {
+        toast.error('Aún no se puede guardar: completa los datos hasta el resumen, o usa "Guardar temporalmente".');
+        return false;
+      }
+      return handleSave("final");
+    },
+  });
+
   return (
-    <Dialog open={dialogOpen} onOpenChange={saving ? undefined : handleClose}>
+    <>
+    {guard}
+    <Dialog open={dialogOpen} onOpenChange={(next) => { if (next) handleClose(true); else if (!saving) requestClose(); }}>
       <DialogContent
         className={cn(
           "max-h-[95vh] overflow-y-auto",
@@ -604,7 +624,7 @@ export function CapexOCRequiredDialog({
         <DialogFooter>
           {step === "amount" && (
             <>
-              <Button variant="outline" onClick={() => handleClose(false)}>
+              <Button variant="outline" onClick={requestClose}>
                 Cancelar
               </Button>
               {onRequestLineSelection && (
@@ -642,7 +662,7 @@ export function CapexOCRequiredDialog({
           )}
           {step === "summary" && (
             <>
-              <Button variant="outline" onClick={() => handleClose(false)} disabled={!!saving}>
+              <Button variant="outline" onClick={requestClose} disabled={!!saving}>
                 Cancelar
               </Button>
               {onRequestLineSelection && (
@@ -674,5 +694,6 @@ export function CapexOCRequiredDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

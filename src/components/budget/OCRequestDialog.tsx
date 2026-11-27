@@ -22,6 +22,7 @@ import { saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionSto
 import { toShareRows } from "@/lib/cebeDistribution";
 import { PaymentPlanRow, resolvePaymentPlan as resolvePlan } from "@/lib/paymentPlan";
 import { backupQuotationFileToRepository } from "@/lib/repositoryBackup";
+import { useCloseGuard } from "@/hooks/useCloseGuard";
 
 // Presupuesto/cotización adjuntado a la Solicitud -- mismas extensiones y
 // mismo criterio de previsualización que usa "Requerimiento de OC"
@@ -251,11 +252,11 @@ export const OCRequestDialog = ({
   // Solo las solicitudes CAPEX llevan la(s) Orden(es) CO del proyecto
   const requestCoNumbers = budgetType === "capex" ? coOrderNumbers || null : null;
 
-  const handleCreate = async () => {
+  const handleCreate = async (): Promise<boolean> => {
     if (!quoteFile) {
       toast({ variant: "destructive", title: "Falta adjuntar presupuesto", description: "Debe adjuntar el presupuesto/cotización antes de crear la solicitud" });
       setActiveTab("quote");
-      return;
+      return false;
     }
 
     // Un "Organismo público" u otro proveedor en texto libre se guarda SIN
@@ -263,19 +264,19 @@ export const OCRequestDialog = ({
     // exigir solo supplier_id bloqueaba la creación para ese caso legítimo.
     if (!form.supplier_id && !form.supplier_name?.trim()) {
       toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
-      return;
+      return false;
     }
 
     if (paymentPlan.length === 0) {
       toast({ variant: "destructive", title: "Error", description: "Debe agregar al menos un pago al plan de pagos" });
-      return;
+      return false;
     }
 
     // Amount is always entered in basic tab
     const amount = parseFloat(form.amount) || 0;
     if (amount <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
-      return;
+      return false;
     }
     
     // Convert to UF if entered in CLP
@@ -287,7 +288,7 @@ export const OCRequestDialog = ({
       const validLines = selectedLines.filter(l => l.lineId);
       if (validLines.length === 0) {
         toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea de presupuesto" });
-        return;
+        return false;
       }
       lineNamesForNumber = validLines.map(l => l.lineName);
 
@@ -301,7 +302,7 @@ export const OCRequestDialog = ({
           title: "Monto excede la suma de las líneas",
           description: `El monto ingresado (${formatCLP(totalAmountUf * ufValue)}) supera la suma de las líneas seleccionadas (${formatCLP(sumLinesUf * ufValue)}). Ajusta los montos de las líneas o el monto ingresado.`,
         });
-        return;
+        return false;
       }
     } else {
       lineNamesForNumber = [lineName];
@@ -313,7 +314,7 @@ export const OCRequestDialog = ({
           title: "Monto excede disponible", 
           description: `El monto ($${Math.round(totalAmountUf * ufValue).toLocaleString("es-CL")}) supera el disponible ($${Math.round(lineAvailable * ufValue).toLocaleString("es-CL")})` 
         });
-        return;
+        return false;
       }
     }
 
@@ -327,18 +328,18 @@ export const OCRequestDialog = ({
     const planError = validatePaymentPlanTotal(resolvedPayments.map((p) => p.amountClp), amountClp);
     if (planError) {
       toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: planError });
-      return;
+      return false;
     }
 
     // Local mixto: la distribución del gasto por CEBE es obligatoria y debe sumar el total.
     if (cebesLoading) {
       toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están cargando los CEBE del local." });
-      return;
+      return false;
     }
     if (cebeMixed && !dist.check.valid) {
       toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: dist.check.errors[0] });
       setActiveTab("basic");
-      return;
+      return false;
     }
 
     setLoading(true);
@@ -350,7 +351,7 @@ export const OCRequestDialog = ({
       const upload = await backupQuotationFileToRepository(contractId, quoteFile, quoteFile.name);
       if (!upload.success || !upload.driveUrl) {
         toast({ variant: "destructive", title: "Error", description: upload.error || "No se pudo subir el presupuesto adjunto" });
-        return;
+        return false;
       }
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -487,8 +488,10 @@ export const OCRequestDialog = ({
         verificationCode: (requestData as any)?.verification_code,
       }, { ufValue, contractId }));
       setShareRequestId(requestData?.id);
+      return true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+      return false;
     } finally {
       setLoading(false);
     }
@@ -508,9 +511,31 @@ export const OCRequestDialog = ({
   // supplier_id bloqueaba avanzar para ese caso legítimo.
   const hasSupplier = !!form.supplier_id || !!form.supplier_name?.trim();
 
+  const createDisabled = loading || paymentPlan.length === 0 || !quoteFile || cebesLoading || (cebeMixed && !dist.check.valid);
+
+  // Nada se crea solo: al cerrar con datos ingresados se pregunta (guardar / seguir editando / salir sin guardar).
+  // (Los valores con que abre la ventana -línea de origen, título y proveedor de la línea- no cuentan como cambios.)
+  const linesChanged =
+    selectedLines.length !== 1 || selectedLines[0].lineId !== budgetLineId || selectedLines[0].amount !== lineAvailable;
+  const isDirty =
+    open &&
+    (!!quoteFile || paymentPlan.length > 0 || linesChanged || !!form.amount || !descriptionIsAuto || form.supplier_id !== initialSupplierId);
+  const { requestClose, guard } = useCloseGuard({
+    isDirty,
+    onClose: () => onOpenChange(false),
+    onSave: async () => {
+      if (createDisabled) {
+        toast({ variant: "destructive", title: "Faltan datos", description: "Completa la solicitud (presupuesto adjunto, plan de pagos y, si aplica, distribución por CEBE) para poder guardarla, o continúa editando." });
+        return false;
+      }
+      return handleCreate();
+    },
+  });
+
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    {guard}
+    <Dialog open={open} onOpenChange={(next) => { if (next) onOpenChange(true); else if (!loading) requestClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Crear Solicitud de OC</DialogTitle>
@@ -758,12 +783,12 @@ export const OCRequestDialog = ({
         </Tabs>
 
         <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={requestClose} disabled={loading}>
             Cancelar
           </Button>
           <Button
             onClick={handleCreate}
-            disabled={loading || paymentPlan.length === 0 || !quoteFile || cebesLoading || (cebeMixed && !dist.check.valid)}
+            disabled={createDisabled}
             title={!quoteFile ? "Adjunta el presupuesto antes de crear la solicitud" : paymentPlan.length === 0 ? "Agrega al menos un pago al plan de pagos" : cebeMixed && !dist.check.valid ? "Completa la distribución por CEBE" : undefined}
           >
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

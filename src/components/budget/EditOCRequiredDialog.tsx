@@ -15,6 +15,7 @@ import { useCebeDistribution, useContractCebeSet } from "@/hooks/useCebeDistribu
 import { CebeDistributionEditor } from "./CebeDistributionEditor";
 import { allocationsToRows, loadDistribution, saveDistribution, syncPaymentSublines } from "@/lib/cebeDistributionStore";
 import type { DistRow } from "@/lib/cebeDistribution";
+import { useCloseGuard } from "@/hooks/useCloseGuard";
 
 interface CapexLeaf {
   id: string;
@@ -56,6 +57,12 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
   const useDist = cebeMixed;
   const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
   const dist = useCebeDistribution(useDist ? cebes.map((c) => c.id) : [], montoClp);
+  // true cuando la persona tocó la distribución a mano (el re-ajuste automático por cambio de monto no cuenta)
+  const [distTouched, setDistTouched] = useState(false);
+  const editDist: typeof dist.edit = (...args) => {
+    setDistTouched(true);
+    dist.edit(...args);
+  };
   useEffect(() => {
     if (pendingDist && useDist) {
       dist.reset(pendingDist);
@@ -72,6 +79,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
     setHasStoredDist(false);
     setDistChecked(false);
     setPendingDist(null);
+    setDistTouched(false);
     loadDistribution({ kind: "requirement", contractId, id: group.quotationNumber })
       .then((stored) => {
         if (stored.length >= 2) {
@@ -118,22 +126,22 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
       return next;
     });
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     if (montoClp <= 0) {
       toast.error("Ingresa un monto válido");
-      return;
+      return false;
     }
     if (useDist && !dist.check.valid) {
       toast.error(dist.check.errors[0]);
-      return;
+      return false;
     }
     if (selectedIds.size === 0) {
       toast.error("Debe quedar al menos una línea asociada");
-      return;
+      return false;
     }
     if (!ocRequeridaStatusId) {
       toast.error('No se encontró el estado "OC Requerida"');
-      return;
+      return false;
     }
 
     setSaving(true);
@@ -145,7 +153,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
         const upload = await backupQuotationFileToRepository(contractId, file, file.name);
         if (!upload.success || !upload.driveUrl) {
           toast.error(upload.error || "No se pudo subir el nuevo archivo");
-          return;
+          return false;
         }
         filePath = upload.driveUrl;
         fileName = file.name;
@@ -213,16 +221,29 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
       toast.success("Requerimiento actualizado");
       onOpenChange(false);
       onSaved();
+      return true;
     } catch (error: any) {
       console.error("Error al editar OC Requerida:", error);
       toast.error(error.message || "No se pudo guardar");
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
+  // Nada se guarda solo: al cerrar con cambios se pregunta (guardar / seguir editando / salir sin guardar).
+  const originalIds = group.lines.map((l) => l.budgetLineId);
+  const isDirty =
+    monto !== String(Math.round(group.amountClp)) ||
+    file !== null ||
+    selectedIds.size !== originalIds.length ||
+    originalIds.some((id) => !selectedIds.has(id)) ||
+    distTouched;
+  const { requestClose, guard } = useCloseGuard({ isDirty, onClose: () => onOpenChange(false), onSave: handleSave });
+
   return (
-    <Dialog open={open} onOpenChange={saving ? undefined : onOpenChange}>
+    <>
+    <Dialog open={open} onOpenChange={(next) => { if (next) onOpenChange(true); else if (!saving) requestClose(); }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Editar OC Requerida</DialogTitle>
@@ -246,7 +267,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
                 cebes={cebes}
                 rows={dist.rows}
                 totalClp={montoClp}
-                onEdit={dist.edit}
+                onEdit={editDist}
                 check={dist.check}
               />
             </div>
@@ -292,7 +313,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
+          <Button variant="outline" onClick={requestClose} disabled={saving}>Cancelar</Button>
           <Button onClick={handleSave} disabled={saving || (useDist && !dist.check.valid)}>
             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Guardar
@@ -300,5 +321,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {guard}
+    </>
   );
 }

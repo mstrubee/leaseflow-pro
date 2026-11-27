@@ -22,6 +22,7 @@ import { saveDistribution, syncPaymentSublines, allocationsToRows, type StoredAl
 import { toShareRows, type DistRow } from "@/lib/cebeDistribution";
 import { formatCoNumbers } from "@/lib/coOrders";
 import { PaymentPlanEditor } from "./PaymentPlanEditor";
+import { useCloseGuard } from "@/hooks/useCloseGuard";
 import { PaymentPlanRow, paymentDecimals, paymentsToClp, resolvePaymentPlan } from "@/lib/paymentPlan";
 import type { OCRequestQuotationRef } from "@/lib/ocRequestQuotation";
 import type { parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
@@ -126,7 +127,6 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   const [shareRequestId, setShareRequestId] = useState<string | undefined>(undefined);
-  const [cancelConfirm, setCancelConfirm] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
 
   // Local mixto (2+ CEBE): el gasto se distribuye entre sus CEBE. Se detecta solo.
@@ -153,7 +153,6 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     setBudgetType("capex");
     setSelectedLines([]);
     setPaymentPlan([]);
-    setCancelConfirm(false);
     setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
     setPrefillFile({ url: null, name: null, storagePath: null });
     setConversionQuotationNumber(null);
@@ -300,23 +299,23 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     return { number: `${dateStr}_${correlativeStr}_${cleanLineNames}_${cleanProjectName}`, correlative };
   };
 
-  const handleCreateNewRequest = async () => {
+  const handleCreateNewRequest = async (): Promise<boolean> => {
     // Validate amount from form
     const enteredAmount = parseFloat(newRequestForm.amount) || 0;
     if (enteredAmount <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
-      return;
+      return false;
     }
 
     // Supplier is required
     if (!newRequestForm.supplier_id) {
       toast({ variant: "destructive", title: "Error", description: "Seleccione un proveedor" });
-      return;
+      return false;
     }
 
     if (paymentPlan.length === 0) {
       toast({ variant: "destructive", title: "Error", description: "Debe agregar al menos un pago al plan de pagos" });
-      return;
+      return false;
     }
 
     const validLines = selectedLines.filter(l => l.lineId);
@@ -326,7 +325,7 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         title: "Error",
         description: budgetType === "opex" ? "Seleccione al menos una categoría OPEX" : "Seleccione al menos una línea de imputación"
       });
-      return;
+      return false;
     }
 
     // Use provided UF value or fallback
@@ -360,19 +359,19 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
       const planError = validatePaymentPlanTotal(planClp, totalAmountClp);
       if (planError) {
         toast({ variant: "destructive", title: "Plan de pagos inconsistente", description: planError });
-        return;
+        return false;
       }
     }
 
     // Local mixto: la distribución del gasto por CEBE es obligatoria y debe sumar el total.
     if (cebesLoading) {
       toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están cargando los CEBE del local." });
-      return;
+      return false;
     }
     if (cebeMixed && !dist.check.valid) {
       toast({ variant: "destructive", title: "Distribución por CEBE inválida", description: dist.check.errors[0] });
       setNewRequestTab("basic");
-      return;
+      return false;
     }
 
     const lineNames = validLines.map(l => l.lineName);
@@ -552,8 +551,10 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
         quotation: quotationRef,
       }, { ufValue: currentUfValue, contractId }));
       setShareRequestId(requestData?.id);
+      return true;
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+      return false;
     } finally {
       setCreatingRequest(false);
     }
@@ -588,15 +589,42 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
     },
   }));
 
+  const createDisabled =
+    creatingRequest ||
+    selectedLines.length === 0 ||
+    availableBudgets.length === 0 ||
+    !newRequestForm.amount ||
+    parseFloat(newRequestForm.amount) <= 0 ||
+    !newRequestForm.supplier_id ||
+    paymentPlan.length === 0 ||
+    Math.abs(totalPlanned - totalSelected) > 0.01 ||
+    cebesLoading ||
+    (cebeMixed && !dist.check.valid);
+
+  // Una solicitud nueva siempre se considera con cambios sin guardar: nada se crea hasta pulsar "Guardar".
+  // "Guardar" del aviso hace lo mismo que "Crear Solicitud" (con las mismas validaciones).
+  const { requestClose, guard } = useCloseGuard({
+    isDirty: showNewRequestDialog,
+    onClose: () => setShowNewRequestDialog(false),
+    onSave: async () => {
+      if (createDisabled) {
+        toast({ variant: "destructive", title: "Faltan datos", description: "Completa los datos de la solicitud para poder guardarla, o continúa editando." });
+        return false;
+      }
+      return handleCreateNewRequest();
+    },
+  });
+
   return (
     <>
+      {guard}
       {/* New Request Dialog */}
       <Dialog
         open={showNewRequestDialog}
         onOpenChange={(open) => {
-          // Any close trigger (backdrop click, Escape, X button) shows inline
-          // confirmation instead of immediately closing the dialog.
-          if (!open) setCancelConfirm(true);
+          // Cualquier intento de cerrar (X, Escape, Cancelar) pregunta: guardar / seguir editando / salir sin guardar.
+          // Un clic fuera de la ventana no la cierra.
+          if (!open && !creatingRequest) requestClose();
         }}
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -827,50 +855,13 @@ export const OCRequestCreateDialog = forwardRef<OCRequestCreateDialogHandle, OCR
           )}
 
           <DialogFooter className="mt-4">
-            {cancelConfirm ? (
-              <div className="flex items-center gap-3 w-full">
-                <span className="text-sm text-muted-foreground flex-1">
-                  ¿Cancelar y perder los datos ingresados?
-                </span>
-                <Button variant="outline" size="sm" onClick={() => setCancelConfirm(false)}>
-                  No, volver
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    setCancelConfirm(false);
-                    setShowNewRequestDialog(false);
-                  }}
-                >
-                  Sí, cancelar
-                </Button>
-              </div>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setCancelConfirm(true)}>
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleCreateNewRequest}
-                  disabled={
-                    creatingRequest ||
-                    selectedLines.length === 0 ||
-                    availableBudgets.length === 0 ||
-                    !newRequestForm.amount ||
-                    parseFloat(newRequestForm.amount) <= 0 ||
-                    !newRequestForm.supplier_id ||
-                    paymentPlan.length === 0 ||
-                    Math.abs(totalPlanned - totalSelected) > 0.01 ||
-                    cebesLoading ||
-                    (cebeMixed && !dist.check.valid)
-                  }
-                >
-                  {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Crear Solicitud
-                </Button>
-              </>
-            )}
+            <Button variant="outline" onClick={requestClose} disabled={creatingRequest}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateNewRequest} disabled={createDisabled}>
+              {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Crear Solicitud
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
