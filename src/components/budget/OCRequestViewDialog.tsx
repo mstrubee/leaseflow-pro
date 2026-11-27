@@ -35,6 +35,7 @@ import { useContractCebeSet } from "@/hooks/useCebeDistribution";
 import { PaymentCebeBreakdown } from "./PaymentCebeBreakdown";
 import { RequestCebeDistributionSection } from "./RequestCebeDistributionSection";
 import { useCloseGuard } from "@/hooks/useCloseGuard";
+import { formatCoGroups, loadContractCoGroups } from "@/lib/requestCoOrders";
 import { loadDistribution, rescaleStoredDistribution, syncPaymentSublines, type StoredAllocation } from "@/lib/cebeDistributionStore";
 
 interface OCRequest {
@@ -207,6 +208,8 @@ export const OCRequestViewDialog = ({
   const [description, setDescription] = useState("");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
+  // Órdenes CO de los contratos de la solicitud (texto, una línea por contrato si son varios)
+  const [coText, setCoText] = useState<string | null>(null);
   // Con Migo / Sin Migo (editable mientras la solicitud está pendiente; se guarda con "Guardar Cambios")
   const [migoChoice, setMigoChoice] = useState<"con" | "sin" | null>(null);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
@@ -366,6 +369,17 @@ export const OCRequestViewDialog = ({
         })));
       } else {
         setContractAllocations([]);
+      }
+
+      // Órdenes CO (solo CAPEX): las de cada contrato de la solicitud, identificadas por contrato.
+      const reqIsOpex = !reqData.budget_id && !!reqData.opex_master_id;
+      if (reqIsOpex) {
+        setCoText(null);
+      } else {
+        const coContractIds = allocationsData && allocationsData.length > 0
+          ? allocationsData.map((a) => a.contract_id as string)
+          : [reqData.contract_id as string];
+        setCoText(formatCoGroups(await loadContractCoGroups(coContractIds)));
       }
 
       // Load payment plans
@@ -1391,10 +1405,10 @@ export const OCRequestViewDialog = ({
                   <p className="text-xs text-muted-foreground">Proyecto</p>
                   <p className="font-medium truncate">{request.project_name}</p>
                 </div>
-                {request.co_order_numbers && (
-                  <div>
+                {(coText || (!isOpexRequest && request.co_order_numbers)) && (
+                  <div className="col-span-2">
                     <p className="text-xs text-muted-foreground">ORDEN CO</p>
-                    <p className="font-medium truncate" title={request.co_order_numbers}>{request.co_order_numbers}</p>
+                    <p className="font-medium whitespace-pre-line" data-testid="request-co-orders">{coText || request.co_order_numbers}</p>
                   </div>
                 )}
                 <div>

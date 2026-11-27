@@ -6,9 +6,12 @@ import { loadContractCebes, loadContractCebeEntriesFor } from "@/lib/contractCeb
 import { loadDistribution } from "@/lib/cebeDistributionStore";
 import { enrichShareData } from "@/lib/shareDataEnrich";
 import { isMixedLocal, toShareRows } from "@/lib/cebeDistribution";
+import { formatCoGroups, loadContractCoGroups } from "@/lib/requestCoOrders";
 
 interface StoredOCRequest {
   contract_id: string;
+  budget_id: string | null;
+  opex_master_id: string | null;
   budget_line_id: string | null;
   request_date: string;
   line_name: string | null;
@@ -137,13 +140,19 @@ export async function loadOCRequestShareData(
     console.error("No se pudo leer la distribución por CEBE para el PDF:", distError);
   }
 
+  // Órdenes CO (solo CAPEX): las de cada contrato de la solicitud, identificadas por contrato cuando son varios.
+  // Si no se pueden leer, queda lo que se guardó al crear la solicitud.
+  const isOpex = !request.budget_id && !!request.opex_master_id;
+  const coGroups = isOpex ? [] : await loadContractCoGroups(allocationRows.length > 0 ? allocationRows.map((a) => a.contract_id) : [request.contract_id]);
+  const coOrderNumbers = isOpex ? null : formatCoGroups(coGroups) ?? request.co_order_numbers ?? null;
+
   const shareData: OCRequestShareData = {
     requestDate: request.request_date,
     currency: "CLP",
     contractNames: allocationNames.length > 0 ? allocationNames : [request.project_name].filter((n): n is string => !!n),
     contractCebe: headerCebe,
     cebeDistribution,
-    coOrderNumbers: request.co_order_numbers ?? null,
+    coOrderNumbers,
     description: request.description || "",
     lines,
     totalAmountClp,
