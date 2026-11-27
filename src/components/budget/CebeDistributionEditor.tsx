@@ -65,9 +65,9 @@ export const CebeDistributionEditor = ({ cebes, rows, totalClp, onEdit, check, d
       </div>
 
       <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground">
-        <div className="col-span-5">CEBE</div>
+        <div className="col-span-4">CEBE</div>
         <div className="col-span-2 text-right">% Distribución</div>
-        <div className="col-span-3 text-right">Monto ($)</div>
+        <div className="col-span-4 text-right">Monto ($)</div>
         <div className="col-span-2 text-right">Origen</div>
       </div>
 
@@ -77,7 +77,7 @@ export const CebeDistributionEditor = ({ cebes, rows, totalClp, onEdit, check, d
         const typingAmt = typing?.idx === idx && typing.field === "amount";
         return (
           <div key={r.cebeId} className="grid grid-cols-12 gap-2 items-center">
-            <div className="col-span-5 text-sm truncate" title={labelOf(r.cebeId)}>{labelOf(r.cebeId)}</div>
+            <div className="col-span-4 text-sm truncate" title={labelOf(r.cebeId)}>{labelOf(r.cebeId)}</div>
             <div className="col-span-2">
               <Input
                 type="number"
@@ -93,7 +93,7 @@ export const CebeDistributionEditor = ({ cebes, rows, totalClp, onEdit, check, d
                 aria-label={`% de ${labelOf(r.cebeId)}`}
               />
             </div>
-            <div className="col-span-3">
+            <div className="col-span-4">
               <Input
                 type="number"
                 inputMode="numeric"
@@ -115,9 +115,9 @@ export const CebeDistributionEditor = ({ cebes, rows, totalClp, onEdit, check, d
       })}
 
       <div className="grid grid-cols-12 gap-2 items-center border-t pt-2 text-sm font-semibold">
-        <div className="col-span-5">Total</div>
+        <div className="col-span-4">Total</div>
         <div className="col-span-2 text-right">{fmtPct(sumPct)}%</div>
-        <div className="col-span-3 text-right">{clp(sumAmount)}</div>
+        <div className="col-span-4 text-right">{clp(sumAmount)}</div>
         <div className="col-span-2 text-right text-xs font-normal text-muted-foreground">de {clp(total)}</div>
       </div>
 

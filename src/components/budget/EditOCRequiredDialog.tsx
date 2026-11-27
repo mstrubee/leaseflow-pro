@@ -45,13 +45,15 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
   const [loadingLeaves, setLoadingLeaves] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Local mixto: si el requerimiento ya tiene distribución por CEBE guardada, se muestra y se
-  // puede editar (al cambiar el monto se re-ajusta sola). Los requerimientos anteriores a esta
-  // función no tienen distribución: se editan como siempre y la piden al pasar a Solicitud.
+  // Local mixto: la distribución por CEBE del requerimiento se muestra y se edita aquí (al cambiar el
+  // monto se re-ajusta sola). Un requerimiento ANTIGUO (anterior a esta función) aún no la tiene: el
+  // editor aparece vacío y hay que definirla para guardar, igual que al crear un requerimiento.
   const { cebes, isMixed: cebeMixed } = useContractCebeSet(contractId);
   const [hasStoredDist, setHasStoredDist] = useState(false);
+  // true cuando ya se consultó si el requerimiento tiene distribución guardada (evita avisar "no tiene" antes de saberlo)
+  const [distChecked, setDistChecked] = useState(false);
   const [pendingDist, setPendingDist] = useState<DistRow[] | null>(null);
-  const useDist = cebeMixed && hasStoredDist;
+  const useDist = cebeMixed;
   const montoClp = parseInt(monto.replace(/\D/g, ""), 10) || 0;
   const dist = useCebeDistribution(useDist ? cebes.map((c) => c.id) : [], montoClp);
   useEffect(() => {
@@ -68,6 +70,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
     setSelectedIds(new Set(group.lines.map((l) => l.budgetLineId)));
     loadLeaves();
     setHasStoredDist(false);
+    setDistChecked(false);
     setPendingDist(null);
     loadDistribution({ kind: "requirement", contractId, id: group.quotationNumber })
       .then((stored) => {
@@ -76,7 +79,8 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
           setPendingDist(allocationsToRows(stored));
         }
       })
-      .catch((error) => console.error("No se pudo leer la distribución por CEBE:", error));
+      .catch((error) => console.error("No se pudo leer la distribución por CEBE:", error))
+      .finally(() => setDistChecked(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, group.quotationNumber]);
 
@@ -219,7 +223,7 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
 
   return (
     <Dialog open={open} onOpenChange={saving ? undefined : onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Editar OC Requerida</DialogTitle>
           <DialogDescription>{group.quotationNumber}</DialogDescription>
@@ -232,13 +236,20 @@ export function EditOCRequiredDialog({ open, onOpenChange, contractId, projectNa
           </div>
 
           {useDist && (
-            <CebeDistributionEditor
-              cebes={cebes}
-              rows={dist.rows}
-              totalClp={montoClp}
-              onEdit={dist.edit}
-              check={dist.check}
-            />
+            <div className="space-y-2">
+              {distChecked && !hasStoredDist && (
+                <p className="text-xs text-amber-700">
+                  Este requerimiento aún no tiene distribución por CEBE. Ingrésala para poder guardar.
+                </p>
+              )}
+              <CebeDistributionEditor
+                cebes={cebes}
+                rows={dist.rows}
+                totalClp={montoClp}
+                onEdit={dist.edit}
+                check={dist.check}
+              />
+            </div>
           )}
 
           <div className="space-y-1.5">
