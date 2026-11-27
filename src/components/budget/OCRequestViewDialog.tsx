@@ -207,6 +207,8 @@ export const OCRequestViewDialog = ({
   const [description, setDescription] = useState("");
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
+  // Con Migo / Sin Migo (editable mientras la solicitud está pendiente; se guarda con "Guardar Cambios")
+  const [migoChoice, setMigoChoice] = useState<"con" | "sin" | null>(null);
   const [shareData, setShareData] = useState<OCRequestShareData | null>(null);
   
   // New payment form
@@ -298,6 +300,7 @@ export const OCRequestViewDialog = ({
       setDescription(reqData.description || "");
       setSupplierId(reqData.supplier_id);
       setSupplierName(reqData.supplier_name);
+      setMigoChoice((reqData as OCRequest).migo_choice ?? null);
 
       // Load budget line assignments
       const { data: linesData } = await supabase
@@ -976,11 +979,13 @@ export const OCRequestViewDialog = ({
         .update({
           description,
           supplier_id: supplierId,
-          supplier_name: supplierName
+          supplier_name: supplierName,
+          migo_choice: migoChoice
         })
         .eq("id", request.id);
       
       if (error) throw error;
+      setRequest((prev) => (prev ? { ...prev, description, supplier_id: supplierId, supplier_name: supplierName, migo_choice: migoChoice } : prev));
 
       toast({ title: "Solicitud actualizada" });
       onRefresh?.();
@@ -1235,7 +1240,8 @@ export const OCRequestViewDialog = ({
     !!request && infoEditable &&
     (description !== (request.description || "") ||
       supplierId !== (request.supplier_id ?? null) ||
-      (supplierName ?? null) !== (request.supplier_name ?? null));
+      (supplierName ?? null) !== (request.supplier_name ?? null) ||
+      migoChoice !== (request.migo_choice ?? null));
   const newPaymentDirty = !!(newPayment.amount.trim() || newPayment.description.trim() || newPayment.due_date);
   const pendingSaves: { pending: boolean; run: () => Promise<boolean> }[] = [
     { pending: infoDirty, run: handleSave },
@@ -1430,6 +1436,28 @@ export const OCRequestViewDialog = ({
                         setSupplierName(name);
                       }}
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Migo</Label>
+                    <div className="flex gap-2 max-w-sm">
+                      <Button
+                        type="button"
+                        variant={migoChoice === "con" ? "default" : "outline"}
+                        onClick={() => setMigoChoice("con")}
+                        className="flex-1"
+                      >
+                        Con Migo
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={migoChoice === "sin" ? "default" : "outline"}
+                        onClick={() => setMigoChoice("sin")}
+                        className="flex-1"
+                      >
+                        Sin Migo
+                      </Button>
+                    </div>
                   </div>
 
                   <Button onClick={handleSave} disabled={saving} className="gap-2">
