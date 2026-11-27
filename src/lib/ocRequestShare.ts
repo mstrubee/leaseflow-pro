@@ -158,11 +158,9 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     },
   });
 
-  // Observaciones = descripción + línea(s), como un solo texto.
-  const observaciones = [
-    data.description?.trim(),
-    `Línea(s) de imputación: ${data.lines.map((l) => l.lineName).join(", ") || "—"}`,
-  ].filter(Boolean).join("\n");
+  // Observaciones = solo el título/descripción de la solicitud. Las líneas de imputación van en el
+  // "Detalle" (última tabla), no se repiten aquí.
+  const observaciones = data.description?.trim() || "—";
 
   const obsY = (doc as any).lastAutoTable?.finalY || 40;
   autoTable(doc, {
@@ -265,8 +263,27 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
   // La columna de monto muestra el monto AUTORIZADO de cada línea en el Control de Presupuesto (no lo
   // imputado a la solicitud); el pie sigue siendo el total de la solicitud.
   const useAuthorized = data.lines.some((l) => l.authorizedClp != null);
+
+  // Título "Detalle". La tabla puede ocupar varias hojas, así que el título va aparte de la tabla; para que
+  // nunca quede solo al final de una hoja se exige espacio para título + encabezado + 2 filas, y si no
+  // hay, el título y la tabla empiezan en la hoja siguiente.
+  const detailPageH = doc.internal.pageSize.getHeight();
+  let detailY = lastFinalY(90) + 10;
+  if (detailY + 8 + 14 + 24 > detailPageH - 15) {
+    doc.addPage();
+    detailY = 14;
+  }
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Detalle", 14, detailY + 4);
+  doc.setFont("helvetica", "normal");
+
   autoTable(doc, {
-    startY: lastFinalY(90) + 10,
+    startY: detailY + 8,
+    // Una fila nunca se parte entre hojas (antes la segunda línea del CEBE quedaba sola arriba de la hoja
+    // siguiente) y el total aparece UNA sola vez, al final del listado (no en el pie de cada hoja).
+    rowPageBreak: "avoid",
+    showFoot: "lastPage",
     head: [["Línea", "Contrato", "CEBE", useAuthorized ? "Monto autorizado" : "Monto"]],
     body: data.lines.map((l) => [
       l.lineName,
@@ -277,6 +294,9 @@ export async function buildOCRequestPdf(data: OCRequestShareData): Promise<jsPDF
     foot: [[{ content: useAuthorized ? "Total solicitud" : "Total", colSpan: 3 }, fmtClp(data.totalAmountClp)]],
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4 },
+    // Filas compactas: el espacio vacío arriba y abajo del texto de cada fila es 1/3 del anterior
+    // (4 -> 4/3 mm). Mismo tamaño de letra y mismos anchos de columna; encabezado y total no cambian.
+    bodyStyles: { cellPadding: { top: 4 / 3, bottom: 4 / 3, left: 4, right: 4 } },
     headStyles: { fillColor: [30, 58, 95], textColor: 255 },
     footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: "bold" },
     columnStyles: {
